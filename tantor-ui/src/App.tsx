@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Hosts } from './pages/Hosts';
+import { Clusters } from './pages/Clusters';
 import './App.css';
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/hosts" element={<Hosts />} />
+            <Route path="/clusters" element={<Clusters />} />
             {/* Fallback routes for pages not fully fleshed out yet */}
             <Route path="*" element={
               <div className="animate-fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
