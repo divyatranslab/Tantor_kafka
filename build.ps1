@@ -19,7 +19,7 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
-cd "$PSScriptRoot\tantor-artifact-repository\tantor-artifact-repository"
+cd "$PSScriptRoot\tantor-artifact-repository"
 & $MvnCmd clean package -DskipTests
 
 # 3. Build Management Server
@@ -29,6 +29,6 @@ cd "$PSScriptRoot\tantor-server"
 
 Write-Host "`nBuild Complete!" -ForegroundColor Green
 Write-Host "To start the Artifact Repository:"
-Write-Host "  java -jar tantor-artifact-repository\tantor-artifact-repository\target\tantor-artifact-repository-0.0.1-SNAPSHOT.jar"
+Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
 Write-Host "To start the Management Server:"
-Write-Host "  java -jar tantor-server\target\tantor-server-0.0.1-SNAPSHOT.jar"
+Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"

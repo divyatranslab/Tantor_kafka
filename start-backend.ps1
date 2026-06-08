@@ -14,7 +14,7 @@ if (Test-Path ".env") {
 }
 
 Write-Host "`nStarting Artifact Repository on port 8081..." -ForegroundColor Magenta
-Start-Process -NoNewWindow -FilePath "java" -ArgumentList "-jar tantor-artifact-repository\tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+Start-Process -NoNewWindow -FilePath "java" -ArgumentList "-jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
 
 Write-Host "Starting Management Server on port 8443..." -ForegroundColor Magenta
 Start-Process -NoNewWindow -FilePath "java" -ArgumentList "-jar tantor-server\target\tantor-server-1.0.0.jar"
