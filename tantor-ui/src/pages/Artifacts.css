@@ -1,0 +1,22 @@
+.artifacts-page {
+  padding: 2rem;
+  height: 100%;
+}
+
+.upload-dropzone {
+  transition: all 0.2s ease;
+}
+
+.upload-dropzone:hover {
+  background: rgba(255,255,255,0.05) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+.badge.service-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: bold;
+}

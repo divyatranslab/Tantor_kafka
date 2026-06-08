@@ -36,11 +36,14 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		logs.WriteString(formatted + "\n")
 	}
 
-	installDir := t.Parameters["install_dir"]
+	installDir := t.Parameters["kafka_install_dir"]
 	if installDir == "" {
 		installDir = "/opt/tantor/kafka"
 	}
-	dataDir := filepath.Join(installDir, "data")
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		dataDir = filepath.Join(installDir, "data")
+	}
 	kafkaUser := "kafka"
 
 	log("Starting Kafka Deployment Workflow...")
@@ -153,16 +156,56 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	}
 	hostname, _ := os.Hostname()
 
+	role := t.Parameters["role"]
+	if role == "broker_controller" || role == "" {
+		role = "broker,controller"
+	}
+
+	listenerPort := t.Parameters["listener_port"]
+	if listenerPort == "" {
+		listenerPort = "9092"
+	}
+
+	controllerPort := t.Parameters["controller_port"]
+	if controllerPort == "" {
+		controllerPort = "9093"
+	}
+
+	logDirs := t.Parameters["log_dirs"]
+	if logDirs == "" {
+		logDirs = filepath.Join(dataDir, "kafka-logs")
+	}
+
+	numPartitions := t.Parameters["num_partitions"]
+	if numPartitions == "" {
+		numPartitions = "1"
+	}
+
+	repFactor := t.Parameters["replication_factor"]
+	if repFactor == "" {
+		repFactor = "1"
+	}
+
 	props := struct {
-		NodeId       string
-		QuorumVoters string
-		Hostname     string
-		DataDir      string
+		NodeId         string
+		QuorumVoters   string
+		Hostname       string
+		LogDirs        string
+		Role           string
+		ListenerPort   string
+		ControllerPort string
+		NumPartitions  string
+		RepFactor      string
 	}{
-		NodeId:       nodeId,
-		QuorumVoters: quorumVoters,
-		Hostname:     hostname,
-		DataDir:      dataDir,
+		NodeId:         nodeId,
+		QuorumVoters:   quorumVoters,
+		Hostname:       hostname,
+		LogDirs:        logDirs,
+		Role:           role,
+		ListenerPort:   listenerPort,
+		ControllerPort: controllerPort,
+		NumPartitions:  numPartitions,
+		RepFactor:      repFactor,
 	}
 
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
@@ -176,16 +219,27 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		javaHome = "/usr" // fallback
 	}
 
+	heapSize := t.Parameters["heap_size"]
+	if heapSize == "" {
+		heapSize = "1G"
+	}
+
+	jmxPort := t.Parameters["jmx_port"]
+
 	props := struct {
 		User       string
 		Group      string
 		JavaHome   string
 		InstallDir string
+		HeapSize   string
+		JmxPort    string
 	}{
 		User:       user,
 		Group:      user,
 		JavaHome:   javaHome,
 		InstallDir: installDir,
+		HeapSize:   heapSize,
+		JmxPort:    jmxPort,
 	}
 
 	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, "/etc/systemd/system/kafka.service")

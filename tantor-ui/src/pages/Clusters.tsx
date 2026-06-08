@@ -6,8 +6,8 @@ export function Clusters() {
   const [showDeployModal, setShowDeployModal] = useState(false);
   const [hosts, setHosts] = useState<any[]>([]);
   const [selectedHosts, setSelectedHosts] = useState<string[]>([]);
-  const [version, setVersion] = useState('3.7.0');
-  const [artifactUrl, setArtifactUrl] = useState('http://localhost:8081/kafka_2.13-3.7.0.tgz');
+  const [availableArtifacts, setAvailableArtifacts] = useState<any[]>([]);
+  const [selectedArtifactId, setSelectedArtifactId] = useState<string>('');
   const [isDeploying, setIsDeploying] = useState(false);
 
   const fetchHosts = async () => {
@@ -23,14 +23,31 @@ export function Clusters() {
     }
   };
 
+  const fetchArtifacts = async () => {
+    try {
+      const response = await fetch('/api/v1/artifacts?serviceType=KAFKA');
+      if (response.ok) {
+        const data = await response.json();
+        const artifacts = data.content || [];
+        setAvailableArtifacts(artifacts);
+        if (artifacts.length > 0) {
+          setSelectedArtifactId(artifacts[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching artifacts:', error);
+    }
+  };
+
   useEffect(() => {
     if (showDeployModal) {
       fetchHosts();
+      fetchArtifacts();
     }
   }, [showDeployModal]);
 
   const toggleHostSelection = (hostId: string) => {
-    setSelectedHosts(prev => 
+    setSelectedHosts(prev =>
       prev.includes(hostId) ? prev.filter(id => id !== hostId) : [...prev, hostId]
     );
   };
@@ -43,14 +60,21 @@ export function Clusters() {
 
     setIsDeploying(true);
     const selectedHostObjects = hosts.filter(h => selectedHosts.includes(h.id));
-    
+
+    const selectedArtifact = availableArtifacts.find(a => a.id === selectedArtifactId);
+    if (!selectedArtifact) {
+      alert("Please select a valid Kafka binary artifact.");
+      setIsDeploying(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/v1/ui/clusters/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          version,
-          artifactUrl,
+          version: selectedArtifact.version,
+          artifactUrl: `http://localhost:8081/api/v1/artifacts/${selectedArtifact.id}/download`,
           hosts: selectedHostObjects.map(h => ({ id: h.id, hostname: h.hostname }))
         })
       });
@@ -98,7 +122,7 @@ export function Clusters() {
       {showDeployModal && (
         <div className="modal-overlay">
           <div className="glass-panel modal-content animate-fade-in" style={{ padding: '2rem', maxWidth: '600px', width: '100%', position: 'relative' }}>
-            <button 
+            <button
               onClick={() => setShowDeployModal(false)}
               className="modal-close-btn"
             >
@@ -106,24 +130,22 @@ export function Clusters() {
             </button>
             <h2 style={{ marginBottom: '1rem', color: 'white' }}>Deploy Kafka Cluster</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>Configure the cluster topology and select the target nodes for agent-based deployment.</p>
-            
-            <div className="form-group">
-              <label>Kafka Version</label>
-              <select className="form-control" value={version} onChange={(e) => setVersion(e.target.value)}>
-                <option value="3.7.0">Apache Kafka 3.7.0 (KRaft)</option>
-                <option value="3.6.1">Apache Kafka 3.6.1 (KRaft)</option>
-              </select>
-            </div>
 
-            <div className="form-group" style={{ marginTop: '1rem' }}>
-              <label>Artifact URL (Internal Binary Repository)</label>
-              <input 
-                type="text" 
-                className="form-control" 
-                value={artifactUrl} 
-                onChange={(e) => setArtifactUrl(e.target.value)}
-                placeholder="http://tantor-artifact-repository:8081/kafka.tgz"
-              />
+            <div className="form-group">
+              <label>Kafka Binary Artifact</label>
+              {availableArtifacts.length === 0 ? (
+                <div className="no-hosts-warning" style={{ background: 'rgba(255,0,0,0.1)', border: '1px solid var(--accent-danger)' }}>
+                  No Kafka binaries found. Please upload a .tgz binary in the <strong>Artifacts</strong> tab first!
+                </div>
+              ) : (
+                <select className="form-control" value={selectedArtifactId} onChange={(e) => setSelectedArtifactId(e.target.value)}>
+                  {availableArtifacts.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.version} - {a.fileName} ({(a.fileSizeBytes / 1024 / 1024).toFixed(1)} MB)
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="form-group" style={{ marginTop: '2rem' }}>
@@ -135,8 +157,8 @@ export function Clusters() {
                   </div>
                 ) : (
                   hosts.map(host => (
-                    <div 
-                      key={host.id} 
+                    <div
+                      key={host.id}
                       className={`host-selectable-card ${selectedHosts.includes(host.id) ? 'selected' : ''}`}
                       onClick={() => toggleHostSelection(host.id)}
                     >
@@ -157,9 +179,9 @@ export function Clusters() {
               <button className="btn" style={{ background: 'transparent', border: '1px solid var(--text-secondary)', color: 'white' }} onClick={() => setShowDeployModal(false)}>
                 Cancel
               </button>
-              <button 
-                className="btn btn-primary" 
-                onClick={handleDeploy} 
+              <button
+                className="btn btn-primary"
+                onClick={handleDeploy}
                 disabled={isDeploying || selectedHosts.length === 0}
               >
                 {isDeploying ? <RefreshCw size={16} className="spin" /> : <Activity size={16} />}

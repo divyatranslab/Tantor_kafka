@@ -6,6 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/api/v1/artifacts': {
+        target: 'http://localhost:8081',
+        secure: false,
+      },
       '/api': {
         target: 'http://localhost:8443',
         secure: false,

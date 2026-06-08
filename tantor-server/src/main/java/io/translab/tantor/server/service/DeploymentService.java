@@ -20,7 +20,7 @@ public class DeploymentService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public void deployKafkaToHost(String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters) {
+    public void deployKafkaToHost(String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
         log.info("Scheduling Kafka {} deployment on host {}", version, hostId);
 
         Task task = new Task();
@@ -31,12 +31,24 @@ public class DeploymentService {
         task.setStatus("PENDING");
         
         try {
-            task.setParameters(objectMapper.writeValueAsString(Map.of(
-                "version", version,
-                "install_dir", "/opt/tantor/kafka",
-                "node_id", nodeId != null ? nodeId : "1",
-                "quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093"
-            )));
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("version", version);
+            params.put("node_id", nodeId != null ? nodeId : "1");
+            params.put("quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093");
+            params.put("role", role != null ? role : "broker_controller");
+
+            // Merge advanced config into the task parameters
+            if (configJsonStr != null && !configJsonStr.equals("{}")) {
+                Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
+                params.putAll(configMap);
+            }
+            
+            // Set default install dir if not provided
+            if (!params.containsKey("kafka_install_dir")) {
+                params.put("kafka_install_dir", "/opt/tantor/kafka");
+            }
+
+            task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize parameters", e);
         }
