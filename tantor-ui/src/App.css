@@ -1,0 +1,4 @@
+/* Override default Vite CSS */
+#root {
+  width: 100%;
+}

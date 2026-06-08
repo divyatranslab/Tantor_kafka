@@ -1,0 +1,30 @@
+# Build and compiled files
+target/
+*.jar
+*.exe
+*.class
+
+# Node and UI
+node_modules/
+dist/
+build/
+.env
+
+# Go
+tantor-agent.exe
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.iml
+*.iws
+
+# Logs
+logs/
+*.log
+
+# Portable / Local Installations
+apache-maven-*/
+apache-maven-*.zip
+go/
+go*.windows-amd64.zip

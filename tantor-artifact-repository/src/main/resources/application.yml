@@ -1,0 +1,73 @@
+server:
+  port: 8081
+  # Large artifacts (Kafka tarballs ~100MB+) stream straight to disk, so keep
+  # the request timeout generous and disable response compression for binaries.
+  tomcat:
+    max-swallow-size: -1
+    connection-timeout: 120s
+
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: tantor-artifact-repository
+
+  datasource:
+    url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
+    username: ${TANTOR_DB_USER:postgres}
+    password: ${TANTOR_DB_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      pool-name: tantor-artifact-pool
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema; disable Hibernate validation to prevent type mismatch errors
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.format_sql: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    table: flyway_artifact_schema_history
+    baseline-on-migrate: true
+
+  servlet:
+    multipart:
+      # Allow large multipart uploads; raw streaming PUT bypasses these limits.
+      max-file-size: 4GB
+      max-request-size: 4GB
+      file-size-threshold: 16MB
+
+# Tantor artifact repository specific settings
+tantor:
+  repository:
+    # Root of the on-disk artifact store. In k8s this is a mounted PVC.
+    base-path: ${TANTOR_REPO_PATH:/var/lib/tantor/repository}
+    # Reject uploads whose declared checksum does not match the computed one.
+    enforce-checksum: true
+    # Buffer size used when streaming files to/from disk.
+    stream-buffer-bytes: 1048576
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    io.translab.tantor: INFO

@@ -1,0 +1,43 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: tantor-server
+  
+  datasource:
+    url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
+    username: ${TANTOR_DB_USER:postgres}
+    password: ${TANTOR_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    clean-disabled: false
+    clean-on-validation-error: true
+
+server:
+  port: 8443
+  ssl:
+    enabled: false
+    key-store-password: changeit
+    key-store-type: PKCS12
+    key-alias: tantor
+    client-auth: want # Allow mTLS but not strictly enforce for all paths (UI uses JWT)
+
+tantor:
+  security:
+    jwt:
+      secret: ${TANTOR_JWT_SECRET:v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E=}
+      expiration-ms: 86400000 # 24 hours
+  artifact-repo:
+    url: ${TANTOR_REPO_URL:http://localhost:8081}
