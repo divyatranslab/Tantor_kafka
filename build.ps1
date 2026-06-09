@@ -27,6 +27,9 @@ Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-server"
 & $MvnCmd clean package -DskipTests
 
+# Restore original directory
+cd $PSScriptRoot
+
 Write-Host "`nBuild Complete!" -ForegroundColor Green
 Write-Host "To start the Artifact Repository:"
 Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"

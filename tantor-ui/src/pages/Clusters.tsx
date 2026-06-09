@@ -73,9 +73,17 @@ export function Clusters() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          version: selectedArtifact.version,
-          artifactUrl: `http://localhost:8081/api/v1/artifacts/${selectedArtifact.id}/download`,
-          hosts: selectedHostObjects.map(h => ({ id: h.id, hostname: h.hostname }))
+          name: `tantor-cluster-${Math.floor(Math.random() * 10000)}`,
+          kafka_version: selectedArtifact.version,
+          mode: 'kraft',
+          environment: 'production',
+          artifactUrl: `http://192.168.3.142:8081/api/v1/artifacts/${selectedArtifact.id}/download`,
+          services: selectedHostObjects.map((h, index) => ({
+            host_id: h.id,
+            role: 'broker_controller',
+            node_id: index + 1
+          })),
+          config: {}
         })
       });
 

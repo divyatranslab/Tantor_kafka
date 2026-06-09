@@ -126,7 +126,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	// 11. Create systemd service
-	if err := d.createSystemdService(ctx, kafkaUser, installDir); err != nil {
+	if err := d.createSystemdService(ctx, kafkaUser, installDir, t); err != nil {
 		return logs.String(), err
 	}
 	log("Systemd service created")
@@ -211,7 +211,7 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
 }
 
-func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string) error {
+func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
 	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
 	javaHome := strings.TrimSpace(out)

@@ -4,6 +4,12 @@
 }
 
 .upload-dropzone {
+  border: 2px dashed #475569;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.4);
   transition: all 0.2s ease;
 }
 

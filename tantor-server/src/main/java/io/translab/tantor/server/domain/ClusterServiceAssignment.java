@@ -3,6 +3,7 @@ package io.translab.tantor.server.domain;
 import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.GenericGenerator;
+import java.util.UUID;
 
 @Entity
 @Table(name = "cluster_services")
@@ -10,10 +11,8 @@ import org.hibernate.annotations.GenericGenerator;
 public class ClusterServiceAssignment {
 
     @Id
-    @GeneratedValue(generator = "uuid2")
-    @GenericGenerator(name = "uuid2", strategy = "uuid2")
-    @Column(length = 36)
-    private String id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cluster_id", nullable = false)

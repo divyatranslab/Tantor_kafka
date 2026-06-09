@@ -5,6 +5,7 @@ import lombok.Data;
 import org.hibernate.annotations.GenericGenerator;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(name = "clusters")
@@ -12,10 +13,8 @@ import java.util.List;
 public class Cluster {
 
     @Id
-    @GeneratedValue(generator = "uuid2")
-    @GenericGenerator(name = "uuid2", strategy = "uuid2")
-    @Column(length = 36)
-    private String id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(nullable = false)
     private String name;

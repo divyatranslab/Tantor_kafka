@@ -101,11 +101,11 @@ export function Artifacts() {
             <span className={`text-sm ${uploadMsg.ok ? 'text-green-500' : 'text-red-500'}`}>{uploadMsg.text}</span>
           )}
           <button 
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 cursor-pointer"
+            className="btn btn-primary"
             onClick={() => setShowUploadModal(true)}
             disabled={uploading}
           >
-            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
             Upload Binary
           </button>
         </div>
@@ -205,31 +205,31 @@ export function Artifacts() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="modal-overlay z-50 fixed inset-0 bg-black/50 flex items-center justify-center">
+        <div className="modal-overlay">
           <div className="glass-panel modal-content animate-fade-in" style={{ padding: '2rem', maxWidth: '500px', width: '100%', position: 'relative' }}>
             <button 
               onClick={() => setShowUploadModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              className="modal-close-btn"
             >
-              <XCircle size={24} />
+              &times;
             </button>
-            <h2 className="text-xl font-bold text-white mb-2">Upload Artifact</h2>
-            <p className="text-gray-400 text-sm mb-6">Upload a Kafka `.tgz` binary to the secure internal repository.</p>
+            <h2 style={{ marginBottom: '0.5rem', color: 'white' }}>Upload Artifact</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>Upload a Kafka `.tgz` binary to the secure internal repository.</p>
             
             <form onSubmit={handleUploadSubmit}>
-              <div className="form-group mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-1">Service Type</label>
-                <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" value={serviceType} onChange={e => setServiceType(e.target.value)} disabled>
+              <div className="form-group">
+                <label>Service Type</label>
+                <select className="form-control" value={serviceType} onChange={e => setServiceType(e.target.value)} disabled>
                   <option value="KAFKA">Apache Kafka</option>
                   <option value="MONITORING">Monitoring Stack</option>
                 </select>
               </div>
 
-              <div className="form-group mb-4">
-                <label className="block text-sm font-medium text-gray-300 mb-1">Version Number</label>
+              <div className="form-group" style={{ marginTop: '1rem' }}>
+                <label>Version Number</label>
                 <input 
                   type="text" 
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white" 
+                  className="form-control" 
                   value={versionInput} 
                   onChange={e => setVersionInput(e.target.value)}
                   placeholder="e.g. 3.7.0"
@@ -237,36 +237,36 @@ export function Artifacts() {
                 />
               </div>
 
-              <div className="form-group mb-6">
-                <label className="block text-sm font-medium text-gray-300 mb-1">Binary File (.tgz)</label>
+              <div className="form-group" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+                <label>Binary File (.tgz)</label>
                 <div 
-                  className="upload-dropzone border-2 border-dashed border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-800/50 transition-colors" 
+                  className="upload-dropzone" 
                   onClick={() => fileRef.current?.click()}
                 >
-                  <HardDrive size={32} className="text-blue-500 mx-auto mb-3" />
+                  <HardDrive size={32} style={{ color: 'var(--accent-primary)', margin: '0 auto 0.5rem auto' }} />
                   {file ? (
                     <div>
-                      <div className="text-white font-medium">{file.name}</div>
-                      <div className="text-gray-400 text-sm">{(file.size / 1024 / 1024).toFixed(2)} MB</div>
+                      <div style={{ color: 'white', fontWeight: '500' }}>{file.name}</div>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{(file.size / 1024 / 1024).toFixed(2)} MB</div>
                     </div>
                   ) : (
-                    <div className="text-gray-400">Click to select a binary file</div>
+                    <div style={{ color: 'var(--text-secondary)' }}>Click to select a binary file</div>
                   )}
                   <input 
                     type="file" 
                     ref={fileRef} 
-                    className="hidden"
+                    style={{ display: 'none' }}
                     onChange={e => setFile(e.target.files ? e.target.files[0] : null)}
                     accept=".tgz,.tar.gz"
                   />
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3">
-                <button type="button" className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white" onClick={() => setShowUploadModal(false)}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                <button type="button" className="btn" style={{ background: 'transparent', border: '1px solid var(--text-secondary)', color: 'white' }} onClick={() => setShowUploadModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50" disabled={uploading || !file || !versionInput}>
+                <button type="submit" className="btn btn-primary" disabled={uploading || !file || !versionInput}>
                   {uploading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>
