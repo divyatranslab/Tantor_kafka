@@ -78,4 +78,49 @@ public class DeploymentService {
 
         taskRepository.save(task);
     }
+
+    @Transactional
+    public void restartService(String hostId, String serviceName) {
+        Task task = new Task();
+        task.setHostId(hostId);
+        task.setCommand("RESTART_SERVICE");
+        task.setStatus("PENDING");
+        
+        try {
+            task.setParameters(objectMapper.writeValueAsString(Map.of(
+                "service_name", serviceName
+            )));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize parameters", e);
+        }
+
+        taskRepository.save(task);
+    }
+
+    @Transactional
+    public void updateKafkaConfig(String hostId, String configJsonStr, boolean restart) {
+        Task task = new Task();
+        task.setHostId(hostId);
+        task.setCommand("UPDATE_KAFKA_CONFIG");
+        task.setStatus("PENDING");
+        
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("restart", String.valueOf(restart));
+            
+            if (configJsonStr != null && !configJsonStr.equals("{}")) {
+                Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
+                for (Map.Entry<String, Object> entry : configMap.entrySet()) {
+                    if (entry.getValue() != null) {
+                        params.put(entry.getKey(), String.valueOf(entry.getValue()));
+                    }
+                }
+            }
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize parameters", e);
+        }
+
+        taskRepository.save(task);
+    }
 }

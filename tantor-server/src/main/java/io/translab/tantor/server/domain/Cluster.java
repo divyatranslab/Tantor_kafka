@@ -25,6 +25,12 @@ public class Cluster {
     private String mode;
     private String environment;
 
+    @Column(name = "bootstrap_servers")
+    private String bootstrapServers;
+
+    @Column(name = "external_broker_hosts_json", columnDefinition = "TEXT")
+    private String externalBrokerHostsJson;
+
     @Column(name = "config_json", columnDefinition = "TEXT")
     private String configJson;
 

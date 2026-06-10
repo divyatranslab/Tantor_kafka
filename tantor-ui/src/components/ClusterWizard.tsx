@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Info } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Info, Network } from 'lucide-react';
 import './ClusterWizard.css';
 
 export interface Host {
@@ -42,9 +42,6 @@ const ROLES = [
   { id: 'broker_controller', label: 'Broker + Controller', description: 'Combined KRaft broker and controller' },
   { id: 'broker', label: 'Broker', description: 'Kafka broker only (data plane)' },
   { id: 'controller', label: 'Controller', description: 'KRaft controller only (metadata)' },
-  { id: 'ksqldb', label: 'ksqlDB', description: 'Stream processing SQL engine' },
-  { id: 'kafka_connect', label: 'Kafka Connect', description: 'Data integration framework' },
-  { id: 'zookeeper', label: 'ZooKeeper', description: 'Legacy consensus (Kafka < 4.0 only)' },
 ];
 
 const EXCLUSIVE_GROUPS: Record<string, string[]> = {
@@ -78,11 +75,14 @@ export default function ClusterWizard() {
   // Step 1
   const [name, setName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
-  const [mode, setMode] = useState<'kraft' | 'zookeeper'>('kraft');
+  const [mode, setMode] = useState<'kraft' | 'zookeeper' | 'EXTERNAL'>('kraft');
   const [environment, setEnvironment] = useState('');
 
   // Step 2
   const [assignments, setAssignments] = useState<Record<string, string[]>>({});
+  
+  // External Cluster
+  const [bootstrapServers, setBootstrapServers] = useState('');
 
   // Step 3
   const [config, setConfig] = useState<ClusterConfig>({
@@ -130,8 +130,8 @@ export default function ClusterWizard() {
   }, []);
 
   useEffect(() => {
-    if (kafkaVersion && getMajorVersion(kafkaVersion) >= 4) setMode('kraft');
-  }, [kafkaVersion]);
+    if (kafkaVersion && getMajorVersion(kafkaVersion) >= 4 && mode === 'zookeeper') setMode('kraft');
+  }, [kafkaVersion, mode]);
 
   useEffect(() => {
     if (config.listener_port < 1024) setPortError('Ports below 1024 require root access');
@@ -175,6 +175,25 @@ export default function ClusterWizard() {
   const handleCreate = async () => {
     setLoading(true);
     try {
+      if (mode === 'EXTERNAL') {
+        const payload = {
+          name,
+          kafkaVersion: kafkaVersion || 'Unknown',
+          environment: environment.trim().toLowerCase(),
+          bootstrapServers: bootstrapServers.trim(),
+        };
+        const response = await fetch('/api/v1/ui/clusters/external', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          alert('External cluster connected successfully!');
+          navigate('/clusters');
+        } else alert('Failed to connect external cluster.');
+        return;
+      }
+
       const selectedArtifact = versions.find(v => v.version === kafkaVersion);
       const payload = {
         name,
@@ -197,7 +216,7 @@ export default function ClusterWizard() {
       });
 
       if (response.ok) {
-        alert('Deployment initialized successfully! The agent will start setting up Kafka on the selected nodes.');
+        alert('Deployment initialized successfully!');
         navigate('/clusters');
       } else {
         alert('Deployment failed.');
@@ -225,9 +244,8 @@ export default function ClusterWizard() {
     return r.id !== 'controller' && r.id !== 'broker_controller';
   });
 
-  const steps = [
-    // ─── Step 1: Cluster Basics ────────────────────────────────────
-    {
+  const getSteps = () => {
+    const s1 = {
       title: 'Cluster Basics',
       content: (
         <div className="wz-space-y">
@@ -260,9 +278,6 @@ export default function ClusterWizard() {
                     </optgroup>
                   )}
                 </select>
-                {selectedVersion?.features && selectedVersion.features.length > 0 && (
-                  <div className="wz-version-features"><strong>Features:</strong> {selectedVersion.features.slice(0, 3).join(', ')}</div>
-                )}
               </>
             )}
           </div>
@@ -273,233 +288,135 @@ export default function ClusterWizard() {
               {['dev', 'qa', 'staging', 'prod'].map(e => (
                 <button key={e} type="button" onClick={() => setEnvironment(e === environment ? '' : e)} className={`wz-env-btn ${environment === e ? 'selected' : ''}`}>{e}</button>
               ))}
-              <input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="custom tag (e.g. us-east-1)" className="wz-env-input" />
+              <input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="custom tag" className="wz-env-input" />
             </div>
-            <p className="wz-hint">Used for filtering on the Clusters list. Lowercased.</p>
           </div>
 
           <div>
-            <label className="wz-label">Consensus Mode</label>
+            <label className="wz-label">Cluster Mode</label>
             <div className="wz-mode-grid">
               <button onClick={() => setMode('kraft')} className={`wz-mode-card ${mode === 'kraft' ? 'active' : ''}`}>
-                <div className="wz-mode-title">KRaft</div>
-                <div className="wz-mode-desc">Recommended. Built-in Raft consensus, no ZooKeeper needed.</div>
+                <div className="wz-mode-title">KRaft Deployment</div>
+                <div className="wz-mode-desc">Recommended. We will provision and install Kafka binaries to your managed hosts.</div>
               </button>
-              <button onClick={() => !isKafka4Plus && setMode('zookeeper')} disabled={isKafka4Plus} className={`wz-mode-card ${mode === 'zookeeper' ? 'active' : ''}`}>
-                <div className="wz-mode-title">ZooKeeper</div>
-                <div className="wz-mode-desc">{isKafka4Plus ? 'Not available for Kafka 4.x+.' : 'Legacy mode. Requires separate ZooKeeper ensemble.'}</div>
+              <button onClick={() => setMode('EXTERNAL')} className={`wz-mode-card ${mode === 'EXTERNAL' ? 'active' : ''}`}>
+                <div className="wz-mode-title">External Cluster</div>
+                <div className="wz-mode-desc">No deployment. Simply provide connection details for an existing cluster to monitor and manage it.</div>
               </button>
             </div>
           </div>
         </div>
       ),
       valid: name.trim().length > 0 && kafkaVersion.length > 0,
-    },
+    };
 
-    // ─── Step 2: Assign Roles ──────────────────────────────────────
-    {
-      title: 'Assign Roles',
-      content: (
-        <div>
-          {hosts.length === 0 ? (
-            <div className="wz-empty-text">No hosts available. <a href="/hosts" className="wz-no-versions-link">Add hosts first</a>.</div>
-          ) : (
-            <div className="wz-space-y">
-              <p className="wz-role-info-text">
-                Assign one or more roles to each host. A single host can run multiple services.
-                {mode === 'kraft' && <span className="wz-role-info-sub">Node IDs: Brokers start at 1, standalone Controllers at 101.</span>}
-              </p>
-              <div className="wz-host-list">
-                {hosts.map(host => {
-                  const hostRoles = assignments[host.id] || [];
-                  const isOffline = host.status !== 'ONLINE' && host.status !== 'online';
-                  return (
-                    <div key={host.id} className={`wz-host-card ${isOffline ? 'offline' : ''}`}>
-                      <div className="wz-host-header">
-                        <Server size={16} className="wz-host-icon" />
-                        <span className="wz-host-name">{host.hostname}</span>
-                        <span className="wz-host-ip">{host.ip_address}</span>
-                        {hostRoles.length > 0 && <span className="wz-host-role-count">{hostRoles.length} role{hostRoles.length > 1 ? 's' : ''}</span>}
-                        <span className={`wz-host-status ${isOffline ? 'offline' : 'online'}`}>{host.status}</span>
-                      </div>
-                      <div className="wz-roles-row">
-                        {availableRoles.map(role => (
-                          <button
-                            key={role.id}
-                            onClick={() => handleAssign(host.id, role.id)}
-                            title={role.description}
-                            className={`wz-role-btn ${hostRoles.includes(role.id) ? `assigned ${role.id}` : ''}`}
-                          >
-                            {role.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      ),
-      valid: hasBroker,
-    },
-
-    // ─── Step 3: Configuration ─────────────────────────────────────
-    {
-      title: 'Configuration',
-      content: (
-        <div className="wz-space-y">
-          <div className="wz-grid-2">
+    if (mode === 'EXTERNAL') {
+      return [s1, {
+        title: 'Connection',
+        content: (
+          <div className="wz-space-y">
             <div>
-              <label className="wz-label">Replication Factor</label>
-              <input type="number" min={1} max={10} value={config.replication_factor} onChange={e => setConfig({ ...config, replication_factor: Number(e.target.value) })} className={`wz-input ${rfExceedsBrokers ? 'error' : ''}`} />
-              {rfExceedsBrokers && <p className="wz-error-text"><AlertTriangle size={12} /> RF ({config.replication_factor}) exceeds broker count ({brokerCount}).</p>}
-            </div>
-            <div>
-              <label className="wz-label">Default Partitions</label>
-              <input type="number" min={1} max={100} value={config.num_partitions} onChange={e => setConfig({ ...config, num_partitions: Number(e.target.value) })} className="wz-input" />
-            </div>
-            <div>
-              <label className="wz-label">Broker Port</label>
-              <input type="number" value={config.listener_port} onChange={e => setConfig({ ...config, listener_port: Number(e.target.value) })} className={`wz-input ${portError ? 'error' : ''}`} />
-              {portError && <p className="wz-warn-text"><AlertTriangle size={12} /> {portError}</p>}
-            </div>
-            <div>
-              <label className="wz-label">{mode === 'zookeeper' ? 'ZooKeeper Port' : 'Controller Port'}</label>
-              <input type="number" value={config.controller_port} onChange={e => setConfig({ ...config, controller_port: Number(e.target.value) })} className="wz-input" />
-              <p className="wz-hint">{mode === 'zookeeper' ? 'Default: 2181' : 'Default: 9093'}</p>
-            </div>
-            <div>
-              <label className="wz-label">Heap Size</label>
-              <select value={config.heap_size} onChange={e => setConfig({ ...config, heap_size: e.target.value })} className="wz-select">
-                <option value="512M">512 MB</option>
-                <option value="1G">1 GB</option>
-                <option value="2G">2 GB</option>
-                <option value="4G">4 GB</option>
-                <option value="6G">6 GB</option>
-              </select>
+              <label className="wz-label">Bootstrap Servers</label>
+              <input type="text" value={bootstrapServers} onChange={e => setBootstrapServers(e.target.value)} placeholder="broker1.example.com:9092,broker2.example.com:9092" className="wz-input mono" />
+              <p className="wz-hint">Comma separated list of broker addresses.</p>
             </div>
           </div>
+        ),
+        valid: bootstrapServers.trim().length > 0
+      }];
+    }
 
-          {/* Deploy Paths */}
-          <div className="wz-section-panel">
-            <div className="wz-section-header">
-              <FolderOpen size={15} className="wz-section-header-icon" />
-              <span className="wz-section-title">Deploy Paths</span>
-              <span className="wz-section-subtitle">(optional — leave blank for auto)</span>
-            </div>
-            <div className="wz-section-body">
-              <div className="wz-info-banner">
-                <Info size={13} className="wz-banner-icon" />
-                <span>
-                  By default Tantor installs to <code>/opt/tantor/kafka</code>. Override when your infrastructure requires specific mount points
-                  (e.g. a dedicated disk at <code>/data/kafka</code>). Must be an absolute path.
-                </span>
+    return [s1,
+      {
+        title: 'Assign Roles',
+        content: (
+          <div>
+            {hosts.length === 0 ? (
+              <div className="wz-empty-text">No hosts available. <a href="/hosts" className="wz-no-versions-link">Add hosts first</a>.</div>
+            ) : (
+              <div className="wz-space-y">
+                <p className="wz-role-info-text">
+                  Assign one or more roles to each host.
+                </p>
+                <div className="wz-host-list">
+                  {hosts.map(host => {
+                    const hostRoles = assignments[host.id] || [];
+                    const isOffline = host.status !== 'ONLINE' && host.status !== 'online';
+                    return (
+                      <div key={host.id} className={`wz-host-card ${isOffline ? 'offline' : ''}`}>
+                        <div className="wz-host-header">
+                          <Server size={16} className="wz-host-icon" />
+                          <span className="wz-host-name">{host.hostname}</span>
+                          <span className="wz-host-ip">{host.ip_address}</span>
+                          {hostRoles.length > 0 && <span className="wz-host-role-count">{hostRoles.length} role{hostRoles.length > 1 ? 's' : ''}</span>}
+                          <span className={`wz-host-status ${isOffline ? 'offline' : 'online'}`}>{host.status}</span>
+                        </div>
+                        <div className="wz-roles-row">
+                          {availableRoles.map(role => (
+                            <button
+                              key={role.id}
+                              onClick={() => handleAssign(host.id, role.id)}
+                              title={role.description}
+                              className={`wz-role-btn ${hostRoles.includes(role.id) ? `assigned ${role.id}` : ''}`}
+                            >
+                              {role.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ),
+        valid: hasBroker,
+      },
+      {
+        title: 'Configuration',
+        content: (
+          <div className="wz-space-y">
+            <div className="wz-grid-2">
+              <div>
+                <label className="wz-label">Replication Factor</label>
+                <input type="number" min={1} max={10} value={config.replication_factor} onChange={e => setConfig({ ...config, replication_factor: Number(e.target.value) })} className={`wz-input ${rfExceedsBrokers ? 'error' : ''}`} />
+                {rfExceedsBrokers && <p className="wz-error-text"><AlertTriangle size={12} /> RF ({config.replication_factor}) exceeds broker count ({brokerCount}).</p>}
               </div>
               <div>
-                <label className="wz-label">Log Directory</label>
-                <input type="text" value={config.log_dirs} onChange={e => setConfig({ ...config, log_dirs: e.target.value })} className="wz-input mono" />
-                <p className="wz-hint">Kafka log.dirs — where message log segments are stored.</p>
-              </div>
-              <div className="wz-grid-2">
-                <div>
-                  <label className="wz-label">Install Directory</label>
-                  <input type="text" value={config.kafka_install_dir || ''} onChange={e => setConfig({ ...config, kafka_install_dir: e.target.value })} placeholder="/opt/tantor/kafka" className={`wz-input mono ${installDirError ? 'error' : ''}`} />
-                  {installDirError ? <p className="wz-error-text"><AlertTriangle size={11} /> {installDirError}</p> : <p className="wz-hint">Where Kafka binaries are extracted on broker hosts.</p>}
-                </div>
-                <div>
-                  <label className="wz-label">Data Directory</label>
-                  <input type="text" value={config.kafka_data_dir || ''} onChange={e => setConfig({ ...config, kafka_data_dir: e.target.value })} placeholder="/var/lib/kafka/data" className={`wz-input mono ${dataDirError ? 'error' : ''}`} />
-                  {dataDirError ? <p className="wz-error-text"><AlertTriangle size={11} /> {dataDirError}</p> : <p className="wz-hint">Where Kafka log segments and KRaft metadata are persisted.</p>}
-                </div>
+                <label className="wz-label">Default Partitions</label>
+                <input type="number" min={1} max={100} value={config.num_partitions} onChange={e => setConfig({ ...config, num_partitions: Number(e.target.value) })} className="wz-input" />
               </div>
             </div>
           </div>
-        </div>
-      ),
-      valid: step3Valid,
-    },
-
-    // ─── Step 4: Review & Create ───────────────────────────────────
-    {
-      title: 'Review & Create',
-      content: (
-        <div className="wz-space-y">
-          {(rfExceedsBrokers) && (
-            <div className="wz-danger-banner">
-              <AlertTriangle size={16} className="wz-banner-icon" />
-              <span>Replication factor ({config.replication_factor}) exceeds broker count ({brokerCount}). Deployment will fail.</span>
-            </div>
-          )}
-
-          <div className="wz-review-panel">
-            <h3 className="wz-review-title">Cluster Summary</h3>
-            <div className="wz-review-grid">
-              <span className="wz-review-label">Name</span>
-              <span className="wz-review-value">{name}</span>
-              <span className="wz-review-label">Kafka Version</span>
-              <span className="wz-review-value">{kafkaVersion}</span>
-              <span className="wz-review-label">Mode</span>
-              <span className="wz-review-value">{mode.toUpperCase()}</span>
-              {environment && <><span className="wz-review-label">Environment</span><span className="wz-review-value">{environment}</span></>}
-              <span className="wz-review-label">Replication Factor</span>
-              <span className="wz-review-value">{config.replication_factor}</span>
-              <span className="wz-review-label">Default Partitions</span>
-              <span className="wz-review-value">{config.num_partitions}</span>
-              <span className="wz-review-label">Broker Port</span>
-              <span className="wz-review-value mono">{config.listener_port}</span>
-              <span className="wz-review-label">Controller Port</span>
-              <span className="wz-review-value mono">{config.controller_port}</span>
-              <span className="wz-review-label">Heap Size</span>
-              <span className="wz-review-value">{config.heap_size}</span>
+        ),
+        valid: step3Valid,
+      },
+      {
+        title: 'Review',
+        content: (
+          <div className="wz-space-y">
+            <div className="wz-review-panel">
+              <h3 className="wz-review-title">Cluster Summary</h3>
+              <div className="wz-review-grid">
+                <span className="wz-review-label">Name</span>
+                <span className="wz-review-value">{name}</span>
+                <span className="wz-review-label">Mode</span>
+                <span className="wz-review-value">{mode.toUpperCase()}</span>
+                {environment && <><span className="wz-review-label">Environment</span><span className="wz-review-value">{environment}</span></>}
+              </div>
             </div>
           </div>
+        ),
+        valid: true,
+      }
+    ];
+  };
 
-          <div className="wz-review-panel">
-            <h3 className="wz-review-title"><FolderOpen size={14} /> Deploy Paths</h3>
-            <div className="wz-review-grid">
-              <span className="wz-review-label">Install Directory</span>
-              <span className={`wz-review-value ${config.kafka_install_dir?.trim() ? 'mono' : 'auto'}`}>
-                {config.kafka_install_dir?.trim() || 'auto — /opt/tantor/kafka'}
-              </span>
-              <span className="wz-review-label">Data Directory</span>
-              <span className={`wz-review-value ${config.kafka_data_dir?.trim() ? 'mono' : 'auto'}`}>
-                {config.kafka_data_dir?.trim() || 'auto — /opt/tantor/kafka/data'}
-              </span>
-              <span className="wz-review-label">Log Directory</span>
-              <span className="wz-review-value mono">{config.log_dirs}</span>
-            </div>
-          </div>
-
-          <div className="wz-review-panel">
-            <h3 className="wz-review-title">Service Assignments</h3>
-            <div className="wz-svc-list">
-              {buildServices().map((svc, i) => {
-                const host = hosts.find(h => h.id === svc.host_id);
-                const roleInfo = ROLES.find(r => r.id === svc.role);
-                const isOffline = host && host.status !== 'ONLINE' && host.status !== 'online';
-                return (
-                  <div key={i} className="wz-svc-row">
-                    <span className={`wz-svc-badge ${svc.role}`}>{roleInfo?.label}</span>
-                    <span className="wz-svc-node-id">ID: {svc.node_id}</span>
-                    <span className="wz-svc-host">{host?.hostname}</span>
-                    <span className="wz-svc-ip">({host?.ip_address})</span>
-                    {isOffline && <span className="wz-svc-offline">OFFLINE</span>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ),
-      valid: !rfExceedsBrokers,
-    },
-  ];
+  const steps = getSteps();
 
   return (
     <div className="wizard-container animate-fade-in">
-      {/* Step indicators */}
       <div className="wizard-steps">
         {steps.map((s, i) => (
           <div key={i} className="wizard-step-group">
@@ -515,30 +432,23 @@ export default function ClusterWizard() {
         ))}
       </div>
 
-      {/* Current step content */}
       <div className="wizard-content-card">
         {steps[step].content}
       </div>
 
-      {/* Navigation */}
       <div className="wizard-nav">
         <button onClick={() => setStep(s => s - 1)} disabled={step === 0} className="wizard-btn-back">
           <ChevronLeft size={16} /> Back
         </button>
         {step < steps.length - 1 ? (
           <div className="wizard-nav-right">
-            {!steps[step].valid && step === 2 && (
-              <span className="wizard-validation-msg">
-                {rfExceedsBrokers ? `RF (${config.replication_factor}) exceeds broker count (${brokerCount}).` : installDirError || dataDirError || 'Fix errors above'}
-              </span>
-            )}
             <button onClick={() => setStep(s => s + 1)} disabled={!steps[step].valid} className="wizard-btn-next">
               Next <ChevronRight size={16} />
             </button>
           </div>
         ) : (
-          <button onClick={handleCreate} disabled={loading || rfExceedsBrokers} className="wizard-btn-create">
-            {loading ? <><Loader2 size={14} className="wz-spin" /> Creating...</> : 'Create Cluster'}
+          <button onClick={handleCreate} disabled={loading || !steps[step].valid} className="wizard-btn-create">
+            {loading ? <><Loader2 size={14} className="wz-spin" /> {mode === 'EXTERNAL' ? 'Connecting...' : 'Creating...'}</> : (mode === 'EXTERNAL' ? 'Connect Cluster' : 'Create Cluster')}
           </button>
         )}
       </div>

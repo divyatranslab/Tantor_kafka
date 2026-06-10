@@ -47,7 +47,7 @@ export function Clusters() {
           </button>
           <button className="btn btn-primary-action" onClick={() => navigate('/clusters/new')}>
             <PlusCircle size={14} />
-            Deploy new cluster
+            Add Cluster
           </button>
         </div>
       </header>
@@ -62,30 +62,37 @@ export function Clusters() {
           <Network size={36} style={{ color: 'var(--accent-primary)' }} />
           <h2>No clusters yet</h2>
           <p>
-            You haven't deployed any Kafka clusters yet. Click the button
-            below to provision your first cluster.
+            You haven't added any Kafka clusters yet. Click the button
+            below to provision your first cluster or connect an external one.
           </p>
           <button
             className="btn btn-primary-action"
             onClick={() => navigate('/clusters/new')}
           >
-            <PlusCircle size={14} /> Deploy first cluster
+            <PlusCircle size={14} /> Add first cluster
           </button>
         </div>
       ) : (
         <div className="clusters-grid">
           {clusters.map(cluster => (
-            <div key={cluster.id} className="cluster-card">
+            <div 
+              key={cluster.id} 
+              className="cluster-card"
+              style={{cursor: 'pointer'}}
+              onClick={() => navigate(`/clusters/${cluster.id}/topics`)}
+            >
 
               <div className="cluster-card-header">
-                <div className="cluster-icon-wrap">
+                <div className="cluster-icon-wrap" style={{ background: cluster.mode === 'EXTERNAL' ? '#f3f4f6' : undefined, color: cluster.mode === 'EXTERNAL' ? '#4b5563' : undefined }}>
                   <Network size={20} />
                 </div>
                 <div>
                   <p className="cluster-name">{cluster.name}</p>
                   <span className="cluster-version">Kafka {cluster.kafkaVersion}</span>
                 </div>
-                <span className="cluster-status-badge">Active</span>
+                <span className={`cluster-status-badge ${cluster.mode === 'EXTERNAL' ? 'external' : ''}`}>
+                  {cluster.mode === 'EXTERNAL' ? 'External' : 'Active'}
+                </span>
               </div>
 
               <div className="cluster-card-body">
@@ -101,10 +108,19 @@ export function Clusters() {
                     <span className="cluster-meta-value tag">{cluster.environment}</span>
                   </div>
                 )}
-                <div className="cluster-meta-row">
-                  <span className="cluster-meta-label">Nodes</span>
-                  <span className="cluster-meta-value">{cluster.nodeCount}</span>
-                </div>
+                {cluster.mode === 'EXTERNAL' ? (
+                  <div className="cluster-meta-row">
+                    <span className="cluster-meta-label">Brokers</span>
+                    <span className="cluster-meta-value" style={{ fontSize: '0.75rem', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={(cluster as any).bootstrapServers}>
+                      {(cluster as any).bootstrapServers || 'N/A'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="cluster-meta-row">
+                    <span className="cluster-meta-label">Nodes</span>
+                    <span className="cluster-meta-value">{cluster.nodeCount}</span>
+                  </div>
+                )}
                 <div className="cluster-meta-row">
                   <span className="cluster-meta-label">Created</span>
                   <span className="cluster-meta-value">

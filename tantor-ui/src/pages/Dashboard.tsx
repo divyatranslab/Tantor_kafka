@@ -1,45 +1,61 @@
-import { Server, Network, Activity, ShieldCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Server, Network, Activity, AlertCircle } from 'lucide-react';
 import './Dashboard.css';
 
-const stats = [
-  {
-    label: 'Active hosts',
-    value: '24',
-    icon: Server,
-    bg: '#E6F1FB',
-    color: '#185FA5',
-  },
-  {
-    label: 'Running clusters',
-    value: '6',
-    icon: Network,
-    bg: '#EEEDFE',
-    color: '#534AB7',
-  },
-  {
-    label: 'Healthy services',
-    value: '142',
-    icon: Activity,
-    bg: '#EAF3DE',
-    color: '#3B6D11',
-  },
-  {
-    label: 'Security score',
-    value: '98%',
-    icon: ShieldCheck,
-    bg: '#EEEDFE',
-    color: '#534AB7',
-  },
-];
-
-const events = [
-  { msg: 'Kafka Broker #3 recovered',              time: '2m ago',  status: 'success' },
-  { msg: 'High memory on Connect Worker-02',        time: '15m ago', status: 'warning' },
-  { msg: 'KRaft quorum stabilized',                 time: '1h ago',  status: 'success' },
-  { msg: 'Replication lag cleared on topic orders', time: '2h ago',  status: 'success' },
-];
+interface DashboardStats {
+  totalClusters: number;
+  totalHosts: number;
+  activeAlerts: number;
+  healthyClusters: number;
+}
 
 export function Dashboard() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activities, setActivities] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/v1/ui/dashboard/stats')
+      .then(res => res.json())
+      .then(data => setStats(data))
+      .catch(err => console.error(err));
+
+    fetch('/api/v1/ui/dashboard/activity')
+      .then(res => res.json())
+      .then(data => setActivities(data))
+      .catch(err => console.error(err));
+  }, []);
+
+  const statsList = [
+    {
+      label: 'Managed hosts',
+      value: stats ? stats.totalHosts : '...',
+      icon: Server,
+      bg: '#E6F1FB',
+      color: '#185FA5',
+    },
+    {
+      label: 'Total clusters',
+      value: stats ? stats.totalClusters : '...',
+      icon: Network,
+      bg: '#EEEDFE',
+      color: '#534AB7',
+    },
+    {
+      label: 'Healthy clusters',
+      value: stats ? stats.healthyClusters : '...',
+      icon: Activity,
+      bg: '#EAF3DE',
+      color: '#3B6D11',
+    },
+    {
+      label: 'Active alerts',
+      value: stats ? stats.activeAlerts : '...',
+      icon: AlertCircle,
+      bg: '#fef2f2',
+      color: '#ef4444',
+    },
+  ];
+
   return (
     <div className="dashboard animate-fade-in">
 
@@ -49,7 +65,7 @@ export function Dashboard() {
       </header>
 
       <section className="stats-grid">
-        {stats.map((s) => (
+        {statsList.map((s) => (
           <div key={s.label} className="stat-card">
             <div className="stat-icon" style={{ background: s.bg, color: s.color }}>
               <s.icon size={16} strokeWidth={2} />
@@ -82,13 +98,19 @@ export function Dashboard() {
         <div className="chart-card">
           <h3>System health events</h3>
           <div className="activity-feed">
-            {events.map((e, i) => (
-              <div key={i} className="feed-item">
-                <span className={`dot ${e.status}`} />
-                <p>{e.msg}</p>
-                <span className="time">{e.time}</span>
+            {activities.length === 0 ? (
+              <div className="feed-item" style={{ color: 'var(--text-secondary)' }}>
+                No recent activity.
               </div>
-            ))}
+            ) : (
+              activities.map((a: any) => (
+                <div key={a.id} className="feed-item">
+                  <span className={`dot ${a.level === 'INFO' ? 'success' : a.level === 'WARN' ? 'warning' : 'error'}`} />
+                  <p>{a.message}</p>
+                  <span className="time">{new Date(a.createdAt).toLocaleString()}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

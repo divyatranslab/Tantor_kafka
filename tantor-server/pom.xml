@@ -89,6 +89,13 @@
             <version>2.5.0</version>
         </dependency>
 
+        <!-- Kafka Clients -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>3.6.1</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

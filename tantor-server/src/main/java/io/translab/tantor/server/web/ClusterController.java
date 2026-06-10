@@ -24,6 +24,7 @@ public class ClusterController {
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
+    private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
 
     @GetMapping
     public List<Map<String, Object>> listClusters() {
@@ -37,6 +38,7 @@ public class ClusterController {
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
             m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
+            m.put("bootstrapServers", c.getBootstrapServers());
             result.add(m);
         }
         return result;
@@ -119,6 +121,25 @@ public class ClusterController {
             );
         }
         
+        activityAlertService.logActivity("INFO", "Initialized deployment for cluster: " + request.getName(), cluster.getId());
+        
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/external")
+    public ResponseEntity<Void> addExternalCluster(@RequestBody ExternalClusterRequest request) {
+        Cluster cluster = new Cluster();
+        cluster.setName(request.getName());
+        cluster.setKafkaVersion(request.getKafkaVersion() != null ? request.getKafkaVersion() : "Unknown");
+        cluster.setMode("EXTERNAL");
+        cluster.setEnvironment(request.getEnvironment());
+        cluster.setBootstrapServers(request.getBootstrapServers());
+        cluster.setConfigJson("{}");
+        
+        clusterRepository.save(cluster);
+        
+        activityAlertService.logActivity("INFO", "Connected external cluster: " + request.getName(), cluster.getId());
+        
         return ResponseEntity.ok().build();
     }
 
@@ -131,6 +152,14 @@ public class ClusterController {
         private Map<String, Object> config;
         private String environment;
         private String artifactUrl;
+    }
+
+    @Data
+    static class ExternalClusterRequest {
+        private String name;
+        private String environment;
+        private String bootstrapServers;
+        private String kafkaVersion;
     }
 
     @Data

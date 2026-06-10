@@ -216,6 +216,34 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
 }
 
+func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error) {
+	var logs strings.Builder
+	installDir := t.Parameters["kafka_install_dir"]
+	if installDir == "" {
+		installDir = "C:\\opt\\tantor\\kafka"
+	}
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		dataDir = filepath.Join(installDir, "data")
+	}
+
+	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
+		return logs.String(), err
+	}
+	logs.WriteString("Configs updated successfully\n")
+
+	// Restart if requested
+	if t.Parameters["restart"] == "true" {
+		_, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka")
+		if err != nil {
+			return logs.String(), fmt.Errorf("failed to restart kafka: %w", err)
+		}
+		logs.WriteString("Kafka service restarted\n")
+	}
+
+	return logs.String(), nil
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
 	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")

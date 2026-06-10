@@ -17,6 +17,7 @@ const navItems = [
   { icon: Package, label: 'Artifacts', path: '/artifacts' },
   { icon: PlayCircle, label: 'Deployments', path: '/deployments' },
   { icon: Activity, label: 'Monitoring', path: '/monitoring' },
+  { icon: ShieldAlert, label: 'Alerts', path: '/alerts' },
   { icon: ShieldAlert, label: 'Audit Logs', path: '/audit' },
 ];
 

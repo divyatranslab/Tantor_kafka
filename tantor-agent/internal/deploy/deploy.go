@@ -50,6 +50,10 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.startService(ctx, t)
 	case "STOP_SERVICE":
 		return e.stopService(ctx, t)
+	case "RESTART_SERVICE":
+		return e.restartService(ctx, t)
+	case "UPDATE_KAFKA_CONFIG":
+		return e.updateKafkaConfig(ctx, t)
 	default:
 		return &api.TaskResult{
 			TaskID:   t.TaskID,
@@ -103,6 +107,35 @@ func (e *Engine) stopService(ctx context.Context, t *api.Task) (*api.TaskResult,
 		HostID:    e.cfg.Agent.HostID,
 		Status:    "SUCCESS",
 		LogOutput: fmt.Sprintf("Service %s stopped successfully.", serviceName),
+	}, nil
+}
+
+func (e *Engine) restartService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	serviceName := t.Parameters["service_name"]
+	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "restart", serviceName)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Failed to restart service: %v, out: %s, errOut: %s", err, out, errOut)), nil
+	}
+
+	return &api.TaskResult{
+		TaskID:    t.TaskID,
+		HostID:    e.cfg.Agent.HostID,
+		Status:    "SUCCESS",
+		LogOutput: fmt.Sprintf("Service %s restarted successfully.", serviceName),
+	}, nil
+}
+
+func (e *Engine) updateKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.UpdateConfig(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka config update failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{
+		TaskID:    t.TaskID,
+		HostID:    e.cfg.Agent.HostID,
+		Status:    "SUCCESS",
+		LogOutput: logOutput,
 	}, nil
 }
 
