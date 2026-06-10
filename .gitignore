@@ -28,3 +28,6 @@ apache-maven-*/
 apache-maven-*.zip
 go/
 go*.windows-amd64.zip
+jdk-21.0.3+9/
+server.log
+server.err

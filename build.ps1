@@ -6,6 +6,10 @@ $MavenZip = "$PSScriptRoot\apache-maven.zip"
 $MavenDir = "$PSScriptRoot\apache-maven-$MavenVersion"
 $MvnCmd = "$MavenDir\bin\mvn.cmd"
 
+# Set JAVA_HOME to the bundled JDK 21
+$env:JAVA_HOME = "$PSScriptRoot\jdk-21.0.3+9"
+$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+
 # 1. Download Maven if not exists
 if (-Not (Test-Path $MvnCmd)) {
     Write-Host "Maven not found. Downloading Apache Maven $MavenVersion..." -ForegroundColor Cyan

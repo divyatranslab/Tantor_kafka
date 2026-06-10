@@ -297,11 +297,9 @@ export default function ClusterWizard() {
           ...(advanced.jmx_port ? {} : { jmx_port: undefined }),
         },
         environment: environment.trim().toLowerCase(),
-        initial_acls: initialAcls.filter(
-          a => a.principal.trim() && a.resource_name.trim() && a.operations.length > 0
-        ),
+        initial_acls: initialAcls,
         // Add fields for our backend's DeployClusterRequest
-        artifactUrl: selectedArtifact ? `http://localhost:8081/api/v1/artifacts/${selectedArtifact.id}/download` : ''
+        artifactUrl: selectedArtifact ? `http://${window.location.hostname}:8081/api/v1/artifacts/${selectedArtifact.id}/download` : ''
       };
       
       // We now send the full data object, which includes name, mode, services, config, environment
@@ -1349,13 +1347,26 @@ export default function ClusterWizard() {
           <ChevronLeft size={16} /> Back
         </button>
         {step < steps.length - 1 ? (
-          <button
-            onClick={() => setStep(s => s + 1)}
-            disabled={!steps[step].valid}
-            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            Next <ChevronRight size={16} />
-          </button>
+          <div className="flex items-center gap-3">
+            {!steps[step].valid && step === 2 && (
+              <span className="text-xs text-red-500 font-medium animate-pulse">
+                {rfExceedsBrokers 
+                  ? `Replication factor (${config.replication_factor}) exceeds broker count (${brokerCount}).`
+                  : installDirError 
+                    ? installDirError 
+                    : dataDirError 
+                      ? dataDirError 
+                      : "Please fix the errors above to continue"}
+              </span>
+            )}
+            <button
+              onClick={() => setStep(s => s + 1)}
+              disabled={!steps[step].valid}
+              className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            >
+              Next <ChevronRight size={16} />
+            </button>
+          </div>
         ) : (
           <button
             onClick={handleCreate}

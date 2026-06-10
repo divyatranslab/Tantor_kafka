@@ -1,5 +1,9 @@
 # start-backend.ps1 - Load .env and start services
 
+# Set JAVA_HOME to the bundled JDK 21
+$env:JAVA_HOME = "$PSScriptRoot\jdk-21.0.3+9"
+$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+
 Write-Host "Loading environment variables from .env..." -ForegroundColor Cyan
 if (Test-Path ".env") {
     foreach ($line in Get-Content ".env") {
@@ -14,9 +18,9 @@ if (Test-Path ".env") {
 }
 
 Write-Host "`nStarting Artifact Repository on port 8081..." -ForegroundColor Magenta
-Start-Process -NoNewWindow -FilePath "java" -ArgumentList "-jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+Start-Process -NoNewWindow -FilePath "$env:JAVA_HOME\bin\java.exe" -ArgumentList "-jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
 
 Write-Host "Starting Management Server on port 8443..." -ForegroundColor Magenta
-Start-Process -NoNewWindow -FilePath "java" -ArgumentList "-jar tantor-server\target\tantor-server-1.0.0.jar"
+Start-Process -NoNewWindow -FilePath "$env:JAVA_HOME\bin\java.exe" -ArgumentList "-jar tantor-server\target\tantor-server-1.0.0.jar"
 
 Write-Host "`nBoth services are starting! Check the console logs above." -ForegroundColor Green

@@ -1,0 +1,18 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
+
+String url = "jdbc:postgresql://localhost:5432/tantor";
+String user = "postgres";
+String password = "postgres";
+
+try (Connection conn = DriverManager.getConnection(url, user, password);
+     Statement stmt = conn.createStatement()) {
+    stmt.executeUpdate("DELETE FROM tasks");
+    stmt.executeUpdate("DELETE FROM cluster_service_assignments");
+    stmt.executeUpdate("DELETE FROM clusters");
+    System.out.println("Cleaned up database successfully!");
+} catch (Exception e) {
+    e.printStackTrace();
+}
+/exit

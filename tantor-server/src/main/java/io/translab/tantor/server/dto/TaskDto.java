@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 public class TaskDto {
     private String taskId;
     private String command;
-    private Map<String, String> parameters;
+    private Map<String, Object> parameters;
     private String artifactUrl;
     private String checksum;
 }

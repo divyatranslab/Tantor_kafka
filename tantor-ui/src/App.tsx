@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Hosts } from './pages/Hosts';
 import { Clusters } from './pages/Clusters';
 import { Artifacts } from './pages/Artifacts';
+import ClusterWizard from './components/ClusterWizard';
 import './App.css';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/hosts" element={<Hosts />} />
             <Route path="/clusters" element={<Clusters />} />
+            <Route path="/clusters/new" element={<ClusterWizard />} />
             <Route path="/artifacts" element={<Artifacts />} />
             {/* Fallback routes for pages not fully fleshed out yet */}
             <Route path="*" element={
