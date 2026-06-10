@@ -1,8 +1,11 @@
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +95,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		}
 		data, err := os.ReadFile(path)
 		if err == nil {
+			os.MkdirAll(filepath.Dir(dest), 0755)
 			os.WriteFile(dest, data, 0644)
 		}
 		return nil
@@ -99,13 +103,46 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	os.RemoveAll(tmpExtractDir)
 	log("Artifact extracted to %s", installDir)
 
-	// 6. Generate Configs
+	// 6. Setup JMX Exporter
+	jmxDir := filepath.Join(installDir, "jmx")
+	os.MkdirAll(jmxDir, 0755)
+	jmxJarPath := filepath.Join(jmxDir, "jmx_prometheus_javaagent.jar")
+	
+	log("Downloading JMX Exporter to %s", jmxJarPath)
+	resp, err := http.Get("https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/0.20.0/jmx_prometheus_javaagent-0.20.0.jar")
+	if err == nil {
+		defer resp.Body.Close()
+		out, _ := os.Create(jmxJarPath)
+		io.Copy(out, resp.Body)
+		out.Close()
+	} else {
+		log("Warning: Failed to download JMX agent: %v", err)
+	}
+
+	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, filepath.Join(jmxDir, "jmx_config.yml")); err != nil {
+		log("Warning: Failed to write JMX config: %v", err)
+	}
+
+	// 7. Generate Configs
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
 		return logs.String(), err
 	}
 	log("Configs generated successfully")
 
-	log("Simulating service start on Windows...")
+	// 8. Systemd Service
+	if err := d.createSystemdService(ctx, "root", installDir, t); err != nil {
+		return logs.String(), err
+	}
+	log("Systemd service created")
+
+	// 9. Start Service
+	_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
+	if err == nil {
+		_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka")
+	}
+	if err != nil {
+		return logs.String(), fmt.Errorf("failed to start service: %w", err)
+	}
 	log("Kafka service started successfully")
 
 	log("Cluster validation step completed")
@@ -219,20 +256,17 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 		return err
 	}
 	
-	tmpFile, err := os.CreateTemp("", "tantor-*")
-	if err != nil {
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile.Name())
 
-	if err := tmpl.Execute(tmpFile, data); err != nil {
-		return err
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
 	}
-	tmpFile.Close()
 
-	_, _, err = d.exec.RunSudo(ctx, "cp", tmpFile.Name(), dest)
-	if err != nil {
-		return fmt.Errorf("failed to copy template to %s: %w", dest, err)
+	if err := os.WriteFile(dest, buf.Bytes(), 0644); err != nil {
+		return fmt.Errorf("failed to write template to %s: %w", dest, err)
 	}
 	
 	return nil

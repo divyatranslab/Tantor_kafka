@@ -13,6 +13,7 @@ Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 {{if ne .JmxPort ""}}Environment="JMX_PORT={{.JmxPort}}"{{end}}
+Environment="KAFKA_OPTS=-javaagent:{{.InstallDir}}/jmx/jmx_prometheus_javaagent.jar=7071:{{.InstallDir}}/jmx/jmx_config.yml"
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.InstallDir}}/config/kraft/server.properties
 ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
 Restart=on-failure
@@ -20,6 +21,19 @@ LimitNOFILE=100000
 
 [Install]
 WantedBy=multi-user.target
+`
+
+const JmxConfigTemplate = `rules:
+  - pattern: "kafka.server<type=(.+), name=(.+)><>(\\w+)"
+    name: "kafka_server_$1_$2_$3"
+  - pattern: "kafka.network<type=(.+), name=(.+)><>(\\w+)"
+    name: "kafka_network_$1_$2_$3"
+  - pattern: "kafka.controller<type=(.+), name=(.+)><>(\\w+)"
+    name: "kafka_controller_$1_$2_$3"
+  - pattern: "kafka.log<type=(.+), name=(.+)><>(\\w+)"
+    name: "kafka_log_$1_$2_$3"
+  - pattern: "java.lang<type=(.+)><>(\\w+)"
+    name: "jvm_$1_$2"
 `
 
 const ServerPropertiesTemplate = `

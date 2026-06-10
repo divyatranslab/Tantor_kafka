@@ -40,7 +40,11 @@ public class DeploymentService {
             // Merge advanced config into the task parameters
             if (configJsonStr != null && !configJsonStr.equals("{}")) {
                 Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
-                params.putAll(configMap);
+                for (Map.Entry<String, Object> entry : configMap.entrySet()) {
+                    if (entry.getValue() != null) {
+                        params.put(entry.getKey(), String.valueOf(entry.getValue()));
+                    }
+                }
             }
             
             // Set default install dir if not provided

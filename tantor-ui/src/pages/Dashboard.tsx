@@ -1,70 +1,97 @@
-import { Activity, Server, Network, ShieldCheck } from 'lucide-react';
+import { Server, Network, Activity, ShieldCheck } from 'lucide-react';
 import './Dashboard.css';
 
-export function Dashboard() {
-  const stats = [
-    { label: 'Active Hosts', value: '24', icon: Server, color: 'var(--accent-primary)' },
-    { label: 'Running Clusters', value: '6', icon: Network, color: 'var(--accent-secondary)' },
-    { label: 'Healthy Services', value: '142', icon: Activity, color: 'var(--accent-success)' },
-    { label: 'Security Score', value: '98%', icon: ShieldCheck, color: 'var(--accent-warning)' },
-  ];
+const stats = [
+  {
+    label: 'Active hosts',
+    value: '24',
+    icon: Server,
+    bg: '#E6F1FB',
+    color: '#185FA5',
+  },
+  {
+    label: 'Running clusters',
+    value: '6',
+    icon: Network,
+    bg: '#EEEDFE',
+    color: '#534AB7',
+  },
+  {
+    label: 'Healthy services',
+    value: '142',
+    icon: Activity,
+    bg: '#EAF3DE',
+    color: '#3B6D11',
+  },
+  {
+    label: 'Security score',
+    value: '98%',
+    icon: ShieldCheck,
+    bg: '#EEEDFE',
+    color: '#534AB7',
+  },
+];
 
+const events = [
+  { msg: 'Kafka Broker #3 recovered',              time: '2m ago',  status: 'success' },
+  { msg: 'High memory on Connect Worker-02',        time: '15m ago', status: 'warning' },
+  { msg: 'KRaft quorum stabilized',                 time: '1h ago',  status: 'success' },
+  { msg: 'Replication lag cleared on topic orders', time: '2h ago',  status: 'success' },
+];
+
+export function Dashboard() {
   return (
     <div className="dashboard animate-fade-in">
+
       <header className="page-header">
-        <h1>Platform Overview</h1>
-        <p>Real-time metrics from the Tantor management plane.</p>
+        <h1>Platform overview</h1>
+        <p>Real-time metrics from the Tantor management plane</p>
       </header>
 
       <section className="stats-grid">
-        {stats.map((stat) => (
-          <div key={stat.label} className="stat-card glass-panel">
-            <div className="stat-icon" style={{ backgroundColor: `${stat.color}20`, color: stat.color }}>
-              <stat.icon size={24} />
+        {stats.map((s) => (
+          <div key={s.label} className="stat-card">
+            <div className="stat-icon" style={{ background: s.bg, color: s.color }}>
+              <s.icon size={16} strokeWidth={2} />
             </div>
             <div className="stat-info">
-              <h3>{stat.value}</h3>
-              <p>{stat.label}</p>
+              <h3>{s.value}</h3>
+              <p>{s.label}</p>
             </div>
           </div>
         ))}
       </section>
 
       <section className="charts-section">
-        <div className="chart-card glass-panel">
-          <h3>Cluster Topology</h3>
+
+        <div className="chart-card">
+          <h3>Cluster topology</h3>
           <div className="placeholder-chart">
-            {/* We will embed an actual chart library later, using a CSS placeholder for aesthetics */}
-            <div className="circle-node center"></div>
-            <div className="circle-node ring n1"></div>
-            <div className="circle-node ring n2"></div>
-            <div className="circle-node ring n3"></div>
-            <div className="connection line1"></div>
-            <div className="connection line2"></div>
-            <div className="connection line3"></div>
+            <div className="circle-node center" />
+            <div className="circle-node ring n1" />
+            <div className="circle-node ring n2" />
+            <div className="circle-node ring n3" />
+            <div className="circle-node ring n4" />
+            <div className="circle-node ring n5" />
+            <div className="connection line1" />
+            <div className="connection line2" />
+            <div className="connection line3" />
           </div>
         </div>
-        
-        <div className="chart-card glass-panel">
-          <h3>System Health Events</h3>
+
+        <div className="chart-card">
+          <h3>System health events</h3>
           <div className="activity-feed">
-            <div className="feed-item">
-              <span className="dot success"></span>
-              <p>Kafka Broker #3 recovered</p>
-              <span className="time">2m ago</span>
-            </div>
-            <div className="feed-item">
-              <span className="dot warning"></span>
-              <p>High memory usage on Connect Worker-02</p>
-              <span className="time">15m ago</span>
-            </div>
-            <div className="feed-item">
-              <span className="dot success"></span>
-              <p>KRaft quorum stabilized</p>
-              <span className="time">1h ago</span>
-            </div>
+            {events.map((e, i) => (
+              <div key={i} className="feed-item">
+                <span className={`dot ${e.status}`} />
+                <p>{e.msg}</p>
+                <span className="time">{e.time}</span>
+              </div>
+            ))}
           </div>
         </div>
+
       </section>
     </div>
   );

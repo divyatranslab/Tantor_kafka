@@ -1,42 +1,50 @@
-.page-header {
-  margin-bottom: 2rem;
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
+/* ── Header ── */
 .page-header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
-  background: linear-gradient(to right, #fff, var(--text-secondary));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 4px;
 }
 
 .page-header p {
+  font-size: 0.875rem;
   color: var(--text-secondary);
-  font-size: 1.1rem;
+  margin: 0;
 }
 
+/* ── Stat cards ── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
 }
 
 .stat-card {
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.125rem;
   display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  transition: transform var(--transition-fast);
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
+  border-color: var(--border-default);
+  box-shadow: var(--shadow-md);
 }
 
 .stat-icon {
-  width: 56px;
-  height: 56px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -44,111 +52,137 @@
 }
 
 .stat-info h3 {
-  font-size: 2rem;
-  line-height: 1.2;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.1;
+  margin: 0 0 2px;
+  letter-spacing: -0.02em;
 }
 
 .stat-info p {
+  font-size: 0.75rem;
   color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
+  margin: 0;
+  font-weight: 400;
 }
 
+/* ── Charts section ── */
 .charts-section {
   display: grid;
   grid-template-columns: 2fr 1fr;
-  gap: 1.5rem;
+  gap: 12px;
 }
 
 .chart-card {
-  padding: 1.5rem;
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .chart-card h3 {
-  font-size: 1.25rem;
-  margin-bottom: 1.5rem;
-  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin: 0 0 1rem;
 }
 
-/* Abstract Topology Graphic */
+/* ── Topology ── */
 .placeholder-chart {
-  flex: 1;
   position: relative;
+  height: 200px;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
 }
 
 .circle-node {
   position: absolute;
   border-radius: 50%;
-  background: var(--bg-surface);
-  border: 2px solid var(--accent-primary);
-  box-shadow: 0 0 15px var(--accent-glow);
-  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .circle-node.center {
-  width: 60px;
-  height: 60px;
-  border-color: var(--accent-secondary);
+  width: 52px;
+  height: 52px;
+  background: var(--accent-light);
+  border: 1.5px solid var(--accent-border);
+  color: var(--accent-primary);
+  z-index: 2;
 }
 
 .circle-node.ring {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-raised);
+  border: 0.5px solid var(--border-default);
+  color: var(--text-secondary);
+  z-index: 2;
 }
 
-.n1 { transform: translate(-80px, -60px); }
-.n2 { transform: translate(80px, -40px); }
-.n3 { transform: translate(0, 80px); }
+.circle-node.n1 { transform: translate(-85px, -55px); }
+.circle-node.n2 { transform: translate(85px, -45px); }
+.circle-node.n3 { transform: translate(100px, 45px); }
+.circle-node.n4 { transform: translate(0px, 75px); }
+.circle-node.n5 { transform: translate(-95px, 45px); }
 
 .connection {
   position: absolute;
-  background: var(--border-glass);
-  height: 2px;
+  background: var(--border-default);
+  height: 1px;
   z-index: 1;
+  transform-origin: left center;
 }
 
-.line1 { width: 100px; transform: rotate(35deg) translate(-20px, -40px); }
-.line2 { width: 90px; transform: rotate(-25deg) translate(30px, -10px); }
-.line3 { width: 80px; transform: rotate(90deg) translate(40px, 0); }
+.line1 { width: 100px; transform: translate(-42px, -28px) rotate(33deg); }
+.line2 { width: 95px;  transform: translate(0px, -22px) rotate(-28deg); }
+.line3 { width: 85px;  transform: translate(2px, 12px) rotate(80deg); }
 
-/* Activity Feed */
+/* ── Activity feed ── */
 .activity-feed {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 8px;
 }
 
 .feed-item {
   display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: var(--radius-sm);
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-raised);
+  border-radius: var(--radius-md);
 }
 
 .feed-item p {
   flex: 1;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.4;
 }
 
 .feed-item .time {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-tertiary);
+  white-space: nowrap;
+  padding-top: 1px;
 }
 
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
 }
 
-.dot.success { background: var(--accent-success); box-shadow: 0 0 8px var(--accent-success); }
-.dot.warning { background: var(--accent-warning); box-shadow: 0 0 8px var(--accent-warning); }
+.dot.success { background: var(--color-success); }
+.dot.warning { background: var(--color-warning); }
+.dot.danger  { background: var(--color-danger); }

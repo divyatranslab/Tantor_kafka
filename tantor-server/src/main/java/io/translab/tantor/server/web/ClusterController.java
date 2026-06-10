@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -23,6 +24,23 @@ public class ClusterController {
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
+
+    @GetMapping
+    public List<Map<String, Object>> listClusters() {
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Cluster c : clusterRepository.findAll()) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", c.getId());
+            m.put("name", c.getName());
+            m.put("kafkaVersion", c.getKafkaVersion());
+            m.put("mode", c.getMode());
+            m.put("environment", c.getEnvironment());
+            m.put("createdAt", c.getCreatedAt());
+            m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
+            result.add(m);
+        }
+        return result;
+    }
 
     @PostMapping("/deploy")
     public ResponseEntity<Void> deployCluster(@RequestBody DeployClusterRequest request) {
@@ -84,10 +102,15 @@ public class ClusterController {
                 configJsonStr = objectMapper.writeValueAsString(request.getConfig());
             } catch (Exception e) {}
 
+            String finalArtifactUrl = request.getArtifactUrl();
+            if (finalArtifactUrl != null && finalArtifactUrl.contains("localhost")) {
+                finalArtifactUrl = finalArtifactUrl.replace("localhost", "192.168.3.142");
+            }
+
             deploymentService.deployKafkaToHost(
                 svc.getHost_id(),
                 request.getKafka_version(),
-                request.getArtifactUrl(),
+                finalArtifactUrl,
                 "", // checksum
                 String.valueOf(svc.getNode_id()),
                 quorumVoters.toString(),

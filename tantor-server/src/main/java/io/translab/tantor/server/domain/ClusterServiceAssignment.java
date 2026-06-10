@@ -1,8 +1,8 @@
 package io.translab.tantor.server.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
-import org.hibernate.annotations.GenericGenerator;
 import java.util.UUID;
 
 @Entity
@@ -16,6 +16,7 @@ public class ClusterServiceAssignment {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cluster_id", nullable = false)
+    @JsonIgnore
     private Cluster cluster;
 
     @Column(name = "host_id", nullable = false)
