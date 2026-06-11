@@ -60,10 +60,15 @@ export function ConfigEditor() {
         setConfigValue('');
         fetchConfigs();
       } else {
-        alert("Failed to apply configuration.");
+        try {
+          const errData = await res.json();
+          alert(`Failed to apply configuration: ${errData.message || res.statusText}`);
+        } catch {
+          alert(`Failed to apply configuration: ${res.statusText}`);
+        }
       }
     } catch (e) {
-      alert("Error applying configuration.");
+      alert("Error applying configuration. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -151,7 +156,17 @@ export function ConfigEditor() {
                         .filter(([k, _]) => !k.startsWith('ssl.') && !k.startsWith('sasl.')) // hide secrets
                         .sort(([a], [b]) => a.localeCompare(b))
                         .map(([key, value]) => (
-                        <tr key={key}>
+                        <tr 
+                          key={key} 
+                          onClick={() => {
+                            setConfigKey(key);
+                            setConfigValue(value);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                          onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)'}
+                          onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
                           <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>{key}</td>
                           <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem', wordBreak: 'break-all' }}>{value}</td>
                         </tr>

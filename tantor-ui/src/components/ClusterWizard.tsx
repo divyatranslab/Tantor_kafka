@@ -388,6 +388,49 @@ export default function ClusterWizard() {
                 <input type="number" min={1} max={100} value={config.num_partitions} onChange={e => setConfig({ ...config, num_partitions: Number(e.target.value) })} className="wz-input" />
               </div>
             </div>
+            
+            <div className="wz-grid-2">
+              <div>
+                <label className="wz-label">JVM Heap Size</label>
+                <input type="text" value={config.heap_size} onChange={e => setConfig({ ...config, heap_size: e.target.value })} placeholder="e.g. 1G, 512M" className="wz-input" />
+                <p className="wz-hint">Memory allocated to the Kafka JVM.</p>
+              </div>
+              <div>
+                <label className="wz-label">Log Directory</label>
+                <input type="text" value={config.log_dirs} onChange={e => setConfig({ ...config, log_dirs: e.target.value })} placeholder="/var/lib/kafka/data" className="wz-input mono" />
+                <p className="wz-hint">Primary directory for topic partition data.</p>
+              </div>
+            </div>
+
+            <div className="wz-grid-2">
+              <div>
+                <label className="wz-label">Listener Port (Client/Broker)</label>
+                <input type="number" value={config.listener_port} onChange={e => setConfig({ ...config, listener_port: Number(e.target.value) })} className={`wz-input ${portError ? 'error' : ''}`} />
+                {portError && <p className="wz-error-text"><AlertTriangle size={12} /> {portError}</p>}
+              </div>
+              {mode === 'kraft' && (
+                <div>
+                  <label className="wz-label">Controller Port (Quorum)</label>
+                  <input type="number" value={config.controller_port} onChange={e => setConfig({ ...config, controller_port: Number(e.target.value) })} className="wz-input" />
+                </div>
+              )}
+            </div>
+
+            <div className="wz-section-divider"></div>
+            <h4 className="wz-section-title"><FolderOpen size={16} /> Deployment Paths <span className="wz-label-optional">(optional overrides)</span></h4>
+            
+            <div className="wz-grid-2">
+              <div>
+                <label className="wz-label">Install Directory</label>
+                <input type="text" value={config.kafka_install_dir} onChange={e => setConfig({ ...config, kafka_install_dir: e.target.value })} placeholder="Default: /opt/tantor/kafka" className={`wz-input mono ${installDirError ? 'error' : ''}`} />
+                {installDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {installDirError}</p>}
+              </div>
+              <div>
+                <label className="wz-label">Data Directory Override</label>
+                <input type="text" value={config.kafka_data_dir} onChange={e => setConfig({ ...config, kafka_data_dir: e.target.value })} placeholder="Default: /var/lib/kafka" className={`wz-input mono ${dataDirError ? 'error' : ''}`} />
+                {dataDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {dataDirError}</p>}
+              </div>
+            </div>
           </div>
         ),
         valid: step3Valid,
@@ -403,7 +446,55 @@ export default function ClusterWizard() {
                 <span className="wz-review-value">{name}</span>
                 <span className="wz-review-label">Mode</span>
                 <span className="wz-review-value">{mode.toUpperCase()}</span>
+                <span className="wz-review-label">Kafka Version</span>
+                <span className="wz-review-value">{kafkaVersion}</span>
                 {environment && <><span className="wz-review-label">Environment</span><span className="wz-review-value">{environment}</span></>}
+              </div>
+
+              <div className="wz-section-divider"></div>
+              <h4 className="wz-section-title"><Server size={16} /> Topology</h4>
+              <div className="wz-review-grid">
+                <span className="wz-review-label">Brokers</span>
+                <span className="wz-review-value">{brokerCount} assigned</span>
+                {mode === 'kraft' && (
+                  <>
+                    <span className="wz-review-label">Controllers</span>
+                    <span className="wz-review-value">{assignedRoles.filter(r => r === 'controller' || r === 'broker_controller').length} assigned</span>
+                  </>
+                )}
+              </div>
+
+              <div className="wz-section-divider"></div>
+              <h4 className="wz-section-title"><Network size={16} /> Configuration & Paths</h4>
+              <div className="wz-review-grid">
+                <span className="wz-review-label">Replication Factor</span>
+                <span className="wz-review-value">{config.replication_factor}</span>
+                <span className="wz-review-label">Default Partitions</span>
+                <span className="wz-review-value">{config.num_partitions}</span>
+                <span className="wz-review-label">JVM Heap</span>
+                <span className="wz-review-value">{config.heap_size}</span>
+                <span className="wz-review-label">Log Directory</span>
+                <span className="wz-review-value">{config.log_dirs}</span>
+                <span className="wz-review-label">Listener Port</span>
+                <span className="wz-review-value">{config.listener_port}</span>
+                {mode === 'kraft' && (
+                  <>
+                    <span className="wz-review-label">Controller Port</span>
+                    <span className="wz-review-value">{config.controller_port}</span>
+                  </>
+                )}
+                {config.kafka_install_dir && (
+                  <>
+                    <span className="wz-review-label">Install Dir Override</span>
+                    <span className="wz-review-value">{config.kafka_install_dir}</span>
+                  </>
+                )}
+                {config.kafka_data_dir && (
+                  <>
+                    <span className="wz-review-label">Data Dir Override</span>
+                    <span className="wz-review-value">{config.kafka_data_dir}</span>
+                  </>
+                )}
               </div>
             </div>
           </div>

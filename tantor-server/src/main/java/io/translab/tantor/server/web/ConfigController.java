@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
+import io.translab.tantor.server.service.ActivityAlertService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +25,7 @@ public class ConfigController {
     private final DeploymentService deploymentService;
     private final KafkaAdminService kafkaAdminService;
     private final ObjectMapper objectMapper;
+    private final ActivityAlertService activityAlertService;
 
     @GetMapping
     public ResponseEntity<Map<Integer, Map<String, String>>> getBrokerConfigs(@PathVariable UUID clusterId) {
@@ -35,14 +37,25 @@ public class ConfigController {
     }
 
     @PutMapping("/bulk")
-    public ResponseEntity<Void> updateConfigBulk(@PathVariable UUID clusterId, @RequestBody BulkConfigRequest request) throws JsonProcessingException {
+    public ResponseEntity<?> updateConfigBulk(@PathVariable UUID clusterId, @RequestBody BulkConfigRequest request) throws JsonProcessingException {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
 
         // 1. Update live dynamically via AdminClient
         Map<Integer, Map<String, String>> currentConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+        boolean dynamicSuccess = true;
+        String dynamicError = null;
         for (Integer brokerId : currentConfigs.keySet()) {
-            kafkaAdminService.alterBrokerConfig(clusterId, brokerId, request.getConfigKey(), request.getConfigValue());
+            try {
+                kafkaAdminService.alterBrokerConfig(clusterId, brokerId, request.getConfigKey(), request.getConfigValue());
+            } catch (Exception e) {
+                dynamicSuccess = false;
+                dynamicError = e.getMessage();
+                // If not applying to agents, we must fail immediately
+                if (!request.isApplyToAgents()) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Failed to alter broker config dynamically: " + e.getMessage()));
+                }
+            }
         }
 
         // 2. Optionally push to static file and restart via Agent
@@ -62,6 +75,17 @@ public class ConfigController {
                     deploymentService.updateKafkaConfig(svc.getHostId(), newConfigStr, request.isRestart());
                 }
             }
+            activityAlertService.logActivity(
+                "INFO",
+                "Updated server.properties config: " + request.getConfigKey() + " = " + request.getConfigValue() + (request.isRestart() ? " (Restarting brokers)" : ""),
+                clusterId
+            );
+        } else if (dynamicSuccess) {
+            activityAlertService.logActivity(
+                "INFO",
+                "Dynamically updated broker config: " + request.getConfigKey() + " = " + request.getConfigValue(),
+                clusterId
+            );
         }
 
         return ResponseEntity.ok().build();
