@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, Network, RefreshCw } from 'lucide-react';
+import { PlusCircle, Network, RefreshCw, Trash2 } from 'lucide-react';
 import './Clusters.css';
 
 interface ClusterInfo {
@@ -27,6 +27,22 @@ export function Clusters() {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
+    e.stopPropagation(); // prevent navigating to cluster topics
+    if (!window.confirm(`Are you sure you want to remove the cluster '${name}' from Tantor?`)) return;
+    try {
+      const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setClusters(prev => prev.filter(c => c.id !== id));
+      } else {
+        alert('Failed to delete cluster.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while deleting.');
     }
   };
 
@@ -78,7 +94,7 @@ export function Clusters() {
             <div 
               key={cluster.id} 
               className="cluster-card"
-              style={{cursor: 'pointer'}}
+              style={{cursor: 'pointer', position: 'relative'}}
               onClick={() => navigate(`/clusters/${cluster.id}/topics`)}
             >
 
@@ -90,9 +106,19 @@ export function Clusters() {
                   <p className="cluster-name">{cluster.name}</p>
                   <span className="cluster-version">Kafka {cluster.kafkaVersion}</span>
                 </div>
-                <span className={`cluster-status-badge ${cluster.mode === 'EXTERNAL' ? 'external' : ''}`}>
-                  {cluster.mode === 'EXTERNAL' ? 'External' : 'Active'}
-                </span>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                  <span className={`cluster-status-badge ${cluster.mode === 'EXTERNAL' ? 'external' : ''}`}>
+                    {cluster.mode === 'EXTERNAL' ? 'External' : 'Active'}
+                  </span>
+                  <button 
+                    className="btn" 
+                    style={{ padding: '0.4rem', color: 'var(--color-danger)', border: 'none', background: 'transparent' }}
+                    onClick={(e) => deleteCluster(e, cluster.id, cluster.name)}
+                    title="Remove cluster"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
 
               <div className="cluster-card-body">

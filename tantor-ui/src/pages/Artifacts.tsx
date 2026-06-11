@@ -59,7 +59,8 @@ export function Artifacts() {
     form.append('overwrite', 'true');
 
     try {
-      const res = await fetch('/api/v1/artifacts', { method: 'POST', body: form });
+      // Send directly to the artifact repo (port 8081) to bypass Vite proxy limits for large files
+      const res = await fetch('http://localhost:8081/api/v1/artifacts', { method: 'POST', body: form });
       if (res.ok) {
         setUploadMsg({ text: `Uploaded ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`, ok: true });
         setShowUploadModal(false);

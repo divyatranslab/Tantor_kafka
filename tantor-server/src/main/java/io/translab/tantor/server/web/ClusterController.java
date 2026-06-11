@@ -143,6 +143,16 @@ public class ClusterController {
         return ResponseEntity.ok().build();
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteCluster(@PathVariable java.util.UUID id) {
+        if (clusterRepository.existsById(id)) {
+            clusterRepository.deleteById(id);
+            activityAlertService.logActivity("INFO", "Deleted cluster", id);
+            return ResponseEntity.ok().build();
+        }
+        return ResponseEntity.notFound().build();
+    }
+
     @Data
     static class DeployClusterRequest {
         private String name;
