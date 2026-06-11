@@ -6,7 +6,14 @@ import {
   Package, 
   PlayCircle, 
   Activity, 
-  ShieldAlert 
+  ShieldAlert,
+  Link2,
+  KeyRound,
+  Users,
+  Shield,
+  Plug,
+  Globe2,
+  ListRestart
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -14,10 +21,17 @@ const navItems = [
   { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
   { icon: Server, label: 'Hosts', path: '/hosts' },
   { icon: Network, label: 'Clusters', path: '/clusters' },
+  { icon: Plug, label: 'External Clusters', path: '/external-clusters' },
+  { icon: Globe2, label: 'Federation', path: '/federation' },
   { icon: Package, label: 'Artifacts', path: '/artifacts' },
   { icon: PlayCircle, label: 'Deployments', path: '/deployments' },
   { icon: Activity, label: 'Monitoring', path: '/monitoring' },
   { icon: ShieldAlert, label: 'Alerts', path: '/alerts' },
+  { icon: Link2, label: 'Cluster Linking', path: '/cluster-linking' },
+  { icon: Shield, label: 'Security Scan', path: '/security-scan' },
+  { icon: ListRestart, label: 'Activity Logs', path: '/activity' },
+  { icon: Users, label: 'User Management', path: '/users' },
+  { icon: KeyRound, label: 'LDAP / AD', path: '/ldap-settings' },
   { icon: ShieldAlert, label: 'Audit Logs', path: '/audit' },
 ];
 

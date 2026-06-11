@@ -7,7 +7,7 @@ $MavenDir = "$PSScriptRoot\apache-maven-$MavenVersion"
 $MvnCmd = "$MavenDir\bin\mvn.cmd"
 
 # Set JAVA_HOME to the system-installed JDK 21
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot"
 $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 
 # 1. Download Maven if not exists

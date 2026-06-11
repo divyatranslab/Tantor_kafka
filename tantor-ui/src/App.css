@@ -1,4 +1,6 @@
 /* Override default Vite CSS */
+@import './migrated-components.css';
+
 #root {
   width: 100%;
 }

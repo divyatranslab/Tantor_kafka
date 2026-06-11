@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Link, Database, FileJson } from 'lucide-react';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -32,6 +32,9 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics' },
     { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers' },
     { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration' },
+    { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry' },
+    { to: `/clusters/${id}/kafka-connect`, icon: Link, label: 'Kafka Connect' },
+    { to: `/clusters/${id}/ksqldb`, icon: Database, label: 'KSQL DB' },
   ];
 
   if (cluster.mode !== 'EXTERNAL') {
