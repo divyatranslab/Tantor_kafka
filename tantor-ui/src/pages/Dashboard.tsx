@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Server, Network, Activity, AlertCircle } from 'lucide-react';
+import { CheckCircle2, AlertCircle, AlertTriangle, Settings, Activity, Server, Database, Box, Layers, HardDrive } from 'lucide-react';
 import './Dashboard.css';
 
 interface DashboardStats {
@@ -11,182 +11,143 @@ interface DashboardStats {
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [activities, setActivities] = useState<any[]>([]);
+
+  const [clusters, setClusters] = useState<any[]>([]);
 
   useEffect(() => {
     fetch('/api/v1/ui/dashboard/stats')
       .then(res => res.json())
       .then(data => setStats(data))
       .catch(err => console.error(err));
-
-    fetch('/api/v1/ui/dashboard/activity')
+      
+    fetch('/api/v1/ui/clusters')
       .then(res => res.json())
-      .then(data => setActivities(data))
+      .then(data => setClusters(data))
       .catch(err => console.error(err));
   }, []);
 
-  const statsList = [
-    { label: 'Managed hosts',    value: stats?.totalHosts      ?? '…', icon: Server,      bg: '#E6F1FB', color: '#185FA5' },
-    { label: 'Total clusters',   value: stats?.totalClusters   ?? '…', icon: Network,     bg: '#EEEDFE', color: '#534AB7' },
-    { label: 'Healthy clusters', value: stats?.healthyClusters ?? '…', icon: Activity,    bg: '#EAF3DE', color: '#3B6D11' },
-    { label: 'Active alerts',    value: stats?.activeAlerts    ?? '…', icon: AlertCircle, bg: '#FEF2F2', color: '#EF4444' },
+  // Map real clusters to the Cloudera-style list
+  // If no clusters exist, show empty state, otherwise list them
+  const services = clusters.map(c => ({
+    name: c.name,
+    status: c.nodeCount > 0 ? 'healthy' : 'warning',
+    alerts: 0,
+    icon: Activity
+  }));
+  
+  // Add some core platform services that are always present
+  const platformServices = [
+    { name: `${stats?.totalHosts ?? 0} Hosts`, status: 'healthy', alerts: stats?.activeAlerts || 0, icon: Settings },
+    { name: 'Core Configuration', status: 'unknown', alerts: 0, icon: Settings },
+    { name: 'Tantor Agent Management', status: 'healthy', alerts: 0, icon: Server },
   ];
 
-  const VMS = [
-    { cx: 320, cy: 58,  label: 'vm-01' },
-    { cx: 418, cy: 102, label: 'vm-02' },
-    { cx: 412, cy: 228, label: 'vm-03' },
-    { cx: 228, cy: 228, label: 'vm-04' },
-    { cx: 222, cy: 102, label: 'vm-05' },
-  ];
+  const allServices = [...platformServices, ...services];
+
+  const renderStatusIcon = (status: string) => {
+    switch(status) {
+      case 'healthy': return <CheckCircle2 className="status-icon healthy" size={18} />;
+      case 'warning': return <AlertTriangle className="status-icon warning" size={18} />;
+      case 'error': return <AlertCircle className="status-icon error" size={18} />;
+      default: return <div className="status-icon unknown" />;
+    }
+  };
 
   return (
     <div className="dashboard animate-fade-in">
 
-      <header className="page-header">
-        <h1>Platform overview</h1>
-        <p>Real-time metrics from the Tantor management plane</p>
+      <header className="page-header cloudera-header">
+        <div className="header-tabs">
+          <span className="active-tab">Status</span>
+          <span>All Health Issues <span className="badge error">{stats?.activeAlerts || 0}</span></span>
+          <span>Configuration <span className="badge warning">0</span></span>
+          <span>All Recent Commands</span>
+        </div>
       </header>
 
-      {/* ── Stat cards ── */}
-      <section className="stats-grid">
-        {statsList.map((s) => (
-          <div key={s.label} className="stat-card">
-            <div className="stat-icon" style={{ background: s.bg, color: s.color }}>
-              <s.icon size={16} strokeWidth={2} />
-            </div>
-            <div className="stat-info">
-              <h3>{s.value}</h3>
-              <p>{s.label}</p>
-            </div>
+      <section className="cloudera-grid">
+        {/* ── Left Pane: Services ── */}
+        <div className="services-pane">
+          <div className="services-header">
+            <h2 className="cluster-title">
+              <CheckCircle2 className="status-icon healthy" size={20} />
+              Tantor Runtime
+            </h2>
+            <p className="runtime-version">Platform Core (Parcels)</p>
           </div>
-        ))}
-      </section>
-
-      {/* ── Charts ── */}
-      <section className="charts-section">
-
-        {/* Topology */}
-        <div className="chart-card">
-          <h3>Cluster topology</h3>
-          <div className="placeholder-chart">
-            <svg
-              className="topology-svg"
-              viewBox="0 0 560 310"
-              role="img"
-              aria-label="Cluster topology — radial hub-and-spoke with animated heartbeats"
-            >
-              <defs>
-                <marker id="topo-arr" viewBox="0 0 10 10" refX="8" refY="5"
-                  markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M2 1L8 5L2 9" fill="none" stroke="#888780"
-                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </marker>
-                <marker id="topo-arr-green" viewBox="0 0 10 10" refX="8" refY="5"
-                  markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-                  <path d="M2 1L8 5L2 9" fill="none" stroke="#1D9E75"
-                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </marker>
-              </defs>
-
-              {/* ── Provisioning sidebar ── */}
-              <rect x="16" y="108" width="98" height="44" rx="8" className="topo-node-master" />
-              <text x="65" y="124" textAnchor="middle" className="topo-label-bold">Master VM</text>
-              <text x="65" y="140" textAnchor="middle" className="topo-label-sub">192.168.1.10</text>
-
-              <line x1="65" y1="152" x2="65" y2="172" className="topo-arrow-line" markerEnd="url(#topo-arr)" />
-
-              <rect x="16" y="172" width="98" height="44" rx="8" className="topo-node-ansible" />
-              <text x="65" y="188" textAnchor="middle" className="topo-label-bold topo-ansible-text">Ansible</text>
-              <text x="65" y="204" textAnchor="middle" className="topo-label-sub topo-ansible-sub">deploy runner</text>
-
-              {/* Animated deploy arrow */}
-              <path d="M114 194 Q175 194 204 194" fill="none"
-                className="topo-deploy-dash" markerEnd="url(#topo-arr-green)" />
-              <text x="159" y="188" textAnchor="middle" className="topo-label-tiny topo-ansible-sub">deploys</text>
-
-              {/* ── Pulse rings ── */}
-              <circle cx="320" cy="163" r="34" fill="none" className="topo-pulse topo-pulse-1" />
-              <circle cx="320" cy="163" r="34" fill="none" className="topo-pulse topo-pulse-2" />
-              <circle cx="320" cy="163" r="34" fill="none" className="topo-pulse topo-pulse-3" />
-
-              {/* ── Spokes + heartbeat dots ── */}
-              {/* top */}
-              <line x1="320" y1="131" x2="320" y2="80" className="topo-spoke" />
-              <circle cx="320" cy="119" r="4" className="topo-hb topo-hb-1" />
-              <circle cx="320" cy="106" r="4" className="topo-hb topo-hb-2" />
-              <circle cx="320" cy="93"  r="4" className="topo-hb topo-hb-3" />
-
-              {/* upper-right */}
-              <line x1="344" y1="143" x2="397" y2="114" className="topo-spoke" />
-              <circle cx="358" cy="137" r="4" className="topo-hb topo-hb-2" />
-              <circle cx="372" cy="129" r="4" className="topo-hb topo-hb-3" />
-              <circle cx="386" cy="122" r="4" className="topo-hb topo-hb-4" />
-
-              {/* lower-right */}
-              <line x1="344" y1="183" x2="396" y2="214" className="topo-spoke" />
-              <circle cx="358" cy="190" r="4" className="topo-hb topo-hb-3" />
-              <circle cx="372" cy="197" r="4" className="topo-hb topo-hb-4" />
-              <circle cx="386" cy="205" r="4" className="topo-hb topo-hb-5" />
-
-              {/* lower-left */}
-              <line x1="296" y1="183" x2="244" y2="214" className="topo-spoke" />
-              <circle cx="282" cy="190" r="4" className="topo-hb topo-hb-4" />
-              <circle cx="268" cy="197" r="4" className="topo-hb topo-hb-5" />
-              <circle cx="254" cy="205" r="4" className="topo-hb topo-hb-1" />
-
-              {/* upper-left */}
-              <line x1="296" y1="143" x2="244" y2="114" className="topo-spoke" />
-              <circle cx="282" cy="137" r="4" className="topo-hb topo-hb-5" />
-              <circle cx="268" cy="129" r="4" className="topo-hb topo-hb-1" />
-              <circle cx="254" cy="122" r="4" className="topo-hb topo-hb-2" />
-
-              {/* ── CMB Backend centre node ── */}
-              <circle cx="320" cy="163" r="36" className="topo-node-cmb" />
-              <text x="320" y="157" textAnchor="middle" className="topo-label-bold topo-cmb-text">CMB</text>
-              <text x="320" y="173" textAnchor="middle" className="topo-label-sub topo-cmb-sub">backend</text>
-
-              {/* ── Agent VM ring ── */}
-              {VMS.map(({ cx, cy, label }) => (
-                <g key={label}>
-                  <circle cx={cx} cy={cy} r="24" className="topo-node-vm" />
-                  <text x={cx} y={cy - 3} textAnchor="middle" className="topo-label-bold">{label}</text>
-                  <text x={cx} y={cy + 12} textAnchor="middle" className="topo-label-tiny">agent</text>
-                  <circle cx={cx + 14} cy={cy - 14} r="5" className="topo-status-ring" />
-                  <circle cx={cx + 14} cy={cy - 14} r="2.5" className="topo-status-dot" />
-                </g>
-              ))}
-
-              {/* ── Legend ── */}
-              <circle cx="360" cy="292" r="4" fill="#3B6D11" />
-              <text x="370" y="296" className="topo-label-tiny">healthy</text>
-              <circle cx="420" cy="292" r="5" fill="none" stroke="#E09B1A" strokeWidth="1" />
-              <circle cx="420" cy="292" r="2.5" fill="#D97706" opacity="0.7" />
-              <text x="430" y="296" className="topo-label-tiny">heartbeat</text>
-            </svg>
-          </div>
-        </div>
-
-        {/* Activity feed */}
-        <div className="chart-card">
-          <h3>System health events</h3>
-          <div className="activity-feed">
-            {activities.length === 0 ? (
-              <div className="feed-item" style={{ color: 'var(--text-secondary)' }}>
-                No recent activity.
-              </div>
-            ) : (
-              activities.map((a: any) => (
-                <div key={a.id} className="feed-item">
-                  <span className={`dot ${a.level === 'INFO' ? 'success' : a.level === 'WARN' ? 'warning' : 'danger'}`} />
-                  <p>{a.message}</p>
-                  <span className="time">{new Date(a.createdAt).toLocaleString()}</span>
+          <div className="services-list">
+            {allServices.length === 0 ? (
+              <div style={{padding: '1rem', color: '#666'}}>No services deployed yet. Click "Add Service" to begin.</div>
+            ) : allServices.map((svc) => (
+              <div key={svc.name} className="service-row">
+                <div className="service-name-col">
+                  {renderStatusIcon(svc.status)}
+                  <svc.icon size={16} className="service-type-icon" />
+                  <span className="service-name">{svc.name}</span>
                 </div>
-              ))
-            )}
+                <div className="service-alerts-col">
+                  {svc.alerts > 0 && (
+                    <span className={`alert-count ${svc.status}`}>
+                      <Settings size={14} /> {svc.alerts}
+                    </span>
+                  )}
+                </div>
+                <div className="service-actions-col">
+                  ⋮
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
+        {/* ── Right Pane: Charts ── */}
+        <div className="charts-pane">
+          <div className="charts-header">
+            <h2>Charts</h2>
+            <div className="time-filters">
+              <span className="active">30m</span>
+              <span>1h</span>
+              <span>2h</span>
+              <span>6h</span>
+              <span>12h</span>
+              <span>1d</span>
+              <span>7d</span>
+              <span>30d</span>
+            </div>
+          </div>
+
+          <div className="chart-card-c">
+            <div className="chart-title-c">Cluster CPU</div>
+            <div className="chart-body-c">
+              <svg viewBox="0 0 400 100" className="line-chart">
+                <path d="M0 80 L50 82 L100 78 L150 80 L200 79 L250 81 L300 78 L350 80 L400 79" fill="none" stroke="#2196F3" strokeWidth="2" strokeDasharray="4 4" />
+                <path d="M0 85 L50 86 L100 84 L150 85 L200 84 L250 86 L300 85 L350 86 L400 85" fill="none" stroke="#64B5F6" strokeWidth="1" />
+              </svg>
+              <div className="chart-legend">- Translab, Host CPU Usage Across Hosts <strong>4.1%</strong></div>
+            </div>
+          </div>
+
+          <div className="chart-card-c">
+            <div className="chart-title-c">Cluster Disk IO</div>
+            <div className="chart-body-c">
+              <svg viewBox="0 0 400 100" className="area-chart">
+                <path d="M0 100 L0 50 L40 45 L80 60 L120 40 L160 55 L200 30 L240 60 L280 40 L320 25 L360 45 L400 50 L400 100 Z" fill="#CDDC39" opacity="0.8" />
+                <path d="M0 100 L0 90 L40 88 L80 92 L120 85 L160 90 L200 80 L240 95 L280 88 L320 82 L360 88 L400 90 L400 100 Z" fill="#2196F3" opacity="0.8" />
+              </svg>
+              <div className="chart-legend"><span style={{color: '#2196F3'}}>- Total Disk By... <strong>12.9K/s</strong></span> <span style={{color: '#CDDC39'}}>- Total Disk By... <strong>2.5M/s</strong></span></div>
+            </div>
+          </div>
+
+          <div className="chart-card-c">
+            <div className="chart-title-c">Cluster Network IO</div>
+            <div className="chart-body-c">
+              <svg viewBox="0 0 400 100" className="line-chart">
+                <path d="M0 90 L50 80 L100 85 L150 60 L200 95 L250 70 L300 90 L350 40 L400 80" fill="none" stroke="#2196F3" strokeWidth="1.5" />
+                <path d="M0 95 L50 85 L100 90 L150 75 L200 80 L250 85 L300 95 L350 60 L400 85" fill="none" stroke="#CDDC39" strokeWidth="1.5" />
+              </svg>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   );

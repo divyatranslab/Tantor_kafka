@@ -2,24 +2,21 @@
    Design tokens
    ══════════════════════════════════════════ */
 :root {
-  --bg-page:        #F4F5F7;
+  --bg-page:        #FFFFFF;
   --bg-surface:     #FFFFFF;
   --bg-raised:      #F8F9FA;
-  --text-primary:   #1A1D23;
+  --text-primary:   #222;
   --text-secondary: #5E6470;
   --text-tertiary:  #9399A6;
-  --border-subtle:  rgba(0,0,0,0.07);
-  --border-default: rgba(0,0,0,0.12);
-  --radius-sm:      6px;
-  --radius-md:      8px;
-  --radius-lg:      14px;
-  --radius-xl:      18px;
-  --shadow-sm:      0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md:      0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-lg:      0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.05);
-  --color-success:  #22C55E;
-  --color-warning:  #F59E0B;
-  --color-danger:   #EF4444;
+  --border-subtle:  #E8EAED;
+  --border-default: #DADCE0;
+  --radius-sm:      4px;
+  --radius-md:      6px;
+  --radius-lg:      8px;
+  --radius-xl:      12px;
+  --color-success:  #0F9D58;
+  --color-warning:  #F4B400;
+  --color-danger:   #DB4437;
   --transition-fast: 0.15s ease;
   --transition-mid:  0.25s ease;
 }
@@ -30,245 +27,229 @@
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  padding: 2rem 2.5rem;
+  padding: 0;
   background: var(--bg-page);
   min-height: 100vh;
 }
 
-/* ── Header ── */
-.page-header h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-  letter-spacing: -0.02em;
+/* ── Cloudera Header ── */
+.cloudera-header {
+  border-bottom: 1px solid var(--border-default);
+  padding: 0 2rem;
+  background: #FFF;
 }
 
-.page-header p {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-/* ══════════════════════════════════════════
-   Stat cards
-   ══════════════════════════════════════════ */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-}
-
-.stat-card {
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  padding: 1.25rem 1.25rem 1rem;
+.header-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--transition-fast),
-              box-shadow var(--transition-fast),
-              transform var(--transition-fast);
+  gap: 2rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  margin-top: 1rem;
 }
 
-.stat-card:hover {
-  border-color: var(--border-default);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-.stat-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
+.header-tabs span {
+  padding: 1rem 0;
+  cursor: pointer;
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-
-.stat-info h3 {
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1;
-  margin: 0 0 3px;
-  letter-spacing: -0.03em;
-}
-
-.stat-info p {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  margin: 0;
-  font-weight: 400;
-}
-
-/* ══════════════════════════════════════════
-   Charts section
-   ══════════════════════════════════════════ */
-.charts-section {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-  align-items: start;
-}
-
-.chart-card {
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
-  padding: 1.5rem;
-  box-shadow: var(--shadow-sm);
-}
-
-.chart-card h3 {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  margin: 0 0 1.25rem;
-}
-
-/* ══════════════════════════════════════════
-   Topology chart area
-   ══════════════════════════════════════════ */
-.placeholder-chart {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  display: flex;
-  align-items: stretch;
-}
-
-.topology-svg {
-  --topo-arrow:          #888780;
-  --topo-ansible-stroke: #1D9E75;
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* ── Node fills ── */
-.topo-node-master  { fill: #EEF5FD; stroke: #378ADD; stroke-width: 0.8px; }
-.topo-node-ansible { fill: #E5F7F0; stroke: #1D9E75; stroke-width: 0.8px; }
-.topo-node-cmb     { fill: #FDF4E7; stroke: #E09B1A; stroke-width: 1.2px; }
-.topo-node-vm      { fill: #F8F9FA; stroke: #C8CAD0; stroke-width: 0.8px; }
-
-/* ── Status indicator ── */
-.topo-status-ring { fill: #EAF3DE; stroke: #639922; stroke-width: 0.6px; }
-.topo-status-dot  { fill: #3B6D11; }
-
-/* ── Text ── */
-.topo-label-bold { font-size: 11px; font-weight: 600; fill: #1A1D23; }
-.topo-label-sub  { font-size: 10px; font-weight: 400; fill: #5E6470; }
-.topo-label-tiny { font-size: 9px;  font-weight: 400; fill: #9399A6; }
-.topo-ansible-text { fill: #065F46; }
-.topo-ansible-sub  { fill: #0F6E56; }
-.topo-cmb-text     { fill: #78350F; }
-.topo-cmb-sub      { fill: #92400E; }
-
-/* ── Connectors ── */
-.topo-spoke      { stroke: #DDE0E7; stroke-width: 0.8px; }
-.topo-arrow-line { stroke: #1D9E75; stroke-width: 0.8px; }
-.topo-deploy-dash {
-  stroke: #1D9E75;
-  stroke-width: 1px;
-  stroke-dasharray: 5 3;
-}
-
-/* ── Heartbeat dots ── */
-.topo-hb { fill: #D97706; opacity: 0; }
-
-/* ── Pulse rings ── */
-.topo-pulse { stroke: #E09B1A; stroke-width: 1.2px; opacity: 0; }
-
-/* ══════════════════════════════════════════
-   Animations
-   ══════════════════════════════════════════ */
-@media (prefers-reduced-motion: no-preference) {
-  .topo-hb-1 { animation: topo-hb 2.6s ease-in-out infinite 0s;    }
-  .topo-hb-2 { animation: topo-hb 2.6s ease-in-out infinite 0.5s;  }
-  .topo-hb-3 { animation: topo-hb 2.6s ease-in-out infinite 1.0s;  }
-  .topo-hb-4 { animation: topo-hb 2.6s ease-in-out infinite 1.5s;  }
-  .topo-hb-5 { animation: topo-hb 2.6s ease-in-out infinite 2.0s;  }
-
-  .topo-pulse-1 { animation: topo-pulse 2.6s ease-out infinite 0s;   }
-  .topo-pulse-2 { animation: topo-pulse 2.6s ease-out infinite 0.9s; }
-  .topo-pulse-3 { animation: topo-pulse 2.6s ease-out infinite 1.8s; }
-
-  .topo-deploy-dash { animation: topo-dash-flow 1.6s linear infinite; }
-}
-
-@keyframes topo-hb {
-  0%,100% { opacity: 0; }
-  20%     { opacity: 1; }
-  60%     { opacity: 0.4; }
-  85%     { opacity: 0; }
-}
-
-@keyframes topo-pulse {
-  0%   { r: 34px; opacity: 0.55; stroke-width: 1.4px; }
-  100% { r: 62px; opacity: 0;    stroke-width: 0.3px; }
-}
-
-@keyframes topo-dash-flow {
-  to { stroke-dashoffset: -24; }
-}
-
-/* ══════════════════════════════════════════
-   Activity feed
-   ══════════════════════════════════════════ */
-.activity-feed {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
 }
 
-.feed-item {
+.header-tabs .active-tab {
+  color: #1967D2;
+  font-weight: 600;
+}
+
+.header-tabs .active-tab::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: #1967D2;
+}
+
+.badge {
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge.error { background: var(--color-danger); }
+.badge.warning { background: var(--color-warning); }
+
+
+/* ══════════════════════════════════════════
+   Cloudera Grid
+   ══════════════════════════════════════════ */
+.cloudera-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  padding: 2rem;
+  align-items: start;
+}
+
+/* ── Services Pane ── */
+.services-pane {
+  background: #FFF;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.services-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--bg-raised);
-  border-radius: var(--radius-md);
-  border: 0.5px solid transparent;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  flex-direction: column;
+  gap: 4px;
 }
 
-.feed-item:hover {
-  background: #F1F3F8;
-  border-color: var(--border-subtle);
-}
-
-.feed-item p {
-  flex: 1;
-  font-size: 0.78rem;
-  color: var(--text-primary);
+.cluster-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.25rem;
+  color: #1967D2;
+  font-weight: 400;
   margin: 0;
-  line-height: 1.45;
 }
 
-.feed-item .time {
-  font-size: 0.68rem;
-  color: var(--text-tertiary);
-  white-space: nowrap;
-  padding-top: 1px;
-  font-variant-numeric: tabular-nums;
+.runtime-version {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding-left: 28px;
 }
 
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+.services-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.service-row {
+  display: grid;
+  grid-template-columns: 1fr 60px 40px;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.service-name-col {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-icon {
   flex-shrink: 0;
-  margin-top: 4px;
+}
+.status-icon.healthy { color: var(--color-success); }
+.status-icon.warning { color: var(--color-warning); }
+.status-icon.error { color: var(--color-danger); }
+.status-icon.unknown { 
+  width: 14px; 
+  height: 14px; 
+  background: #BDBDBD; 
+  border-radius: 50%;
+  margin: 2px;
 }
 
-.dot.success { background: var(--color-success); }
-.dot.warning { background: var(--color-warning); }
-.dot.danger  { background: var(--color-danger);  }
+.service-type-icon {
+  color: #1967D2;
+}
+
+.service-name {
+  color: #1967D2;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.service-name:hover {
+  text-decoration: underline;
+}
+
+.alert-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.alert-count.warning { color: var(--color-warning); }
+.alert-count.error { color: var(--color-danger); }
+
+.service-actions-col {
+  text-align: right;
+  color: #1967D2;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* ── Charts Pane ── */
+.charts-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.charts-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.charts-header h2 {
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: #222;
+  margin: 0;
+}
+
+.time-filters {
+  display: flex;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: #1967D2;
+  cursor: pointer;
+}
+.time-filters span:hover { text-decoration: underline; }
+.time-filters .active { color: #222; font-weight: 600; }
+
+.chart-card-c {
+  border: 1px solid var(--border-subtle);
+  background: #FFF;
+  border-radius: 2px;
+}
+
+.chart-title-c {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.chart-body-c {
+  padding: 1rem;
+}
+
+.line-chart, .area-chart {
+  width: 100%;
+  height: 100px;
+}
+
+.chart-legend {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: 8px;
+}
 
 /* ══════════════════════════════════════════
    Fade-in on mount

@@ -13,6 +13,7 @@ import { Consumers } from './pages/Consumers';
 import { ConfigEditor } from './pages/ConfigEditor';
 import { ClusterActions } from './pages/ClusterActions';
 import ClusterWizard from './components/ClusterWizard';
+import { DataServices } from './pages/DataServices';
 import './App.css';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/audit" element={<AuditLogs />} />
+            <Route path="/services" element={<DataServices />} />
             {/* Fallback routes for pages not fully fleshed out yet */}
             <Route path="*" element={
               <div className="animate-fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>

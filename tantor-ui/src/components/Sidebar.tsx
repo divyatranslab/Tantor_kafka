@@ -11,14 +11,15 @@ import {
 import './Sidebar.css';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: Server, label: 'Hosts', path: '/hosts' },
+  { icon: LayoutDashboard, label: 'Home', path: '/' },
   { icon: Network, label: 'Clusters', path: '/clusters' },
-  { icon: Package, label: 'Artifacts', path: '/artifacts' },
-  { icon: PlayCircle, label: 'Deployments', path: '/deployments' },
-  { icon: Activity, label: 'Monitoring', path: '/monitoring' },
-  { icon: ShieldAlert, label: 'Alerts', path: '/alerts' },
-  { icon: ShieldAlert, label: 'Audit Logs', path: '/audit' },
+  { icon: Server, label: 'Hosts', path: '/hosts' },
+  { icon: Activity, label: 'Diagnostics', path: '/diagnostics' },
+  { icon: ShieldAlert, label: 'Audits', path: '/audit' },
+  { icon: PlayCircle, label: 'Running Commands', path: '/commands' },
+  { icon: LayoutDashboard, label: 'Data Services', path: '/services' },
+  { icon: Package, label: 'Parcels', path: '/artifacts' },
+  { icon: ShieldAlert, label: 'Administration', path: '/admin' },
 ];
 
 export function Sidebar() {

@@ -61,9 +61,12 @@ public class ConfigController {
         // 2. Optionally push to static file and restart via Agent
         if (request.isApplyToAgents()) {
             // Need to update the DB blob so the agents get the new properties
-            Map<String, Object> dbConfig = Map.of();
+            Map<String, Object> dbConfig = new java.util.HashMap<>();
             if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
-                dbConfig = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+                Map<String, Object> existing = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+                if (existing != null) {
+                    dbConfig.putAll(existing);
+                }
             }
             dbConfig.put(request.getConfigKey(), request.getConfigValue());
             String newConfigStr = objectMapper.writeValueAsString(dbConfig);
