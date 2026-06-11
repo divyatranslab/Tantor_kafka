@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Info, Network } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Info, Network, Wifi, CheckCircle, XCircle } from 'lucide-react';
 import './ClusterWizard.css';
 
 export interface Host {
@@ -99,6 +99,11 @@ export default function ClusterWizard() {
   const [portError, setPortError] = useState('');
   const [installDirError, setInstallDirError] = useState('');
   const [dataDirError, setDataDirError] = useState('');
+
+  // Port check state
+  const [portCheckLoading, setPortCheckLoading] = useState(false);
+  const [portCheckResults, setPortCheckResults] = useState<{host: string; port: number; free: boolean; message: string}[]>([]);
+  const [portCheckDone, setPortCheckDone] = useState(false);
 
   useEffect(() => {
     fetch('/api/v1/ui/hosts')
@@ -413,6 +418,69 @@ export default function ClusterWizard() {
                   <label className="wz-label">Controller Port (Quorum)</label>
                   <input type="number" value={config.controller_port} onChange={e => setConfig({ ...config, controller_port: Number(e.target.value) })} className="wz-input" />
                 </div>
+              )}
+            </div>
+
+            <div className="wz-section-divider"></div>
+            <h4 className="wz-section-title"><Wifi size={16} /> Port Availability Check</h4>
+            
+            <div className="wz-port-check">
+              <div className="wz-port-check-header">
+                <div>
+                  <div className="wz-port-check-title">Check if ports are free on assigned hosts</div>
+                  <div className="wz-port-check-desc">Tests listener port ({config.listener_port}){mode === 'kraft' ? ` and controller port (${config.controller_port})` : ''} on each host.</div>
+                </div>
+                <button
+                  type="button"
+                  className="wz-port-check-btn"
+                  disabled={portCheckLoading || Object.keys(assignments).length === 0}
+                  onClick={async () => {
+                    setPortCheckLoading(true);
+                    setPortCheckResults([]);
+                    setPortCheckDone(false);
+                    const results: {host: string; port: number; free: boolean; message: string}[] = [];
+                    const hostIds = Object.keys(assignments);
+                    const ports = [config.listener_port];
+                    if (mode === 'kraft') ports.push(config.controller_port);
+                    for (const hostId of hostIds) {
+                      for (const p of ports) {
+                        try {
+                          const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-port/${p}`);
+                          if (res.ok) {
+                            const data = await res.json();
+                            results.push({ host: data.host, port: data.port, free: data.free, message: data.message });
+                          } else {
+                            const h = hosts.find(h => h.id === hostId);
+                            results.push({ host: h?.hostname || hostId, port: p, free: false, message: `Failed to reach host` });
+                          }
+                        } catch {
+                          const h = hosts.find(h => h.id === hostId);
+                          results.push({ host: h?.hostname || hostId, port: p, free: false, message: `Connection error` });
+                        }
+                      }
+                    }
+                    setPortCheckResults(results);
+                    setPortCheckDone(true);
+                    setPortCheckLoading(false);
+                  }}
+                >
+                  {portCheckLoading ? <><Loader2 size={14} className="wz-spin" /> Checking...</> : <><Wifi size={14} /> Check Ports</>}
+                </button>
+              </div>
+
+              {portCheckDone && portCheckResults.length > 0 && (
+                <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                  {portCheckResults.map((r, i) => (
+                    <div key={i} className={r.free ? 'wz-port-ok' : 'wz-error-text'} style={{ fontSize: '0.8rem' }}>
+                      {r.free ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                      <span><strong>{r.host}</strong>:{r.port} — {r.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {Object.keys(assignments).length === 0 && (
+                <p className="wz-hint" style={{ marginTop: '0.5rem' }}>Assign hosts in the previous step first.</p>
               )}
             </div>
 
