@@ -1,0 +1,15 @@
+.ksqldb-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ksqldb-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* We reuse styles from KafkaConnect via the same class names or generic component classes */
+/* If needed we can add KSQL specific overrides here */
