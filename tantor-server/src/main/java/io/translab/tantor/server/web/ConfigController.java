@@ -28,11 +28,11 @@ public class ConfigController {
     private final ActivityAlertService activityAlertService;
 
     @GetMapping
-    public ResponseEntity<Map<Integer, Map<String, String>>> getBrokerConfigs(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<Integer, Map<String, Object>>> getBrokerConfigs(@PathVariable UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
 
-        Map<Integer, Map<String, String>> configs = kafkaAdminService.getBrokerConfigs(clusterId);
+        Map<Integer, Map<String, Object>> configs = kafkaAdminService.getBrokerConfigs(clusterId);
         return ResponseEntity.ok(configs);
     }
 
@@ -42,7 +42,7 @@ public class ConfigController {
         if (cluster == null) return ResponseEntity.notFound().build();
 
         // 1. Update live dynamically via AdminClient
-        Map<Integer, Map<String, String>> currentConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+        Map<Integer, Map<String, Object>> currentConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
         boolean dynamicSuccess = true;
         String dynamicError = null;
         for (Integer brokerId : currentConfigs.keySet()) {

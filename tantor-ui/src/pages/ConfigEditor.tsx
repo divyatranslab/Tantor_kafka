@@ -4,7 +4,7 @@ import { Save, AlertTriangle, RefreshCw, Server } from 'lucide-react';
 
 interface BrokerConfigs {
   [brokerId: string]: {
-    [key: string]: string;
+    [key: string]: { value: string; isReadOnly: boolean };
   };
 }
 
@@ -19,6 +19,7 @@ export function ConfigEditor() {
   const [saving, setSaving] = useState(false);
   const [applyToAgents, setApplyToAgents] = useState(false);
   const [restart, setRestart] = useState(false);
+  const [isCurrentlyStatic, setIsCurrentlyStatic] = useState(false);
 
   const fetchConfigs = async () => {
     setLoading(true);
@@ -42,6 +43,12 @@ export function ConfigEditor() {
       return;
     }
 
+    if (isCurrentlyStatic && (!applyToAgents || !restart)) {
+      if (!confirm("Warning: You are updating a STATIC (read-only) configuration. It will NOT take effect unless you persist to server.properties and restart. Proceed anyway?")) {
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const res = await fetch(`/api/v1/clusters/${id}/config/bulk`, {
@@ -58,6 +65,7 @@ export function ConfigEditor() {
         alert(`Successfully applied config ${configKey} to all brokers.`);
         setConfigKey('');
         setConfigValue('');
+        setIsCurrentlyStatic(false);
         fetchConfigs();
       } else {
         try {
@@ -95,11 +103,21 @@ export function ConfigEditor() {
 
         <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.5rem' }}>Configuration Key</label>
+            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.5rem' }}>
+              Configuration Key
+              {isCurrentlyStatic ? (
+                <span style={{ marginLeft: '8px', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Requires Restart</span>
+              ) : configKey ? (
+                <span style={{ marginLeft: '8px', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>Live Updatable</span>
+              ) : null}
+            </label>
             <input 
               type="text" 
               value={configKey} 
-              onChange={e => setConfigKey(e.target.value)} 
+              onChange={e => {
+                setConfigKey(e.target.value);
+                setIsCurrentlyStatic(false);
+              }} 
               placeholder="e.g. log.retention.hours"
               style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontFamily: 'monospace' }}
             />
@@ -118,11 +136,11 @@ export function ConfigEditor() {
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', gap: '1.5rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-              <input type="checkbox" checked={applyToAgents} onChange={e => setApplyToAgents(e.target.checked)} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: isCurrentlyStatic ? '#92400e' : 'inherit', fontWeight: isCurrentlyStatic ? 600 : 400 }}>
+              <input type="checkbox" checked={applyToAgents} onChange={e => { setApplyToAgents(e.target.checked); if (!e.target.checked) setRestart(false); }} />
               Persist to server.properties
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', opacity: applyToAgents ? 1 : 0.5 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', opacity: applyToAgents ? 1 : 0.5, color: isCurrentlyStatic ? '#92400e' : 'inherit', fontWeight: isCurrentlyStatic ? 600 : 400 }}>
               <input type="checkbox" checked={restart} onChange={e => setRestart(e.target.checked)} disabled={!applyToAgents} />
               Restart service immediately
             </label>
@@ -144,7 +162,7 @@ export function ConfigEditor() {
         ) : (
           <div style={{ padding: '1rem', display: 'flex', gap: '1rem', overflowX: 'auto' }}>
             {Object.entries(brokerConfigs).map(([brokerId, configs]) => (
-              <div key={brokerId} style={{ minWidth: '400px', flex: 1, border: '1px solid var(--border-color)', borderRadius: '0.5rem' }}>
+              <div key={brokerId} style={{ minWidth: '450px', flex: 1, border: '1px solid var(--border-color)', borderRadius: '0.5rem' }}>
                 <div style={{ padding: '0.75rem', backgroundColor: '#f9fafb', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Server size={18} color="#4b5563" />
                   <span style={{ fontWeight: 500 }}>Broker {brokerId}</span>
@@ -155,20 +173,43 @@ export function ConfigEditor() {
                       {Object.entries(configs)
                         .filter(([k, _]) => !k.startsWith('ssl.') && !k.startsWith('sasl.')) // hide secrets
                         .sort(([a], [b]) => a.localeCompare(b))
-                        .map(([key, value]) => (
+                        .map(([key, configObj]) => (
                         <tr 
                           key={key} 
                           onClick={() => {
                             setConfigKey(key);
-                            setConfigValue(value);
+                            setConfigValue(configObj.value);
+                            setIsCurrentlyStatic(configObj.isReadOnly);
+                            if (configObj.isReadOnly) {
+                              setApplyToAgents(true);
+                              setRestart(true);
+                            } else {
+                              setApplyToAgents(false);
+                              setRestart(false);
+                            }
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
                           style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
                           onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)'}
                           onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
-                          <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>{key}</td>
-                          <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem', wordBreak: 'break-all' }}>{value}</td>
+                          <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>
+                            {key}
+                            <span style={{ 
+                                marginLeft: '8px', 
+                                fontSize: '0.65rem', 
+                                padding: '2px 6px', 
+                                borderRadius: '4px', 
+                                background: configObj.isReadOnly ? '#fef3c7' : '#dcfce7', 
+                                color: configObj.isReadOnly ? '#92400e' : '#166534', 
+                                border: `1px solid ${configObj.isReadOnly ? '#fde68a' : '#bbf7d0'}`,
+                                verticalAlign: 'middle',
+                                float: 'right'
+                              }}>
+                              {configObj.isReadOnly ? 'STATIC' : 'DYNAMIC'}
+                            </span>
+                          </td>
+                          <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem', wordBreak: 'break-all', maxWidth: '200px' }}>{configObj.value}</td>
                         </tr>
                       ))}
                     </tbody>

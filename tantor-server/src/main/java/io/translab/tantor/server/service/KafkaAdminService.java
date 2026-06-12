@@ -186,7 +186,7 @@ public class KafkaAdminService {
 
     // --- Configuration Operations ---
 
-    public Map<Integer, Map<String, String>> getBrokerConfigs(UUID clusterId) {
+    public Map<Integer, Map<String, Object>> getBrokerConfigs(UUID clusterId) {
         AdminClient client = getAdminClient(clusterId);
         try {
             Collection<org.apache.kafka.common.Node> nodes = client.describeCluster().nodes().get();
@@ -198,10 +198,15 @@ public class KafkaAdminService {
             Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> configs = 
                     client.describeConfigs(resources).all().get();
 
-            Map<Integer, Map<String, String>> result = new HashMap<>();
+            Map<Integer, Map<String, Object>> result = new HashMap<>();
             configs.forEach((res, conf) -> {
-                Map<String, String> brokerConf = new HashMap<>();
-                conf.entries().forEach(entry -> brokerConf.put(entry.name(), entry.value()));
+                Map<String, Object> brokerConf = new HashMap<>();
+                conf.entries().forEach(entry -> {
+                    Map<String, Object> details = new HashMap<>();
+                    details.put("value", entry.value());
+                    details.put("isReadOnly", entry.isReadOnly());
+                    brokerConf.put(entry.name(), details);
+                });
                 result.put(Integer.parseInt(res.name()), brokerConf);
             });
             return result;
