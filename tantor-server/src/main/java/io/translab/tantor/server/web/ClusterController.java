@@ -106,7 +106,7 @@ public class ClusterController {
 
             String finalArtifactUrl = request.getArtifactUrl();
             if (finalArtifactUrl != null && finalArtifactUrl.contains("localhost")) {
-                finalArtifactUrl = finalArtifactUrl.replace("localhost", "192.168.3.142");
+                finalArtifactUrl = finalArtifactUrl.replace("localhost", "192.168.3.91");
             }
 
             deploymentService.deployKafkaToHost(

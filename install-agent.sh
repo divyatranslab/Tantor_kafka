@@ -47,7 +47,7 @@ echo "[MOCK] Generating self-signed certs for mTLS..."
 openssl req -x509 -newkey rsa:4096 -keyout $CERT_PATH/agent.key -out $CERT_PATH/agent.crt -days 365 -nodes -subj "/CN=$(hostname)" 2>/dev/null
 cp $CERT_PATH/agent.crt $CERT_PATH/ca.crt # Mock CA
 
-HOST_ID="agent-$(hostname)-$(date +%s)"
+HOST_ID="agent-$(hostname)"
 
 cat <<EOF > /etc/tantor/config/agent.yaml
 agent:

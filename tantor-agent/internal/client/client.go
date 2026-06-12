@@ -93,7 +93,12 @@ func (c *APIClient) ReportTaskResult(result *api.TaskResult) error {
 }
 
 func (c *APIClient) DownloadArtifact(url, destPath string) (string, error) {
-	resp, err := c.httpClient.Get(url)
+	downloadClient := &http.Client{
+		Transport: c.httpClient.Transport,
+		Timeout:   10 * time.Minute,
+	}
+
+	resp, err := downloadClient.Get(url)
 	if err != nil {
 		return "", err
 	}

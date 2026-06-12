@@ -31,3 +31,8 @@ go*.windows-amd64.zip
 jdk-21.0.3+9/
 server.log
 server.err
+
+# Artifacts and Heavy Files
+repository/
+test.tgz
+tantor-agent-linux
