@@ -221,8 +221,8 @@ export default function ClusterWizard() {
       });
 
       if (response.ok) {
-        alert('Deployment initialized successfully!');
-        navigate('/clusters');
+        const data = await response.json();
+        navigate(`/clusters/${data.id}`);
       } else {
         alert('Deployment failed.');
       }

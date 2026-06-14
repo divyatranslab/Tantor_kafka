@@ -18,8 +18,17 @@ public class TopicsController {
     private final KafkaAdminService kafkaAdminService;
 
     @GetMapping("/topics")
-    public ResponseEntity<List<Map<String, Object>>> listTopics(@PathVariable UUID clusterId) {
-        return ResponseEntity.ok(kafkaAdminService.listTopics(clusterId));
+    public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
+            @PathVariable UUID clusterId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "name") String sortBy) {
+        
+        // Prevent huge page requests
+        if (size > 500) size = 500;
+        
+        return ResponseEntity.ok(kafkaAdminService.listTopicsPaginated(clusterId, page, size, search, sortBy));
     }
 
     @PostMapping("/topics")

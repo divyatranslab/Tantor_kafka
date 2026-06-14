@@ -156,10 +156,10 @@
   font-weight: 500;
   padding: 4px 10px;
   border-radius: 999px;
-  background: var(--color-success-light);
-  color: var(--color-success);
   white-space: nowrap;
   flex-shrink: 0;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
 }
 
 .cluster-status-badge::before {
@@ -167,7 +167,37 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--color-success);
+  background: currentColor;
+}
+
+.cluster-status-badge.success,
+.cluster-status-badge.active {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.cluster-status-badge.failed {
+  background: #fef2f2;
+  color: var(--color-danger);
+}
+
+.cluster-status-badge.pending,
+.cluster-status-badge.running,
+.cluster-status-badge.validating,
+.cluster-status-badge.deleting {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+.cluster-status-badge.pending::before,
+.cluster-status-badge.running::before,
+.cluster-status-badge.validating::before,
+.cluster-status-badge.deleting::before {
+  display: none; /* Hide dot if spinning */
+}
+
+.cluster-status-badge.external {
+  background: #f3f4f6;
+  color: #4b5563;
 }
 
 /* ── Meta rows ── */

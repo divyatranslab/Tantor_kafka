@@ -10,6 +10,7 @@ interface ClusterInfo {
   mode:         string;
   environment:  string;
   createdAt:    string;
+  status:       string;
   nodeCount:    number;
 }
 
@@ -36,7 +37,16 @@ export function Clusters() {
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
       if (res.ok) {
-        setClusters(prev => prev.filter(c => c.id !== id));
+        // Optimistically set to DELETING, or remove if external
+        setClusters(prev => prev.map(c => {
+          if (c.id === id) {
+            return { ...c, status: c.mode === 'EXTERNAL' ? 'DELETED' : 'DELETING' };
+          }
+          return c;
+        }).filter(c => c.status !== 'DELETED'));
+        
+        // Refresh from server after a short delay to get actual status
+        setTimeout(fetchClusters, 2000);
       } else {
         alert('Failed to delete cluster.');
       }
@@ -93,9 +103,13 @@ export function Clusters() {
           {clusters.map(cluster => (
             <div 
               key={cluster.id} 
-              className="cluster-card"
-              style={{cursor: 'pointer', position: 'relative'}}
-              onClick={() => navigate(`/clusters/${cluster.id}/topics`)}
+              className={`cluster-card ${cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' ? 'disabled' : ''}`}
+              style={{cursor: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' ? 'default' : 'pointer', position: 'relative', opacity: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' ? 0.7 : 1}}
+              onClick={() => {
+                if (cluster.status === 'SUCCESS' || cluster.mode === 'EXTERNAL') {
+                  navigate(`/clusters/${cluster.id}/topics`);
+                }
+              }}
             >
 
               <div className="cluster-card-header">
@@ -107,8 +121,15 @@ export function Clusters() {
                   <span className="cluster-version">Kafka {cluster.kafkaVersion}</span>
                 </div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <span className={`cluster-status-badge ${cluster.mode === 'EXTERNAL' ? 'external' : ''}`}>
-                    {cluster.mode === 'EXTERNAL' ? 'External' : 'Active'}
+                  <span className={`cluster-status-badge ${cluster.mode === 'EXTERNAL' ? 'external' : (cluster.status || 'PENDING').toLowerCase()}`}>
+                    {cluster.mode === 'EXTERNAL' ? 'External' : (
+                      <>
+                        {['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(cluster.status) && (
+                          <RefreshCw size={12} className="spin" style={{ marginRight: '4px' }} />
+                        )}
+                        {cluster.status === 'SUCCESS' ? 'Active' : cluster.status}
+                      </>
+                    )}
                   </span>
                   <button 
                     className="btn" 

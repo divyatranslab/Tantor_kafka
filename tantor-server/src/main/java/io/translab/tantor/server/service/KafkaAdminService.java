@@ -104,34 +104,89 @@ public class KafkaAdminService {
         adminClients.clear();
     }
 
-    // --- Topic Operations ---
-
     public List<Map<String, Object>> listTopics(UUID clusterId) {
         AdminClient client = getAdminClient(clusterId);
         try {
             ListTopicsOptions options = new ListTopicsOptions().listInternal(false);
             Set<String> topicNames = client.listTopics(options).names().get();
-
             DescribeTopicsResult describeTopicsResult = client.describeTopics(topicNames);
             Map<String, TopicDescription> descriptions = describeTopicsResult.allTopicNames().get();
 
             return descriptions.values().stream().map(desc -> {
                 Map<String, Object> map = new HashMap<>();
                 map.put("name", desc.name());
-                map.put("partitionCount", desc.partitions().size());
-                
-                int replicationFactor = desc.partitions().isEmpty() ? 0 : desc.partitions().get(0).replicas().size();
-                map.put("replicationFactor", replicationFactor);
-                
-                long underReplicated = desc.partitions().stream()
-                        .filter(p -> p.replicas().size() > p.isr().size())
-                        .count();
-                map.put("underReplicated", underReplicated);
+                map.put("underReplicated", desc.partitions().stream().filter(p -> p.replicas().size() > p.isr().size()).count());
                 return map;
             }).collect(Collectors.toList());
-
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to list topics", e);
+            throw new RuntimeException("Failed to list topics: " + e.getMessage());
+        }
+    }
+
+    public io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto> listTopicsPaginated(UUID clusterId, int page, int size, String search, String sortBy) {
+        AdminClient client = getAdminClient(clusterId);
+        try {
+            ListTopicsOptions options = new ListTopicsOptions().listInternal(false);
+            Set<String> allTopicNames = client.listTopics(options).names().get();
+
+            // Filter and Sort in memory
+            List<String> filteredNames = allTopicNames.stream()
+                    .filter(name -> search == null || search.isEmpty() || name.toLowerCase().contains(search.toLowerCase()))
+                    .sorted((a, b) -> {
+                        if ("name".equalsIgnoreCase(sortBy)) return a.compareToIgnoreCase(b);
+                        return a.compareToIgnoreCase(b); // Default fallback
+                    })
+                    .collect(Collectors.toList());
+
+            // Pagination calculation
+            int totalElements = filteredNames.size();
+            int totalPages = (int) Math.ceil((double) totalElements / size);
+            
+            // Validate page bounds
+            if (page < 0) page = 0;
+            if (page >= totalPages && totalPages > 0) page = totalPages - 1;
+            
+            int start = page * size;
+            int end = Math.min(start + size, totalElements);
+            
+            List<String> pagedNames = filteredNames.subList(start, end);
+
+            // Fetch metadata ONLY for the current page
+            List<io.translab.tantor.server.dto.TopicSummaryDto> content = new ArrayList<>();
+            if (!pagedNames.isEmpty()) {
+                DescribeTopicsResult describeTopicsResult = client.describeTopics(pagedNames);
+                Map<String, TopicDescription> descriptions = describeTopicsResult.allTopicNames().get();
+
+                for (String name : pagedNames) {
+                    TopicDescription desc = descriptions.get(name);
+                    if (desc != null) {
+                        int replicationFactor = desc.partitions().isEmpty() ? 0 : desc.partitions().get(0).replicas().size();
+                        long underReplicated = desc.partitions().stream()
+                                .filter(p -> p.replicas().size() > p.isr().size())
+                                .count();
+
+                        content.add(io.translab.tantor.server.dto.TopicSummaryDto.builder()
+                                .name(desc.name())
+                                .partitionCount(desc.partitions().size())
+                                .replicationFactor(replicationFactor)
+                                .underReplicated(underReplicated)
+                                .build());
+                    }
+                }
+            }
+
+            return io.translab.tantor.server.dto.PaginatedResponse.<io.translab.tantor.server.dto.TopicSummaryDto>builder()
+                    .content(content)
+                    .page(page)
+                    .size(size)
+                    .totalElements(totalElements)
+                    .totalPages(totalPages)
+                    .hasNext(page < totalPages - 1)
+                    .build();
+
+        } catch (InterruptedException | ExecutionException e) {
+            log.error("Failed to list topics paginated", e);
             throw new RuntimeException("Failed to list topics: " + e.getMessage());
         }
     }

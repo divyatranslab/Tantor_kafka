@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 public class AgentService {
     private final HostRepository hostRepository;
     private final TaskRepository taskRepository;
+    private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -105,9 +106,49 @@ public class AgentService {
                 task.setErrorMsg(dto.getErrorMsg());
                 taskRepository.save(task);
                 log.info("Task {} completed with status: {}", taskId, dto.getStatus());
+
+                // Propagate to Cluster
+                hostRepository.findById(task.getHostId()).ifPresent(host -> {
+                    if (host.getClusterId() != null) {
+                        clusterRepository.findById(host.getClusterId()).ifPresent(cluster -> {
+                            updateClusterStatus(cluster, task);
+                        });
+                    }
+                });
             });
         } catch (IllegalArgumentException e) {
             log.error("Invalid task ID format: {}", dto.getTaskId(), e);
         }
+    }
+
+    private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
+        String command = currentTask.getCommand();
+        String status = currentTask.getStatus();
+        
+        if ("FAILED".equals(status)) {
+            cluster.setStatus("FAILED");
+        } else if ("VALIDATING".equals(status)) {
+            cluster.setStatus("VALIDATING");
+        } else if ("RUNNING".equals(status) || "IN_PROGRESS".equals(status)) {
+            cluster.setStatus("DELETE_CLUSTER".equals(command) ? "DELETING" : "RUNNING");
+        } else if ("SUCCESS".equals(status)) {
+            boolean allSuccess = true;
+            for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
+                List<Task> hostTasks = taskRepository.findByHostIdAndCommandOrderByCreatedAtDesc(svc.getHostId(), command);
+                if (hostTasks.isEmpty() || !"SUCCESS".equals(hostTasks.get(0).getStatus())) {
+                    allSuccess = false;
+                    break;
+                }
+            }
+            if (allSuccess) {
+                if ("DELETE_CLUSTER".equals(command)) {
+                    cluster.setStatus("DELETED");
+                    cluster.setDeletedAt(java.time.Instant.now());
+                } else {
+                    cluster.setStatus("SUCCESS");
+                }
+            }
+        }
+        clusterRepository.save(cluster);
     }
 }

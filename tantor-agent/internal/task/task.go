@@ -91,6 +91,15 @@ func (e *Engine) pollTasks() {
 }
 
 func (e *Engine) executeTask(t api.Task) {
+	// Report intermediate status: RUNNING
+	if err := e.client.ReportTaskResult(&api.TaskResult{
+		TaskID: t.TaskID,
+		HostID: e.cfg.Agent.HostID,
+		Status: "RUNNING",
+	}); err != nil {
+		slog.Error("Failed to report RUNNING status", "err", err)
+	}
+
 	result, err := e.deployEngine.Execute(context.Background(), &t)
 	if err != nil {
 		slog.Error("Task execution failed with system error", "err", err)

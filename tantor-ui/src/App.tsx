@@ -12,6 +12,8 @@ import { Topics } from './pages/Topics';
 import { Consumers } from './pages/Consumers';
 import { ConfigEditor } from './pages/ConfigEditor';
 import { ClusterActions } from './pages/ClusterActions';
+import { DeploymentLogs } from './pages/DeploymentLogs';
+import { Brokers } from './pages/Brokers';
 import ClusterWizard from './components/ClusterWizard';
 import { DataServices } from './pages/DataServices';
 import './App.css';
@@ -28,10 +30,12 @@ function App() {
             <Route path="/clusters" element={<Clusters />} />
             <Route path="/clusters/new" element={<ClusterWizard />} />
             <Route path="/clusters/:id" element={<ClusterDetails />}>
+              <Route path="brokers" element={<Brokers />} />
               <Route path="topics" element={<Topics />} />
               <Route path="consumers" element={<Consumers />} />
               <Route path="config" element={<ConfigEditor />} />
               <Route path="actions" element={<ClusterActions />} />
+              <Route path="logs" element={<DeploymentLogs />} />
             </Route>
             <Route path="/artifacts" element={<Artifacts />} />
             <Route path="/monitoring" element={<Monitoring />} />

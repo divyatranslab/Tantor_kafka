@@ -37,6 +37,11 @@ public class Cluster {
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
 
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    private String status = "PENDING"; // PENDING, RUNNING, VALIDATING, SUCCESS, FAILED, DELETING, DELETED
+
     @OneToMany(mappedBy = "cluster", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ClusterServiceAssignment> services;
 }

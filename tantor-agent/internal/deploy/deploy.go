@@ -54,6 +54,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.restartService(ctx, t)
 	case "UPDATE_KAFKA_CONFIG":
 		return e.updateKafkaConfig(ctx, t)
+	case "DELETE_CLUSTER":
+		return e.deleteCluster(ctx, t)
 	default:
 		return &api.TaskResult{
 			TaskID:   t.TaskID,
@@ -62,6 +64,20 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 			ErrorMsg: fmt.Sprintf("Unknown command: %s", t.Command),
 		}, nil
 	}
+}
+
+func (e *Engine) deleteCluster(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Clean(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Cluster cleanup failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{
+		TaskID:    t.TaskID,
+		HostID:    e.cfg.Agent.HostID,
+		Status:    "SUCCESS",
+		LogOutput: logOutput,
+	}, nil
 }
 
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {

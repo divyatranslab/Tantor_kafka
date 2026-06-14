@@ -23,13 +23,16 @@ public class ClusterController {
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
+    private final io.translab.tantor.server.repository.TaskRepository taskRepository;
+    private final io.translab.tantor.server.repository.HostRepository hostRepository;
+    private final io.translab.tantor.server.service.BrokerMetricsCacheService brokerMetricsCacheService;
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
 
     @GetMapping
     public List<Map<String, Object>> listClusters() {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Cluster c : clusterRepository.findAll()) {
+        for (Cluster c : clusterRepository.findByStatusNot("DELETED")) {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -37,6 +40,7 @@ public class ClusterController {
             m.put("mode", c.getMode());
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
+            m.put("status", c.getStatus());
             m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
             m.put("bootstrapServers", c.getBootstrapServers());
             result.add(m);
@@ -44,8 +48,50 @@ public class ClusterController {
         return result;
     }
 
+    @GetMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> getCluster(@PathVariable java.util.UUID id) {
+        return clusterRepository.findById(id).map(c -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", c.getId());
+            m.put("name", c.getName());
+            m.put("kafkaVersion", c.getKafkaVersion());
+            m.put("mode", c.getMode());
+            m.put("environment", c.getEnvironment());
+            m.put("createdAt", c.getCreatedAt());
+            m.put("status", c.getStatus());
+            m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
+            m.put("bootstrapServers", c.getBootstrapServers());
+            return ResponseEntity.ok(m);
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/tasks")
+    public ResponseEntity<List<io.translab.tantor.server.domain.Task>> getClusterTasks(@PathVariable java.util.UUID id) {
+        return clusterRepository.findById(id).map(cluster -> {
+            if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
+                return ResponseEntity.ok(java.util.Collections.<io.translab.tantor.server.domain.Task>emptyList());
+            }
+            List<String> hostIds = cluster.getServices().stream()
+                .map(io.translab.tantor.server.domain.ClusterServiceAssignment::getHostId)
+                .collect(Collectors.toList());
+            List<io.translab.tantor.server.domain.Task> tasks = taskRepository.findByHostIdInOrderByCreatedAtDesc(hostIds);
+            return ResponseEntity.ok(tasks);
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/brokers")
+    public ResponseEntity<Map<String, Object>> getClusterBrokers(@PathVariable java.util.UUID id) {
+        return clusterRepository.findById(id).map(cluster -> {
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+            Map<String, Object> response = new HashMap<>();
+            response.put("clusterId", cluster.getId());
+            response.put("brokers", brokers);
+            return ResponseEntity.ok(response);
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
     @PostMapping("/deploy")
-    public ResponseEntity<Void> deployCluster(@RequestBody DeployClusterRequest request) {
+    public ResponseEntity<Map<String, String>> deployCluster(@RequestBody DeployClusterRequest request) {
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
@@ -71,6 +117,14 @@ public class ClusterController {
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
+
+        // Update host cluster_id references
+        for (ServiceAssignmentReq sa : request.getServices()) {
+            hostRepository.findById(sa.getHost_id()).ifPresent(host -> {
+                host.setClusterId(cluster.getId());
+                hostRepository.save(host);
+            });
+        }
 
         // 2. Build quorum voters string for KRaft
         // Find all controllers or broker_controllers
@@ -106,7 +160,8 @@ public class ClusterController {
 
             String finalArtifactUrl = request.getArtifactUrl();
             if (finalArtifactUrl != null && finalArtifactUrl.contains("localhost")) {
-                finalArtifactUrl = finalArtifactUrl.replace("localhost", "192.168.3.142");
+                // Keep localhost so the agent connects via the SSH tunnel to port 8081
+                finalArtifactUrl = finalArtifactUrl.replace("localhost", "127.0.0.1");
             }
 
             deploymentService.deployKafkaToHost(
@@ -123,7 +178,7 @@ public class ClusterController {
         
         activityAlertService.logActivity("INFO", "Initialized deployment for cluster: " + request.getName(), cluster.getId());
         
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(Map.of("id", cluster.getId().toString()));
     }
 
     @PostMapping("/external")
@@ -135,6 +190,7 @@ public class ClusterController {
         cluster.setEnvironment(request.getEnvironment());
         cluster.setBootstrapServers(request.getBootstrapServers());
         cluster.setConfigJson("{}");
+        cluster.setStatus("SUCCESS");
         
         clusterRepository.save(cluster);
         
@@ -145,12 +201,37 @@ public class ClusterController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteCluster(@PathVariable java.util.UUID id) {
-        if (clusterRepository.existsById(id)) {
-            clusterRepository.deleteById(id);
-            activityAlertService.logActivity("INFO", "Deleted cluster", id);
+        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
+        if (optionalCluster.isPresent()) {
+            Cluster cluster = optionalCluster.get();
+            if ("EXTERNAL".equals(cluster.getMode())) {
+                cluster.setStatus("DELETED");
+                cluster.setDeletedAt(java.time.Instant.now());
+                clusterRepository.save(cluster);
+                activityAlertService.logActivity("INFO", "Deleted external cluster", id);
+            } else {
+                cluster.setStatus("DELETING");
+                clusterRepository.save(cluster);
+                if (cluster.getServices() != null) {
+                    for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
+                        deploymentService.deleteClusterFromHost(svc.getHostId());
+                    }
+                }
+                activityAlertService.logActivity("INFO", "Initiated cleanup for cluster", id);
+            }
             return ResponseEntity.ok().build();
+        } else {
+            return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/force-delete/{id}")
+    public ResponseEntity<Void> forceDeleteCluster(@PathVariable java.util.UUID id) {
+        clusterRepository.findById(id).ifPresent(cluster -> {
+            cluster.setStatus("DELETED");
+            clusterRepository.save(cluster);
+        });
+        return ResponseEntity.ok().build();
     }
 
     @Data

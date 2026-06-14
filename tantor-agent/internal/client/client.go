@@ -47,7 +47,7 @@ func NewAPIClient(cfg *config.Config) (*APIClient, error) {
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
 	client := &http.Client{
 		Transport: transport,
-		Timeout:   30 * time.Second,
+		Timeout:   10 * time.Minute,
 	}
 
 	return &APIClient{
