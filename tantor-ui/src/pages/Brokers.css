@@ -1,134 +1,241 @@
+/* ══════════════════════════════════════════
+   Brokers — white redesign
+   ══════════════════════════════════════════ */
+
 .brokers-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
+  padding: 20px;
+  background: #f5f4f1;
+  min-height: 100%;
 }
 
+/* ── Overview cards ── */
 .brokers-overview {
-  display: flex;
-  gap: 20px;
-  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
 .metric-card {
-  flex: 1;
+  background: #ffffff;
+  border: 0.5px solid #e8e6e1;
+  border-radius: 10px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
-  gap: 15px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border-color);
-  padding: 15px 20px;
-  border-radius: 8px;
+  gap: 13px;
 }
 
 .metric-icon {
-  padding: 10px;
+  width: 36px;
+  height: 36px;
   border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
-.metric-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.metric-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.metric-icon.purple { background: rgba(139, 92, 246, 0.1); color: #8b5cf6; }
+.metric-icon.blue   { background: #e6f1fb; color: #185FA5; }
+.metric-icon.green  { background: #eaf3de; color: #3B6D11; }
+.metric-icon.purple { background: #eeedfe; color: #534AB7; }
 
 .metric-info {
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 
 .metric-info .label {
-  font-size: 12px;
-  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 500;
   text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #a0a099;
 }
 
 .metric-info .value {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 2px 0;
+  font-size: 22px;
+  font-weight: 500;
+  color: #1a1a18;
+  line-height: 1.1;
 }
 
 .metric-info .subtext {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: 11px;
+  color: #b0aea8;
+  margin-top: 1px;
 }
 
+/* ── Controls bar ── */
 .brokers-controls {
-  padding: 15px 20px;
+  background: #ffffff;
+  border: 0.5px solid #e8e6e1;
+  border-radius: 10px;
+  padding: 12px 16px;
   display: flex;
-  gap: 15px;
+  gap: 10px;
   align-items: center;
 }
 
 .search-input {
-  width: 300px;
-  background: var(--bg-main);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  padding: 8px 12px;
-  border-radius: 4px;
+  width: 280px;
+  background: #f8f7f4;
+  border: 0.5px solid #e2e0db;
+  color: #1a1a18;
+  padding: 7px 11px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.search-input::placeholder {
+  color: #b0aea8;
 }
 
 .search-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
+  border-color: #378ADD;
+  background: #ffffff;
 }
 
+.brokers-controls select {
+  background: #f8f7f4;
+  border: 0.5px solid #e2e0db;
+  color: #1a1a18;
+  padding: 7px 11px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+
+.brokers-controls select:focus {
+  border-color: #378ADD;
+}
+
+/* ── Table container ── */
 .brokers-table-container {
-  overflow-x: auto;
+  background: #ffffff;
+  border: 0.5px solid #e8e6e1;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+/* ── Table ── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.data-table thead {
+  background: #fafaf8;
+  border-bottom: 0.5px solid #e8e6e1;
+}
+
+.data-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: #a0a099;
+  white-space: nowrap;
 }
 
 .data-table th.sortable {
   cursor: pointer;
   user-select: none;
+  transition: color 0.1s ease;
 }
 
 .data-table th.sortable:hover {
-  background: rgba(255, 255, 255, 0.05);
+  color: #1a1a18;
 }
 
+.data-table tbody tr {
+  border-bottom: 0.5px solid #f0eeea;
+  transition: background 0.1s ease;
+}
+
+.data-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: #fafaf8;
+}
+
+.data-table td {
+  padding: 11px 14px;
+  color: #1a1a18;
+  vertical-align: middle;
+}
+
+/* ── Broker ID cell ── */
 .broker-id-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-weight: 500;
 }
 
+.text-green  { color: #1D9E75; }
+.text-yellow { color: #BA7517; }
+.text-red    { color: #A32D2D; }
+.text-gray   { color: #c0beb8; }
+
+/* Controller badge */
 .controller-badge {
-  background: #3b82f6;
-  color: white;
-  font-size: 10px;
-  font-weight: bold;
+  background: #185FA5;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 600;
   width: 16px;
   height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
+  letter-spacing: 0;
 }
 
+/* ── Role badge ── */
 .role-badge {
-  background: rgba(255, 255, 255, 0.1);
+  background: #f5f4f1;
+  border: 0.5px solid #e2e0db;
+  color: #5f5e5a;
   padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
+/* ── Metric cell (with progress bar) ── */
 .metric-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 120px;
+  gap: 5px;
+  min-width: 100px;
 }
 
 .metric-val {
-  font-size: 13px;
-  font-family: monospace;
+  font-size: 12.5px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #1a1a18;
 }
 
+/* ── Progress bar ── */
 .progress-bar-container {
   width: 100%;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  height: 3px;
+  background: #f0eeea;
   border-radius: 2px;
   overflow: hidden;
 }
@@ -139,14 +246,39 @@
   transition: width 0.3s ease;
 }
 
-.bg-blue { background-color: #3b82f6; }
-.bg-yellow { background-color: #f59e0b; }
-.bg-red { background-color: #ef4444; }
+.bg-blue   { background: #378ADD; }
+.bg-yellow { background: #BA7517; }
+.bg-red    { background: #A32D2D; }
 
+/* ── Misc ── */
+.font-mono {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #5f5e5a;
+}
+
+.text-muted { color: #a0a099; }
+.text-sm    { font-size: 11.5px; }
+.text-center { text-align: center; }
+.py-4       { padding: 16px 0; }
+
+/* ── Error alert ── */
 .error-alert {
-  background: rgba(239, 68, 68, 0.1);
-  border-left: 4px solid #ef4444;
-  color: #fca5a5;
-  padding: 12px 16px;
-  border-radius: 4px;
+  background: #fcebeb;
+  border: 0.5px solid #e8b4b4;
+  border-left: 3px solid #A32D2D;
+  color: #791F1F;
+  padding: 11px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+/* ── Loading ── */
+.state-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-size: 13px;
+  color: #a0a099;
 }

@@ -11,6 +11,7 @@ import { ClusterDetails } from './pages/ClusterDetails';
 import { Topics } from './pages/Topics';
 import { Consumers } from './pages/Consumers';
 import { ConfigEditor } from './pages/ConfigEditor';
+import { Partitions } from './pages/Partitions';
 import { ClusterActions } from './pages/ClusterActions';
 import { DeploymentLogs } from './pages/DeploymentLogs';
 import { Brokers } from './pages/Brokers';
@@ -31,6 +32,7 @@ function App() {
             <Route path="/clusters/new" element={<ClusterWizard />} />
             <Route path="/clusters/:id" element={<ClusterDetails />}>
               <Route path="brokers" element={<Brokers />} />
+              <Route path="partitions" element={<Partitions />} />
               <Route path="topics" element={<Topics />} />
               <Route path="consumers" element={<Consumers />} />
               <Route path="config" element={<ConfigEditor />} />

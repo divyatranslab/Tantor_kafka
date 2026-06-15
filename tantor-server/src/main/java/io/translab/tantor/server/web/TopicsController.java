@@ -16,6 +16,7 @@ import java.util.UUID;
 public class TopicsController {
 
     private final KafkaAdminService kafkaAdminService;
+    private final io.translab.tantor.server.service.PartitionCacheService partitionCacheService;
 
     @GetMapping("/topics")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
@@ -52,6 +53,18 @@ public class TopicsController {
     @GetMapping("/consumer-groups")
     public ResponseEntity<List<Map<String, Object>>> listConsumerGroups(@PathVariable UUID clusterId) {
         return ResponseEntity.ok(kafkaAdminService.listConsumerGroups(clusterId));
+    }
+
+    @GetMapping("/partitions")
+    public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.PartitionSummaryDto>> listPartitions(
+            @PathVariable UUID clusterId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "topicName") String sortBy) {
+        
+        if (size > 500) size = 500;
+        return ResponseEntity.ok(partitionCacheService.getPaginatedPartitions(clusterId, page, size, search, sortBy));
     }
 
     @Data

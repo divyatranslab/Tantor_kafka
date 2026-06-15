@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, AlertCircle, AlertTriangle, Settings, Activity, Server, Database, Box, Layers, HardDrive } from 'lucide-react';
+import {
+  CheckCircle2, AlertCircle, AlertTriangle,
+  Settings, Activity, Server, ChevronRight,
+  Cpu, Database, Wifi, RefreshCw, Plus, Bot
+} from 'lucide-react';
 import './Dashboard.css';
 
 interface DashboardStats {
@@ -11,144 +15,342 @@ interface DashboardStats {
 
 export function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-
   const [clusters, setClusters] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState('status');
+  const [activeTime, setActiveTime] = useState('30m');
 
   useEffect(() => {
     fetch('/api/v1/ui/dashboard/stats')
       .then(res => res.json())
       .then(data => setStats(data))
       .catch(err => console.error(err));
-      
+
     fetch('/api/v1/ui/clusters')
       .then(res => res.json())
       .then(data => setClusters(data))
       .catch(err => console.error(err));
   }, []);
 
-  // Map real clusters to the Cloudera-style list
-  // If no clusters exist, show empty state, otherwise list them
-  const services = clusters.map(c => ({
-    name: c.name,
-    status: c.nodeCount > 0 ? 'healthy' : 'warning',
-    alerts: 0,
-    icon: Activity
-  }));
-  
-  // Add some core platform services that are always present
   const platformServices = [
-    { name: `${stats?.totalHosts ?? 0} Hosts`, status: 'healthy', alerts: stats?.activeAlerts || 0, icon: Settings },
-    { name: 'Core Configuration', status: 'unknown', alerts: 0, icon: Settings },
-    { name: 'Tantor Agent Management', status: 'healthy', alerts: 0, icon: Server },
+    {
+      name: `${stats?.totalHosts ?? 0} Hosts`,
+      sub: 'Registered · reachable',
+      status: 'healthy',
+      icon: Server,
+      iconVariant: 'blue',
+    },
+    {
+      name: 'Core Configuration',
+      sub: 'Pending review',
+      status: 'unknown',
+      icon: Settings,
+      iconVariant: 'amber',
+    },
+    {
+      name: 'Tantor Agent Management',
+      sub: `Agent v1.0.0 running`,
+      status: 'healthy',
+      icon: Bot,
+      iconVariant: 'green',
+    },
   ];
 
-  const allServices = [...platformServices, ...services];
+  const clusterServices = clusters.map(c => ({
+    name: c.name,
+    sub: `${c.nodeCount ?? 0} brokers · managed`,
+    status: c.nodeCount > 0 ? 'healthy' : 'warning',
+    icon: Activity,
+    iconVariant: 'purple',
+  }));
 
-  const renderStatusIcon = (status: string) => {
-    switch(status) {
-      case 'healthy': return <CheckCircle2 className="status-icon healthy" size={18} />;
-      case 'warning': return <AlertTriangle className="status-icon warning" size={18} />;
-      case 'error': return <AlertCircle className="status-icon error" size={18} />;
-      default: return <div className="status-icon unknown" />;
-    }
+  const renderStatusDot = (status: string) => {
+    const cls = status === 'healthy' ? 'dot-green'
+              : status === 'warning' ? 'dot-amber'
+              : status === 'error'   ? 'dot-red'
+              : 'dot-gray';
+    return <span className={`status-dot ${cls}`} />;
   };
 
+  const renderStatusLabel = (status: string) => {
+    if (status === 'healthy') return <span className="status-label green">Online</span>;
+    if (status === 'warning') return <span className="status-label amber">Warning</span>;
+    if (status === 'error')   return <span className="status-label red">Error</span>;
+    return <span className="status-label gray">Idle</span>;
+  };
+
+  const tabs = [
+    { id: 'status', label: 'Status' },
+    { id: 'health', label: 'Health Issues', count: stats?.activeAlerts || 0, countType: 'danger' },
+    { id: 'config', label: 'Configuration', count: 0, countType: 'warning' },
+    { id: 'commands', label: 'Recent Commands' },
+  ];
+
+  const times = ['30m', '1h', '2h', '6h', '12h', '1d', '7d', '30d'];
+
+  const kpis = [
+    { label: 'CPU', value: '4.1', unit: '%', sub: 'All hosts', trend: 'stable', icon: Cpu },
+    { label: 'Disk IO', value: '12.9', unit: 'K/s', sub: 'Read', trend: 'up', icon: Database },
+    { label: 'Throughput', value: '2.4', unit: 'M/s', sub: 'Messages', trend: 'down', icon: Activity },
+    { label: 'Lag', value: '142', unit: 'ms', sub: 'Consumer', trend: 'stable', icon: Wifi },
+  ];
+
   return (
-    <div className="dashboard animate-fade-in">
+    <div className="db animate-fade-in">
 
-      <header className="page-header cloudera-header">
-        <div className="header-tabs">
-          <span className="active-tab">Status</span>
-          <span>All Health Issues <span className="badge error">{stats?.activeAlerts || 0}</span></span>
-          <span>Configuration <span className="badge warning">0</span></span>
-          <span>All Recent Commands</span>
-        </div>
-      </header>
-
-      <section className="cloudera-grid">
-        {/* ── Left Pane: Services ── */}
-        <div className="services-pane">
-          <div className="services-header">
-            <h2 className="cluster-title">
-              <CheckCircle2 className="status-icon healthy" size={20} />
-              Tantor Runtime
-            </h2>
-            <p className="runtime-version">Platform Core (Parcels)</p>
+      {/* ── Top header ── */}
+      <div className="db-header">
+        <div className="db-header-left">
+          <div className="db-cluster-pill">
+            <span className="db-cluster-dot" />
+            <span className="db-cluster-name">Tantor Runtime</span>
+            <span className="db-cluster-env">Air-Gapped · v1.0.0</span>
           </div>
-          <div className="services-list">
-            {allServices.length === 0 ? (
-              <div style={{padding: '1rem', color: '#666'}}>No services deployed yet. Click "Add Service" to begin.</div>
-            ) : allServices.map((svc) => (
-              <div key={svc.name} className="service-row">
-                <div className="service-name-col">
-                  {renderStatusIcon(svc.status)}
-                  <svc.icon size={16} className="service-type-icon" />
-                  <span className="service-name">{svc.name}</span>
+          <div className="db-header-sep" />
+          <nav className="db-tabs">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                className={`db-tab${activeTab === t.id ? ' active' : ''}`}
+                onClick={() => setActiveTab(t.id)}
+              >
+                {t.label}
+                {t.count !== undefined && (
+                  <span className={`db-tab-badge ${t.countType}`}>{t.count}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="db-header-right">
+          <button className="db-btn ghost">
+            <RefreshCw size={12} /> Refresh
+          </button>
+          <button className="db-btn primary">
+            <Plus size={12} /> New cluster
+          </button>
+        </div>
+      </div>
+
+      {/* ── Body ── */}
+      <div className="db-body">
+
+        {/* ── Left pane ── */}
+        <aside className="db-left">
+
+          {/* Cluster meta */}
+          <div className="db-left-head">
+            <div className="db-left-title-row">
+              <span className="db-left-title">Platform Core</span>
+              <span className="db-healthy-badge">
+                <span className="db-healthy-dot" /> Healthy
+              </span>
+            </div>
+            <span className="db-left-sub">Parcels · {clusters.length} cluster{clusters.length !== 1 ? 's' : ''}</span>
+          </div>
+
+          {/* KPI strip */}
+          <div className="db-kpi-strip">
+            <div className="db-kpi">
+              <span className="db-kpi-label">CPU</span>
+              <span className="db-kpi-val">4.1<span className="db-kpi-unit">%</span></span>
+            </div>
+            <div className="db-kpi-divider" />
+            <div className="db-kpi">
+              <span className="db-kpi-label">Hosts</span>
+              <span className="db-kpi-val">{stats?.totalHosts ?? 0}</span>
+            </div>
+            <div className="db-kpi-divider" />
+            <div className="db-kpi">
+              <span className="db-kpi-label">Uptime</span>
+              <span className="db-kpi-val">99<span className="db-kpi-unit">%</span></span>
+            </div>
+          </div>
+
+          {/* Services */}
+          <div className="db-svc-list">
+
+            <div className="db-svc-section">Infrastructure</div>
+            {platformServices.map(svc => (
+              <div key={svc.name} className="db-svc-row">
+                <div className={`db-svc-icon ${svc.iconVariant}`}>
+                  <svc.icon size={13} />
                 </div>
-                <div className="service-alerts-col">
-                  {svc.alerts > 0 && (
-                    <span className={`alert-count ${svc.status}`}>
-                      <Settings size={14} /> {svc.alerts}
-                    </span>
-                  )}
+                <div className="db-svc-body">
+                  <span className="db-svc-name">{svc.name}</span>
+                  <span className="db-svc-sub">{svc.sub}</span>
                 </div>
-                <div className="service-actions-col">
-                  ⋮
+                <div className="db-svc-right">
+                  <div className="db-svc-status">
+                    {renderStatusDot(svc.status)}
+                    {renderStatusLabel(svc.status)}
+                  </div>
+                  <ChevronRight size={12} className="db-svc-arrow" />
+                </div>
+              </div>
+            ))}
+
+            {clusterServices.length > 0 && (
+              <>
+                <div className="db-svc-section">Kafka Clusters</div>
+                {clusterServices.map(svc => (
+                  <div key={svc.name} className="db-svc-row">
+                    <div className={`db-svc-icon ${svc.iconVariant}`}>
+                      <svc.icon size={13} />
+                    </div>
+                    <div className="db-svc-body">
+                      <span className="db-svc-name">{svc.name}</span>
+                      <span className="db-svc-sub">{svc.sub}</span>
+                    </div>
+                    <div className="db-svc-right">
+                      <div className="db-svc-status">
+                        {renderStatusDot(svc.status)}
+                        {renderStatusLabel(svc.status)}
+                      </div>
+                      <ChevronRight size={12} className="db-svc-arrow" />
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {clusterServices.length === 0 && (
+              <div className="db-empty">
+                No clusters yet. Click <strong>New cluster</strong> to begin.
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* ── Right pane ── */}
+        <div className="db-right">
+
+          {/* Summary cards */}
+          <div className="db-summary-row">
+            {kpis.map(k => (
+              <div key={k.label} className="db-summary-card">
+                <div className="db-sc-label">
+                  <k.icon size={12} className="db-sc-icon" />
+                  {k.label}
+                </div>
+                <div className="db-sc-val">
+                  {k.value}<span className="db-sc-unit">{k.unit}</span>
+                </div>
+                <div className={`db-sc-trend ${k.trend}`}>
+                  {k.trend === 'stable' ? '→ Stable' : k.trend === 'up' ? '↑ Rising' : '↓ Dropping'}
                 </div>
               </div>
             ))}
           </div>
+
+          {/* Charts */}
+          <div className="db-charts">
+
+            {/* Time selector */}
+            <div className="db-time-row">
+              {times.map(t => (
+                <button
+                  key={t}
+                  className={`db-time-btn${activeTime === t ? ' active' : ''}`}
+                  onClick={() => setActiveTime(t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {/* CPU chart */}
+            <div className="db-chart-card">
+              <div className="db-chart-head">
+                <div className="db-chart-title">
+                  <Cpu size={13} className="db-chart-icon" />
+                  CPU usage across hosts
+                </div>
+                <div className="db-chart-meta">
+                  <span className="db-chart-val">4.1%</span>
+                  <span className="db-chart-delta stable">→ stable</span>
+                </div>
+              </div>
+              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="cpu-g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#378ADD" stopOpacity="0.13" />
+                    <stop offset="100%" stopColor="#378ADD" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
+                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
+                <path d="M0 58 C30 56,55 52,90 54 S130 50,165 51 S205 47,240 45 S275 48,310 46 S350 42,385 43 S450 44,500 43 L500 80 L0 80Z" fill="url(#cpu-g)" />
+                <path d="M0 58 C30 56,55 52,90 54 S130 50,165 51 S205 47,240 45 S275 48,310 46 S350 42,385 43 S450 44,500 43" fill="none" stroke="#378ADD" strokeWidth="1.5" strokeLinecap="round" />
+                <text x="4" y="17" className="db-chart-label">8%</text>
+                <text x="4" y="47" className="db-chart-label">4%</text>
+                <text x="4" y="77" className="db-chart-label">0%</text>
+              </svg>
+            </div>
+
+            {/* Disk IO chart */}
+            <div className="db-chart-card">
+              <div className="db-chart-head">
+                <div className="db-chart-title">
+                  <Database size={13} className="db-chart-icon" />
+                  Disk IO — read vs write
+                </div>
+                <div className="db-chart-meta">
+                  <div className="db-chart-legend">
+                    <span className="db-legend-dot green" /> Read
+                    <span className="db-legend-dot amber" style={{ marginLeft: 10 }} /> Write
+                  </div>
+                  <span className="db-chart-val">12.9 K/s</span>
+                  <span className="db-chart-delta up">↑ write heavy</span>
+                </div>
+              </div>
+              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="read-g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.2" />
+                    <stop offset="100%" stopColor="#1D9E75" stopOpacity="0" />
+                  </linearGradient>
+                  <linearGradient id="write-g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#BA7517" stopOpacity="0.18" />
+                    <stop offset="100%" stopColor="#BA7517" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
+                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
+                <path d="M0 52 C40 38,90 48,140 32 S210 44,260 28 S320 38,370 22 S440 32,500 26 L500 80 L0 80Z" fill="url(#read-g)" />
+                <path d="M0 52 C40 38,90 48,140 32 S210 44,260 28 S320 38,370 22 S440 32,500 26" fill="none" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M0 66 C40 58,90 62,140 54 S210 60,260 48 S320 56,370 44 S440 50,500 46 L500 80 L0 80Z" fill="url(#write-g)" />
+                <path d="M0 66 C40 58,90 62,140 54 S210 60,260 48 S320 56,370 44 S440 50,500 46" fill="none" stroke="#BA7517" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+
+            {/* Network IO chart */}
+            <div className="db-chart-card">
+              <div className="db-chart-head">
+                <div className="db-chart-title">
+                  <Wifi size={13} className="db-chart-icon" />
+                  Network IO
+                </div>
+                <div className="db-chart-meta">
+                  <span className="db-chart-val">—</span>
+                </div>
+              </div>
+              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="net-g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#534AB7" stopOpacity="0.13" />
+                    <stop offset="100%" stopColor="#534AB7" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
+                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
+                <path d="M0 62 C50 50,80 58,130 42 S190 68,240 52 S300 38,350 55 S420 32,500 48 L500 80 L0 80Z" fill="url(#net-g)" />
+                <path d="M0 62 C50 50,80 58,130 42 S190 68,240 52 S300 38,350 55 S420 32,500 48" fill="none" stroke="#534AB7" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+
+          </div>
         </div>
-
-        {/* ── Right Pane: Charts ── */}
-        <div className="charts-pane">
-          <div className="charts-header">
-            <h2>Charts</h2>
-            <div className="time-filters">
-              <span className="active">30m</span>
-              <span>1h</span>
-              <span>2h</span>
-              <span>6h</span>
-              <span>12h</span>
-              <span>1d</span>
-              <span>7d</span>
-              <span>30d</span>
-            </div>
-          </div>
-
-          <div className="chart-card-c">
-            <div className="chart-title-c">Cluster CPU</div>
-            <div className="chart-body-c">
-              <svg viewBox="0 0 400 100" className="line-chart">
-                <path d="M0 80 L50 82 L100 78 L150 80 L200 79 L250 81 L300 78 L350 80 L400 79" fill="none" stroke="#2196F3" strokeWidth="2" strokeDasharray="4 4" />
-                <path d="M0 85 L50 86 L100 84 L150 85 L200 84 L250 86 L300 85 L350 86 L400 85" fill="none" stroke="#64B5F6" strokeWidth="1" />
-              </svg>
-              <div className="chart-legend">- Translab, Host CPU Usage Across Hosts <strong>4.1%</strong></div>
-            </div>
-          </div>
-
-          <div className="chart-card-c">
-            <div className="chart-title-c">Cluster Disk IO</div>
-            <div className="chart-body-c">
-              <svg viewBox="0 0 400 100" className="area-chart">
-                <path d="M0 100 L0 50 L40 45 L80 60 L120 40 L160 55 L200 30 L240 60 L280 40 L320 25 L360 45 L400 50 L400 100 Z" fill="#CDDC39" opacity="0.8" />
-                <path d="M0 100 L0 90 L40 88 L80 92 L120 85 L160 90 L200 80 L240 95 L280 88 L320 82 L360 88 L400 90 L400 100 Z" fill="#2196F3" opacity="0.8" />
-              </svg>
-              <div className="chart-legend"><span style={{color: '#2196F3'}}>- Total Disk By... <strong>12.9K/s</strong></span> <span style={{color: '#CDDC39'}}>- Total Disk By... <strong>2.5M/s</strong></span></div>
-            </div>
-          </div>
-
-          <div className="chart-card-c">
-            <div className="chart-title-c">Cluster Network IO</div>
-            <div className="chart-body-c">
-              <svg viewBox="0 0 400 100" className="line-chart">
-                <path d="M0 90 L50 80 L100 85 L150 60 L200 95 L250 70 L300 90 L350 40 L400 80" fill="none" stroke="#2196F3" strokeWidth="1.5" />
-                <path d="M0 95 L50 85 L100 90 L150 75 L200 80 L250 85 L300 95 L350 60 L400 85" fill="none" stroke="#CDDC39" strokeWidth="1.5" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }
