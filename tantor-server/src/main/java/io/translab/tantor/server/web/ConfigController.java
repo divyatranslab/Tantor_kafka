@@ -28,12 +28,36 @@ public class ConfigController {
     private final ActivityAlertService activityAlertService;
 
     @GetMapping
-    public ResponseEntity<Map<Integer, Map<String, Object>>> getBrokerConfigs(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
 
-        Map<Integer, Map<String, Object>> configs = kafkaAdminService.getBrokerConfigs(clusterId);
-        return ResponseEntity.ok(configs);
+        Map<Integer, Map<String, Object>> dynamicConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+        
+        Map<String, Object> response = new java.util.HashMap<>();
+        response.put("dynamicConfigs", dynamicConfigs);
+        
+        Map<String, Object> staticConfigs = new java.util.HashMap<>();
+        String installDir = "/data/apps/kafka/install";
+        
+        try {
+            if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
+                Map<String, Object> parsedConfig = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+                staticConfigs.put("properties", parsedConfig);
+                if (parsedConfig.containsKey("kafka_install_dir")) {
+                    installDir = (String) parsedConfig.get("kafka_install_dir");
+                }
+            } else {
+                staticConfigs.put("properties", new java.util.HashMap<>());
+            }
+        } catch(Exception e) {
+            staticConfigs.put("properties", new java.util.HashMap<>());
+        }
+        
+        staticConfigs.put("filePath", installDir + "/config/kraft/server.properties");
+        response.put("staticConfigs", staticConfigs);
+
+        return ResponseEntity.ok(response);
     }
 
     @PutMapping("/bulk")

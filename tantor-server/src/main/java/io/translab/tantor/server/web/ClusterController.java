@@ -140,14 +140,21 @@ public class ClusterController {
 
         for (int i = 0; i < controllers.size(); i++) {
             if (i > 0) quorumVoters.append(",");
-            // Note: In reality we need the hostname of the controller, but we only have host_id here.
-            // For now, we assume the frontend sent hostnames somewhere, or we look it up.
-            // But the agent just needs hostnames. Actually we need to fetch Host from DB.
-            // Since we don't have HostRepository wired here right now, we'll just use a placeholder
-            // or we'll pass the problem to the DeploymentService or assume the Hostname is passed.
-            // For KRaft, node_id@hostname:port.
-            // We will let DeploymentService handle the real mapping or just pass the quorum string as best effort.
-            quorumVoters.append(controllers.get(i).getNode_id()).append("@").append(controllers.get(i).getHost_id()).append(":").append(controllerPort);
+            String hostId = controllers.get(i).getHost_id();
+            String hostIp = hostId;
+            io.translab.tantor.server.domain.Host h = hostRepository.findById(hostId).orElse(null);
+            if (h != null && h.getIpAddresses() != null && !h.getIpAddresses().isEmpty() && !h.getIpAddresses().equals("[]")) {
+                try {
+                    List<String> ips = objectMapper.readValue(h.getIpAddresses(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                    if (!ips.isEmpty()) {
+                        hostIp = ips.get(0);
+                    }
+                } catch (Exception e) {
+                    // Fallback to simple string manipulation if Jackson fails
+                    hostIp = h.getIpAddresses().replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
+                }
+            }
+            quorumVoters.append(controllers.get(i).getNode_id()).append("@").append(hostIp).append(":").append(controllerPort);
         }
         
         // 3. Dispatch tasks
@@ -199,6 +206,7 @@ public class ClusterController {
         return ResponseEntity.ok().build();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteCluster(@PathVariable java.util.UUID id) {
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);

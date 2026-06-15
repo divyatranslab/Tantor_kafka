@@ -39,3 +39,16 @@ Write-Host "To start the Artifact Repository:"
 Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
 Write-Host "To start the Management Server:"
 Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"
+
+# 4. Build Agent (Linux amd64)
+Write-Host "`n=== Building Tantor Agent (Linux) ===" -ForegroundColor Magenta
+if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
+    cd "$PSScriptRoot\tantor-agent"
+    $env:GOOS="linux"
+    $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-agent-linux cmd/agent/main.go
+    Write-Host "Agent successfully compiled to: tantor-agent\tantor-agent-linux" -ForegroundColor Green
+    cd $PSScriptRoot
+} else {
+    Write-Host "Go compiler not found in the 'go' directory. Skipping agent compilation." -ForegroundColor Yellow
+}

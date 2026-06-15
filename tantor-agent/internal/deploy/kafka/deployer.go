@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 	"time"
+	"net"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
@@ -102,6 +103,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 			if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
 				mode = 0755 // Ensure bin/ scripts are always executable
 			}
+			os.Remove(dest) // Force recreation to avoid preserving old permissions
 			os.WriteFile(dest, data, mode)
 		}
 		return nil
@@ -309,11 +311,11 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	if nodeId == "" {
 		nodeId = "1"
 	}
+	hostname := getLocalIP()
 	quorumVoters := t.Parameters["quorum_voters"]
 	if quorumVoters == "" {
-		quorumVoters = fmt.Sprintf("%s@localhost:9093", nodeId)
+		quorumVoters = fmt.Sprintf("%s@%s:9093", nodeId, hostname)
 	}
-	hostname, _ := os.Hostname()
 
 	role := t.Parameters["role"]
 	if role == "broker_controller" || role == "" {
@@ -466,14 +468,25 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	installDir := t.Parameters["kafka_install_dir"]
+	dataDir := t.Parameters["kafka_data_dir"]
+	logDirs := t.Parameters["log_dirs"]
+	listenerPort := t.Parameters["listener_port"]
+	controllerPort := t.Parameters["controller_port"]
+
 	if installDir == "" {
 		installDir = "/data/apps/kafka/install"
 	}
-	dataDir := filepath.Dir(installDir)
-	if dataDir == "/data/apps/kafka" {
-		// Only delete if it's the expected structure
-	} else {
-		dataDir = installDir // Fallback just to delete install
+	if dataDir == "" {
+		dataDir = "/data/apps/kafka/data"
+	}
+	if logDirs == "" {
+		logDirs = "/data/apps/kafka/logs"
+	}
+	if listenerPort == "" {
+		listenerPort = "9092"
+	}
+	if controllerPort == "" {
+		controllerPort = "9093"
 	}
 
 	log("Starting Kafka cleanup process...")
@@ -488,24 +501,47 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 
 	// 2. Kill remaining processes on ports
-	log("Terminating processes on port 9092, 9093, 9095, 7071...")
-	d.exec.RunSudo(ctx, "fuser", "-k", "9092/tcp")
-	d.exec.RunSudo(ctx, "fuser", "-k", "9093/tcp")
-	d.exec.RunSudo(ctx, "fuser", "-k", "9095/tcp")
+	log("Terminating processes on port %s, %s, 7071...", listenerPort, controllerPort)
+	d.exec.RunSudo(ctx, "fuser", "-k", listenerPort+"/tcp")
+	d.exec.RunSudo(ctx, "fuser", "-k", controllerPort+"/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "7071/tcp")
 	time.Sleep(2 * time.Second)
 
 	// 3. Remove files
-	log("Purging directories: %s", dataDir)
+	log("Purging directories: %s, %s, %s", installDir, dataDir, logDirs)
+	d.exec.RunSudo(ctx, "rm", "-rf", installDir)
 	d.exec.RunSudo(ctx, "rm", "-rf", dataDir)
+	d.exec.RunSudo(ctx, "rm", "-rf", logDirs)
 
 	// 4. Validate ports are free
 	log("Validating ports are free...")
 	out, _, _ := d.exec.RunSudo(ctx, "ss", "-tlnp")
-	if strings.Contains(out, ":9092 ") || strings.Contains(out, ":9093 ") || strings.Contains(out, ":9095 ") || strings.Contains(out, ":7071 ") {
+	if strings.Contains(out, ":"+listenerPort+" ") || strings.Contains(out, ":"+controllerPort+" ") || strings.Contains(out, ":7071 ") {
 		return logs.String(), fmt.Errorf("Ports are still in use after cleanup")
 	}
 
 	log("Cleanup completed successfully.")
 	return logs.String(), nil
+}
+
+// getLocalIP dynamically fetches the first non-loopback IPv4 address of the host.
+// If none is found, it falls back to the OS hostname.
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip != nil && !ip.IsLoopback() && ip.To4() != nil {
+				return ip.String()
+			}
+		}
+	}
+	h, _ := os.Hostname()
+	return h
 }

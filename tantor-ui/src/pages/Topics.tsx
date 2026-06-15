@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Database, Search, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Database, Search, ChevronLeft, ChevronRight, AlertTriangle, Plus, X } from 'lucide-react';
 import './Topics.css';
 
 interface TopicSummaryDto {
@@ -30,6 +30,14 @@ export function Topics() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Create Topic Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newTopicName, setNewTopicName] = useState('');
+  const [newTopicPartitions, setNewTopicPartitions] = useState(1);
+  const [newTopicReplication, setNewTopicReplication] = useState(1);
+  const [creatingTopic, setCreatingTopic] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const fetchTopics = async () => {
     setLoading(true);
     setError(null);
@@ -57,24 +65,73 @@ export function Topics() {
     setSearchQuery(searchInput);
   };
 
+  const handleCreateTopic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTopicName.trim()) return;
+
+    setCreatingTopic(true);
+    setCreateError(null);
+
+    try {
+      const res = await fetch(`/api/v1/clusters/${id}/topics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTopicName.trim(),
+          partitions: newTopicPartitions,
+          replicationFactor: newTopicReplication,
+          configs: {}
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.message || `Failed to create topic (HTTP ${res.status})`);
+      }
+
+      // Success
+      setShowCreateModal(false);
+      setNewTopicName('');
+      setNewTopicPartitions(1);
+      setNewTopicReplication(1);
+      
+      // Refresh the list to show the new topic
+      fetchTopics();
+    } catch (e: any) {
+      setCreateError(e.message);
+    } finally {
+      setCreatingTopic(false);
+    }
+  };
+
   return (
-    <div className="topics-tab animate-fade-in">
+    <div className="topics-tab animate-fade-in" style={{ position: 'relative' }}>
       <div className="topics-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2>Topics Dashboard</h2>
         
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
-            <input 
-              type="text" 
-              placeholder="Search topics..." 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ padding: '0.5rem 0.5rem 0.5rem 2rem', borderRadius: '6px', border: '1px solid var(--border-color)', width: '250px' }}
-            />
-          </div>
-          <button type="submit" className="btn btn-secondary">Search</button>
-        </form>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
+              <input 
+                type="text" 
+                placeholder="Search topics..." 
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{ padding: '0.5rem 0.5rem 0.5rem 2rem', borderRadius: '6px', border: '1px solid var(--border-color)', width: '250px' }}
+              />
+            </div>
+            <button type="submit" className="btn btn-secondary">Search</button>
+          </form>
+
+          <button 
+            className="btn btn-primary-action" 
+            onClick={() => setShowCreateModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <Plus size={16} /> Create Topic
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -92,6 +149,13 @@ export function Topics() {
             <Database size={48} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
             <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>No topics found</p>
             <p style={{ color: 'var(--text-secondary)' }}>Try adjusting your search criteria or cluster.</p>
+            <button 
+              className="btn btn-primary-action" 
+              onClick={() => setShowCreateModal(true)}
+              style={{ marginTop: '1rem' }}
+            >
+              Create your first topic
+            </button>
           </div>
         ) : (
           <>
@@ -167,6 +231,83 @@ export function Topics() {
           </>
         )}
       </div>
+
+      {/* Create Topic Modal */}
+      {showCreateModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, animation: 'fadeIn 0.2s ease-out' }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '12px', width: '450px', maxWidth: '90%', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', overflow: 'hidden' }}>
+            <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>Create New Topic</h3>
+              <button onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateTopic} style={{ padding: '1.5rem' }}>
+              {createError && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fef2f2', color: '#b91c1c', borderRadius: '6px', fontSize: '0.875rem' }}>
+                  {createError}
+                </div>
+              )}
+              
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Topic Name</label>
+                <input 
+                  type="text" 
+                  value={newTopicName}
+                  onChange={e => setNewTopicName(e.target.value)}
+                  placeholder="e.g. user-events"
+                  required
+                  style={{ width: '100%', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '6px' }}
+                />
+              </div>
+              
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Partitions</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={newTopicPartitions}
+                    onChange={e => setNewTopicPartitions(Number(e.target.value))}
+                    required
+                    style={{ width: '100%', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '6px' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Replication Factor</label>
+                  <input 
+                    type="number" 
+                    min="1"
+                    value={newTopicReplication}
+                    onChange={e => setNewTopicReplication(Number(e.target.value))}
+                    required
+                    style={{ width: '100%', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '6px' }}
+                  />
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  onClick={() => setShowCreateModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary-action" 
+                  disabled={creatingTopic || !newTopicName.trim()}
+                >
+                  {creatingTopic ? 'Creating...' : 'Create Topic'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

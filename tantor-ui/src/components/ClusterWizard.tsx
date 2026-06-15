@@ -211,7 +211,7 @@ export default function ClusterWizard() {
           kafka_data_dir: config.kafka_data_dir?.trim() || undefined,
         },
         environment: environment.trim().toLowerCase(),
-        artifactUrl: selectedArtifact ? `http://${window.location.hostname}:8081/api/v1/artifacts/${selectedArtifact.id}/download` : '',
+        artifactUrl: selectedArtifact ? `http://${window.location.hostname === 'localhost' ? '192.168.3.142' : window.location.hostname}:8081/api/v1/artifacts/${selectedArtifact.id}/download` : '',
       };
 
       const response = await fetch('/api/v1/ui/clusters/deploy', {

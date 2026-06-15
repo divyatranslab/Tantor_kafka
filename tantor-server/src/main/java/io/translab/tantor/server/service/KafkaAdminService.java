@@ -60,6 +60,13 @@ public class KafkaAdminService {
                                     String listeners = (String) config.get("listeners");
                                     String[] parts = listeners.split(":");
                                     port = Integer.parseInt(parts[parts.length - 1]);
+                                } else if (config.containsKey("listener_port")) {
+                                    Object portObj = config.get("listener_port");
+                                    if (portObj instanceof Number) {
+                                        port = ((Number) portObj).intValue();
+                                    } else if (portObj instanceof String) {
+                                        port = Integer.parseInt((String) portObj);
+                                    }
                                 }
                             }
                             List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
@@ -67,6 +74,7 @@ public class KafkaAdminService {
                                 bootstrapServers.add(ips.get(0) + ":" + port);
                             }
                         } catch (Exception e) {
+                            log.error("Error generating bootstrap servers for cluster {}: {}", clusterId, e.getMessage(), e);
                             try {
                                 List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
                                 if (!ips.isEmpty()) bootstrapServers.add(ips.get(0) + ":9092");
