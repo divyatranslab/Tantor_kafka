@@ -21,6 +21,7 @@ tantor-agent.exe
 
 # Logs
 logs/
+.runtime/
 *.log
 
 # Portable / Local Installations

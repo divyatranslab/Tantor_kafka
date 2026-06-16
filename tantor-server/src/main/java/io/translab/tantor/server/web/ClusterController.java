@@ -5,15 +5,20 @@ import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
+import io.translab.tantor.server.service.HostStatusService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
@@ -28,6 +33,10 @@ public class ClusterController {
     private final io.translab.tantor.server.service.BrokerMetricsCacheService brokerMetricsCacheService;
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
+    private final HostStatusService hostStatusService;
+
+    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
+    private String artifactRepoUrl;
 
     @GetMapping
     public List<Map<String, Object>> listClusters() {
@@ -68,13 +77,7 @@ public class ClusterController {
     @GetMapping("/{id}/tasks")
     public ResponseEntity<List<io.translab.tantor.server.domain.Task>> getClusterTasks(@PathVariable java.util.UUID id) {
         return clusterRepository.findById(id).map(cluster -> {
-            if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
-                return ResponseEntity.ok(java.util.Collections.<io.translab.tantor.server.domain.Task>emptyList());
-            }
-            List<String> hostIds = cluster.getServices().stream()
-                .map(io.translab.tantor.server.domain.ClusterServiceAssignment::getHostId)
-                .collect(Collectors.toList());
-            List<io.translab.tantor.server.domain.Task> tasks = taskRepository.findByHostIdInOrderByCreatedAtDesc(hostIds);
+            List<io.translab.tantor.server.domain.Task> tasks = taskRepository.findByClusterIdOrderByCreatedAtDesc(id);
             return ResponseEntity.ok(tasks);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -92,6 +95,10 @@ public class ClusterController {
 
     @PostMapping("/deploy")
     public ResponseEntity<Map<String, String>> deployCluster(@RequestBody DeployClusterRequest request) {
+        ResponseEntity<Map<String, String>> validationError = validateDeployRequest(request);
+        if (validationError != null) {
+            return validationError;
+        }
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
@@ -135,7 +142,7 @@ public class ClusterController {
         StringBuilder quorumVoters = new StringBuilder();
         int controllerPort = 9093;
         if (request.getConfig() != null && request.getConfig().containsKey("controller_port")) {
-            controllerPort = (Integer) request.getConfig().get("controller_port");
+            controllerPort = parseIntConfig(request.getConfig().get("controller_port"), controllerPort);
         }
 
         for (int i = 0; i < controllers.size(); i++) {
@@ -165,13 +172,10 @@ public class ClusterController {
                 configJsonStr = objectMapper.writeValueAsString(request.getConfig());
             } catch (Exception e) {}
 
-            String finalArtifactUrl = request.getArtifactUrl();
-            if (finalArtifactUrl != null && finalArtifactUrl.contains("localhost")) {
-                // Keep localhost so the agent connects via the SSH tunnel to port 8081
-                finalArtifactUrl = finalArtifactUrl.replace("localhost", "127.0.0.1");
-            }
+            String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
 
             deploymentService.deployKafkaToHost(
+                cluster.getId(),
                 svc.getHost_id(),
                 request.getKafka_version(),
                 finalArtifactUrl,
@@ -189,7 +193,14 @@ public class ClusterController {
     }
 
     @PostMapping("/external")
-    public ResponseEntity<Void> addExternalCluster(@RequestBody ExternalClusterRequest request) {
+    public ResponseEntity<?> addExternalCluster(@RequestBody ExternalClusterRequest request) {
+        if (request.getName() == null || request.getName().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster name is required."));
+        }
+        if (clusterRepository.findByNameAndStatusNot(request.getName(), "DELETED").isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "A non-deleted cluster with this name already exists."));
+        }
+
         Cluster cluster = new Cluster();
         cluster.setName(request.getName());
         cluster.setKafkaVersion(request.getKafkaVersion() != null ? request.getKafkaVersion() : "Unknown");
@@ -213,19 +224,15 @@ public class ClusterController {
         if (optionalCluster.isPresent()) {
             Cluster cluster = optionalCluster.get();
             if ("EXTERNAL".equals(cluster.getMode())) {
-                cluster.setStatus("DELETED");
-                cluster.setDeletedAt(java.time.Instant.now());
-                clusterRepository.save(cluster);
+                markClusterDeleted(cluster);
                 activityAlertService.logActivity("INFO", "Deleted external cluster", id);
             } else {
-                cluster.setStatus("DELETING");
-                clusterRepository.save(cluster);
-                if (cluster.getServices() != null) {
-                    for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
-                        deploymentService.deleteClusterFromHost(svc.getHostId());
-                    }
+                if (initiateClusterCleanup(cluster)) {
+                    activityAlertService.logActivity("INFO", "Initiated cleanup for cluster", id);
+                } else {
+                    markClusterDeleted(cluster);
+                    activityAlertService.logActivity("INFO", "Deleted cluster with no host assignments", id);
                 }
-                activityAlertService.logActivity("INFO", "Initiated cleanup for cluster", id);
             }
             return ResponseEntity.ok().build();
         } else {
@@ -233,11 +240,16 @@ public class ClusterController {
         }
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/force-delete/{id}")
     public ResponseEntity<Void> forceDeleteCluster(@PathVariable java.util.UUID id) {
         clusterRepository.findById(id).ifPresent(cluster -> {
-            cluster.setStatus("DELETED");
-            clusterRepository.save(cluster);
+            if ("EXTERNAL".equals(cluster.getMode()) || !initiateClusterCleanup(cluster)) {
+                markClusterDeleted(cluster);
+                activityAlertService.logActivity("INFO", "Force-deleted cluster without VM cleanup task", id);
+            } else {
+                activityAlertService.logActivity("WARN", "Force-delete requested; VM cleanup task dispatched before deleting cluster", id);
+            }
         });
         return ResponseEntity.ok().build();
     }
@@ -266,5 +278,173 @@ public class ClusterController {
         private String host_id;
         private String role;
         private Integer node_id;
+    }
+
+    private ResponseEntity<Map<String, String>> validateDeployRequest(DeployClusterRequest request) {
+        if (request.getName() == null || request.getName().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster name is required."));
+        }
+        if (clusterRepository.findByNameAndStatusNot(request.getName(), "DELETED").isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "A non-deleted cluster with this name already exists."));
+        }
+        if (request.getServices() == null || request.getServices().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "At least one host assignment is required."));
+        }
+
+        Set<String> hostIds = new HashSet<>();
+        boolean hasBroker = false;
+        boolean hasController = false;
+        for (ServiceAssignmentReq service : request.getServices()) {
+            if (service.getHost_id() == null || service.getHost_id().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a host."));
+            }
+            if (service.getRole() == null || service.getRole().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a role."));
+            }
+            if (service.getNode_id() == null || service.getNode_id() <= 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            if (!hostIds.add(service.getHost_id())) {
+                return ResponseEntity.badRequest().body(Map.of(
+                    "error",
+                    "Host " + service.getHost_id() + " has more than one role assignment. Use the Broker + Controller role for a combined KRaft node."
+                ));
+            }
+
+            if ("broker".equals(service.getRole()) || "broker_controller".equals(service.getRole())) {
+                hasBroker = true;
+            }
+            if ("controller".equals(service.getRole()) || "broker_controller".equals(service.getRole())) {
+                hasController = true;
+            }
+
+            io.translab.tantor.server.domain.Host host = hostRepository.findById(service.getHost_id()).orElse(null);
+            if (host == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + service.getHost_id() + " was not found."));
+            }
+            String effectiveStatus = hostStatusService.effectiveStatus(host);
+            if (!"ONLINE".equalsIgnoreCase(effectiveStatus)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + service.getHost_id() + " is not online. Current status: " + effectiveStatus + "."));
+            }
+            if (host.getClusterId() != null) {
+                java.util.Optional<Cluster> activeCluster = clusterRepository.findById(host.getClusterId())
+                    .filter(cluster -> !"DELETED".equals(cluster.getStatus()));
+                if (activeCluster.isPresent()) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                        "error",
+                        "Host " + service.getHost_id() + " is already assigned to cluster " + activeCluster.get().getName() + ". Delete or force-delete that cluster before reusing the host."
+                    ));
+                }
+            }
+        }
+        if (!hasBroker) {
+            return ResponseEntity.badRequest().body(Map.of("error", "At least one broker or broker-controller node is required."));
+        }
+        if (!"zookeeper".equalsIgnoreCase(request.getMode()) && !hasController) {
+            return ResponseEntity.badRequest().body(Map.of("error", "KRaft deployments require at least one controller or broker-controller node."));
+        }
+        return null;
+    }
+
+    private int parseIntConfig(Object value, int defaultValue) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        if (value instanceof String text) {
+            try {
+                return Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                return defaultValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    private String resolveAgentArtifactUrl(String artifactUrl) {
+        if (artifactUrl == null || artifactUrl.isBlank()) {
+            return artifactUrl;
+        }
+
+        String trimmed = artifactUrl.trim();
+        try {
+            URI uri = URI.create(trimmed);
+            if (!uri.isAbsolute()) {
+                return trimmed.startsWith("/api/v1/artifacts/") ? joinArtifactRepoBase(trimmed) : trimmed;
+            }
+
+            String rawPath = uri.getRawPath();
+            if (rawPath != null && rawPath.startsWith("/api/v1/artifacts/")) {
+                return joinArtifactRepoBase(pathAndQuery(uri));
+            }
+            if (isLoopbackHost(uri.getHost())) {
+                return joinArtifactRepoBase(pathAndQuery(uri));
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Leave custom or malformed URLs unchanged; validation happens when the agent downloads.
+        }
+        return trimmed;
+    }
+
+    private String joinArtifactRepoBase(String pathAndQuery) {
+        String base = artifactRepoUrl == null || artifactRepoUrl.isBlank()
+                ? "http://localhost:8081"
+                : artifactRepoUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (pathAndQuery == null || pathAndQuery.isBlank()) {
+            return base;
+        }
+        String normalizedPath = pathAndQuery.startsWith("/") ? pathAndQuery : "/" + pathAndQuery;
+        return base + normalizedPath;
+    }
+
+    private String pathAndQuery(URI uri) {
+        String rawPath = uri.getRawPath() != null ? uri.getRawPath() : "";
+        return uri.getRawQuery() == null ? rawPath : rawPath + "?" + uri.getRawQuery();
+    }
+
+    private boolean isLoopbackHost(String host) {
+        if (host == null) {
+            return false;
+        }
+        return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host);
+    }
+
+    private boolean initiateClusterCleanup(Cluster cluster) {
+        if ("DELETING".equalsIgnoreCase(cluster.getStatus())) {
+            return true;
+        }
+        if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
+            return false;
+        }
+
+        cluster.setStatus("DELETING");
+        clusterRepository.save(cluster);
+        for (ClusterServiceAssignment svc : cluster.getServices()) {
+            deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(), cluster.getConfigJson());
+        }
+        return true;
+    }
+
+    private void markClusterDeleted(Cluster cluster) {
+        cluster.setStatus("DELETED");
+        cluster.setDeletedAt(java.time.Instant.now());
+        clearClusterHostAssignments(cluster);
+        clusterRepository.save(cluster);
+    }
+
+    private void clearClusterHostAssignments(Cluster cluster) {
+        if (cluster.getServices() == null) {
+            return;
+        }
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            hostRepository.findById(service.getHostId()).ifPresent(host -> {
+                if (cluster.getId().equals(host.getClusterId())) {
+                    host.setClusterId(null);
+                    hostRepository.save(host);
+                }
+            });
+        }
     }
 }

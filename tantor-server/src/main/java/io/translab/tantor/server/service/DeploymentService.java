@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -20,15 +21,12 @@ public class DeploymentService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public void deployKafkaToHost(String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
+    public void deployKafkaToHost(UUID clusterId, String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
         log.info("Scheduling Kafka {} deployment on host {}", version, hostId);
 
-        Task task = new Task();
-        task.setHostId(hostId);
-        task.setCommand("INSTALL_KAFKA");
+        Task task = createTask(clusterId, hostId, "INSTALL_KAFKA");
         task.setArtifactUrl(artifactUrl);
         task.setChecksum(checksum);
-        task.setStatus("PENDING");
         
         try {
             Map<String, Object> params = new java.util.HashMap<>();
@@ -36,21 +34,13 @@ public class DeploymentService {
             params.put("node_id", nodeId != null ? nodeId : "1");
             params.put("quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093");
             params.put("role", role != null ? role : "broker_controller");
+            if (clusterId != null) {
+                params.put("cluster_id", clusterId.toString());
+            }
 
-            // Merge advanced config into the task parameters
-            if (configJsonStr != null && !configJsonStr.equals("{}")) {
-                Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
-                for (Map.Entry<String, Object> entry : configMap.entrySet()) {
-                    if (entry.getValue() != null) {
-                        params.put(entry.getKey(), String.valueOf(entry.getValue()));
-                    }
-                }
-            }
+            mergeConfigParams(params, configJsonStr);
             
-            // Set default install dir if not provided
-            if (!params.containsKey("kafka_install_dir")) {
-                params.put("kafka_install_dir", "/opt/tantor/kafka");
-            }
+            applyDefaultKafkaPaths(params);
 
             // Inject JMX Exporter artifact URL so Agent can pull it securely
             if (artifactUrl != null && artifactUrl.contains("/api/v1/artifacts/")) {
@@ -69,11 +59,8 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void startService(String hostId, String serviceName) {
-        Task task = new Task();
-        task.setHostId(hostId);
-        task.setCommand("START_SERVICE");
-        task.setStatus("PENDING");
+    public void startService(UUID clusterId, String hostId, String serviceName) {
+        Task task = createTask(clusterId, hostId, "START_SERVICE");
         
         try {
             task.setParameters(objectMapper.writeValueAsString(Map.of(
@@ -87,11 +74,8 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void restartService(String hostId, String serviceName) {
-        Task task = new Task();
-        task.setHostId(hostId);
-        task.setCommand("RESTART_SERVICE");
-        task.setStatus("PENDING");
+    public void restartService(UUID clusterId, String hostId, String serviceName) {
+        Task task = createTask(clusterId, hostId, "RESTART_SERVICE");
         
         try {
             task.setParameters(objectMapper.writeValueAsString(Map.of(
@@ -105,24 +89,18 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void updateKafkaConfig(String hostId, String configJsonStr, boolean restart) {
-        Task task = new Task();
-        task.setHostId(hostId);
-        task.setCommand("UPDATE_KAFKA_CONFIG");
-        task.setStatus("PENDING");
+    public void updateKafkaConfig(UUID clusterId, String hostId, String configJsonStr, boolean restart) {
+        Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
         try {
             Map<String, Object> params = new java.util.HashMap<>();
             params.put("restart", String.valueOf(restart));
-            
-            if (configJsonStr != null && !configJsonStr.equals("{}")) {
-                Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
-                for (Map.Entry<String, Object> entry : configMap.entrySet()) {
-                    if (entry.getValue() != null) {
-                        params.put(entry.getKey(), String.valueOf(entry.getValue()));
-                    }
-                }
+            if (clusterId != null) {
+                params.put("cluster_id", clusterId.toString());
             }
+
+            mergeConfigParams(params, configJsonStr);
+            applyDefaultKafkaPaths(params);
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize parameters", e);
@@ -132,13 +110,51 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void deleteClusterFromHost(String hostId) {
-        Task task = new Task();
-        task.setHostId(hostId);
-        task.setCommand("DELETE_CLUSTER");
-        task.setStatus("PENDING");
-        task.setParameters("{}");
+    public void deleteClusterFromHost(UUID clusterId, String hostId, String configJsonStr) {
+        Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            if (clusterId != null) {
+                params.put("cluster_id", clusterId.toString());
+            }
+            mergeConfigParams(params, configJsonStr);
+            applyDefaultKafkaPaths(params);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize cleanup parameters", e);
+            task.setParameters("{}");
+        }
         taskRepository.save(task);
-        log.info("Dispatched DELETE_CLUSTER task for host {}", hostId);
+        log.info("Dispatched DELETE_CLUSTER task for host {} in cluster {}", hostId, clusterId);
+    }
+
+    private Task createTask(UUID clusterId, String hostId, String command) {
+        Task task = new Task();
+        task.setClusterId(clusterId);
+        task.setHostId(hostId);
+        task.setCommand(command);
+        task.setStatus("PENDING");
+        return task;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mergeConfigParams(Map<String, Object> params, String configJsonStr) throws JsonProcessingException {
+        if (configJsonStr == null || configJsonStr.isBlank() || "{}".equals(configJsonStr)) {
+            return;
+        }
+
+        Map<String, Object> configMap = objectMapper.readValue(configJsonStr, Map.class);
+        for (Map.Entry<String, Object> entry : configMap.entrySet()) {
+            if (entry.getValue() != null) {
+                params.put(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+        }
+    }
+
+    private void applyDefaultKafkaPaths(Map<String, Object> params) {
+        Object installDir = params.get("kafka_install_dir");
+        if (installDir == null || String.valueOf(installDir).isBlank()) {
+            params.put("kafka_install_dir", "/opt/tantor/kafka");
+        }
     }
 }

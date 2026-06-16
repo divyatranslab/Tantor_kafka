@@ -6,4 +6,5 @@ import java.util.UUID;
 
 public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     java.util.List<Cluster> findByStatusNot(String status);
+    java.util.Optional<Cluster> findByNameAndStatusNot(String name, String status);
 }

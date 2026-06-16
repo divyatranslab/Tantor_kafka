@@ -297,11 +297,7 @@ export function ConfigEditor() {
             <span style={{ fontWeight: 500 }}>Properties File Path:</span>
             <code style={{ backgroundColor: '#e5e7eb', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', color: '#1f2937' }}>
               {(() => {
-                const basePath = payload.staticConfigs.filePath;
-                // Replace server.properties with the appropriate filename based on view type
-                if (viewType === 'BROKER') return basePath.replace('server.properties', 'broker.properties');
-                if (viewType === 'CONTROLLER') return basePath.replace('server.properties', 'controller.properties');
-                return basePath;
+                return payload.staticConfigs.filePath;
               })()}
             </code>
             <span style={{ 

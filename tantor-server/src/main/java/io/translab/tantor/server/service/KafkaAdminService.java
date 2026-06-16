@@ -128,6 +128,7 @@ public class KafkaAdminService {
             }).collect(Collectors.toList());
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to list topics", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to list topics: " + e.getMessage());
         }
     }
@@ -195,6 +196,7 @@ public class KafkaAdminService {
 
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to list topics paginated", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to list topics: " + e.getMessage());
         }
     }
@@ -206,6 +208,7 @@ public class KafkaAdminService {
             client.createTopics(Collections.singletonList(newTopic)).all().get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to create topic", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to create topic: " + e.getMessage());
         }
     }
@@ -216,6 +219,7 @@ public class KafkaAdminService {
             client.deleteTopics(Collections.singletonList(name)).all().get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to delete topic", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to delete topic: " + e.getMessage());
         }
     }
@@ -243,6 +247,7 @@ public class KafkaAdminService {
 
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to list consumer groups", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to list consumer groups: " + e.getMessage());
         }
     }
@@ -275,6 +280,7 @@ public class KafkaAdminService {
             return result;
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to get broker configs", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to get broker configs: " + e.getMessage());
         }
     }
@@ -292,6 +298,7 @@ public class KafkaAdminService {
             client.incrementalAlterConfigs(Map.of(resource, Collections.singletonList(op))).all().get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to alter broker config", e);
+            refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to alter broker config: " + e.getMessage());
         }
     }

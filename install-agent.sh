@@ -15,6 +15,9 @@ TANTOR_HOME="/opt/tantor"
 AGENT_BIN_URL=${AGENT_BIN_URL:-"https://tantor-server:8443/downloads/tantor-agent"}
 SERVER_URL=${SERVER_URL:-"https://tantor-server:8443"}
 CERT_PATH="/etc/tantor/certs"
+AGENT_DATA_DIR="/var/lib/tantor/agent/data"
+AGENT_ARTIFACTS_DIR="/var/lib/tantor/agent/artifacts"
+AGENT_LOG_DIR="/var/log/tantor"
 
 echo "=== Tantor Agent Installer ==="
 
@@ -36,6 +39,10 @@ mkdir -p $TANTOR_HOME/bin
 curl -k -s -o $TANTOR_HOME/bin/tantor-agent $AGENT_BIN_URL
 chmod +x $TANTOR_HOME/bin/tantor-agent
 chown -R $TANTOR_USER:$TANTOR_USER $TANTOR_HOME
+
+# Runtime directories used by the agent for downloads, extraction, and logs.
+mkdir -p "$AGENT_DATA_DIR" "$AGENT_ARTIFACTS_DIR" "$AGENT_LOG_DIR"
+chown -R $TANTOR_USER:$TANTOR_USER /var/lib/tantor "$AGENT_LOG_DIR"
 
 # 3. Configure certificates and agent config
 echo "Setting up certificates and configs..."
@@ -60,9 +67,9 @@ agent:
   log_level: "INFO"
 
 paths:
-  data_dir: "/var/lib/tantor/agent/data"
-  log_dir: "/var/log/tantor"
-  artifacts_dir: "/var/lib/tantor/agent/artifacts"
+  data_dir: "$AGENT_DATA_DIR"
+  log_dir: "$AGENT_LOG_DIR"
+  artifacts_dir: "$AGENT_ARTIFACTS_DIR"
 EOF
 
 chown -R $TANTOR_USER:$TANTOR_USER /etc/tantor

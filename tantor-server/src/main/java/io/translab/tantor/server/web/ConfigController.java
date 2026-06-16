@@ -99,7 +99,7 @@ public class ConfigController {
 
             for (ClusterServiceAssignment svc : cluster.getServices()) {
                 if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole())) {
-                    deploymentService.updateKafkaConfig(svc.getHostId(), newConfigStr, request.isRestart());
+                    deploymentService.updateKafkaConfig(clusterId, svc.getHostId(), newConfigStr, request.isRestart());
                 }
             }
             activityAlertService.logActivity(

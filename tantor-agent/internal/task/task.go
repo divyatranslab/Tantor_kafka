@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"io.translab/tantor-agent/internal/client"
@@ -15,10 +16,11 @@ import (
 
 // Engine handles background polling and task dispatching
 type Engine struct {
-	cfg       *config.Config
-	client    *client.APIClient
+	cfg          *config.Config
+	client       *client.APIClient
 	collector    *collect.Collector
 	deployEngine *deploy.Engine
+	taskMu       sync.Mutex
 }
 
 func NewEngine(cfg *config.Config, c *client.APIClient, col *collect.Collector, deployEngine *deploy.Engine) *Engine {
@@ -86,7 +88,16 @@ func (e *Engine) pollTasks() {
 
 	for _, t := range tasks {
 		slog.Info("Received task", "taskId", t.TaskID, "command", t.Command)
-		go e.executeTask(t)
+	}
+	go e.executeTasks(tasks)
+}
+
+func (e *Engine) executeTasks(tasks []api.Task) {
+	e.taskMu.Lock()
+	defer e.taskMu.Unlock()
+
+	for _, t := range tasks {
+		e.executeTask(t)
 	}
 }
 
@@ -112,7 +123,7 @@ func (e *Engine) executeTask(t api.Task) {
 			}
 		}
 	}
-	
+
 	slog.Info("Task executed", "taskId", t.TaskID, "status", result.Status)
 
 	if err := e.client.ReportTaskResult(result); err != nil {

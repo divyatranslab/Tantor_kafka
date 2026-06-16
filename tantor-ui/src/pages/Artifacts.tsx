@@ -17,6 +17,7 @@ export function Artifacts() {
   const [serviceType, setServiceType]     = useState('KAFKA');
   const [versionInput, setVersionInput]   = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
 
   const fetchVersions = async () => {
     setLoading(true);
@@ -60,7 +61,7 @@ export function Artifacts() {
 
     try {
       // Send directly to the artifact repo (port 8081) to bypass Vite proxy limits for large files
-      const res = await fetch('http://localhost:8081/api/v1/artifacts', { method: 'POST', body: form });
+      const res = await fetch(`${artifactRepoBaseUrl}/api/v1/artifacts`, { method: 'POST', body: form });
       if (res.ok) {
         setUploadMsg({ text: `Uploaded ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`, ok: true });
         setShowUploadModal(false);

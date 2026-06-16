@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Info, Network, Wifi, CheckCircle, XCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Server, Loader2, AlertTriangle, FolderOpen, Network, Wifi, CheckCircle, XCircle } from 'lucide-react';
 import './ClusterWizard.css';
 
 export interface Host {
@@ -146,6 +146,10 @@ export default function ClusterWizard() {
 
   useEffect(() => { setInstallDirError(validateDeployPath(config.kafka_install_dir || '', 'Install Directory')); }, [config.kafka_install_dir]);
   useEffect(() => { setDataDirError(validateDeployPath(config.kafka_data_dir || '', 'Data Directory')); }, [config.kafka_data_dir]);
+  useEffect(() => {
+    setPortCheckDone(false);
+    setPortCheckResults([]);
+  }, [assignments, config.listener_port, config.controller_port, mode]);
 
   const handleAssign = (hostId: string, role: string) => {
     setAssignments(prev => {
@@ -195,11 +199,15 @@ export default function ClusterWizard() {
         if (response.ok) {
           alert('External cluster connected successfully!');
           navigate('/clusters');
-        } else alert('Failed to connect external cluster.');
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          alert(errorData.error || errorData.message || 'Failed to connect external cluster.');
+        }
         return;
       }
 
       const selectedArtifact = versions.find(v => v.version === kafkaVersion);
+      const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
       const payload = {
         name,
         kafka_version: kafkaVersion,
@@ -211,7 +219,7 @@ export default function ClusterWizard() {
           kafka_data_dir: config.kafka_data_dir?.trim() || undefined,
         },
         environment: environment.trim().toLowerCase(),
-        artifactUrl: selectedArtifact ? `http://${window.location.hostname === 'localhost' ? '192.168.3.142' : window.location.hostname}:8081/api/v1/artifacts/${selectedArtifact.id}/download` : '',
+        artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
       };
 
       const response = await fetch('/api/v1/ui/clusters/deploy', {
@@ -224,7 +232,8 @@ export default function ClusterWizard() {
         const data = await response.json();
         navigate(`/clusters/${data.id}`);
       } else {
-        alert('Deployment failed.');
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || errorData.message || 'Deployment failed.');
       }
     } catch (e) {
       console.error(e);
@@ -237,12 +246,11 @@ export default function ClusterWizard() {
   const assignedRoles = Object.values(assignments).flat();
   const hasBroker = assignedRoles.some(r => r === 'broker' || r === 'broker_controller');
   const availableVersions = versions.filter(v => v.available);
-  const selectedVersion = versions.find(v => v.version === kafkaVersion);
-  const isKafka4Plus = kafkaVersion ? getMajorVersion(kafkaVersion) >= 4 : false;
   const brokerCount = assignedRoles.filter(r => r === 'broker' || r === 'broker_controller').length;
   const rfExceedsBrokers = config.replication_factor > brokerCount && brokerCount > 0;
   const pathsValid = !installDirError && !dataDirError;
-  const step3Valid = !rfExceedsBrokers && pathsValid;
+  const portsValid = !portError && portCheckDone && portCheckResults.length > 0 && portCheckResults.every(r => r.free);
+  const step3Valid = !rfExceedsBrokers && pathsValid && portsValid;
 
   const availableRoles = ROLES.filter(r => {
     if (mode === 'kraft') return r.id !== 'zookeeper';
@@ -481,6 +489,9 @@ export default function ClusterWizard() {
 
               {Object.keys(assignments).length === 0 && (
                 <p className="wz-hint" style={{ marginTop: '0.5rem' }}>Assign hosts in the previous step first.</p>
+              )}
+              {Object.keys(assignments).length > 0 && !portsValid && (
+                <p className="wz-hint" style={{ marginTop: '0.5rem' }}>Run the port check and resolve any ports in use before continuing.</p>
               )}
             </div>
 

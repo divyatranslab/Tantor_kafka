@@ -79,8 +79,8 @@ export function ClusterDetails() {
               <p>Kafka {cluster.kafkaVersion} • {cluster.nodeCount} nodes • {cluster.mode}</p>
             </div>
           </div>
-          <div className="status-badge">
-             <div className="status-dot"></div> Active
+          <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
+             <div className="status-dot"></div> {cluster.mode === 'EXTERNAL' ? 'External' : cluster.status}
           </div>
         </div>
       </header>

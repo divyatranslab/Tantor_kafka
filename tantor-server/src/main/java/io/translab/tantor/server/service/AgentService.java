@@ -82,6 +82,9 @@ public class AgentService {
             
             TaskDto dto = new TaskDto();
             dto.setTaskId(t.getId().toString());
+            if (t.getClusterId() != null) {
+                dto.setClusterId(t.getClusterId().toString());
+            }
             dto.setCommand(t.getCommand());
             dto.setArtifactUrl(t.getArtifactUrl());
             dto.setChecksum(t.getChecksum());
@@ -107,14 +110,16 @@ public class AgentService {
                 taskRepository.save(task);
                 log.info("Task {} completed with status: {}", taskId, dto.getStatus());
 
-                // Propagate to Cluster
-                hostRepository.findById(task.getHostId()).ifPresent(host -> {
-                    if (host.getClusterId() != null) {
-                        clusterRepository.findById(host.getClusterId()).ifPresent(cluster -> {
-                            updateClusterStatus(cluster, task);
-                        });
-                    }
-                });
+                if (task.getClusterId() != null) {
+                    clusterRepository.findById(task.getClusterId()).ifPresent(cluster -> updateClusterStatus(cluster, task));
+                } else {
+                    // Legacy tasks created before cluster_id was added can only be mapped through host assignment.
+                    hostRepository.findById(task.getHostId()).ifPresent(host -> {
+                        if (host.getClusterId() != null) {
+                            clusterRepository.findById(host.getClusterId()).ifPresent(cluster -> updateClusterStatus(cluster, task));
+                        }
+                    });
+                }
             });
         } catch (IllegalArgumentException e) {
             log.error("Invalid task ID format: {}", dto.getTaskId(), e);
@@ -134,7 +139,9 @@ public class AgentService {
         } else if ("SUCCESS".equals(status)) {
             boolean allSuccess = true;
             for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
-                List<Task> hostTasks = taskRepository.findByHostIdAndCommandOrderByCreatedAtDesc(svc.getHostId(), command);
+                List<Task> hostTasks = currentTask.getClusterId() != null
+                    ? taskRepository.findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(currentTask.getClusterId(), svc.getHostId(), command)
+                    : taskRepository.findByHostIdAndCommandOrderByCreatedAtDesc(svc.getHostId(), command);
                 if (hostTasks.isEmpty() || !"SUCCESS".equals(hostTasks.get(0).getStatus())) {
                     allSuccess = false;
                     break;
@@ -144,11 +151,26 @@ public class AgentService {
                 if ("DELETE_CLUSTER".equals(command)) {
                     cluster.setStatus("DELETED");
                     cluster.setDeletedAt(java.time.Instant.now());
+                    releaseClusterHosts(cluster);
                 } else {
                     cluster.setStatus("SUCCESS");
                 }
             }
         }
         clusterRepository.save(cluster);
+    }
+
+    private void releaseClusterHosts(io.translab.tantor.server.domain.Cluster cluster) {
+        if (cluster.getServices() == null) {
+            return;
+        }
+        for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
+            hostRepository.findById(svc.getHostId()).ifPresent(host -> {
+                if (cluster.getId().equals(host.getClusterId())) {
+                    host.setClusterId(null);
+                    hostRepository.save(host);
+                }
+            });
+        }
     }
 }

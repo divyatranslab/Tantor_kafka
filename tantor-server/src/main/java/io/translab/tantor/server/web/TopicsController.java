@@ -50,10 +50,6 @@ public class TopicsController {
         return ResponseEntity.ok().build();
     }
 
-    @GetMapping("/consumer-groups")
-    public ResponseEntity<List<Map<String, Object>>> listConsumerGroups(@PathVariable UUID clusterId) {
-        return ResponseEntity.ok(kafkaAdminService.listConsumerGroups(clusterId));
-    }
 
     @GetMapping("/partitions")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.PartitionSummaryDto>> listPartitions(

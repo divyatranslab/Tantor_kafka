@@ -1,10 +1,14 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.service.HostStatusService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,10 +28,14 @@ import java.util.Map;
 public class HostController {
 
     private final HostRepository hostRepository;
+    private final ClusterRepository clusterRepository;
+    private final HostStatusService hostStatusService;
 
     @GetMapping
     public ResponseEntity<List<Host>> getAllHosts() {
-        return ResponseEntity.ok(hostRepository.findAll());
+        List<Host> hosts = hostRepository.findAll();
+        hosts.forEach(host -> host.setStatus(hostStatusService.effectiveStatus(host)));
+        return ResponseEntity.ok(hosts);
     }
 
     @PostMapping("/{id}/approve")
@@ -39,13 +47,30 @@ public class HostController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @Transactional
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteHost(@PathVariable String id) {
-        if (hostRepository.existsById(id)) {
-            hostRepository.deleteById(id);
-            return ResponseEntity.ok().build();
-        }
-        return ResponseEntity.notFound().build();
+    public ResponseEntity<?> deleteHost(@PathVariable String id) {
+        return hostRepository.findById(id).map(host -> {
+            if (host.getClusterId() != null) {
+                boolean assignedToActiveCluster = clusterRepository.findById(host.getClusterId())
+                    .filter(cluster -> !"DELETED".equalsIgnoreCase(cluster.getStatus()))
+                    .isPresent();
+                if (assignedToActiveCluster) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "message",
+                        "This host is assigned to an active cluster. Delete or force-delete the cluster before disconnecting the host."
+                    ));
+                }
+            }
+
+            host.setClusterId(null);
+            host.setStatus("PENDING");
+            hostRepository.save(host);
+            return ResponseEntity.ok(Map.of(
+                "message",
+                "Host disconnected. It is now waiting in discovered nodes and can be connected again."
+            ));
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     /**

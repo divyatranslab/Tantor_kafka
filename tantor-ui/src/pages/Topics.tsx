@@ -43,7 +43,10 @@ export function Topics() {
     setError(null);
     try {
       const res = await fetch(`/api/v1/clusters/${id}/topics?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}`);
-      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || `Topics are not available yet (HTTP ${res.status})`);
+      }
       const json = await res.json();
       setData(json);
     } catch (e: any) {

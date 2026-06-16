@@ -26,11 +26,19 @@ export function Hosts() {
   };
 
   const deleteHost = async (id: string) => {
-    if (!window.confirm('Remove this node?')) return;
+    if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchHosts();
-    } catch (e) { console.error(e); }
+      if (res.ok) {
+        fetchHosts();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        alert(errorData.message || 'Failed to disconnect node.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('An error occurred while disconnecting the node.');
+    }
   };
 
   useEffect(() => {

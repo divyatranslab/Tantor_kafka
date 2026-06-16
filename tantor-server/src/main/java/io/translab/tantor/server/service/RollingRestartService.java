@@ -52,7 +52,7 @@ public class RollingRestartService {
             String msgPrefix = String.format("Node %d/%d (%s): ", i + 1, brokers.size(), broker.getHostId());
             
             restartTasks.put(taskId, msgPrefix + "Dispatching restart command to agent");
-            deploymentService.restartService(broker.getHostId(), "kafka");
+            deploymentService.restartService(clusterId, broker.getHostId(), "kafka");
 
             // Give it a few seconds to actually stop and start restarting
             Thread.sleep(10000);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShieldAlert, RefreshCw, Server, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { ShieldAlert, RefreshCw, AlertTriangle, CheckCircle, Info } from 'lucide-react';
 import './AuditLogs.css';
 
 export function AuditLogs() {

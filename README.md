@@ -37,6 +37,15 @@ Once the build is complete, you can launch both backend services simultaneously.
    .\start-backend.ps1
    ```
 2. Wait about **15 seconds** for Spring Boot to fully initialize.
+3. The backend services keep running in the background. To stop them, run:
+   ```powershell
+   .\stop-backend.ps1
+   ```
+4. To restart cleanly without creating duplicate Java processes, run:
+   ```powershell
+   .\start-backend.ps1 -Restart
+   ```
+5. Backend logs are written under `.runtime\logs`.
 
 ### Step 4: Start the Frontend UI
 The frontend is built with React and Vite.

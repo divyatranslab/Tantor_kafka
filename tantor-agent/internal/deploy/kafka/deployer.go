@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
-	"net"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
@@ -54,14 +54,20 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	log("Starting cross-platform Kafka Deployment Workflow...")
 
 	// 1. Create directories
-	os.MkdirAll(installDir, 0755)
-	os.MkdirAll(dataDir, 0755)
-	os.MkdirAll(d.cfg.Paths.ArtifactsDir, 0755)
+	if err := d.ensureWritableDir(ctx, d.cfg.Paths.ArtifactsDir); err != nil {
+		return logs.String(), err
+	}
+	if err := d.ensureWritableDir(ctx, installDir); err != nil {
+		return logs.String(), err
+	}
+	if err := d.ensureWritableDir(ctx, dataDir); err != nil {
+		return logs.String(), err
+	}
 
 	// 2. Download TAR
 	destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
 	log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
-	
+
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
@@ -85,7 +91,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
 	}
-	
+
 	// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
 	err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == tmpExtractDir {
@@ -125,7 +131,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	jmxDir := filepath.Join(installDir, "jmx")
 	os.MkdirAll(jmxDir, 0755)
 	jmxJarPath := filepath.Join(jmxDir, "jmx_prometheus_javaagent.jar")
-	
+
 	log("Downloading JMX Exporter to %s", jmxJarPath)
 
 	jmxUrl := t.Parameters["jmx_artifact_url"]
@@ -163,20 +169,23 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if logDirs == "" {
 		logDirs = filepath.Join(dataDir, "kafka-logs")
 	}
+	if err := d.ensureWritableDir(ctx, logDirs); err != nil {
+		return logs.String(), err
+	}
 
 	metaPropsPath := filepath.Join(logDirs, "meta.properties")
 	if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 		log("Fresh deployment detected — formatting KRaft storage...")
 		storageScript := filepath.Join(installDir, "bin", "kafka-storage.sh")
 		configPath := filepath.Join(installDir, "config/kraft/server.properties")
-		
+
 		uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
 		if err != nil {
 			return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
 		}
 		clusterUUID := strings.TrimSpace(uuidOut)
 		log("Generated cluster UUID: %s", clusterUUID)
-		
+
 		_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
 		if err != nil {
 			return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
@@ -439,24 +448,76 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 	if err != nil {
 		return err
 	}
-	
+
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
+	destDir := filepath.Dir(dest)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		if _, _, sudoErr := d.exec.RunSudo(ctx, "mkdir", "-p", destDir); sudoErr != nil {
+			return fmt.Errorf("failed to create dir %s: %w", destDir, err)
+		}
 	}
 
 	// Strip CRLF for Linux compatibility
 	content := bytes.ReplaceAll(buf.Bytes(), []byte("\r\n"), []byte("\n"))
 
 	if err := os.WriteFile(dest, content, 0644); err != nil {
-		return fmt.Errorf("failed to write template to %s: %w", dest, err)
+		tmpDir := d.cfg.Paths.ArtifactsDir
+		if tmpDir == "" {
+			tmpDir = os.TempDir()
+		}
+		if mkErr := os.MkdirAll(tmpDir, 0755); mkErr != nil {
+			return fmt.Errorf("failed to create template temp dir %s: %w", tmpDir, mkErr)
+		}
+
+		tmpPath := filepath.Join(tmpDir, fmt.Sprintf("tantor-template-%d.tmp", time.Now().UnixNano()))
+		if tmpErr := os.WriteFile(tmpPath, content, 0644); tmpErr != nil {
+			return fmt.Errorf("failed to write template to %s: %w", dest, err)
+		}
+		defer os.Remove(tmpPath)
+
+		if _, _, sudoErr := d.exec.RunSudo(ctx, "cp", tmpPath, dest); sudoErr != nil {
+			return fmt.Errorf("failed to write template to %s: %w", dest, sudoErr)
+		}
+		_, _, _ = d.exec.RunSudo(ctx, "chmod", "0644", dest)
 	}
-	
+
 	return nil
+}
+
+func (d *Deployer) ensureWritableDir(ctx context.Context, dir string) error {
+	if dir == "" {
+		return nil
+	}
+
+	createdWithoutSudo := false
+	if err := os.MkdirAll(dir, 0755); err == nil {
+		createdWithoutSudo = true
+	}
+	if createdWithoutSudo && d.canWriteToDir(dir) {
+		return nil
+	}
+
+	if _, _, err := d.exec.RunSudo(ctx, "mkdir", "-p", dir); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	if _, _, err := d.exec.RunSudo(ctx, "chown", "-R", owner, dir); err != nil {
+		return fmt.Errorf("failed to grant agent ownership of %s: %w", dir, err)
+	}
+	return nil
+}
+
+func (d *Deployer) canWriteToDir(dir string) bool {
+	probe := filepath.Join(dir, fmt.Sprintf(".tantor-write-test-%d", time.Now().UnixNano()))
+	if err := os.WriteFile(probe, []byte("ok"), 0600); err != nil {
+		return false
+	}
+	_ = os.Remove(probe)
+	return true
 }
 
 func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
@@ -474,13 +535,13 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	controllerPort := t.Parameters["controller_port"]
 
 	if installDir == "" {
-		installDir = "/data/apps/kafka/install"
+		installDir = "/opt/tantor/kafka"
 	}
 	if dataDir == "" {
-		dataDir = "/data/apps/kafka/data"
+		dataDir = filepath.Join(installDir, "data")
 	}
 	if logDirs == "" {
-		logDirs = "/data/apps/kafka/logs"
+		logDirs = filepath.Join(dataDir, "kafka-logs")
 	}
 	if listenerPort == "" {
 		listenerPort = "9092"
@@ -491,20 +552,15 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	log("Starting Kafka cleanup process...")
 
-	// 1. Stop and disable systemd service
-	log("Stopping kafka.service...")
-	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
-	d.exec.RunSudo(ctx, "systemctl", "disable", "kafka")
+	// 1. Stop and remove broker systemd units before killing processes, otherwise
+	// Restart=on-failure units can respawn Kafka immediately after fuser/pkill.
+	if err := d.cleanupKafkaSystemdUnits(ctx, &logs); err != nil {
+		return logs.String(), err
+	}
 
-	log("Removing systemd unit file...")
-	d.exec.RunSudo(ctx, "rm", "-f", "/etc/systemd/system/kafka.service")
-	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
-
-	// 2. Kill remaining processes on ports
+	// 2. Kill remaining broker/JMX processes on known deployment ports.
 	log("Terminating processes on port %s, %s, 7071...", listenerPort, controllerPort)
-	d.exec.RunSudo(ctx, "fuser", "-k", listenerPort+"/tcp")
-	d.exec.RunSudo(ctx, "fuser", "-k", controllerPort+"/tcp")
-	d.exec.RunSudo(ctx, "fuser", "-k", "7071/tcp")
+	d.killKafkaRuntimeProcesses(ctx, listenerPort, controllerPort, &logs)
 	time.Sleep(2 * time.Second)
 
 	// 3. Remove files
@@ -522,6 +578,65 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	log("Cleanup completed successfully.")
 	return logs.String(), nil
+}
+
+func (d *Deployer) cleanupKafkaSystemdUnits(ctx context.Context, logs *strings.Builder) error {
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+		slog.Info(formatted)
+	}
+
+	log("Stopping and removing Kafka broker systemd units...")
+	script := `
+set +e
+units="$(systemctl list-units --type=service --all --no-legend 'kafka.service' 'kafka-managed-*.service' 'kafka-test-*.service' 2>/dev/null | awk '{print $1}' | sort -u)"
+files="$(find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' \) -printf '%f\n' 2>/dev/null | sort -u)"
+for unit in $units $files; do
+  [ -n "$unit" ] || continue
+  systemctl stop "$unit" 2>/dev/null || true
+  systemctl disable "$unit" 2>/dev/null || true
+  systemctl reset-failed "$unit" 2>/dev/null || true
+done
+find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' \) -delete 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
+`
+	out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script)
+	if out != "" {
+		log("systemd cleanup output: %s", out)
+	}
+	if errOut != "" {
+		log("systemd cleanup warnings: %s", errOut)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to clean Kafka systemd units: %w", err)
+	}
+	return nil
+}
+
+func (d *Deployer) killKafkaRuntimeProcesses(ctx context.Context, listenerPort, controllerPort string, logs *strings.Builder) {
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+		slog.Info(formatted)
+	}
+
+	ports := []string{listenerPort, controllerPort, "7071"}
+	for _, port := range ports {
+		if strings.TrimSpace(port) == "" {
+			continue
+		}
+		if out, errOut, err := d.exec.RunSudo(ctx, "fuser", "-k", port+"/tcp"); err != nil {
+			if errOut != "" {
+				log("fuser warning for port %s: %s", port, errOut)
+			}
+		} else if out != "" {
+			log("Killed process(es) on port %s: %s", port, out)
+		}
+	}
+
+	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "kafka.Kafka")
+	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "jmx_prometheus_javaagent")
 }
 
 // getLocalIP dynamically fetches the first non-loopback IPv4 address of the host.

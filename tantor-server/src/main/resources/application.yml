@@ -22,8 +22,8 @@ spring:
     enabled: true
     baseline-on-migrate: true
     locations: classpath:db/migration
-    clean-disabled: false
-    clean-on-validation-error: true
+    clean-disabled: true
+    clean-on-validation-error: false
 
 server:
   port: 8443
@@ -41,3 +41,5 @@ tantor:
       expiration-ms: 86400000 # 24 hours
   artifact-repo:
     url: ${TANTOR_REPO_URL:http://localhost:8081}
+  hosts:
+    heartbeat-timeout-seconds: ${TANTOR_HOST_HEARTBEAT_TIMEOUT_SECONDS:90}

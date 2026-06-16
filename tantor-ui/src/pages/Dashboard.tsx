@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import {
-  CheckCircle2, AlertCircle, AlertTriangle,
   Settings, Activity, Server, ChevronRight,
   Cpu, Database, Wifi, RefreshCw, Plus, Bot
 } from 'lucide-react';

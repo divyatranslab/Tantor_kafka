@@ -34,7 +34,7 @@ export function Clusters() {
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
-    if (!window.confirm(`Remove cluster '${name}' from Tantor?`)) return;
+    if (!window.confirm(`Delete cluster '${name}' and clean it from assigned VM(s)?`)) return;
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
       if (res.ok) {

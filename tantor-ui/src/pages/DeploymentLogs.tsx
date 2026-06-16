@@ -59,7 +59,7 @@ export function DeploymentLogs() {
     if (!cluster) return;
     
     const activeStatuses = ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'];
-    let interval: NodeJS.Timeout;
+    let interval: ReturnType<typeof setInterval>;
     
     if (activeStatuses.includes(cluster.status)) {
       interval = setInterval(() => {

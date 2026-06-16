@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Server, Cpu, HardDrive, Activity,
+  Server, Cpu, Activity,
   AlertCircle, CheckCircle2, XCircle
 } from 'lucide-react';
 import './Brokers.css';
@@ -36,7 +36,10 @@ export function Brokers() {
   const fetchBrokers = async () => {
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}/brokers`);
-      if (!res.ok) throw new Error('Failed to fetch broker metrics');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch broker metrics');
+      }
       const data = await res.json();
       setBrokers(data.brokers || []);
       setError(null);
@@ -68,11 +71,11 @@ export function Brokers() {
   const getHealthIcon = (health: string) => {
     switch (health) {
       case 'HEALTHY':
-        return <CheckCircle2 className="text-green" size={15} title="Healthy" />;
+        return <CheckCircle2 className="text-green" size={15} />;
       case 'DEGRADED':
-        return <AlertCircle className="text-yellow" size={15} title="Degraded: JMX unreachable" />;
+        return <AlertCircle className="text-yellow" size={15} />;
       case 'OFFLINE':
-        return <XCircle className="text-red" size={15} title="Offline: heartbeat missing" />;
+        return <XCircle className="text-red" size={15} />;
       default:
         return <Server className="text-gray" size={15} />;
     }
