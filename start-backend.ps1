@@ -38,6 +38,18 @@ function Import-DotEnv {
     }
 }
 
+function Normalize-PathEnvironment {
+    $envVars = [System.Environment]::GetEnvironmentVariables("Process")
+    $pathValue = $envVars["Path"]
+    if ([string]::IsNullOrWhiteSpace($pathValue)) {
+        $pathValue = $envVars["PATH"]
+    }
+    if (![string]::IsNullOrWhiteSpace($pathValue)) {
+        [System.Environment]::SetEnvironmentVariable("PATH", $null, "Process")
+        [System.Environment]::SetEnvironmentVariable("Path", $pathValue, "Process")
+    }
+}
+
 function Resolve-Java {
     $candidateJavaHome = "C:\Program Files\Java\jdk-21"
     if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -and (Test-Path $candidateJavaHome)) {
@@ -100,6 +112,7 @@ function Stop-ServiceIfRunning {
 }
 
 Import-DotEnv -Path (Join-Path $RootDir ".env")
+Normalize-PathEnvironment
 $JavaExe = Resolve-Java
 
 $services = @(

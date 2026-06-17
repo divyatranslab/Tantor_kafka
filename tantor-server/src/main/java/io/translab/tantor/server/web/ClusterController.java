@@ -30,6 +30,7 @@ public class ClusterController {
     private final ClusterRepository clusterRepository;
     private final io.translab.tantor.server.repository.TaskRepository taskRepository;
     private final io.translab.tantor.server.repository.HostRepository hostRepository;
+    private final io.translab.tantor.server.repository.HostParcelRepository hostParcelRepository;
     private final io.translab.tantor.server.service.BrokerMetricsCacheService brokerMetricsCacheService;
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
@@ -99,16 +100,20 @@ public class ClusterController {
         if (validationError != null) {
             return validationError;
         }
+
+        String deploymentMode = normalizeDeploymentMode(request.getMode());
+        Map<String, Object> deploymentConfig = buildDeploymentConfig(request, deploymentMode);
+        String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
         cluster.setName(request.getName());
         cluster.setKafkaVersion(request.getKafka_version());
-        cluster.setMode(request.getMode());
+        cluster.setMode(deploymentMode);
         cluster.setEnvironment(request.getEnvironment());
         
         try {
-            cluster.setConfigJson(objectMapper.writeValueAsString(request.getConfig()));
+            cluster.setConfigJson(objectMapper.writeValueAsString(deploymentConfig));
         } catch (Exception e) {
             cluster.setConfigJson("{}");
         }
@@ -133,47 +138,14 @@ public class ClusterController {
             });
         }
 
-        // 2. Build quorum voters string for KRaft
-        // Find all controllers or broker_controllers
-        List<ServiceAssignmentReq> controllers = request.getServices().stream()
-                .filter(s -> s.getRole().equals("controller") || s.getRole().equals("broker_controller") || s.getRole().equals("zookeeper"))
-                .collect(Collectors.toList());
+        // 2. Dispatch tasks
+        String configJsonStr = "{}";
+        try {
+            configJsonStr = objectMapper.writeValueAsString(deploymentConfig);
+        } catch (Exception e) {}
 
-        StringBuilder quorumVoters = new StringBuilder();
-        int controllerPort = 9093;
-        if (request.getConfig() != null && request.getConfig().containsKey("controller_port")) {
-            controllerPort = parseIntConfig(request.getConfig().get("controller_port"), controllerPort);
-        }
-
-        for (int i = 0; i < controllers.size(); i++) {
-            if (i > 0) quorumVoters.append(",");
-            String hostId = controllers.get(i).getHost_id();
-            String hostIp = hostId;
-            io.translab.tantor.server.domain.Host h = hostRepository.findById(hostId).orElse(null);
-            if (h != null && h.getIpAddresses() != null && !h.getIpAddresses().isEmpty() && !h.getIpAddresses().equals("[]")) {
-                try {
-                    List<String> ips = objectMapper.readValue(h.getIpAddresses(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
-                    if (!ips.isEmpty()) {
-                        hostIp = ips.get(0);
-                    }
-                } catch (Exception e) {
-                    // Fallback to simple string manipulation if Jackson fails
-                    hostIp = h.getIpAddresses().replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
-                }
-            }
-            quorumVoters.append(controllers.get(i).getNode_id()).append("@").append(hostIp).append(":").append(controllerPort);
-        }
-        
-        // 3. Dispatch tasks
+        String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
         for (ServiceAssignmentReq svc : request.getServices()) {
-            // Convert config to JSON string to pass as a parameter
-            String configJsonStr = "{}";
-            try {
-                configJsonStr = objectMapper.writeValueAsString(request.getConfig());
-            } catch (Exception e) {}
-
-            String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
-
             deploymentService.deployKafkaToHost(
                 cluster.getId(),
                 svc.getHost_id(),
@@ -181,7 +153,7 @@ public class ClusterController {
                 finalArtifactUrl,
                 "", // checksum
                 String.valueOf(svc.getNode_id()),
-                quorumVoters.toString(),
+                quorumVoters,
                 svc.getRole(),
                 configJsonStr
             );
@@ -254,6 +226,75 @@ public class ClusterController {
         return ResponseEntity.ok().build();
     }
 
+    @org.springframework.transaction.annotation.Transactional
+    @PostMapping("/{id}/upgrade")
+    public ResponseEntity<Map<String, String>> upgradeCluster(@PathVariable java.util.UUID id, @RequestBody UpgradeClusterRequest request) {
+        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
+        if (optionalCluster.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Cluster cluster = optionalCluster.get();
+        String targetVersion = request == null ? null : request.getTargetVersion();
+        if (targetVersion == null || targetVersion.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Target Kafka version is required."));
+        }
+        targetVersion = targetVersion.trim();
+
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "External clusters cannot be upgraded by Tantor."));
+        }
+        if (!"SUCCESS".equalsIgnoreCase(cluster.getStatus())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster must be active before upgrade. Current status: " + cluster.getStatus() + "."));
+        }
+        if (targetVersion.equals(cluster.getKafkaVersion())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster is already on Kafka " + targetVersion + "."));
+        }
+        if ("zookeeper".equalsIgnoreCase(cluster.getMode()) && !isZooKeeperSupported(targetVersion)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka versions newer than 3.9.0."));
+        }
+        if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster has no host assignments."));
+        }
+
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            String hostId = service.getHostId();
+            io.translab.tantor.server.domain.Host host = hostRepository.findById(hostId).orElse(null);
+            if (host == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + hostId + " was not found."));
+            }
+            String effectiveStatus = hostStatusService.effectiveStatus(host);
+            if (!"ONLINE".equalsIgnoreCase(effectiveStatus)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + hostId + " is not online. Current status: " + effectiveStatus + "."));
+            }
+            String finalTargetVersion = targetVersion;
+            boolean activeOnHost = hostParcelRepository.findByHostIdAndServiceTypeAndActiveTrue(hostId, "KAFKA").stream()
+                    .anyMatch(parcel -> finalTargetVersion.equals(parcel.getVersion()));
+            if (!activeOnHost) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Kafka " + targetVersion + " must be active as a parcel on host " + hostId + " before upgrade."));
+            }
+        }
+
+        String previousVersion = cluster.getKafkaVersion();
+        cluster.setStatus("RUNNING");
+        clusterRepository.save(cluster);
+
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            deploymentService.upgradeKafkaOnHost(
+                cluster.getId(),
+                service.getHostId(),
+                previousVersion,
+                targetVersion,
+                service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()),
+                service.getRole(),
+                cluster.getConfigJson()
+            );
+        }
+
+        activityAlertService.logActivity("INFO", "Initialized Kafka upgrade to " + targetVersion + " for cluster: " + cluster.getName(), cluster.getId());
+        return ResponseEntity.ok(Map.of("status", "scheduled", "targetVersion", targetVersion));
+    }
+
     @Data
     static class DeployClusterRequest {
         private String name;
@@ -274,6 +315,11 @@ public class ClusterController {
     }
 
     @Data
+    static class UpgradeClusterRequest {
+        private String targetVersion;
+    }
+
+    @Data
     static class ServiceAssignmentReq {
         private String host_id;
         private String role;
@@ -291,9 +337,16 @@ public class ClusterController {
             return ResponseEntity.badRequest().body(Map.of("error", "At least one host assignment is required."));
         }
 
+        String deploymentMode = normalizeDeploymentMode(request.getMode());
+        boolean zookeeperMode = "zookeeper".equals(deploymentMode);
+        if (zookeeperMode && !isZooKeeperSupported(request.getKafka_version())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka versions newer than 3.9.0."));
+        }
+
         Set<String> hostIds = new HashSet<>();
         boolean hasBroker = false;
         boolean hasController = false;
+        boolean hasZooKeeper = false;
         for (ServiceAssignmentReq service : request.getServices()) {
             if (service.getHost_id() == null || service.getHost_id().isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a host."));
@@ -301,21 +354,27 @@ public class ClusterController {
             if (service.getRole() == null || service.getRole().isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a role."));
             }
+            if (!isRoleAllowedForMode(service.getRole(), deploymentMode)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Role " + service.getRole() + " is not valid for " + deploymentMode + " deployments."));
+            }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
             }
             if (!hostIds.add(service.getHost_id())) {
                 return ResponseEntity.badRequest().body(Map.of(
                     "error",
-                    "Host " + service.getHost_id() + " has more than one role assignment. Use the Broker + Controller role for a combined KRaft node."
+                    "Host " + service.getHost_id() + " has more than one role assignment. Use the " + (zookeeperMode ? "Broker + ZooKeeper" : "Broker + Controller") + " role for a combined node."
                 ));
             }
 
-            if ("broker".equals(service.getRole()) || "broker_controller".equals(service.getRole())) {
+            if (isBrokerRole(service.getRole())) {
                 hasBroker = true;
             }
-            if ("controller".equals(service.getRole()) || "broker_controller".equals(service.getRole())) {
+            if (isControllerRole(service.getRole())) {
                 hasController = true;
+            }
+            if (isZooKeeperRole(service.getRole())) {
+                hasZooKeeper = true;
             }
 
             io.translab.tantor.server.domain.Host host = hostRepository.findById(service.getHost_id()).orElse(null);
@@ -338,12 +397,157 @@ public class ClusterController {
             }
         }
         if (!hasBroker) {
-            return ResponseEntity.badRequest().body(Map.of("error", "At least one broker or broker-controller node is required."));
+            return ResponseEntity.badRequest().body(Map.of("error", "At least one broker node is required."));
         }
-        if (!"zookeeper".equalsIgnoreCase(request.getMode()) && !hasController) {
+        if (zookeeperMode && !hasZooKeeper) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments require at least one ZooKeeper or broker-zookeeper node."));
+        }
+        if (!zookeeperMode && !hasController) {
             return ResponseEntity.badRequest().body(Map.of("error", "KRaft deployments require at least one controller or broker-controller node."));
         }
         return null;
+    }
+
+    private Map<String, Object> buildDeploymentConfig(DeployClusterRequest request, String deploymentMode) {
+        Map<String, Object> config = new HashMap<>();
+        if (request.getConfig() != null) {
+            config.putAll(request.getConfig());
+        }
+
+        config.put("mode", deploymentMode);
+        if ("zookeeper".equals(deploymentMode)) {
+            int zookeeperPort = parseIntConfig(config.get("zookeeper_port"), parseIntConfig(config.get("controller_port"), 2181));
+            int zookeeperPeerPort = parseIntConfig(config.get("zookeeper_peer_port"), 2888);
+            int zookeeperElectionPort = parseIntConfig(config.get("zookeeper_election_port"), 3888);
+            config.put("zookeeper_port", zookeeperPort);
+            config.put("controller_port", zookeeperPort);
+            config.put("zookeeper_connect", buildZooKeeperConnect(request.getServices(), zookeeperPort));
+            config.put("zookeeper_peer_port", zookeeperPeerPort);
+            config.put("zookeeper_election_port", zookeeperElectionPort);
+            String zookeeperServers = buildZooKeeperServers(request.getServices(), zookeeperPeerPort, zookeeperElectionPort);
+            if (!zookeeperServers.isBlank()) {
+                config.put("zookeeper_servers", zookeeperServers);
+            }
+        } else {
+            int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+            config.put("controller_port", controllerPort);
+            config.put("quorum_voters", buildQuorumVoters(request.getServices(), controllerPort));
+        }
+        return config;
+    }
+
+    private String buildQuorumVoters(List<ServiceAssignmentReq> services, int controllerPort) {
+        StringBuilder quorumVoters = new StringBuilder();
+        List<ServiceAssignmentReq> controllers = services.stream()
+                .filter(service -> isControllerRole(service.getRole()))
+                .toList();
+
+        for (int i = 0; i < controllers.size(); i++) {
+            if (i > 0) quorumVoters.append(",");
+            ServiceAssignmentReq controller = controllers.get(i);
+            quorumVoters
+                    .append(controller.getNode_id())
+                    .append("@")
+                    .append(resolveHostAddress(controller.getHost_id()))
+                    .append(":")
+                    .append(controllerPort);
+        }
+        return quorumVoters.toString();
+    }
+
+    private String buildZooKeeperConnect(List<ServiceAssignmentReq> services, int zookeeperPort) {
+        return services.stream()
+                .filter(service -> isZooKeeperRole(service.getRole()))
+                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + zookeeperPort)
+                .collect(Collectors.joining(","));
+    }
+
+    private String buildZooKeeperServers(List<ServiceAssignmentReq> services, int peerPort, int electionPort) {
+        List<ServiceAssignmentReq> zookeeperNodes = services.stream()
+                .filter(service -> isZooKeeperRole(service.getRole()))
+                .toList();
+        if (zookeeperNodes.size() <= 1) {
+            return "";
+        }
+        return zookeeperNodes.stream()
+                .map(service -> "server." + service.getNode_id() + "=" + resolveHostAddress(service.getHost_id()) + ":" + peerPort + ":" + electionPort)
+                .collect(Collectors.joining("\n"));
+    }
+
+    private String resolveHostAddress(String hostId) {
+        String hostIp = hostId;
+        io.translab.tantor.server.domain.Host h = hostRepository.findById(hostId).orElse(null);
+        if (h != null && h.getIpAddresses() != null && !h.getIpAddresses().isEmpty() && !h.getIpAddresses().equals("[]")) {
+            try {
+                List<String> ips = objectMapper.readValue(h.getIpAddresses(), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                if (!ips.isEmpty()) {
+                    hostIp = ips.get(0);
+                }
+            } catch (Exception e) {
+                hostIp = h.getIpAddresses().replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
+            }
+        }
+        return hostIp;
+    }
+
+    private boolean isRoleAllowedForMode(String role, String deploymentMode) {
+        if ("zookeeper".equals(deploymentMode)) {
+            return "broker".equals(role) || "zookeeper".equals(role) || "broker_zookeeper".equals(role);
+        }
+        return "broker".equals(role) || "controller".equals(role) || "broker_controller".equals(role);
+    }
+
+    private boolean isBrokerRole(String role) {
+        return "broker".equals(role) || "broker_controller".equals(role) || "broker_zookeeper".equals(role);
+    }
+
+    private boolean isControllerRole(String role) {
+        return "controller".equals(role) || "broker_controller".equals(role);
+    }
+
+    private boolean isZooKeeperRole(String role) {
+        return "zookeeper".equals(role) || "broker_zookeeper".equals(role);
+    }
+
+    private String normalizeDeploymentMode(String mode) {
+        return "zookeeper".equalsIgnoreCase(mode) ? "zookeeper" : "kraft";
+    }
+
+    private boolean isZooKeeperSupported(String kafkaVersion) {
+        int[] version = parseKafkaVersion(kafkaVersion);
+        int major = version[0];
+        int minor = version[1];
+        int patch = version[2];
+        if (major < 3) {
+            return true;
+        }
+        if (major > 3) {
+            return false;
+        }
+        if (minor < 9) {
+            return true;
+        }
+        if (minor > 9) {
+            return false;
+        }
+        return patch <= 0;
+    }
+
+    private int[] parseKafkaVersion(String kafkaVersion) {
+        int[] fallback = new int[] {0, 0, 0};
+        if (kafkaVersion == null || kafkaVersion.isBlank()) {
+            return fallback;
+        }
+        String[] parts = kafkaVersion.trim().split("\\.");
+        int[] parsed = new int[] {0, 0, 0};
+        for (int i = 0; i < Math.min(parts.length, 3); i++) {
+            try {
+                parsed[i] = Integer.parseInt(parts[i].replaceAll("[^0-9].*$", ""));
+            } catch (NumberFormatException e) {
+                parsed[i] = 0;
+            }
+        }
+        return parsed;
     }
 
     private int parseIntConfig(Object value, int defaultValue) {

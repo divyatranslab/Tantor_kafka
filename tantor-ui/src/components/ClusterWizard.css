@@ -595,6 +595,12 @@
   color: #475569;
 }
 
+.wz-role-btn.assigned.broker_zookeeper {
+  border-color: #0f766e;
+  background: #ccfbf1;
+  color: #115e59;
+}
+
 /* ─── Info / Warning Banners ────────────────────────────────────────── */
 .wz-info-banner {
   display: flex;

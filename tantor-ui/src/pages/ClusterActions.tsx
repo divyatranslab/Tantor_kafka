@@ -1,12 +1,44 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Activity, Play, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle } from 'lucide-react';
+
+interface ClusterInfo {
+  id: string;
+  kafkaVersion: string;
+  status: string;
+}
+
+interface HostParcel {
+  hostId: string;
+  serviceType: string;
+  version: string;
+  status: string;
+  active: boolean;
+}
 
 export function ClusterActions() {
   const { id } = useParams<{ id: string }>();
   const [taskId, setTaskId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [cluster, setCluster] = useState<ClusterInfo | null>(null);
+  const [parcels, setParcels] = useState<HostParcel[]>([]);
+  const [targetVersion, setTargetVersion] = useState('');
+  const [upgradeMsg, setUpgradeMsg] = useState('');
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+
+  const fetchUpgradeContext = async () => {
+    try {
+      const [clusterRes, parcelsRes] = await Promise.all([
+        fetch(`/api/v1/ui/clusters/${id}`),
+        fetch('/api/v1/ui/parcels'),
+      ]);
+      if (clusterRes.ok) setCluster(await clusterRes.json());
+      if (parcelsRes.ok) setParcels(await parcelsRes.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const triggerRollingRestart = async () => {
     if (!window.confirm("WARNING: This will begin a rolling restart of the cluster. Continue?")) return;
@@ -25,6 +57,47 @@ export function ClusterActions() {
       alert("Error triggering rolling restart.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const activeUpgradeVersions = Array.from(new Set(
+    parcels
+      .filter(p => p.serviceType === 'KAFKA' && p.active && p.status === 'ACTIVE' && p.version !== cluster?.kafkaVersion)
+      .map(p => p.version)
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
+
+  useEffect(() => {
+    fetchUpgradeContext();
+  }, [id]);
+
+  useEffect(() => {
+    if (!targetVersion && activeUpgradeVersions.length > 0) {
+      setTargetVersion(activeUpgradeVersions[0]);
+    }
+  }, [activeUpgradeVersions, targetVersion]);
+
+  const triggerUpgrade = async () => {
+    if (!targetVersion) return;
+    if (!window.confirm(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`)) return;
+
+    setUpgradeLoading(true);
+    setUpgradeMsg('');
+    try {
+      const res = await fetch(`/api/v1/ui/clusters/${id}/upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetVersion }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to schedule upgrade.');
+      }
+      setUpgradeMsg(`Upgrade to Kafka ${targetVersion} scheduled. Watch Deployment Logs for progress.`);
+      await fetchUpgradeContext();
+    } catch (e: any) {
+      setUpgradeMsg(e.message || 'Failed to schedule upgrade.');
+    } finally {
+      setUpgradeLoading(false);
     }
   };
 
@@ -59,6 +132,55 @@ export function ClusterActions() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+        <div className="table-card">
+          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ padding: '0.625rem', backgroundColor: '#f0fdf4', color: '#16a34a', borderRadius: '0.5rem' }}>
+                <ArrowUpCircle size={24} />
+              </div>
+              <div>
+                <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Upgrade Kafka Version</h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  Apply an active parcel version to this running cluster
+                </p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1rem', lineHeight: 1.5 }}>
+              Current cluster version: <strong>Kafka {cluster?.kafkaVersion || '-'}</strong>. Choose a newer active parcel, then Tantor will preserve the existing data directory while switching the Kafka runtime files.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 260px) 1fr', gap: '0.75rem', alignItems: 'center' }}>
+              <select
+                className="form-control"
+                value={targetVersion}
+                onChange={e => setTargetVersion(e.target.value)}
+                disabled={upgradeLoading || activeUpgradeVersions.length === 0}
+              >
+                {activeUpgradeVersions.length === 0 ? (
+                  <option value="">No active upgrade parcel</option>
+                ) : activeUpgradeVersions.map(version => (
+                  <option key={version} value={version}>Kafka {version}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary-action"
+                style={{ justifyContent: 'center' }}
+                onClick={triggerUpgrade}
+                disabled={upgradeLoading || !targetVersion || cluster?.status !== 'SUCCESS'}
+              >
+                {upgradeLoading ? <RefreshCw size={16} className="spin" /> : <ArrowUpCircle size={16} />}
+                Upgrade Kafka
+              </button>
+            </div>
+
+            {upgradeMsg && (
+              <p style={{ margin: '1rem 0 0', fontSize: '0.875rem', color: upgradeMsg.startsWith('Failed') ? '#b91c1c' : '#166534' }}>
+                {upgradeMsg}
+              </p>
+            )}
+          </div>
+        </div>
         
         {/* Rolling Restart Card */}
         <div className="table-card">

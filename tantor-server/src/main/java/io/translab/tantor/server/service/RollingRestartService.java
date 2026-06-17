@@ -39,7 +39,7 @@ public class RollingRestartService {
             }
 
         List<ClusterServiceAssignment> brokers = cluster.getServices().stream()
-                .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()))
+                .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole()))
                 .toList();
 
         if (brokers.isEmpty()) {

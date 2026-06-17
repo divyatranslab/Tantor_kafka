@@ -3,6 +3,7 @@ package io.translab.tantor.server.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class DeploymentService {
 
     private final TaskRepository taskRepository;
+    private final HostParcelRepository hostParcelRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -41,6 +43,7 @@ public class DeploymentService {
             mergeConfigParams(params, configJsonStr);
             
             applyDefaultKafkaPaths(params);
+            applyActiveParcelParams(params, hostId, version);
 
             // Inject JMX Exporter artifact URL so Agent can pull it securely
             if (artifactUrl != null && artifactUrl.contains("/api/v1/artifacts/")) {
@@ -56,6 +59,39 @@ public class DeploymentService {
 
         taskRepository.save(task);
         log.info("Task {} created successfully", task.getId());
+    }
+
+    @Transactional
+    public void upgradeKafkaOnHost(UUID clusterId, String hostId, String currentVersion, String targetVersion, String nodeId, String role, String configJsonStr) {
+        log.info("Scheduling Kafka upgrade on host {} from {} to {}", hostId, currentVersion, targetVersion);
+
+        Task task = createTask(clusterId, hostId, "UPGRADE_KAFKA");
+
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("version", targetVersion);
+            params.put("target_version", targetVersion);
+            params.put("previous_version", currentVersion);
+            params.put("node_id", nodeId != null ? nodeId : "1");
+            params.put("role", role != null ? role : "broker_controller");
+            if (clusterId != null) {
+                params.put("cluster_id", clusterId.toString());
+            }
+
+            mergeConfigParams(params, configJsonStr);
+            applyDefaultKafkaPaths(params);
+            if (!applyActiveParcelParams(params, hostId, targetVersion)) {
+                throw new IllegalStateException("Kafka " + targetVersion + " is not active on host " + hostId + ".");
+            }
+
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize upgrade parameters", e);
+            task.setParameters("{}");
+        }
+
+        taskRepository.save(task);
+        log.info("Upgrade task {} created successfully", task.getId());
     }
 
     @Transactional
@@ -156,5 +192,16 @@ public class DeploymentService {
         if (installDir == null || String.valueOf(installDir).isBlank()) {
             params.put("kafka_install_dir", "/opt/tantor/kafka");
         }
+    }
+
+    private boolean applyActiveParcelParams(Map<String, Object> params, String hostId, String version) {
+        var activeParcel = hostParcelRepository.findByHostIdAndServiceTypeAndActiveTrue(hostId, "KAFKA").stream()
+                .filter(parcel -> version != null && version.equals(parcel.getVersion()))
+                .findFirst();
+        activeParcel.ifPresent(parcel -> {
+            params.put("use_active_parcel", "true");
+            params.put("parcel_dir", parcel.getParcelDir());
+        });
+        return activeParcel.isPresent();
     }
 }

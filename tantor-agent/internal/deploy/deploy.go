@@ -11,6 +11,7 @@ import (
 	"io.translab/tantor-agent/internal/deploy/kafka"
 	"io.translab/tantor-agent/internal/deploy/ksqldb"
 	"io.translab/tantor-agent/internal/deploy/monitoring"
+	"io.translab/tantor-agent/internal/deploy/parcel"
 	"io.translab/tantor-agent/internal/deploy/schema"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/pkg/api"
@@ -34,10 +35,12 @@ func NewEngine(cfg *config.Config, client *client.APIClient, exec executor.Execu
 // Execute handles a task dispatched from the task poller
 func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	slog.Info("Executing deployment task", "taskId", t.TaskID, "command", t.Command)
-	
+
 	switch t.Command {
 	case "INSTALL_KAFKA":
 		return e.installKafka(ctx, t)
+	case "UPGRADE_KAFKA":
+		return e.upgradeKafka(ctx, t)
 	case "INSTALL_CONNECT":
 		return e.installConnect(ctx, t)
 	case "INSTALL_SCHEMA":
@@ -56,6 +59,14 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.updateKafkaConfig(ctx, t)
 	case "DELETE_CLUSTER":
 		return e.deleteCluster(ctx, t)
+	case "DISTRIBUTE_PARCEL":
+		return e.distributeParcel(ctx, t)
+	case "ACTIVATE_PARCEL":
+		return e.activateParcel(ctx, t)
+	case "DEACTIVATE_PARCEL":
+		return e.deactivateParcel(ctx, t)
+	case "REMOVE_PARCEL":
+		return e.removeParcel(ctx, t)
 	default:
 		return &api.TaskResult{
 			TaskID:   t.TaskID,
@@ -64,6 +75,51 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 			ErrorMsg: fmt.Sprintf("Unknown command: %s", t.Command),
 		}, nil
 	}
+}
+
+func (e *Engine) upgradeKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Upgrade(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka upgrade failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) distributeParcel(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := parcel.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Distribute(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Parcel distribution failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) activateParcel(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := parcel.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Activate(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Parcel activation failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) deactivateParcel(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := parcel.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Deactivate(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Parcel deactivation failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) removeParcel(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := parcel.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Remove(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Parcel removal failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
 }
 
 func (e *Engine) deleteCluster(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
@@ -83,7 +139,7 @@ func (e *Engine) deleteCluster(ctx context.Context, t *api.Task) (*api.TaskResul
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
 	logOutput, err := deployer.Deploy(ctx, t)
-	
+
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Kafka deployment failed: %v\nLogs: %s", err, logOutput)), nil
 	}
@@ -168,7 +224,7 @@ func (e *Engine) fail(t *api.Task, msg string) *api.TaskResult {
 func (e *Engine) installConnect(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	deployer := connect.NewDeployer(e.cfg, e.client, e.exec)
 	logOutput, err := deployer.Deploy(ctx, t)
-	
+
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Connect deployment failed: %v\nLogs: %s", err, logOutput)), nil
 	}

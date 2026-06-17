@@ -1,6 +1,7 @@
 package kafka
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"fmt"
@@ -20,6 +21,8 @@ import (
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/checksum"
 )
+
+const defaultKafkaParcelDir = "/srv/apps/tantor/parcels"
 
 type Deployer struct {
 	cfg    *config.Config
@@ -50,8 +53,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if dataDir == "" {
 		dataDir = filepath.Join(installDir, "data")
 	}
+	mode := deploymentMode(t)
+	role := t.Parameters["role"]
 
 	log("Starting cross-platform Kafka Deployment Workflow...")
+	log("Deployment mode: %s", mode)
 
 	// 1. Create directories
 	if err := d.ensureWritableDir(ctx, d.cfg.Paths.ArtifactsDir); err != nil {
@@ -64,58 +70,65 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		return logs.String(), err
 	}
 
+	usedParcel, err := d.installFromActiveParcel(ctx, t, installDir, &logs)
+	if err != nil {
+		return logs.String(), err
+	}
+
 	// 2. Download TAR
-	destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
-	log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
+	if !usedParcel {
+		destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
+		log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
 
-	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
-	}
-
-	// 3. Verify Checksum
-	expectedChecksum := t.Checksum
-	if expectedChecksum == "" {
-		expectedChecksum = downloadedChecksum
-	}
-	if err := checksum.VerifySHA256(destPath, expectedChecksum); err != nil {
-		os.Remove(destPath)
-		return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
-	}
-	log("Checksum verified successfully")
-
-	// 4. Extract TAR (using tar command which exists on Windows 10+)
-	tmpExtractDir := filepath.Join(d.cfg.Paths.ArtifactsDir, "extract_"+t.TaskID)
-	os.MkdirAll(tmpExtractDir, 0755)
-	_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
-	}
-
-	// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
-	err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || path == tmpExtractDir {
-			return err
+		downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
+		if err != nil {
+			return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
 		}
-		relPath, _ := filepath.Rel(tmpExtractDir, path)
-		dest := filepath.Join(installDir, relPath)
-		if info.IsDir() {
-			return os.MkdirAll(dest, 0755)
+
+		// 3. Verify Checksum
+		expectedChecksum := t.Checksum
+		if expectedChecksum == "" {
+			expectedChecksum = downloadedChecksum
 		}
-		data, err := os.ReadFile(path)
-		if err == nil {
-			os.MkdirAll(filepath.Dir(dest), 0755)
-			mode := info.Mode().Perm()
-			if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
-				mode = 0755 // Ensure bin/ scripts are always executable
+		if err := checksum.VerifySHA256(destPath, expectedChecksum); err != nil {
+			os.Remove(destPath)
+			return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
+		}
+		log("Checksum verified successfully")
+
+		// 4. Extract TAR (using tar command which exists on Windows 10+)
+		tmpExtractDir := filepath.Join(d.cfg.Paths.ArtifactsDir, "extract_"+t.TaskID)
+		os.MkdirAll(tmpExtractDir, 0755)
+		_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
+		if err != nil {
+			return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
+		}
+
+		// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
+		err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == tmpExtractDir {
+				return err
 			}
-			os.Remove(dest) // Force recreation to avoid preserving old permissions
-			os.WriteFile(dest, data, mode)
-		}
-		return nil
-	})
-	os.RemoveAll(tmpExtractDir)
-	log("Artifact extracted to %s", installDir)
+			relPath, _ := filepath.Rel(tmpExtractDir, path)
+			dest := filepath.Join(installDir, relPath)
+			if info.IsDir() {
+				return os.MkdirAll(dest, 0755)
+			}
+			data, err := os.ReadFile(path)
+			if err == nil {
+				os.MkdirAll(filepath.Dir(dest), 0755)
+				mode := info.Mode().Perm()
+				if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
+					mode = 0755 // Ensure bin/ scripts are always executable
+				}
+				os.Remove(dest) // Force recreation to avoid preserving old permissions
+				os.WriteFile(dest, data, mode)
+			}
+			return nil
+		})
+		os.RemoveAll(tmpExtractDir)
+		log("Artifact extracted to %s", installDir)
+	}
 
 	// 5.5 Fix SELinux contexts for extracted files (RHEL/CentOS)
 	if d.isSELinuxEnabled(ctx) {
@@ -157,6 +170,10 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, filepath.Join(jmxDir, "jmx_config.yml")); err != nil {
 		log("Warning: Failed to write JMX config: %v", err)
 	}
+	if !isUsableJmxAgent(jmxJarPath) {
+		log("Warning: JMX agent jar is missing or invalid; Kafka will start without JMX exporter")
+		_ = os.Remove(jmxJarPath)
+	}
 
 	// 7. Generate Configs
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
@@ -173,43 +190,67 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		return logs.String(), err
 	}
 
-	metaPropsPath := filepath.Join(logDirs, "meta.properties")
-	if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
-		log("Fresh deployment detected — formatting KRaft storage...")
-		storageScript := filepath.Join(installDir, "bin", "kafka-storage.sh")
-		configPath := filepath.Join(installDir, "config/kraft/server.properties")
+	if mode == "kraft" {
+		metaPropsPath := filepath.Join(logDirs, "meta.properties")
+		if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
+			log("Fresh deployment detected — formatting KRaft storage...")
+			storageScript := filepath.Join(installDir, "bin", "kafka-storage.sh")
+			configPath := filepath.Join(installDir, "config/kraft/server.properties")
 
-		uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-		if err != nil {
-			return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
-		}
-		clusterUUID := strings.TrimSpace(uuidOut)
-		log("Generated cluster UUID: %s", clusterUUID)
+			uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
+			if err != nil {
+				return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+			}
+			clusterUUID := strings.TrimSpace(uuidOut)
+			log("Generated cluster UUID: %s", clusterUUID)
 
-		_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
-		if err != nil {
-			return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+			_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
+			if err != nil {
+				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+			}
+			log("KRaft storage formatted successfully")
+		} else {
+			log("Existing KRaft metadata found — skipping format (safe re-deploy)")
 		}
-		log("KRaft storage formatted successfully")
+
 	} else {
-		log("Existing KRaft metadata found — skipping format (safe re-deploy)")
+		log("ZooKeeper deployment detected - skipping KRaft storage format")
 	}
 
 	// 8. Systemd Service
-	if err := d.createSystemdService(ctx, "root", installDir, t); err != nil {
-		return logs.String(), err
+	if mode == "zookeeper" && roleHasZooKeeper(role) {
+		if err := d.createZooKeeperSystemdService(ctx, "root", installDir, t); err != nil {
+			return logs.String(), err
+		}
+		log("ZooKeeper systemd service created")
 	}
-	log("Systemd service created")
+	if mode == "kraft" || roleHasBroker(role) {
+		configPath := filepath.Join(installDir, "config/kraft/server.properties")
+		if mode == "zookeeper" {
+			configPath = filepath.Join(installDir, "config/server.properties")
+		}
+		if err := d.createSystemdService(ctx, "root", installDir, configPath, t); err != nil {
+			return logs.String(), err
+		}
+		log("Kafka systemd service created")
+	}
 
 	// 9. Start Service
-	_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
-	if err == nil {
-		_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka")
+	if _, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload"); err != nil {
+		return logs.String(), fmt.Errorf("failed to reload systemd: %w", err)
 	}
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to start service: %w", err)
+	if mode == "zookeeper" && roleHasZooKeeper(role) {
+		if _, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "zookeeper"); err != nil {
+			return logs.String(), fmt.Errorf("failed to start zookeeper service: %w", err)
+		}
+		log("ZooKeeper service started successfully")
 	}
-	log("Kafka service started successfully")
+	if mode == "kraft" || roleHasBroker(role) {
+		if _, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka"); err != nil {
+			return logs.String(), fmt.Errorf("failed to start kafka service: %w", err)
+		}
+		log("Kafka service started successfully")
+	}
 
 	// 10. Post-Deployment Validation
 	if err := d.validateDeployment(ctx, t, installDir, &logs); err != nil {
@@ -217,6 +258,109 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	}
 	log("All deployment validations passed ✓")
 
+	return logs.String(), nil
+}
+
+func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
+	var logs strings.Builder
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+	}
+
+	installDir := firstNonEmpty(t.Parameters["kafka_install_dir"], "/opt/tantor/kafka")
+	dataDir := firstNonEmpty(t.Parameters["kafka_data_dir"], filepath.Join(installDir, "data"))
+	targetVersion := firstNonEmpty(t.Parameters["target_version"], t.Parameters["version"])
+	mode := deploymentMode(t)
+	role := t.Parameters["role"]
+
+	if targetVersion == "" {
+		return logs.String(), fmt.Errorf("target Kafka version is required")
+	}
+
+	parcelDir := firstNonEmpty(t.Parameters["parcel_dir"], defaultKafkaParcelDir)
+	activeLink := filepath.Join(parcelDir, "active", "kafka")
+	parcelTarget, err := os.Readlink(activeLink)
+	if err != nil {
+		return logs.String(), fmt.Errorf("active Kafka parcel link %s was not found: %w", activeLink, err)
+	}
+	if !filepath.IsAbs(parcelTarget) {
+		parcelTarget = filepath.Join(filepath.Dir(activeLink), parcelTarget)
+	}
+	if filepath.Base(parcelTarget) != targetVersion {
+		return logs.String(), fmt.Errorf("active Kafka parcel is %s, expected %s", filepath.Base(parcelTarget), targetVersion)
+	}
+	if _, err := os.Stat(filepath.Join(parcelTarget, "bin", "kafka-server-start.sh")); err != nil {
+		return logs.String(), fmt.Errorf("active parcel at %s does not look like a Kafka binary: %w", parcelTarget, err)
+	}
+	if _, err := os.Stat(installDir); err != nil {
+		return logs.String(), fmt.Errorf("Kafka install directory %s was not found: %w", installDir, err)
+	}
+
+	log("Starting Kafka upgrade workflow...")
+	log("Target version: %s", targetVersion)
+	log("Active parcel: %s", parcelTarget)
+	log("Install directory: %s", installDir)
+	log("Preserving data directory: %s", dataDir)
+
+	if mode == "kraft" || roleHasBroker(role) {
+		log("Stopping Kafka service...")
+		if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", "systemctl stop kafka 2>/dev/null || true"); err != nil {
+			return logs.String(), fmt.Errorf("failed to stop kafka service: %w, out: %s, err: %s", err, out, errOut)
+		}
+	}
+	if mode == "zookeeper" && roleHasZooKeeper(role) {
+		log("Stopping ZooKeeper service...")
+		if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", "systemctl stop zookeeper 2>/dev/null || true"); err != nil {
+			return logs.String(), fmt.Errorf("failed to stop zookeeper service: %w, out: %s, err: %s", err, out, errOut)
+		}
+	}
+
+	if err := d.switchKafkaBinariesFromParcel(ctx, parcelTarget, installDir, dataDir); err != nil {
+		return logs.String(), err
+	}
+	log("Kafka software switched to parcel %s", targetVersion)
+
+	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
+		return logs.String(), fmt.Errorf("failed to regenerate Kafka config: %w", err)
+	}
+	log("Kafka configs regenerated with existing data paths")
+
+	if mode == "zookeeper" && roleHasZooKeeper(role) {
+		if err := d.createZooKeeperSystemdService(ctx, "root", installDir, t); err != nil {
+			return logs.String(), err
+		}
+	}
+	if mode == "kraft" || roleHasBroker(role) {
+		configPath := filepath.Join(installDir, "config/kraft/server.properties")
+		if mode == "zookeeper" {
+			configPath = filepath.Join(installDir, "config/server.properties")
+		}
+		if err := d.createSystemdService(ctx, "root", installDir, configPath, t); err != nil {
+			return logs.String(), err
+		}
+	}
+
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "daemon-reload"); err != nil {
+		return logs.String(), fmt.Errorf("failed to reload systemd: %w", err)
+	}
+	if mode == "zookeeper" && roleHasZooKeeper(role) {
+		if _, _, err := d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "zookeeper"); err != nil {
+			return logs.String(), fmt.Errorf("failed to start zookeeper service: %w", err)
+		}
+		log("ZooKeeper service restarted successfully")
+	}
+	if mode == "kraft" || roleHasBroker(role) {
+		if _, _, err := d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka"); err != nil {
+			return logs.String(), fmt.Errorf("failed to start kafka service: %w", err)
+		}
+		log("Kafka service restarted successfully")
+	}
+
+	if err := d.validateDeployment(ctx, t, installDir, &logs); err != nil {
+		return logs.String(), fmt.Errorf("upgrade validation failed: %w", err)
+	}
+	log("Kafka upgrade validations passed")
 	return logs.String(), nil
 }
 
@@ -230,6 +374,137 @@ func (d *Deployer) isSELinuxEnabled(ctx context.Context) bool {
 }
 
 func (d *Deployer) validateDeployment(ctx context.Context, t *api.Task, installDir string, logs *strings.Builder) error {
+	log := func(msg string, args ...interface{}) {
+		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
+	}
+
+	if err := d.client.ReportTaskResult(&api.TaskResult{
+		TaskID: t.TaskID,
+		HostID: d.cfg.Agent.HostID,
+		Status: "VALIDATING",
+	}); err != nil {
+		log("Warning: Failed to report VALIDATING status: %v", err)
+	}
+
+	if deploymentMode(t) == "zookeeper" {
+		return d.validateZooKeeperDeployment(ctx, t, logs)
+	}
+	return d.validateKRaftDeployment(ctx, t, installDir, logs)
+}
+
+func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, installDir string, logs *strings.Builder) error {
+	log := func(msg string, args ...interface{}) {
+		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
+	}
+
+	role := t.Parameters["role"]
+	listenerPort := firstNonEmpty(t.Parameters["listener_port"], "9092")
+	controllerPort := firstNonEmpty(t.Parameters["controller_port"], "9093")
+
+	log("Validation [1/6]: Checking Kafka process...")
+	if pid, ok := d.waitForProcess(ctx, "kafka.Kafka", 10, 3*time.Second); ok {
+		log("  Kafka process detected (PID: %s)", pid)
+	} else {
+		return fmt.Errorf("Kafka process not found after 30s")
+	}
+
+	log("Validation [2/6]: Checking systemd service status...")
+	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "kafka")
+	if err != nil || strings.TrimSpace(out) != "active" {
+		return fmt.Errorf("kafka.service is not active: %s", out)
+	}
+	log("  kafka.service is active")
+
+	log("Validation [3/6]: Checking KRaft metadata...")
+	logDirs := firstNonEmpty(t.Parameters["log_dirs"], filepath.Join(t.Parameters["kafka_data_dir"], "kafka-logs"))
+	if logDirs == "" {
+		logDirs = filepath.Join(installDir, "data", "kafka-logs")
+	}
+	if _, err := os.Stat(filepath.Join(logDirs, "meta.properties")); err != nil {
+		return fmt.Errorf("KRaft meta.properties not found in %s", logDirs)
+	}
+	log("  KRaft meta.properties exists")
+
+	if roleHasBroker(role) || role == "" {
+		log("Validation [4/6]: Checking broker port %s...", listenerPort)
+		if err := d.waitForListeningPort(ctx, listenerPort, 10, 3*time.Second); err != nil {
+			return fmt.Errorf("broker port %s not listening after 30s", listenerPort)
+		}
+		log("  Broker listening on port %s", listenerPort)
+	} else {
+		log("Validation [4/6]: Checking controller port %s...", controllerPort)
+		if err := d.waitForListeningPort(ctx, controllerPort, 10, 3*time.Second); err != nil {
+			return fmt.Errorf("controller port %s not listening after 30s", controllerPort)
+		}
+		log("  Controller listening on port %s", controllerPort)
+	}
+
+	if roleHasBroker(role) || role == "" {
+		d.validateJMX(ctx, logs, "5/6", "6/6")
+	} else {
+		log("Validation [5/6]: Skipping broker JMX check for controller-only node")
+		log("Validation [6/6]: Controller-only node validation complete")
+	}
+	return nil
+}
+
+func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task, logs *strings.Builder) error {
+	log := func(msg string, args ...interface{}) {
+		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
+	}
+
+	role := t.Parameters["role"]
+	listenerPort := firstNonEmpty(t.Parameters["listener_port"], "9092")
+	zookeeperPort := firstNonEmpty(t.Parameters["zookeeper_port"], t.Parameters["controller_port"], "2181")
+
+	if roleHasZooKeeper(role) {
+		log("Validation [1/6]: Checking ZooKeeper service status...")
+		out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "zookeeper")
+		if err != nil || strings.TrimSpace(out) != "active" {
+			return fmt.Errorf("zookeeper.service is not active: %s", out)
+		}
+		log("  zookeeper.service is active")
+
+		log("Validation [2/6]: Checking ZooKeeper port %s...", zookeeperPort)
+		if err := d.waitForListeningPort(ctx, zookeeperPort, 10, 3*time.Second); err != nil {
+			return fmt.Errorf("ZooKeeper port %s not listening after 30s", zookeeperPort)
+		}
+		log("  ZooKeeper listening on port %s", zookeeperPort)
+	} else {
+		log("Validation [1/6]: ZooKeeper service runs on another host")
+		log("Validation [2/6]: Skipping local ZooKeeper port check")
+	}
+
+	if !roleHasBroker(role) {
+		log("Validation [3/6]: ZooKeeper-only node validation complete")
+		return nil
+	}
+
+	log("Validation [3/6]: Checking Kafka process...")
+	if pid, ok := d.waitForProcess(ctx, "kafka.Kafka", 10, 3*time.Second); ok {
+		log("  Kafka process detected (PID: %s)", pid)
+	} else {
+		return fmt.Errorf("Kafka process not found after 30s")
+	}
+
+	log("Validation [4/6]: Checking kafka.service status...")
+	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "kafka")
+	if err != nil || strings.TrimSpace(out) != "active" {
+		return fmt.Errorf("kafka.service is not active: %s", out)
+	}
+	log("  kafka.service is active")
+
+	log("Validation [5/6]: Checking broker port %s...", listenerPort)
+	if err := d.waitForListeningPort(ctx, listenerPort, 10, 3*time.Second); err != nil {
+		return fmt.Errorf("broker port %s not listening after 30s", listenerPort)
+	}
+	log("  Broker listening on port %s", listenerPort)
+
+	d.validateJMX(ctx, logs, "6/6", "6/6")
+	return nil
+}
+
+func (d *Deployer) validateDeploymentLegacy(ctx context.Context, t *api.Task, installDir string, logs *strings.Builder) error {
 	log := func(msg string, args ...interface{}) {
 		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
 	}
@@ -316,69 +591,116 @@ check5:
 }
 
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
-	nodeId := t.Parameters["node_id"]
-	if nodeId == "" {
-		nodeId = "1"
+	if deploymentMode(t) == "zookeeper" {
+		return d.generateZooKeeperConfigs(ctx, t, installDir, dataDir)
 	}
+	return d.generateKRaftConfigs(ctx, t, installDir, dataDir)
+}
+
+func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
+	nodeId := firstNonEmpty(t.Parameters["node_id"], "1")
 	hostname := getLocalIP()
-	quorumVoters := t.Parameters["quorum_voters"]
-	if quorumVoters == "" {
-		quorumVoters = fmt.Sprintf("%s@%s:9093", nodeId, hostname)
-	}
+	controllerPort := firstNonEmpty(t.Parameters["controller_port"], "9093")
+	listenerPort := firstNonEmpty(t.Parameters["listener_port"], "9092")
+	quorumVoters := firstNonEmpty(t.Parameters["quorum_voters"], fmt.Sprintf("%s@%s:%s", nodeId, hostname, controllerPort))
+	role := normalizeKRaftRole(t.Parameters["role"])
+	logDirs := firstNonEmpty(t.Parameters["log_dirs"], filepath.Join(dataDir, "kafka-logs"))
+	numPartitions := firstNonEmpty(t.Parameters["num_partitions"], "1")
+	repFactor := firstNonEmpty(t.Parameters["replication_factor"], "1")
 
-	role := t.Parameters["role"]
-	if role == "broker_controller" || role == "" {
-		role = "broker,controller"
-	}
-
-	listenerPort := t.Parameters["listener_port"]
-	if listenerPort == "" {
-		listenerPort = "9092"
-	}
-
-	controllerPort := t.Parameters["controller_port"]
-	if controllerPort == "" {
-		controllerPort = "9093"
-	}
-
-	logDirs := t.Parameters["log_dirs"]
-	if logDirs == "" {
-		logDirs = filepath.Join(dataDir, "kafka-logs")
-	}
-
-	numPartitions := t.Parameters["num_partitions"]
-	if numPartitions == "" {
-		numPartitions = "1"
-	}
-
-	repFactor := t.Parameters["replication_factor"]
-	if repFactor == "" {
-		repFactor = "1"
+	listeners := "PLAINTEXT://" + hostname + ":" + listenerPort
+	advertisedListeners := "PLAINTEXT://" + hostname + ":" + listenerPort
+	if roleHasController(t.Parameters["role"]) {
+		controllerListener := "CONTROLLER://" + hostname + ":" + controllerPort
+		if roleHasBroker(t.Parameters["role"]) || t.Parameters["role"] == "" {
+			listeners += "," + controllerListener
+		} else {
+			listeners = controllerListener
+			advertisedListeners = ""
+		}
 	}
 
 	props := struct {
-		NodeId         string
-		QuorumVoters   string
-		Hostname       string
-		LogDirs        string
-		Role           string
-		ListenerPort   string
-		ControllerPort string
-		NumPartitions  string
-		RepFactor      string
+		NodeId              string
+		QuorumVoters        string
+		LogDirs             string
+		Role                string
+		Listeners           string
+		AdvertisedListeners string
+		NumPartitions       string
+		RepFactor           string
 	}{
-		NodeId:         nodeId,
-		QuorumVoters:   quorumVoters,
-		Hostname:       hostname,
-		LogDirs:        logDirs,
-		Role:           role,
-		ListenerPort:   listenerPort,
-		ControllerPort: controllerPort,
-		NumPartitions:  numPartitions,
-		RepFactor:      repFactor,
+		NodeId:              nodeId,
+		QuorumVoters:        quorumVoters,
+		LogDirs:             logDirs,
+		Role:                role,
+		Listeners:           listeners,
+		AdvertisedListeners: advertisedListeners,
+		NumPartitions:       numPartitions,
+		RepFactor:           repFactor,
 	}
 
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
+}
+
+func (d *Deployer) generateZooKeeperConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
+	role := t.Parameters["role"]
+	nodeId := firstNonEmpty(t.Parameters["node_id"], "1")
+	hostname := getLocalIP()
+	listenerPort := firstNonEmpty(t.Parameters["listener_port"], "9092")
+	zookeeperPort := firstNonEmpty(t.Parameters["zookeeper_port"], t.Parameters["controller_port"], "2181")
+	zookeeperConnect := firstNonEmpty(t.Parameters["zookeeper_connect"], hostname+":"+zookeeperPort)
+	logDirs := firstNonEmpty(t.Parameters["log_dirs"], filepath.Join(dataDir, "kafka-logs"))
+	numPartitions := firstNonEmpty(t.Parameters["num_partitions"], "1")
+	repFactor := firstNonEmpty(t.Parameters["replication_factor"], "1")
+
+	if roleHasZooKeeper(role) {
+		props := struct {
+			DataDir    string
+			ClientPort string
+			Servers    string
+		}{
+			DataDir:    filepath.Join(dataDir, "zookeeper"),
+			ClientPort: zookeeperPort,
+			Servers:    t.Parameters["zookeeper_servers"],
+		}
+		if err := d.ensureWritableDir(ctx, props.DataDir); err != nil {
+			return err
+		}
+		if strings.TrimSpace(props.Servers) != "" {
+			if err := os.WriteFile(filepath.Join(props.DataDir, "myid"), []byte(nodeId+"\n"), 0644); err != nil {
+				return fmt.Errorf("failed to write ZooKeeper myid: %w", err)
+			}
+		}
+		if err := d.writeTemplateToSudoFile(ctx, ZooKeeperPropertiesTemplate, props, filepath.Join(installDir, "config/zookeeper.properties")); err != nil {
+			return err
+		}
+	}
+
+	if roleHasBroker(role) {
+		props := struct {
+			NodeId           string
+			Hostname         string
+			ListenerPort     string
+			ZooKeeperConnect string
+			LogDirs          string
+			NumPartitions    string
+			RepFactor        string
+		}{
+			NodeId:           nodeId,
+			Hostname:         hostname,
+			ListenerPort:     listenerPort,
+			ZooKeeperConnect: zookeeperConnect,
+			LogDirs:          logDirs,
+			NumPartitions:    numPartitions,
+			RepFactor:        repFactor,
+		}
+		if err := d.writeTemplateToSudoFile(ctx, ZooKeeperBrokerPropertiesTemplate, props, filepath.Join(installDir, "config/server.properties")); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error) {
@@ -409,7 +731,7 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 	return logs.String(), nil
 }
 
-func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
+func (d *Deployer) createSystemdService(ctx context.Context, user, installDir, configPath string, t *api.Task) error {
 	// Find Java Home
 	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
 	javaHome := strings.TrimSpace(out)
@@ -423,6 +745,66 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 
 	jmxPort := t.Parameters["jmx_port"]
+	jmxJarPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
+	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
+	jmxAgentPath := ""
+	if isUsableJmxAgent(jmxJarPath) {
+		jmxAgentPath = jmxJarPath
+	}
+
+	props := struct {
+		User          string
+		Group         string
+		JavaHome      string
+		InstallDir    string
+		ConfigPath    string
+		HeapSize      string
+		JmxPort       string
+		JmxAgentPath  string
+		JmxConfigPath string
+	}{
+		User:          user,
+		Group:         user,
+		JavaHome:      javaHome,
+		InstallDir:    installDir,
+		ConfigPath:    configPath,
+		HeapSize:      heapSize,
+		JmxPort:       jmxPort,
+		JmxAgentPath:  jmxAgentPath,
+		JmxConfigPath: jmxConfigPath,
+	}
+
+	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, "/etc/systemd/system/kafka.service")
+}
+
+func isUsableJmxAgent(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() < 1024 {
+		return false
+	}
+
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return false
+	}
+	defer reader.Close()
+
+	for _, file := range reader.File {
+		if strings.EqualFold(file.Name, "META-INF/MANIFEST.MF") {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *Deployer) createZooKeeperSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
+	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
+	javaHome := strings.TrimSpace(out)
+	if javaHome == "" || javaHome == "." {
+		javaHome = "/usr"
+	}
+
+	heapSize := firstNonEmpty(t.Parameters["zookeeper_heap_size"], t.Parameters["heap_size"], "1G")
 
 	props := struct {
 		User       string
@@ -430,17 +812,15 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		JavaHome   string
 		InstallDir string
 		HeapSize   string
-		JmxPort    string
 	}{
 		User:       user,
 		Group:      user,
 		JavaHome:   javaHome,
 		InstallDir: installDir,
 		HeapSize:   heapSize,
-		JmxPort:    jmxPort,
 	}
 
-	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, "/etc/systemd/system/kafka.service")
+	return d.writeTemplateToSudoFile(ctx, ZooKeeperSystemdTemplate, props, "/etc/systemd/system/zookeeper.service")
 }
 
 func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, data interface{}, dest string) error {
@@ -520,6 +900,91 @@ func (d *Deployer) canWriteToDir(dir string) bool {
 	return true
 }
 
+func (d *Deployer) switchKafkaBinariesFromParcel(ctx context.Context, parcelTarget, installDir, dataDir string) error {
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	script := fmt.Sprintf(`
+set -e
+test -d %s
+test -d %s
+mkdir -p %s
+for item in bin config libs licenses site-docs LICENSE NOTICE; do
+  rm -rf %s/"$item"
+done
+cp -a %s/. %s/
+mkdir -p %s
+for item in bin config libs licenses site-docs LICENSE NOTICE; do
+  if [ -e %s/"$item" ]; then
+    chmod -R a+rX %s/"$item"
+    chown -R %s %s/"$item"
+  fi
+done
+`,
+		shellQuote(parcelTarget),
+		shellQuote(installDir),
+		shellQuote(installDir),
+		shellQuote(installDir),
+		shellQuote(parcelTarget),
+		shellQuote(installDir),
+		shellQuote(dataDir),
+		shellQuote(installDir),
+		shellQuote(installDir),
+		shellQuote(owner),
+		shellQuote(installDir),
+	)
+	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+		return fmt.Errorf("failed to switch Kafka binaries from active parcel: %w, out: %s, err: %s", err, out, errOut)
+	}
+	return nil
+}
+
+func (d *Deployer) installFromActiveParcel(ctx context.Context, t *api.Task, installDir string, logs *strings.Builder) (bool, error) {
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+	}
+
+	if !strings.EqualFold(t.Parameters["use_active_parcel"], "true") {
+		return false, nil
+	}
+
+	parcelDir := firstNonEmpty(t.Parameters["parcel_dir"], defaultKafkaParcelDir)
+	activeLink := filepath.Join(parcelDir, "active", "kafka")
+	target, err := os.Readlink(activeLink)
+	if err != nil {
+		log("Active Kafka parcel was requested, but %s is not available; downloading artifact instead", activeLink)
+		return false, nil
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(activeLink), target)
+	}
+
+	expectedVersion := strings.TrimSpace(t.Parameters["version"])
+	if expectedVersion != "" && filepath.Base(target) != expectedVersion {
+		log("Active Kafka parcel version %s does not match requested version %s; downloading artifact instead", filepath.Base(target), expectedVersion)
+		return false, nil
+	}
+
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	script := fmt.Sprintf(
+		"set -e; test -d %s; rm -rf %s; mkdir -p %s %s; cp -a %s/. %s/; chmod -R a+rX %s; chown -R %s %s",
+		shellQuote(target),
+		shellQuote(installDir),
+		shellQuote(filepath.Dir(installDir)),
+		shellQuote(installDir),
+		shellQuote(activeLink),
+		shellQuote(installDir),
+		shellQuote(installDir),
+		shellQuote(owner),
+		shellQuote(installDir),
+	)
+	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+		return false, fmt.Errorf("failed to install Kafka from active parcel: %w, out: %s, err: %s", err, out, errOut)
+	}
+
+	log("Installed Kafka from active parcel %s to %s", target, installDir)
+	return true, nil
+}
+
 func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	var logs strings.Builder
 	log := func(msg string, args ...interface{}) {
@@ -533,6 +998,8 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	logDirs := t.Parameters["log_dirs"]
 	listenerPort := t.Parameters["listener_port"]
 	controllerPort := t.Parameters["controller_port"]
+	zookeeperPort := t.Parameters["zookeeper_port"]
+	mode := deploymentMode(t)
 
 	if installDir == "" {
 		installDir = "/opt/tantor/kafka"
@@ -547,7 +1014,18 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 		listenerPort = "9092"
 	}
 	if controllerPort == "" {
-		controllerPort = "9093"
+		if mode == "zookeeper" {
+			controllerPort = firstNonEmpty(zookeeperPort, "2181")
+		} else {
+			controllerPort = "9093"
+		}
+	}
+	if zookeeperPort == "" {
+		if mode == "zookeeper" {
+			zookeeperPort = controllerPort
+		} else {
+			zookeeperPort = "2181"
+		}
 	}
 
 	log("Starting Kafka cleanup process...")
@@ -572,7 +1050,8 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	// 4. Validate ports are free
 	log("Validating ports are free...")
 	out, _, _ := d.exec.RunSudo(ctx, "ss", "-tlnp")
-	if strings.Contains(out, ":"+listenerPort+" ") || strings.Contains(out, ":"+controllerPort+" ") || strings.Contains(out, ":7071 ") {
+	zooPortStillUsed := mode == "zookeeper" && strings.Contains(out, ":"+zookeeperPort+" ")
+	if strings.Contains(out, ":"+listenerPort+" ") || strings.Contains(out, ":"+controllerPort+" ") || zooPortStillUsed || strings.Contains(out, ":7071 ") {
 		return logs.String(), fmt.Errorf("Ports are still in use after cleanup")
 	}
 
@@ -587,18 +1066,18 @@ func (d *Deployer) cleanupKafkaSystemdUnits(ctx context.Context, logs *strings.B
 		slog.Info(formatted)
 	}
 
-	log("Stopping and removing Kafka broker systemd units...")
+	log("Stopping and removing Kafka and ZooKeeper systemd units...")
 	script := `
 set +e
-units="$(systemctl list-units --type=service --all --no-legend 'kafka.service' 'kafka-managed-*.service' 'kafka-test-*.service' 2>/dev/null | awk '{print $1}' | sort -u)"
-files="$(find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' \) -printf '%f\n' 2>/dev/null | sort -u)"
+units="$(systemctl list-units --type=service --all --no-legend 'kafka.service' 'kafka-managed-*.service' 'kafka-test-*.service' 'zookeeper.service' 'zookeeper-managed-*.service' 2>/dev/null | awk '{print $1}' | sort -u)"
+files="$(find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' -o -name 'zookeeper.service' -o -name 'zookeeper-managed-*.service' \) -printf '%f\n' 2>/dev/null | sort -u)"
 for unit in $units $files; do
   [ -n "$unit" ] || continue
   systemctl stop "$unit" 2>/dev/null || true
   systemctl disable "$unit" 2>/dev/null || true
   systemctl reset-failed "$unit" 2>/dev/null || true
 done
-find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' \) -delete 2>/dev/null || true
+find /etc/systemd/system -maxdepth 1 \( -name 'kafka.service' -o -name 'kafka-managed-*.service' -o -name 'kafka-test-*.service' -o -name 'zookeeper.service' -o -name 'zookeeper-managed-*.service' \) -delete 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true
 `
 	out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script)
@@ -637,6 +1116,99 @@ func (d *Deployer) killKafkaRuntimeProcesses(ctx context.Context, listenerPort, 
 
 	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "kafka.Kafka")
 	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "jmx_prometheus_javaagent")
+	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "QuorumPeerMain")
+	_, _, _ = d.exec.RunSudo(ctx, "pkill", "-f", "zookeeper-server-start")
+}
+
+func (d *Deployer) waitForProcess(ctx context.Context, pattern string, attempts int, delay time.Duration) (string, bool) {
+	for i := 0; i < attempts; i++ {
+		out, _, _ := d.exec.Run(ctx, "bash", "-c", "pgrep -f '"+pattern+"'")
+		if strings.TrimSpace(out) != "" {
+			return strings.TrimSpace(out), true
+		}
+		time.Sleep(delay)
+	}
+	return "", false
+}
+
+func (d *Deployer) waitForListeningPort(ctx context.Context, port string, attempts int, delay time.Duration) error {
+	for i := 0; i < attempts; i++ {
+		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ss -tlnp | grep :%s", port))
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+	}
+	return fmt.Errorf("port %s not listening", port)
+}
+
+func (d *Deployer) validateJMX(ctx context.Context, logs *strings.Builder, processStep, metricsStep string) {
+	log := func(msg string, args ...interface{}) {
+		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
+	}
+
+	jmxMetricsPort := "7071"
+	log("Validation [%s]: Checking JMX Exporter javaagent...", processStep)
+	out, _, _ := d.exec.Run(ctx, "bash", "-c", "ps aux | grep javaagent | grep -v grep")
+	if strings.Contains(out, "jmx_prometheus_javaagent") {
+		log("  JMX Prometheus Exporter attached")
+	} else {
+		log("  JMX Exporter not detected in process args (non-fatal)")
+	}
+
+	log("Validation [%s]: Checking metrics endpoint on port %s...", metricsStep, jmxMetricsPort)
+	for i := 0; i < 5; i++ {
+		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("curl -sf http://localhost:%s/metrics | head -1", jmxMetricsPort))
+		if err == nil {
+			log("  Metrics endpoint responding on port %s", jmxMetricsPort)
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
+	log("  Metrics endpoint not responding on port %s (non-fatal - JMX jar may be missing)", jmxMetricsPort)
+}
+
+func deploymentMode(t *api.Task) string {
+	if strings.EqualFold(t.Parameters["mode"], "zookeeper") {
+		return "zookeeper"
+	}
+	return "kraft"
+}
+
+func normalizeKRaftRole(role string) string {
+	switch role {
+	case "broker":
+		return "broker"
+	case "controller":
+		return "controller"
+	default:
+		return "broker,controller"
+	}
+}
+
+func roleHasBroker(role string) bool {
+	return role == "" || role == "broker" || role == "broker_controller" || role == "broker_zookeeper"
+}
+
+func roleHasController(role string) bool {
+	return role == "" || role == "controller" || role == "broker_controller"
+}
+
+func roleHasZooKeeper(role string) bool {
+	return role == "zookeeper" || role == "broker_zookeeper"
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 // getLocalIP dynamically fetches the first non-loopback IPv4 address of the host.

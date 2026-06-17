@@ -48,7 +48,7 @@ public class KafkaAdminService {
         } else {
             List<String> bootstrapServers = new ArrayList<>();
             for (ClusterServiceAssignment svc : cluster.getServices()) {
-                if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole())) {
+                if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole())) {
                     Host host = hostRepository.findById(svc.getHostId()).orElse(null);
                     if (host != null) {
                         try {

@@ -29,6 +29,7 @@ public class AgentService {
     private final TaskRepository taskRepository;
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
+    private final ParcelService parcelService;
 
     @Transactional
     public void registerHost(HostRegistrationDto dto) {
@@ -109,6 +110,7 @@ public class AgentService {
                 task.setErrorMsg(dto.getErrorMsg());
                 taskRepository.save(task);
                 log.info("Task {} completed with status: {}", taskId, dto.getStatus());
+                parcelService.processTaskResult(task);
 
                 if (task.getClusterId() != null) {
                     clusterRepository.findById(task.getClusterId()).ifPresent(cluster -> updateClusterStatus(cluster, task));
@@ -152,12 +154,36 @@ public class AgentService {
                     cluster.setStatus("DELETED");
                     cluster.setDeletedAt(java.time.Instant.now());
                     releaseClusterHosts(cluster);
+                } else if ("UPGRADE_KAFKA".equals(command)) {
+                    String targetVersion = taskParameter(currentTask, "target_version");
+                    if (targetVersion == null || targetVersion.isBlank()) {
+                        targetVersion = taskParameter(currentTask, "version");
+                    }
+                    if (targetVersion != null && !targetVersion.isBlank()) {
+                        cluster.setKafkaVersion(targetVersion);
+                    }
+                    cluster.setStatus("SUCCESS");
                 } else {
                     cluster.setStatus("SUCCESS");
                 }
             }
         }
         clusterRepository.save(cluster);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String taskParameter(Task task, String name) {
+        if (task.getParameters() == null || task.getParameters().isBlank()) {
+            return null;
+        }
+        try {
+            Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
+            Object value = params.get(name);
+            return value == null ? null : String.valueOf(value);
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse task parameters for task {}", task.getId(), e);
+            return null;
+        }
     }
 
     private void releaseClusterHosts(io.translab.tantor.server.domain.Cluster cluster) {

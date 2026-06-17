@@ -38,20 +38,33 @@ export interface ClusterConfig {
   kafka_data_dir?: string;
 }
 
-const ROLES = [
+const KRAFT_ROLES = [
   { id: 'broker_controller', label: 'Broker + Controller', description: 'Combined KRaft broker and controller' },
   { id: 'broker', label: 'Broker', description: 'Kafka broker only (data plane)' },
   { id: 'controller', label: 'Controller', description: 'KRaft controller only (metadata)' },
 ];
 
+const ZOOKEEPER_ROLES = [
+  { id: 'broker_zookeeper', label: 'Broker + ZooKeeper', description: 'Combined Kafka broker and ZooKeeper node' },
+  { id: 'broker', label: 'Broker', description: 'Kafka broker only (data plane)' },
+  { id: 'zookeeper', label: 'ZooKeeper', description: 'ZooKeeper quorum node only' },
+];
+
 const EXCLUSIVE_GROUPS: Record<string, string[]> = {
-  broker_controller: ['broker', 'controller'],
-  broker: ['broker_controller'],
-  controller: ['broker_controller'],
+  broker_controller: ['broker', 'controller', 'broker_zookeeper', 'zookeeper'],
+  broker_zookeeper: ['broker', 'zookeeper', 'broker_controller', 'controller'],
+  broker: ['broker_controller', 'broker_zookeeper', 'controller', 'zookeeper'],
+  controller: ['broker_controller', 'broker_zookeeper', 'broker', 'zookeeper'],
+  zookeeper: ['broker_zookeeper', 'broker_controller', 'broker', 'controller'],
 };
 
-function getMajorVersion(version: string): number {
-  return parseInt(version.split('.')[0], 10) || 0;
+function supportsZooKeeper(version: string): boolean {
+  const [major = 0, minor = 0, patch = 0] = version.split('.').map(part => parseInt(part, 10) || 0);
+  if (major < 3) return true;
+  if (major > 3) return false;
+  if (minor < 9) return true;
+  if (minor > 9) return false;
+  return patch <= 0;
 }
 
 function validateDeployPath(value: string, label: string): string {
@@ -75,14 +88,11 @@ export default function ClusterWizard() {
   // Step 1
   const [name, setName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
-  const [mode, setMode] = useState<'kraft' | 'zookeeper' | 'EXTERNAL'>('kraft');
+  const [mode, setMode] = useState<'kraft' | 'zookeeper'>('kraft');
   const [environment, setEnvironment] = useState('');
 
   // Step 2
   const [assignments, setAssignments] = useState<Record<string, string[]>>({});
-  
-  // External Cluster
-  const [bootstrapServers, setBootstrapServers] = useState('');
 
   // Step 3
   const [config, setConfig] = useState<ClusterConfig>({
@@ -135,8 +145,32 @@ export default function ClusterWizard() {
   }, []);
 
   useEffect(() => {
-    if (kafkaVersion && getMajorVersion(kafkaVersion) >= 4 && mode === 'zookeeper') setMode('kraft');
+    if (kafkaVersion && !supportsZooKeeper(kafkaVersion) && mode === 'zookeeper') setMode('kraft');
   }, [kafkaVersion, mode]);
+
+  useEffect(() => {
+    setAssignments(prev => {
+      const validRoleIds = new Set((mode === 'kraft' ? KRAFT_ROLES : ZOOKEEPER_ROLES).map(role => role.id));
+      const next: Record<string, string[]> = {};
+      for (const [hostId, roles] of Object.entries(prev)) {
+        const filtered = roles.filter(role => validRoleIds.has(role));
+        if (filtered.length > 0) next[hostId] = filtered;
+      }
+      return next;
+    });
+  }, [mode]);
+
+  useEffect(() => {
+    setConfig(prev => {
+      if (mode === 'zookeeper' && prev.controller_port === 9093) {
+        return { ...prev, controller_port: 2181 };
+      }
+      if (mode === 'kraft' && prev.controller_port === 2181) {
+        return { ...prev, controller_port: 9093 };
+      }
+      return prev;
+    });
+  }, [mode]);
 
   useEffect(() => {
     if (config.listener_port < 1024) setPortError('Ports below 1024 require root access');
@@ -167,13 +201,14 @@ export default function ClusterWizard() {
   };
 
   const buildServices = (): ServiceAssignment[] => {
-    let brokerId = 1, controllerId = 101, otherId = 201;
+    let brokerId = 1, controllerId = 101, zookeeperId = 201, otherId = 301;
     const svcs: ServiceAssignment[] = [];
     for (const [hostId, roles] of Object.entries(assignments)) {
       for (const role of roles) {
         let nid: number;
         if (role === 'controller') nid = controllerId++;
-        else if (role === 'broker_controller' || role === 'broker') nid = brokerId++;
+        else if (role === 'zookeeper') nid = zookeeperId++;
+        else if (role === 'broker_controller' || role === 'broker_zookeeper' || role === 'broker') nid = brokerId++;
         else nid = otherId++;
         svcs.push({ host_id: hostId, role, node_id: nid });
       }
@@ -184,28 +219,6 @@ export default function ClusterWizard() {
   const handleCreate = async () => {
     setLoading(true);
     try {
-      if (mode === 'EXTERNAL') {
-        const payload = {
-          name,
-          kafkaVersion: kafkaVersion || 'Unknown',
-          environment: environment.trim().toLowerCase(),
-          bootstrapServers: bootstrapServers.trim(),
-        };
-        const response = await fetch('/api/v1/ui/clusters/external', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (response.ok) {
-          alert('External cluster connected successfully!');
-          navigate('/clusters');
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          alert(errorData.error || errorData.message || 'Failed to connect external cluster.');
-        }
-        return;
-      }
-
       const selectedArtifact = versions.find(v => v.version === kafkaVersion);
       const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
       const payload = {
@@ -215,6 +228,7 @@ export default function ClusterWizard() {
         services: buildServices(),
         config: {
           ...config,
+          zookeeper_port: mode === 'zookeeper' ? config.controller_port : undefined,
           kafka_install_dir: config.kafka_install_dir?.trim() || undefined,
           kafka_data_dir: config.kafka_data_dir?.trim() || undefined,
         },
@@ -244,18 +258,20 @@ export default function ClusterWizard() {
   };
 
   const assignedRoles = Object.values(assignments).flat();
-  const hasBroker = assignedRoles.some(r => r === 'broker' || r === 'broker_controller');
+  const hasBroker = assignedRoles.some(r => r === 'broker' || r === 'broker_controller' || r === 'broker_zookeeper');
+  const hasController = assignedRoles.some(r => r === 'controller' || r === 'broker_controller');
+  const hasZooKeeper = assignedRoles.some(r => r === 'zookeeper' || r === 'broker_zookeeper');
   const availableVersions = versions.filter(v => v.available);
-  const brokerCount = assignedRoles.filter(r => r === 'broker' || r === 'broker_controller').length;
+  const brokerCount = assignedRoles.filter(r => r === 'broker' || r === 'broker_controller' || r === 'broker_zookeeper').length;
+  const zookeeperCount = assignedRoles.filter(r => r === 'zookeeper' || r === 'broker_zookeeper').length;
   const rfExceedsBrokers = config.replication_factor > brokerCount && brokerCount > 0;
   const pathsValid = !installDirError && !dataDirError;
   const portsValid = !portError && portCheckDone && portCheckResults.length > 0 && portCheckResults.every(r => r.free);
   const step3Valid = !rfExceedsBrokers && pathsValid && portsValid;
+  const zookeeperSupported = !kafkaVersion || supportsZooKeeper(kafkaVersion);
+  const modeHasRequiredRoles = mode === 'kraft' ? (hasBroker && hasController) : (hasBroker && hasZooKeeper);
 
-  const availableRoles = ROLES.filter(r => {
-    if (mode === 'kraft') return r.id !== 'zookeeper';
-    return r.id !== 'controller' && r.id !== 'broker_controller';
-  });
+  const availableRoles = mode === 'kraft' ? KRAFT_ROLES : ZOOKEEPER_ROLES;
 
   const getSteps = () => {
     const s1 = {
@@ -312,32 +328,29 @@ export default function ClusterWizard() {
                 <div className="wz-mode-title">KRaft Deployment</div>
                 <div className="wz-mode-desc">Recommended. We will provision and install Kafka binaries to your managed hosts.</div>
               </button>
-              <button onClick={() => setMode('EXTERNAL')} className={`wz-mode-card ${mode === 'EXTERNAL' ? 'active' : ''}`}>
-                <div className="wz-mode-title">External Cluster</div>
-                <div className="wz-mode-desc">No deployment. Simply provide connection details for an existing cluster to monitor and manage it.</div>
+              <button
+                onClick={() => zookeeperSupported && setMode('zookeeper')}
+                disabled={!zookeeperSupported}
+                className={`wz-mode-card ${mode === 'zookeeper' ? 'active' : ''} ${!zookeeperSupported ? 'disabled' : ''}`}
+              >
+                <div className="wz-mode-title">ZooKeeper Deployment</div>
+                <div className="wz-mode-desc">
+                  {zookeeperSupported
+                    ? 'Legacy Kafka mode with ZooKeeper quorum and Kafka brokers.'
+                    : 'ZooKeeper is not supported for Kafka versions newer than 3.9.0.'}
+                </div>
               </button>
             </div>
+            {!zookeeperSupported && (
+              <p className="wz-hint" style={{ marginTop: '0.5rem' }}>
+                Kafka {kafkaVersion} is KRaft-only in this wizard, so ZooKeeper mode is disabled.
+              </p>
+            )}
           </div>
         </div>
       ),
       valid: name.trim().length > 0 && kafkaVersion.length > 0,
     };
-
-    if (mode === 'EXTERNAL') {
-      return [s1, {
-        title: 'Connection',
-        content: (
-          <div className="wz-space-y">
-            <div>
-              <label className="wz-label">Bootstrap Servers</label>
-              <input type="text" value={bootstrapServers} onChange={e => setBootstrapServers(e.target.value)} placeholder="broker1.example.com:9092,broker2.example.com:9092" className="wz-input mono" />
-              <p className="wz-hint">Comma separated list of broker addresses.</p>
-            </div>
-          </div>
-        ),
-        valid: bootstrapServers.trim().length > 0
-      }];
-    }
 
     return [s1,
       {
@@ -349,7 +362,7 @@ export default function ClusterWizard() {
             ) : (
               <div className="wz-space-y">
                 <p className="wz-role-info-text">
-                  Assign one or more roles to each host.
+                  Assign one role to each host. Use a combined role when a host runs both services.
                 </p>
                 <div className="wz-host-list">
                   {hosts.map(host => {
@@ -384,7 +397,7 @@ export default function ClusterWizard() {
             )}
           </div>
         ),
-        valid: hasBroker,
+        valid: modeHasRequiredRoles,
       },
       {
         title: 'Configuration',
@@ -427,6 +440,12 @@ export default function ClusterWizard() {
                   <input type="number" value={config.controller_port} onChange={e => setConfig({ ...config, controller_port: Number(e.target.value) })} className="wz-input" />
                 </div>
               )}
+              {mode === 'zookeeper' && (
+                <div>
+                  <label className="wz-label">ZooKeeper Port</label>
+                  <input type="number" value={config.controller_port} onChange={e => setConfig({ ...config, controller_port: Number(e.target.value) })} className="wz-input" />
+                </div>
+              )}
             </div>
 
             <div className="wz-section-divider"></div>
@@ -436,7 +455,7 @@ export default function ClusterWizard() {
               <div className="wz-port-check-header">
                 <div>
                   <div className="wz-port-check-title">Check if ports are free on assigned hosts</div>
-                  <div className="wz-port-check-desc">Tests listener port ({config.listener_port}){mode === 'kraft' ? ` and controller port (${config.controller_port})` : ''} on each host.</div>
+                  <div className="wz-port-check-desc">Tests only the ports needed by each selected role.</div>
                 </div>
                 <button
                   type="button"
@@ -448,10 +467,23 @@ export default function ClusterWizard() {
                     setPortCheckDone(false);
                     const results: {host: string; port: number; free: boolean; message: string}[] = [];
                     const hostIds = Object.keys(assignments);
-                    const ports = [config.listener_port];
-                    if (mode === 'kraft') ports.push(config.controller_port);
                     for (const hostId of hostIds) {
-                      for (const p of ports) {
+                      const hostRoles = assignments[hostId] || [];
+                      const ports = new Set<number>();
+                      if (hostRoles.some(r => r === 'broker' || r === 'broker_controller' || r === 'broker_zookeeper')) {
+                        ports.add(config.listener_port);
+                      }
+                      if (mode === 'kraft' && hostRoles.some(r => r === 'controller' || r === 'broker_controller')) {
+                        ports.add(config.controller_port);
+                      }
+                      if (mode === 'zookeeper' && hostRoles.some(r => r === 'zookeeper' || r === 'broker_zookeeper')) {
+                        ports.add(config.controller_port);
+                        if (zookeeperCount > 1) {
+                          ports.add(2888);
+                          ports.add(3888);
+                        }
+                      }
+                      for (const p of Array.from(ports)) {
                         try {
                           const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-port/${p}`);
                           if (res.ok) {
@@ -541,6 +573,12 @@ export default function ClusterWizard() {
                     <span className="wz-review-value">{assignedRoles.filter(r => r === 'controller' || r === 'broker_controller').length} assigned</span>
                   </>
                 )}
+                {mode === 'zookeeper' && (
+                  <>
+                    <span className="wz-review-label">ZooKeeper Nodes</span>
+                    <span className="wz-review-value">{assignedRoles.filter(r => r === 'zookeeper' || r === 'broker_zookeeper').length} assigned</span>
+                  </>
+                )}
               </div>
 
               <div className="wz-section-divider"></div>
@@ -559,6 +597,12 @@ export default function ClusterWizard() {
                 {mode === 'kraft' && (
                   <>
                     <span className="wz-review-label">Controller Port</span>
+                    <span className="wz-review-value">{config.controller_port}</span>
+                  </>
+                )}
+                {mode === 'zookeeper' && (
+                  <>
+                    <span className="wz-review-label">ZooKeeper Port</span>
                     <span className="wz-review-value">{config.controller_port}</span>
                   </>
                 )}
@@ -618,7 +662,7 @@ export default function ClusterWizard() {
           </div>
         ) : (
           <button onClick={handleCreate} disabled={loading || !steps[step].valid} className="wizard-btn-create">
-            {loading ? <><Loader2 size={14} className="wz-spin" /> {mode === 'EXTERNAL' ? 'Connecting...' : 'Creating...'}</> : (mode === 'EXTERNAL' ? 'Connect Cluster' : 'Create Cluster')}
+            {loading ? <><Loader2 size={14} className="wz-spin" /> Creating...</> : 'Create Cluster'}
           </button>
         )}
       </div>

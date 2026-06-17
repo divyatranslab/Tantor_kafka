@@ -13,9 +13,30 @@ Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 {{if ne .JmxPort ""}}Environment="JMX_PORT={{.JmxPort}}"{{end}}
-Environment="KAFKA_OPTS=-javaagent:{{.InstallDir}}/jmx/jmx_prometheus_javaagent.jar=7071:{{.InstallDir}}/jmx/jmx_config.yml"
-ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.InstallDir}}/config/kraft/server.properties
+{{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}=7071:{{.JmxConfigPath}}"{{end}}
+ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
+Restart=on-failure
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target
+`
+
+const ZooKeeperSystemdTemplate = `[Unit]
+Description=Apache ZooKeeper Server
+Documentation=http://kafka.apache.org/documentation.html
+Requires=network.target
+After=network.target
+
+[Service]
+Type=simple
+User={{.User}}
+Group={{.Group}}
+Environment="JAVA_HOME={{.JavaHome}}"
+Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
+ExecStart={{.InstallDir}}/bin/zookeeper-server-start.sh {{.InstallDir}}/config/zookeeper.properties
+ExecStop={{.InstallDir}}/bin/zookeeper-server-stop.sh
 Restart=on-failure
 LimitNOFILE=100000
 
@@ -43,9 +64,9 @@ node.id={{.NodeId}}
 controller.quorum.voters={{.QuorumVoters}}
 
 # Listeners
-listeners=PLAINTEXT://{{.Hostname}}:{{.ListenerPort}},CONTROLLER://{{.Hostname}}:{{.ControllerPort}}
+listeners={{.Listeners}}
 inter.broker.listener.name=PLAINTEXT
-advertised.listeners=PLAINTEXT://{{.Hostname}}:{{.ListenerPort}}
+{{if .AdvertisedListeners}}advertised.listeners={{.AdvertisedListeners}}{{end}}
 controller.listener.names=CONTROLLER
 listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
 
@@ -57,4 +78,38 @@ num.partitions={{.NumPartitions}}
 offsets.topic.replication.factor={{.RepFactor}}
 transaction.state.log.replication.factor={{.RepFactor}}
 transaction.state.log.min.isr=1
+`
+
+const ZooKeeperBrokerPropertiesTemplate = `
+# ZooKeeper-backed Kafka Broker Config
+broker.id={{.NodeId}}
+
+# Listeners
+listeners=PLAINTEXT://{{.Hostname}}:{{.ListenerPort}}
+advertised.listeners=PLAINTEXT://{{.Hostname}}:{{.ListenerPort}}
+
+# ZooKeeper
+zookeeper.connect={{.ZooKeeperConnect}}
+zookeeper.connection.timeout.ms=18000
+
+# Log Directories
+log.dirs={{.LogDirs}}
+
+# Internal Topic Settings
+num.partitions={{.NumPartitions}}
+offsets.topic.replication.factor={{.RepFactor}}
+transaction.state.log.replication.factor={{.RepFactor}}
+transaction.state.log.min.isr=1
+`
+
+const ZooKeeperPropertiesTemplate = `
+# ZooKeeper Config
+tickTime=2000
+initLimit=10
+syncLimit=5
+dataDir={{.DataDir}}
+clientPort={{.ClientPort}}
+maxClientCnxns=0
+admin.enableServer=false
+{{if .Servers}}{{.Servers}}{{end}}
 `

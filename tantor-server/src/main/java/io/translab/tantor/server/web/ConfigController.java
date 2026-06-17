@@ -54,7 +54,9 @@ public class ConfigController {
             staticConfigs.put("properties", new java.util.HashMap<>());
         }
         
-        staticConfigs.put("filePath", installDir + "/config/kraft/server.properties");
+        staticConfigs.put("filePath", "zookeeper".equalsIgnoreCase(cluster.getMode())
+                ? installDir + "/config/server.properties"
+                : installDir + "/config/kraft/server.properties");
         response.put("staticConfigs", staticConfigs);
 
         return ResponseEntity.ok(response);
@@ -98,7 +100,7 @@ public class ConfigController {
             clusterRepository.save(cluster);
 
             for (ClusterServiceAssignment svc : cluster.getServices()) {
-                if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole())) {
+                if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole())) {
                     deploymentService.updateKafkaConfig(clusterId, svc.getHostId(), newConfigStr, request.isRestart());
                 }
             }

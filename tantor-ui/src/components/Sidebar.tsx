@@ -9,7 +9,6 @@ import {
   ShieldAlert,
   Bell,
   LineChart,
-  Database,
   Settings,
 } from 'lucide-react';
 import './Sidebar.css';
@@ -37,7 +36,6 @@ const navSections = [
     items: [
       { icon: ShieldAlert,  label: 'Audits',        path: '/audit' },
       { icon: PlayCircle,   label: 'Commands',       path: '/commands' },
-      { icon: Database,     label: 'Data Services',  path: '/services' },
       { icon: Package,      label: 'Parcels',        path: '/artifacts' },
       { icon: Settings,     label: 'Administration', path: '/admin' },
     ],
