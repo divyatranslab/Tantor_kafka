@@ -67,7 +67,7 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) 
 	cachePath := filepath.Join(meta.BaseDir, ".downloads", filepath.Base(downloadPath))
 
 	script := fmt.Sprintf(
-		"set -e; rm -rf %s %s; mkdir -p %s %s %s; tar -xzf %s -C %s --strip-components=1; cp %s %s; chmod -R a+rX %s",
+		"set -e; rm -rf %s %s; mkdir -p %s %s %s; tar -xzf %s -C %s --strip-components=1; cp %s %s; chmod -R a+rX %s; find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true",
 		shellQuote(tmpDir),
 		shellQuote(installDir),
 		shellQuote(tmpDir),
@@ -77,6 +77,7 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) 
 		shellQuote(tmpDir),
 		shellQuote(downloadPath),
 		shellQuote(cachePath),
+		shellQuote(tmpDir),
 		shellQuote(tmpDir),
 	)
 	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {

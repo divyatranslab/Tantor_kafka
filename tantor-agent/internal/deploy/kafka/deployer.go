@@ -130,14 +130,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		log("Artifact extracted to %s", installDir)
 	}
 
-	// 5.5 Fix SELinux contexts for extracted files (RHEL/CentOS)
-	if d.isSELinuxEnabled(ctx) {
-		log("SELinux detected — relabeling Kafka files...")
-		_, _, err := d.exec.RunSudo(ctx, "restorecon", "-Rv", installDir)
-		if err != nil {
-			log("Warning: restorecon failed (may not be RHEL): %v", err)
-		}
-		d.exec.RunSudo(ctx, "chcon", "-R", "-t", "bin_t", filepath.Join(installDir, "bin"))
+	// 5.5 Fix executable bits and SELinux contexts for extracted/copied files.
+	if err := d.fixKafkaRuntimePermissions(ctx, installDir, &logs); err != nil {
+		return logs.String(), err
 	}
 
 	// 6. Setup JMX Exporter
@@ -320,6 +315,9 @@ func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
 		return logs.String(), err
 	}
 	log("Kafka software switched to parcel %s", targetVersion)
+	if err := d.fixKafkaRuntimePermissions(ctx, installDir, &logs); err != nil {
+		return logs.String(), err
+	}
 
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
 		return logs.String(), fmt.Errorf("failed to regenerate Kafka config: %w", err)
@@ -411,7 +409,7 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 	log("Validation [2/6]: Checking systemd service status...")
 	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "kafka")
 	if err != nil || strings.TrimSpace(out) != "active" {
-		return fmt.Errorf("kafka.service is not active: %s", out)
+		return d.serviceInactiveError(ctx, "kafka", out)
 	}
 	log("  kafka.service is active")
 
@@ -461,7 +459,7 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 		log("Validation [1/6]: Checking ZooKeeper service status...")
 		out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "zookeeper")
 		if err != nil || strings.TrimSpace(out) != "active" {
-			return fmt.Errorf("zookeeper.service is not active: %s", out)
+			return d.serviceInactiveError(ctx, "zookeeper", out)
 		}
 		log("  zookeeper.service is active")
 
@@ -490,7 +488,7 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 	log("Validation [4/6]: Checking kafka.service status...")
 	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "kafka")
 	if err != nil || strings.TrimSpace(out) != "active" {
-		return fmt.Errorf("kafka.service is not active: %s", out)
+		return d.serviceInactiveError(ctx, "kafka", out)
 	}
 	log("  kafka.service is active")
 
@@ -797,6 +795,36 @@ func isUsableJmxAgent(path string) bool {
 	return false
 }
 
+func (d *Deployer) serviceInactiveError(ctx context.Context, serviceName, state string) error {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		state = "unknown"
+	}
+
+	statusOut, statusErr, _ := d.exec.RunSudo(ctx, "systemctl", "status", serviceName, "--no-pager", "-l")
+	journalOut, journalErr, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceName, "-n", "80", "--no-pager")
+
+	var details strings.Builder
+	if trimmed := strings.TrimSpace(statusOut); trimmed != "" {
+		details.WriteString("\nSystemd status:\n")
+		details.WriteString(trimmed)
+	}
+	if trimmed := strings.TrimSpace(statusErr); trimmed != "" {
+		details.WriteString("\nSystemd status stderr:\n")
+		details.WriteString(trimmed)
+	}
+	if trimmed := strings.TrimSpace(journalOut); trimmed != "" {
+		details.WriteString("\nRecent journal:\n")
+		details.WriteString(trimmed)
+	}
+	if trimmed := strings.TrimSpace(journalErr); trimmed != "" {
+		details.WriteString("\nJournal stderr:\n")
+		details.WriteString(trimmed)
+	}
+
+	return fmt.Errorf("%s.service is not active: %s%s", serviceName, state, details.String())
+}
+
 func (d *Deployer) createZooKeeperSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
 	javaHome := strings.TrimSpace(out)
@@ -900,6 +928,39 @@ func (d *Deployer) canWriteToDir(dir string) bool {
 	return true
 }
 
+func (d *Deployer) fixKafkaRuntimePermissions(ctx context.Context, installDir string, logs *strings.Builder) error {
+	log := func(msg string, args ...interface{}) {
+		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
+	}
+
+	binDir := filepath.Join(installDir, "bin")
+	script := fmt.Sprintf(`
+set -e
+test -d %s
+chmod -R a+rX %s
+find %s -type f -name '*.sh' -exec chmod a+x {} +
+`,
+		shellQuote(binDir),
+		shellQuote(binDir),
+		shellQuote(binDir),
+	)
+	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+		return fmt.Errorf("failed to fix Kafka executable permissions: %w, out: %s, err: %s", err, out, errOut)
+	}
+	log("Kafka executable permissions verified")
+
+	if d.isSELinuxEnabled(ctx) {
+		log("SELinux detected - relabeling Kafka files...")
+		if _, _, err := d.exec.RunSudo(ctx, "restorecon", "-Rv", installDir); err != nil {
+			log("Warning: restorecon failed (may not be RHEL): %v", err)
+		}
+		if _, _, err := d.exec.RunSudo(ctx, "chcon", "-R", "-t", "bin_t", binDir); err != nil {
+			log("Warning: chcon failed for Kafka bin directory: %v", err)
+		}
+	}
+	return nil
+}
+
 func (d *Deployer) switchKafkaBinariesFromParcel(ctx context.Context, parcelTarget, installDir, dataDir string) error {
 	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 	script := fmt.Sprintf(`
@@ -916,6 +977,9 @@ for item in bin config libs licenses site-docs LICENSE NOTICE; do
   if [ -e %s/"$item" ]; then
     chmod -R a+rX %s/"$item"
     chown -R %s %s/"$item"
+    if [ "$item" = "bin" ]; then
+      find %s/"$item" -type f -name '*.sh' -exec chmod a+x {} + || true
+    fi
   fi
 done
 `,
@@ -929,6 +993,7 @@ done
 		shellQuote(installDir),
 		shellQuote(installDir),
 		shellQuote(owner),
+		shellQuote(installDir),
 		shellQuote(installDir),
 	)
 	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
