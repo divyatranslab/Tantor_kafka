@@ -11,6 +11,7 @@ interface ClusterInfo {
   environment: string;
   nodeCount: number;
   status: string;
+  managementLevel?: string;
 }
 
 export function ClusterDetails() {
@@ -55,7 +56,9 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
   ];
 
-  if (cluster.mode !== 'EXTERNAL') {
+  if (cluster.mode === 'EXTERNAL') {
+    tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: false });
+  } else {
     tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: cluster.status !== 'SUCCESS' });
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }

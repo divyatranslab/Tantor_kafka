@@ -26,6 +26,7 @@ public class ConfigController {
     private final KafkaAdminService kafkaAdminService;
     private final ObjectMapper objectMapper;
     private final ActivityAlertService activityAlertService;
+    private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
@@ -86,6 +87,16 @@ public class ConfigController {
 
         // 2. Optionally push to static file and restart via Agent
         if (request.isApplyToAgents()) {
+            if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+                externalClusterService.queueConfigUpdate(clusterId, request.getConfigKey(), request.getConfigValue(), request.isRestart());
+                activityAlertService.logActivity(
+                    "INFO",
+                    "Queued external agent config persistence: " + request.getConfigKey() + " = " + request.getConfigValue() + (request.isRestart() ? " (restart requested)" : ""),
+                    clusterId
+                );
+                return ResponseEntity.ok().build();
+            }
+
             // Need to update the DB blob so the agents get the new properties
             Map<String, Object> dbConfig = new java.util.HashMap<>();
             if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {

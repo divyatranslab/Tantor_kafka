@@ -1,0 +1,9 @@
+discovery:
+  server_url: "http://<tantor-server-ip>:8443"
+  scan_paths:
+    - "/srv/apps"
+    - "/data/apps"
+    - "/opt"
+  interval: "15s"
+  node_name: ""
+  restart_command: "systemctl restart kafka"

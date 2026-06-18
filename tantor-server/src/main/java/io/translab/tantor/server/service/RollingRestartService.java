@@ -21,6 +21,7 @@ public class RollingRestartService {
     private final ClusterRepository clusterRepository;
     private final DeploymentService deploymentService;
     private final KafkaAdminService kafkaAdminService;
+    private final ExternalClusterService externalClusterService;
 
     // A simple in-memory tracker of restart task status.
     // Map of TaskID -> Status Message
@@ -35,6 +36,16 @@ public class RollingRestartService {
             Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
             if (cluster == null) {
                 restartTasks.put(taskId, "FAILED: Cluster not found");
+                return;
+            }
+
+            if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+                restartTasks.put(taskId, "Dispatching restart command to external discovery agent");
+                Map<String, Object> externalTask = externalClusterService.queueRestart(clusterId);
+                String externalTaskId = String.valueOf(externalTask.get("taskId"));
+                waitForExternalTask(externalTaskId);
+                waitForBrokerHealth(clusterId);
+                restartTasks.put(taskId, "COMPLETED successfully.");
                 return;
             }
 
@@ -95,6 +106,21 @@ public class RollingRestartService {
             Thread.sleep(10000);
         }
         throw new RuntimeException("Timeout waiting for cluster to become healthy after restart");
+    }
+
+    private void waitForExternalTask(String externalTaskId) throws InterruptedException {
+        int maxRetries = 60;
+        for (int i = 0; i < maxRetries; i++) {
+            String status = externalClusterService.getExternalTaskStatus(externalTaskId);
+            if (status.startsWith("COMPLETED")) {
+                return;
+            }
+            if (status.startsWith("FAILED")) {
+                throw new RuntimeException(status);
+            }
+            Thread.sleep(2000);
+        }
+        throw new RuntimeException("Timeout waiting for external agent task to finish");
     }
 
     public String getTaskStatus(String taskId) {

@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Server,
   Network,
+  Globe,
   Package,
   PlayCircle,
   Activity,
@@ -20,6 +21,7 @@ const navSections = [
     items: [
       { icon: LayoutDashboard, label: 'Home',     path: '/' },
       { icon: Network,         label: 'Clusters', path: '/clusters' },
+      { icon: Globe,           label: 'External Clusters', path: '/external-clusters' },
       { icon: Server,          label: 'Hosts',    path: '/hosts' },
     ],
   },

@@ -35,6 +35,7 @@ public class ClusterController {
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
+    private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -53,6 +54,7 @@ public class ClusterController {
             m.put("status", c.getStatus());
             m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
             m.put("bootstrapServers", c.getBootstrapServers());
+            m.put("managementLevel", externalMetadataValue(c, "managementMode"));
             result.add(m);
         }
         return result;
@@ -71,6 +73,7 @@ public class ClusterController {
             m.put("status", c.getStatus());
             m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
             m.put("bootstrapServers", c.getBootstrapServers());
+            m.put("managementLevel", externalMetadataValue(c, "managementMode"));
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -166,27 +169,22 @@ public class ClusterController {
 
     @PostMapping("/external")
     public ResponseEntity<?> addExternalCluster(@RequestBody ExternalClusterRequest request) {
-        if (request.getName() == null || request.getName().isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Cluster name is required."));
-        }
-        if (clusterRepository.findByNameAndStatusNot(request.getName(), "DELETED").isPresent()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "A non-deleted cluster with this name already exists."));
-        }
-
-        Cluster cluster = new Cluster();
-        cluster.setName(request.getName());
-        cluster.setKafkaVersion(request.getKafkaVersion() != null ? request.getKafkaVersion() : "Unknown");
-        cluster.setMode("EXTERNAL");
-        cluster.setEnvironment(request.getEnvironment());
-        cluster.setBootstrapServers(request.getBootstrapServers());
-        cluster.setConfigJson("{}");
-        cluster.setStatus("SUCCESS");
-        
-        clusterRepository.save(cluster);
-        
-        activityAlertService.logActivity("INFO", "Connected external cluster: " + request.getName(), cluster.getId());
-        
-        return ResponseEntity.ok().build();
+        io.translab.tantor.server.service.ExternalClusterService.ExternalDiscoveryReport report =
+                new io.translab.tantor.server.service.ExternalClusterService.ExternalDiscoveryReport();
+        report.setName(request.getName());
+        report.setEnvironment(request.getEnvironment());
+        report.setBootstrapServers(request.getBootstrapServers());
+        report.setKafkaVersion(request.getKafkaVersion());
+        report.setKafkaClusterId(request.getKafkaClusterId());
+        report.setKafkaMode(request.getKafkaMode());
+        report.setSecurity(request.getSecurity());
+        report.setBrokerCount(request.getBrokerCount());
+        report.setNodeId(request.getNodeId());
+        report.setRunning(request.isRunning());
+        report.setInstallPath(request.getInstallPath());
+        report.setLogDirs(request.getLogDirs());
+        report.setHostname(request.getHostname());
+        return ResponseEntity.ok(externalClusterService.recordDiscoveryReport(report));
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -251,7 +249,7 @@ public class ClusterController {
             return ResponseEntity.badRequest().body(Map.of("error", "Cluster is already on Kafka " + targetVersion + "."));
         }
         if ("zookeeper".equalsIgnoreCase(cluster.getMode()) && !isZooKeeperSupported(targetVersion)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka versions newer than 3.9.0."));
+            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka 4.0.0 and newer."));
         }
         if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Cluster has no host assignments."));
@@ -312,6 +310,15 @@ public class ClusterController {
         private String environment;
         private String bootstrapServers;
         private String kafkaVersion;
+        private String kafkaClusterId;
+        private String kafkaMode;
+        private String security;
+        private int brokerCount = 1;
+        private Integer nodeId;
+        private boolean isRunning = true;
+        private String installPath;
+        private String logDirs;
+        private String hostname;
     }
 
     @Data
@@ -340,7 +347,7 @@ public class ClusterController {
         String deploymentMode = normalizeDeploymentMode(request.getMode());
         boolean zookeeperMode = "zookeeper".equals(deploymentMode);
         if (zookeeperMode && !isZooKeeperSupported(request.getKafka_version())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka versions newer than 3.9.0."));
+            return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments are not supported for Kafka 4.0.0 and newer."));
         }
 
         Set<String> hostIds = new HashSet<>();
@@ -515,22 +522,20 @@ public class ClusterController {
 
     private boolean isZooKeeperSupported(String kafkaVersion) {
         int[] version = parseKafkaVersion(kafkaVersion);
-        int major = version[0];
-        int minor = version[1];
-        int patch = version[2];
-        if (major < 3) {
-            return true;
+        return version[0] < 4;
+    }
+
+    private String externalMetadataValue(Cluster cluster, String key) {
+        if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode()) || cluster.getConfigJson() == null || cluster.getConfigJson().isBlank()) {
+            return null;
         }
-        if (major > 3) {
-            return false;
+        try {
+            Map<String, Object> metadata = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+            Object value = metadata.get(key);
+            return value == null ? null : String.valueOf(value);
+        } catch (Exception e) {
+            return null;
         }
-        if (minor < 9) {
-            return true;
-        }
-        if (minor > 9) {
-            return false;
-        }
-        return patch <= 0;
     }
 
     private int[] parseKafkaVersion(String kafkaVersion) {

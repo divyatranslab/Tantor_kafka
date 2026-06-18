@@ -6,6 +6,8 @@ interface ClusterInfo {
   id: string;
   kafkaVersion: string;
   status: string;
+  mode: string;
+  managementLevel?: string;
 }
 
 interface HostParcel {
@@ -65,6 +67,8 @@ export function ClusterActions() {
       .filter(p => p.serviceType === 'KAFKA' && p.active && p.status === 'ACTIVE' && p.version !== cluster?.kafkaVersion)
       .map(p => p.version)
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
+  const isExternal = cluster?.mode === 'EXTERNAL';
+  const externalCanRestart = !isExternal || cluster?.managementLevel === 'AGENT_MANAGED';
 
   useEffect(() => {
     fetchUpgradeContext();
@@ -132,6 +136,7 @@ export function ClusterActions() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+        {!isExternal && (
         <div className="table-card">
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -181,6 +186,7 @@ export function ClusterActions() {
             )}
           </div>
         </div>
+        )}
         
         {/* Rolling Restart Card */}
         <div className="table-card">
@@ -191,17 +197,22 @@ export function ClusterActions() {
               </div>
               <div>
                 <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Rolling Restart</h3>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>Safely restart brokers one-by-one</p>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+                  {isExternal ? 'Queue restart through the discovery agent' : 'Safely restart brokers one-by-one'}
+                </p>
               </div>
             </div>
             <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-              The orchestrator will restart each broker node sequentially. It automatically waits for the node to rejoin the cluster and for all partitions to become fully replicated before proceeding to the next node.
+              {isExternal
+                ? 'External clusters require a running discovery agent on the broker VM before Tantor can perform service control. Bootstrap-only external clusters remain read-only.'
+                : 'The orchestrator will restart each broker node sequentially. It automatically waits for the node to rejoin the cluster and for all partitions to become fully replicated before proceeding to the next node.'}
             </p>
             <button 
               className="btn btn-primary-action"
               style={{ width: '100%', justifyContent: 'center' }}
               onClick={triggerRollingRestart}
-              disabled={loading || (taskId != null && !status.startsWith('COMPLETED') && !status.startsWith('FAILED'))}
+              disabled={!externalCanRestart || loading || (taskId != null && !status.startsWith('COMPLETED') && !status.startsWith('FAILED'))}
+              title={!externalCanRestart ? 'Attach the discovery agent to enable restart control' : 'Start rolling restart'}
             >
               <Play size={16} /> Start Rolling Restart
             </button>

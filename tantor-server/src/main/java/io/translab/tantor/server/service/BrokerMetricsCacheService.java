@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 public class BrokerMetricsCacheService {
 
     private final HostRepository hostRepository;
+    private final KafkaAdminService kafkaAdminService;
+    private final ExternalClusterService externalClusterService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = new RestTemplateBuilder()
             .setConnectTimeout(Duration.ofSeconds(2))
@@ -40,6 +42,12 @@ public class BrokerMetricsCacheService {
         
         if (cached != null && (now - cached.timestamp < CACHE_TTL_MS)) {
             return cached.brokers;
+        }
+
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && (cluster.getServices() == null || cluster.getServices().isEmpty())) {
+            List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
+            cache.put(cluster.getId(), new CachedBrokers(brokers, now));
+            return brokers;
         }
 
         // Cache miss or expired, fetch asynchronously
@@ -134,6 +142,49 @@ public class BrokerMetricsCacheService {
         }
 
         return builder.build();
+    }
+
+    private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(Cluster cluster) {
+        try {
+            return kafkaAdminService.describeClusterNodes(cluster.getId()).stream()
+                    .map(node -> BrokerSummaryDto.builder()
+                            .brokerId(node.id())
+                            .hostname(node.host() + ":" + node.port())
+                            .role("broker")
+                            .brokerHealth("HEALTHY")
+                            .isJmxReachable(false)
+                            .metricsTimestamp(System.currentTimeMillis())
+                            .cpuUsagePct(0.0)
+                            .memoryTotalMb(0L)
+                            .memoryUsedMb(0L)
+                            .diskTotalGb(0L)
+                            .diskUsedGb(0L)
+                            .messagesInPerSec(0.0)
+                            .bytesInPerSec(0.0)
+                            .bytesOutPerSec(0.0)
+                            .build())
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("Failed to describe bootstrap-only external brokers for cluster {}: {}", cluster.getId(), e.getMessage());
+            return externalClusterService.brokerRecords(cluster).stream()
+                    .map(record -> BrokerSummaryDto.builder()
+                            .brokerId(record.getNodeId())
+                            .hostname(record.getBootstrap())
+                            .role("broker")
+                            .brokerHealth("DEGRADED")
+                            .isJmxReachable(false)
+                            .metricsTimestamp(System.currentTimeMillis())
+                            .cpuUsagePct(0.0)
+                            .memoryTotalMb(0L)
+                            .memoryUsedMb(0L)
+                            .diskTotalGb(0L)
+                            .diskUsedGb(0L)
+                            .messagesInPerSec(0.0)
+                            .bytesInPerSec(0.0)
+                            .bytesOutPerSec(0.0)
+                            .build())
+                    .collect(Collectors.toList());
+        }
     }
 
     private void simulateMetrics(BrokerSummaryDto.BrokerSummaryDtoBuilder builder) {

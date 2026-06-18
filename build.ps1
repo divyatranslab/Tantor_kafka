@@ -52,3 +52,16 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
 } else {
     Write-Host "Go compiler not found in the 'go' directory. Skipping agent compilation." -ForegroundColor Yellow
 }
+
+# 5. Build Discovery Agent (Linux amd64)
+Write-Host "`n=== Building Tantor Discovery Agent (Linux) ===" -ForegroundColor Magenta
+if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
+    cd "$PSScriptRoot\tantor-discovery-agent"
+    $env:GOOS="linux"
+    $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-discovery-agent-linux .
+    Write-Host "Discovery agent successfully compiled to: tantor-discovery-agent\tantor-discovery-agent-linux" -ForegroundColor Green
+    cd $PSScriptRoot
+} else {
+    Write-Host "Go compiler not found in the 'go' directory. Skipping discovery agent compilation." -ForegroundColor Yellow
+}

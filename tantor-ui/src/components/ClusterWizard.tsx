@@ -58,13 +58,19 @@ const EXCLUSIVE_GROUPS: Record<string, string[]> = {
   zookeeper: ['broker_zookeeper', 'broker_controller', 'broker', 'controller'],
 };
 
-function supportsZooKeeper(version: string): boolean {
+function parseKafkaVersion(version: string): [number, number, number] {
   const [major = 0, minor = 0, patch = 0] = version.split('.').map(part => parseInt(part, 10) || 0);
-  if (major < 3) return true;
-  if (major > 3) return false;
-  if (minor < 9) return true;
-  if (minor > 9) return false;
-  return patch <= 0;
+  return [major, minor, patch];
+}
+
+function supportsZooKeeper(version: string): boolean {
+  const [major] = parseKafkaVersion(version);
+  return major < 4;
+}
+
+function isZooKeeperDeprecated(version: string): boolean {
+  const [major, minor] = parseKafkaVersion(version);
+  return major === 3 && minor >= 5;
 }
 
 function validateDeployPath(value: string, label: string): string {
@@ -269,6 +275,7 @@ export default function ClusterWizard() {
   const portsValid = !portError && portCheckDone && portCheckResults.length > 0 && portCheckResults.every(r => r.free);
   const step3Valid = !rfExceedsBrokers && pathsValid && portsValid;
   const zookeeperSupported = !kafkaVersion || supportsZooKeeper(kafkaVersion);
+  const zookeeperDeprecated = kafkaVersion ? isZooKeeperDeprecated(kafkaVersion) : false;
   const modeHasRequiredRoles = mode === 'kraft' ? (hasBroker && hasController) : (hasBroker && hasZooKeeper);
 
   const availableRoles = mode === 'kraft' ? KRAFT_ROLES : ZOOKEEPER_ROLES;
@@ -337,13 +344,19 @@ export default function ClusterWizard() {
                 <div className="wz-mode-desc">
                   {zookeeperSupported
                     ? 'Legacy Kafka mode with ZooKeeper quorum and Kafka brokers.'
-                    : 'ZooKeeper is not supported for Kafka versions newer than 3.9.0.'}
+                    : 'ZooKeeper is not supported for Kafka 4.0.0 and newer.'}
                 </div>
               </button>
             </div>
             {!zookeeperSupported && (
               <p className="wz-hint" style={{ marginTop: '0.5rem' }}>
-                Kafka {kafkaVersion} is KRaft-only in this wizard, so ZooKeeper mode is disabled.
+                Kafka {kafkaVersion} is KRaft-only in this wizard because ZooKeeper mode was removed in Kafka 4.0.0.
+              </p>
+            )}
+            {zookeeperSupported && zookeeperDeprecated && (
+              <p className="wz-warn-text" style={{ marginTop: '0.5rem' }}>
+                <AlertTriangle size={12} />
+                ZooKeeper mode is deprecated for Kafka {kafkaVersion}. Prefer KRaft for new clusters.
               </p>
             )}
           </div>

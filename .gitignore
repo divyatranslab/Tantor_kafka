@@ -37,3 +37,4 @@ server.err
 repository/
 test.tgz
 tantor-agent-linux
+tantor-discovery-agent-linux

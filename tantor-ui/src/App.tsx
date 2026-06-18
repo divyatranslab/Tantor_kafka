@@ -15,6 +15,7 @@ import { Partitions } from './pages/Partitions';
 import { ClusterActions } from './pages/ClusterActions';
 import { DeploymentLogs } from './pages/DeploymentLogs';
 import { Brokers } from './pages/Brokers';
+import { ExternalClusters } from './pages/ExternalClusters';
 import ClusterWizard from './components/ClusterWizard';
 import './App.css';
 
@@ -29,6 +30,7 @@ function App() {
             <Route path="/hosts" element={<Hosts />} />
             <Route path="/clusters" element={<Clusters />} />
             <Route path="/clusters/new" element={<ClusterWizard />} />
+            <Route path="/external-clusters" element={<ExternalClusters />} />
             <Route path="/clusters/:id" element={<ClusterDetails />}>
               <Route path="brokers" element={<Brokers />} />
               <Route path="partitions" element={<Partitions />} />
