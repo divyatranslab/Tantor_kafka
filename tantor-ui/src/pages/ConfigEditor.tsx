@@ -13,10 +13,21 @@ interface ConfigPayload {
   staticConfigs: {
     filePath: string;
     properties: Record<string, any>;
+    configFiles?: StaticConfigFile[];
   };
 }
 
-type ViewType = 'BROKER' | 'CONTROLLER' | 'SERVER';
+interface StaticConfigFile {
+  id: string;
+  label: string;
+  description?: string;
+  path: string;
+  role?: string;
+  active?: boolean;
+  properties: Record<string, any>;
+}
+
+type ViewType = 'BROKER' | 'STATIC';
 
 export function ConfigEditor() {
   const { id } = useParams<{ id: string }>();
@@ -24,6 +35,7 @@ export function ConfigEditor() {
   const [loading, setLoading] = useState(true);
   
   const [viewType, setViewType] = useState<ViewType>('BROKER');
+  const [selectedStaticFileId, setSelectedStaticFileId] = useState('');
   
   // Bulk update state
   const [configKey, setConfigKey] = useState('');
@@ -48,6 +60,27 @@ export function ConfigEditor() {
   useEffect(() => {
     fetchConfigs();
   }, [id]);
+
+  useEffect(() => {
+    const firstFile = payload?.staticConfigs.configFiles?.[0];
+    if (firstFile && !selectedStaticFileId) {
+      setSelectedStaticFileId(firstFile.id);
+    }
+  }, [payload, selectedStaticFileId]);
+
+  const staticFiles = payload?.staticConfigs.configFiles?.length
+    ? payload.staticConfigs.configFiles
+    : payload ? [{
+        id: 'active-server',
+        label: 'Active Server Config',
+        description: 'server.properties used by the Kafka service',
+        path: payload.staticConfigs.filePath,
+        active: true,
+        role: 'server',
+        properties: payload.staticConfigs.properties,
+      }] : [];
+
+  const selectedStaticFile = staticFiles.find(file => file.id === selectedStaticFileId) || staticFiles[0];
 
   const handleBulkSave = async () => {
     if (!configKey.trim() || !configValue.trim()) {
@@ -97,10 +130,10 @@ export function ConfigEditor() {
   const renderConfigurationTable = () => {
     if (!payload) return null;
 
-    if (viewType === 'SERVER') {
-      const staticProps = payload.staticConfigs.properties;
+    if (viewType === 'STATIC') {
+      const staticProps = selectedStaticFile?.properties || {};
       if (!staticProps || Object.keys(staticProps).length === 0) {
-        return <div className="empty-state">No static properties found in database.</div>;
+        return <div className="empty-state">No properties available for this config file.</div>;
       }
       return (
         <div style={{ padding: '1rem' }}>
@@ -112,8 +145,21 @@ export function ConfigEditor() {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(staticProps).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => (
-                <tr key={key} style={{ borderTop: '1px solid var(--border-color)' }}>
+              {Object.entries(staticProps).map(([key, value]) => (
+                <tr
+                  key={key}
+                  style={{ borderTop: '1px solid var(--border-color)', cursor: 'pointer' }}
+                  onClick={() => {
+                    setConfigKey(key);
+                    setConfigValue(String(value ?? ''));
+                    setIsCurrentlyStatic(true);
+                    setApplyToAgents(true);
+                    setRestart(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)'}
+                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
                   <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>{key}</td>
                   <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem' }}>{String(value)}</td>
                 </tr>
@@ -136,7 +182,7 @@ export function ConfigEditor() {
             <div style={{ padding: '0.75rem', backgroundColor: '#f9fafb', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <Server size={18} color="#4b5563" />
               <span style={{ fontWeight: 500 }}>
-                {viewType === 'CONTROLLER' ? `Controller ${nodeId}` : `Broker ${nodeId}`}
+                Broker {nodeId}
               </span>
             </div>
             <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
@@ -267,8 +313,16 @@ export function ConfigEditor() {
           <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 500 }}>Active Configurations</h3>
           <div style={{ position: 'relative' }}>
             <select
-              value={viewType}
-              onChange={(e) => setViewType(e.target.value as ViewType)}
+              value={viewType === 'STATIC' && selectedStaticFile ? `STATIC:${selectedStaticFile.id}` : 'BROKER'}
+              onChange={(e) => {
+                const value = e.target.value;
+                if (value === 'BROKER') {
+                  setViewType('BROKER');
+                  return;
+                }
+                setViewType('STATIC');
+                setSelectedStaticFileId(value.replace('STATIC:', ''));
+              }}
               style={{
                 appearance: 'none',
                 padding: '0.5rem 2.5rem 0.5rem 1rem',
@@ -283,9 +337,12 @@ export function ConfigEditor() {
                 boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
               }}
             >
-              <option value="BROKER">Broker Properties</option>
-              <option value="CONTROLLER">Controller Properties</option>
-              <option value="SERVER">Kafka Server Properties</option>
+              <option value="BROKER">Live Broker Configs</option>
+              {staticFiles.map(file => (
+                <option key={file.id} value={`STATIC:${file.id}`}>
+                  {file.label}{file.active ? ' (active)' : ''}
+                </option>
+              ))}
             </select>
             <ChevronDown size={16} color="#6b7280" style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           </div>
@@ -296,21 +353,22 @@ export function ConfigEditor() {
             <FileText size={14} />
             <span style={{ fontWeight: 500 }}>Properties File Path:</span>
             <code style={{ backgroundColor: '#e5e7eb', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', color: '#1f2937' }}>
-              {(() => {
-                return payload.staticConfigs.filePath;
-              })()}
+              {viewType === 'STATIC' && selectedStaticFile ? selectedStaticFile.path : 'Kafka AdminClient live memory'}
             </code>
+            {viewType === 'STATIC' && selectedStaticFile?.description && (
+              <span style={{ color: '#6b7280', marginLeft: '0.5rem' }}>{selectedStaticFile.description}</span>
+            )}
             <span style={{ 
               marginLeft: 'auto', 
               fontSize: '0.7rem', 
               padding: '2px 8px', 
               borderRadius: '12px', 
-              background: viewType === 'SERVER' ? '#f3e8ff' : '#dbeafe', 
-              color: viewType === 'SERVER' ? '#7e22ce' : '#1d4ed8', 
+              background: viewType === 'STATIC' ? '#f3e8ff' : '#dbeafe', 
+              color: viewType === 'STATIC' ? '#7e22ce' : '#1d4ed8', 
               fontWeight: 600,
-              border: `1px solid ${viewType === 'SERVER' ? '#d8b4fe' : '#bfdbfe'}`
+              border: `1px solid ${viewType === 'STATIC' ? '#d8b4fe' : '#bfdbfe'}`
             }}>
-              {viewType === 'SERVER' ? 'STATIC FILE' : 'LIVE MEMORY (AdminClient)'}
+              {viewType === 'STATIC' ? 'ACTIVE FILE CONTENT' : 'LIVE MEMORY (AdminClient)'}
             </span>
           </div>
         )}

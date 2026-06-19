@@ -240,6 +240,15 @@
   white-space: pre;
 }
 
+.bootstrap-result-terminal.compact {
+  margin-top: 4px;
+}
+
+.bootstrap-result-terminal.compact pre {
+  max-height: 220px;
+  font-size: 11.5px;
+}
+
 .panel-actions {
   display: flex;
   justify-content: flex-end;
@@ -549,6 +558,16 @@
   background: #fff;
 }
 
+.discovery-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 132px;
+}
+
+.discovery-actions .btn {
+  justify-content: center;
+}
+
 .discovery-main {
   min-width: 0;
   display: grid;
@@ -608,6 +627,10 @@
 
   .discovery-row {
     grid-template-columns: 1fr;
+  }
+
+  .discovery-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .discovery-paths {

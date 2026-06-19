@@ -1,355 +1,454 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  Settings, Activity, Server, ChevronRight,
-  Cpu, Database, Wifi, RefreshCw, Plus, Bot
+  Activity, AlertTriangle, BarChart3, Bot, Clock, Database, ExternalLink,
+  HardDrive, Network, Plus, RefreshCw, Server, ShieldCheck
 } from 'lucide-react';
+import {
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis
+} from 'recharts';
 import './Dashboard.css';
 
-interface DashboardStats {
-  totalClusters: number;
+interface DashboardSummary {
   totalHosts: number;
+  activeHosts: number;
+  offlineHosts: number;
+  pendingHosts: number;
+  totalClusters: number;
+  activeClusters: number;
+  failedClusters: number;
+  externalClusters: number;
+  internalClusters: number;
   activeAlerts: number;
-  healthyClusters: number;
+  runningTasks: number;
+  failedTasks: number;
+  activeParcels: number;
+  failedParcels: number;
+  runningServices: number;
+  failedServices: number;
+  firstClusterCreatedAt?: string;
+  latestClusterCreatedAt?: string;
+  lastActivityAt?: string;
 }
 
+interface ChartRow {
+  name: string;
+  status?: string;
+  value?: number;
+  usedGb?: number;
+  freeGb?: number;
+  totalGb?: number;
+  usedPct?: number;
+  success?: number;
+  failed?: number;
+  running?: number;
+  label?: string;
+}
+
+interface ServiceRow {
+  name: string;
+  description: string;
+  status: string;
+  type: string;
+}
+
+interface ActivityRow {
+  id: string;
+  level: string;
+  message: string;
+  clusterId?: string;
+  createdAt?: string;
+}
+
+interface TaskRow {
+  id: string;
+  command: string;
+  status: string;
+  hostId: string;
+  clusterName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  errorMsg?: string;
+}
+
+interface DashboardPayload {
+  generatedAt: string;
+  summary: DashboardSummary;
+  hostStatus: ChartRow[];
+  clusterStatus: ChartRow[];
+  hostDiskUsage: ChartRow[];
+  taskStatus: ChartRow[];
+  taskTimeline: ChartRow[];
+  runningServices: ServiceRow[];
+  failedServices: ServiceRow[];
+  recentActivities: ActivityRow[];
+  recentTasks: TaskRow[];
+}
+
+const emptyDashboard: DashboardPayload = {
+  generatedAt: '',
+  summary: {
+    totalHosts: 0,
+    activeHosts: 0,
+    offlineHosts: 0,
+    pendingHosts: 0,
+    totalClusters: 0,
+    activeClusters: 0,
+    failedClusters: 0,
+    externalClusters: 0,
+    internalClusters: 0,
+    activeAlerts: 0,
+    runningTasks: 0,
+    failedTasks: 0,
+    activeParcels: 0,
+    failedParcels: 0,
+    runningServices: 0,
+    failedServices: 0,
+  },
+  hostStatus: [],
+  clusterStatus: [],
+  hostDiskUsage: [],
+  taskStatus: [],
+  taskTimeline: [],
+  runningServices: [],
+  failedServices: [],
+  recentActivities: [],
+  recentTasks: [],
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  SUCCESS: '#1D9E75',
+  ONLINE: '#1D9E75',
+  RUNNING: '#378ADD',
+  IN_PROGRESS: '#378ADD',
+  PENDING: '#BA7517',
+  DELETING: '#BA7517',
+  OFFLINE: '#A32D2D',
+  FAILED: '#A32D2D',
+  UNKNOWN: '#8b8982',
+};
+
 export function Dashboard() {
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [clusters, setClusters] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState('status');
-  const [activeTime, setActiveTime] = useState('30m');
+  const navigate = useNavigate();
+  const [dashboard, setDashboard] = useState<DashboardPayload>(emptyDashboard);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchDashboard = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/v1/ui/dashboard');
+      if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
+      setDashboard(await res.json());
+    } catch (e: any) {
+      setError(e.message || 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetch('/api/v1/ui/dashboard/stats')
-      .then(res => res.json())
-      .then(data => setStats(data))
-      .catch(err => console.error(err));
-
-    fetch('/api/v1/ui/clusters')
-      .then(res => res.json())
-      .then(data => setClusters(data))
-      .catch(err => console.error(err));
+    fetchDashboard();
   }, []);
 
-  const platformServices = [
+  const summary = dashboard.summary;
+  const platformState = summary.failedServices > 0 || summary.failedTasks > 0 || summary.offlineHosts > 0
+    ? 'Attention'
+    : 'Healthy';
+
+  const kpis = useMemo(() => [
     {
-      name: `${stats?.totalHosts ?? 0} Hosts`,
-      sub: 'Registered · reachable',
-      status: 'healthy',
+      label: 'Active Hosts',
+      value: `${summary.activeHosts}/${summary.totalHosts}`,
+      detail: `${summary.offlineHosts} offline, ${summary.pendingHosts} pending`,
       icon: Server,
-      iconVariant: 'blue',
+      tone: summary.offlineHosts > 0 ? 'warn' : 'good',
     },
     {
-      name: 'Core Configuration',
-      sub: 'Pending review',
-      status: 'unknown',
-      icon: Settings,
-      iconVariant: 'amber',
+      label: 'Clusters',
+      value: String(summary.totalClusters),
+      detail: `${summary.internalClusters} internal, ${summary.externalClusters} external`,
+      icon: Network,
+      tone: summary.failedClusters > 0 ? 'bad' : 'blue',
     },
     {
-      name: 'Tantor Agent Management',
-      sub: `Agent v1.0.0 running`,
-      status: 'healthy',
-      icon: Bot,
-      iconVariant: 'green',
+      label: 'External Clusters',
+      value: String(summary.externalClusters),
+      detail: summary.externalClusters > 0 ? 'Connected inventory' : 'No external clusters',
+      icon: ExternalLink,
+      tone: summary.externalClusters > 0 ? 'purple' : 'muted',
     },
-  ];
+    {
+      label: 'Failed Services',
+      value: String(summary.failedServices),
+      detail: `${summary.failedTasks} failed tasks, ${summary.failedParcels} parcel issues`,
+      icon: AlertTriangle,
+      tone: summary.failedServices > 0 ? 'bad' : 'good',
+    },
+    {
+      label: 'Running Services',
+      value: String(summary.runningServices),
+      detail: `${summary.activeParcels} active parcels`,
+      icon: Activity,
+      tone: 'good',
+    },
+    {
+      label: 'Last Activity',
+      value: relativeTime(summary.lastActivityAt),
+      detail: formatDateTime(summary.lastActivityAt) || 'Waiting for activity',
+      icon: Clock,
+      tone: 'blue',
+    },
+  ], [summary]);
 
-  const clusterServices = clusters.map(c => ({
-    name: c.name,
-    sub: `${c.nodeCount ?? 0} brokers · managed`,
-    status: c.nodeCount > 0 ? 'healthy' : 'warning',
-    icon: Activity,
-    iconVariant: 'purple',
-  }));
-
-  const renderStatusDot = (status: string) => {
-    const cls = status === 'healthy' ? 'dot-green'
-              : status === 'warning' ? 'dot-amber'
-              : status === 'error'   ? 'dot-red'
-              : 'dot-gray';
-    return <span className={`status-dot ${cls}`} />;
+  const serviceIcon = (type: string) => {
+    if (type === 'agent') return Bot;
+    if (type === 'kafka') return Network;
+    if (type === 'external') return ExternalLink;
+    if (type === 'parcel') return Database;
+    if (type === 'task') return Activity;
+    if (type === 'cleanup') return RefreshCw;
+    return ShieldCheck;
   };
-
-  const renderStatusLabel = (status: string) => {
-    if (status === 'healthy') return <span className="status-label green">Online</span>;
-    if (status === 'warning') return <span className="status-label amber">Warning</span>;
-    if (status === 'error')   return <span className="status-label red">Error</span>;
-    return <span className="status-label gray">Idle</span>;
-  };
-
-  const tabs = [
-    { id: 'status', label: 'Status' },
-    { id: 'health', label: 'Health Issues', count: stats?.activeAlerts || 0, countType: 'danger' },
-    { id: 'config', label: 'Configuration', count: 0, countType: 'warning' },
-    { id: 'commands', label: 'Recent Commands' },
-  ];
-
-  const times = ['30m', '1h', '2h', '6h', '12h', '1d', '7d', '30d'];
-
-  const kpis = [
-    { label: 'CPU', value: '4.1', unit: '%', sub: 'All hosts', trend: 'stable', icon: Cpu },
-    { label: 'Disk IO', value: '12.9', unit: 'K/s', sub: 'Read', trend: 'up', icon: Database },
-    { label: 'Throughput', value: '2.4', unit: 'M/s', sub: 'Messages', trend: 'down', icon: Activity },
-    { label: 'Lag', value: '142', unit: 'ms', sub: 'Consumer', trend: 'stable', icon: Wifi },
-  ];
 
   return (
     <div className="db animate-fade-in">
-
-      {/* ── Top header ── */}
-      <div className="db-header">
-        <div className="db-header-left">
-          <div className="db-cluster-pill">
-            <span className="db-cluster-dot" />
-            <span className="db-cluster-name">Tantor Runtime</span>
-            <span className="db-cluster-env">Air-Gapped · v1.0.0</span>
+      <header className="db-hero">
+        <div>
+          <div className={`db-live-pill ${platformState === 'Healthy' ? 'good' : 'warn'}`}>
+            <span />
+            {platformState === 'Healthy' ? 'Live system healthy' : 'Live system needs attention'}
           </div>
-          <div className="db-header-sep" />
-          <nav className="db-tabs">
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                className={`db-tab${activeTab === t.id ? ' active' : ''}`}
-                onClick={() => setActiveTab(t.id)}
-              >
-                {t.label}
-                {t.count !== undefined && (
-                  <span className={`db-tab-badge ${t.countType}`}>{t.count}</span>
-                )}
-              </button>
-            ))}
-          </nav>
+          <h1>Tantor Kafka Operations</h1>
+          <p>Real-time inventory, service health, task activity, and agent heartbeat state.</p>
         </div>
-        <div className="db-header-right">
-          <button className="db-btn ghost">
-            <RefreshCw size={12} /> Refresh
+        <div className="db-hero-actions">
+          <span className="db-generated">Updated {relativeTime(dashboard.generatedAt)}</span>
+          <button className="db-btn ghost" onClick={fetchDashboard}>
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+            Refresh
           </button>
-          <button className="db-btn primary">
-            <Plus size={12} /> New cluster
+          <button className="db-btn primary" onClick={() => navigate('/clusters/new')}>
+            <Plus size={14} />
+            New cluster
           </button>
         </div>
+      </header>
+
+      {error && <div className="db-banner error">{error}</div>}
+
+      <section className="db-kpi-grid">
+        {kpis.map(kpi => (
+          <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
+            <div className="db-kpi-icon"><kpi.icon size={18} /></div>
+            <div>
+              <span>{kpi.label}</span>
+              <strong>{kpi.value}</strong>
+              <small>{kpi.detail}</small>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="db-main-grid">
+        <article className="db-panel large">
+          <PanelTitle icon={HardDrive} title="Host Disk Usage" detail="From latest host heartbeat" />
+          {dashboard.hostDiskUsage.length ? (
+            <ResponsiveContainer width="100%" height={270}>
+              <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
+                <CartesianGrid stroke="#eeeae3" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
+                <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
+                <Tooltip content={<DiskTooltip />} />
+                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#378ADD" barSize={16} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyPanel text="No disk data yet. Wait for host heartbeat metrics." />
+          )}
+        </article>
+
+        <article className="db-panel">
+          <PanelTitle icon={Network} title="Cluster Status" detail={`${summary.totalClusters} cluster records`} />
+          <StatusDonut data={dashboard.clusterStatus} />
+        </article>
+
+        <article className="db-panel">
+          <PanelTitle icon={Server} title="Host Fleet" detail={`${summary.activeHosts} active of ${summary.totalHosts}`} />
+          <StatusDonut data={dashboard.hostStatus} />
+        </article>
+      </section>
+
+      <section className="db-main-grid lower">
+        <article className="db-panel large">
+          <PanelTitle icon={BarChart3} title="Task Activity" detail="Last seven days" />
+          <ResponsiveContainer width="100%" height={235}>
+            <AreaChart data={dashboard.taskTimeline} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
+              <CartesianGrid stroke="#eeeae3" vertical={false} />
+              <XAxis dataKey="label" stroke="#8b8982" fontSize={11} tickLine={false} />
+              <YAxis allowDecimals={false} stroke="#8b8982" fontSize={11} tickLine={false} />
+              <Tooltip />
+              <Legend />
+              <Area type="monotone" dataKey="success" stackId="1" stroke="#1D9E75" fill="#dff3e8" name="Success" />
+              <Area type="monotone" dataKey="running" stackId="1" stroke="#378ADD" fill="#e4f0fb" name="Running" />
+              <Area type="monotone" dataKey="failed" stackId="1" stroke="#A32D2D" fill="#f7dddd" name="Failed" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </article>
+
+        <article className="db-panel">
+          <PanelTitle icon={ShieldCheck} title="Running Services" detail={`${summary.runningServices} active units`} />
+          <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
+        </article>
+
+        <article className="db-panel">
+          <PanelTitle icon={AlertTriangle} title="Failed Services" detail={summary.failedServices > 0 ? 'Needs review' : 'No failures'} />
+          {dashboard.failedServices.length ? (
+            <ServiceList rows={dashboard.failedServices} iconFor={serviceIcon} />
+          ) : (
+            <EmptyPanel text="No failed services right now." compact />
+          )}
+        </article>
+      </section>
+
+      <section className="db-bottom-grid">
+        <article className="db-panel">
+          <PanelTitle icon={Clock} title="Recent Activities" detail="Latest platform events" />
+          <div className="db-feed">
+            {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
+              <div key={item.id} className="db-feed-row">
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}>{item.level || 'INFO'}</span>
+                <div>
+                  <strong>{item.message}</strong>
+                  <small>{formatDateTime(item.createdAt)}</small>
+                </div>
+              </div>
+            )) : <EmptyPanel text="No activity has been logged yet." compact />}
+          </div>
+        </article>
+
+        <article className="db-panel">
+          <PanelTitle icon={Activity} title="Recent Tasks" detail="Deploy, upgrade, parcel, and cleanup jobs" />
+          <div className="db-task-list">
+            {dashboard.recentTasks.length ? dashboard.recentTasks.map(task => (
+              <div key={task.id} className="db-task-row">
+                <span className={`db-task-status ${task.status?.toLowerCase()}`}>{task.status}</span>
+                <div>
+                  <strong>{prettyCommand(task.command)}</strong>
+                  <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
+                  {task.errorMsg && <em>{task.errorMsg}</em>}
+                </div>
+              </div>
+            )) : <EmptyPanel text="No tasks have run yet." compact />}
+          </div>
+        </article>
+      </section>
+    </div>
+  );
+}
+
+function PanelTitle({ icon: Icon, title, detail }: { icon: any; title: string; detail: string }) {
+  return (
+    <div className="db-panel-title">
+      <div>
+        <Icon size={16} />
+        <h2>{title}</h2>
       </div>
+      <span>{detail}</span>
+    </div>
+  );
+}
 
-      {/* ── Body ── */}
-      <div className="db-body">
+function EmptyPanel({ text, compact = false }: { text: string; compact?: boolean }) {
+  return <div className={`db-empty-panel ${compact ? 'compact' : ''}`}>{text}</div>;
+}
 
-        {/* ── Left pane ── */}
-        <aside className="db-left">
+function StatusDonut({ data }: { data: ChartRow[] }) {
+  const clean = data.filter(row => (row.value || 0) > 0);
+  if (!clean.length) return <EmptyPanel text="No status data yet." compact />;
 
-          {/* Cluster meta */}
-          <div className="db-left-head">
-            <div className="db-left-title-row">
-              <span className="db-left-title">Platform Core</span>
-              <span className="db-healthy-badge">
-                <span className="db-healthy-dot" /> Healthy
-              </span>
-            </div>
-            <span className="db-left-sub">Parcels · {clusters.length} cluster{clusters.length !== 1 ? 's' : ''}</span>
-          </div>
-
-          {/* KPI strip */}
-          <div className="db-kpi-strip">
-            <div className="db-kpi">
-              <span className="db-kpi-label">CPU</span>
-              <span className="db-kpi-val">4.1<span className="db-kpi-unit">%</span></span>
-            </div>
-            <div className="db-kpi-divider" />
-            <div className="db-kpi">
-              <span className="db-kpi-label">Hosts</span>
-              <span className="db-kpi-val">{stats?.totalHosts ?? 0}</span>
-            </div>
-            <div className="db-kpi-divider" />
-            <div className="db-kpi">
-              <span className="db-kpi-label">Uptime</span>
-              <span className="db-kpi-val">99<span className="db-kpi-unit">%</span></span>
-            </div>
-          </div>
-
-          {/* Services */}
-          <div className="db-svc-list">
-
-            <div className="db-svc-section">Infrastructure</div>
-            {platformServices.map(svc => (
-              <div key={svc.name} className="db-svc-row">
-                <div className={`db-svc-icon ${svc.iconVariant}`}>
-                  <svc.icon size={13} />
-                </div>
-                <div className="db-svc-body">
-                  <span className="db-svc-name">{svc.name}</span>
-                  <span className="db-svc-sub">{svc.sub}</span>
-                </div>
-                <div className="db-svc-right">
-                  <div className="db-svc-status">
-                    {renderStatusDot(svc.status)}
-                    {renderStatusLabel(svc.status)}
-                  </div>
-                  <ChevronRight size={12} className="db-svc-arrow" />
-                </div>
-              </div>
-            ))}
-
-            {clusterServices.length > 0 && (
-              <>
-                <div className="db-svc-section">Kafka Clusters</div>
-                {clusterServices.map(svc => (
-                  <div key={svc.name} className="db-svc-row">
-                    <div className={`db-svc-icon ${svc.iconVariant}`}>
-                      <svc.icon size={13} />
-                    </div>
-                    <div className="db-svc-body">
-                      <span className="db-svc-name">{svc.name}</span>
-                      <span className="db-svc-sub">{svc.sub}</span>
-                    </div>
-                    <div className="db-svc-right">
-                      <div className="db-svc-status">
-                        {renderStatusDot(svc.status)}
-                        {renderStatusLabel(svc.status)}
-                      </div>
-                      <ChevronRight size={12} className="db-svc-arrow" />
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-
-            {clusterServices.length === 0 && (
-              <div className="db-empty">
-                No clusters yet. Click <strong>New cluster</strong> to begin.
-              </div>
-            )}
-          </div>
-        </aside>
-
-        {/* ── Right pane ── */}
-        <div className="db-right">
-
-          {/* Summary cards */}
-          <div className="db-summary-row">
-            {kpis.map(k => (
-              <div key={k.label} className="db-summary-card">
-                <div className="db-sc-label">
-                  <k.icon size={12} className="db-sc-icon" />
-                  {k.label}
-                </div>
-                <div className="db-sc-val">
-                  {k.value}<span className="db-sc-unit">{k.unit}</span>
-                </div>
-                <div className={`db-sc-trend ${k.trend}`}>
-                  {k.trend === 'stable' ? '→ Stable' : k.trend === 'up' ? '↑ Rising' : '↓ Dropping'}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Charts */}
-          <div className="db-charts">
-
-            {/* Time selector */}
-            <div className="db-time-row">
-              {times.map(t => (
-                <button
-                  key={t}
-                  className={`db-time-btn${activeTime === t ? ' active' : ''}`}
-                  onClick={() => setActiveTime(t)}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-
-            {/* CPU chart */}
-            <div className="db-chart-card">
-              <div className="db-chart-head">
-                <div className="db-chart-title">
-                  <Cpu size={13} className="db-chart-icon" />
-                  CPU usage across hosts
-                </div>
-                <div className="db-chart-meta">
-                  <span className="db-chart-val">4.1%</span>
-                  <span className="db-chart-delta stable">→ stable</span>
-                </div>
-              </div>
-              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="cpu-g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#378ADD" stopOpacity="0.13" />
-                    <stop offset="100%" stopColor="#378ADD" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
-                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
-                <path d="M0 58 C30 56,55 52,90 54 S130 50,165 51 S205 47,240 45 S275 48,310 46 S350 42,385 43 S450 44,500 43 L500 80 L0 80Z" fill="url(#cpu-g)" />
-                <path d="M0 58 C30 56,55 52,90 54 S130 50,165 51 S205 47,240 45 S275 48,310 46 S350 42,385 43 S450 44,500 43" fill="none" stroke="#378ADD" strokeWidth="1.5" strokeLinecap="round" />
-                <text x="4" y="17" className="db-chart-label">8%</text>
-                <text x="4" y="47" className="db-chart-label">4%</text>
-                <text x="4" y="77" className="db-chart-label">0%</text>
-              </svg>
-            </div>
-
-            {/* Disk IO chart */}
-            <div className="db-chart-card">
-              <div className="db-chart-head">
-                <div className="db-chart-title">
-                  <Database size={13} className="db-chart-icon" />
-                  Disk IO — read vs write
-                </div>
-                <div className="db-chart-meta">
-                  <div className="db-chart-legend">
-                    <span className="db-legend-dot green" /> Read
-                    <span className="db-legend-dot amber" style={{ marginLeft: 10 }} /> Write
-                  </div>
-                  <span className="db-chart-val">12.9 K/s</span>
-                  <span className="db-chart-delta up">↑ write heavy</span>
-                </div>
-              </div>
-              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="read-g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#1D9E75" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="#1D9E75" stopOpacity="0" />
-                  </linearGradient>
-                  <linearGradient id="write-g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#BA7517" stopOpacity="0.18" />
-                    <stop offset="100%" stopColor="#BA7517" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
-                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
-                <path d="M0 52 C40 38,90 48,140 32 S210 44,260 28 S320 38,370 22 S440 32,500 26 L500 80 L0 80Z" fill="url(#read-g)" />
-                <path d="M0 52 C40 38,90 48,140 32 S210 44,260 28 S320 38,370 22 S440 32,500 26" fill="none" stroke="#1D9E75" strokeWidth="1.5" strokeLinecap="round" />
-                <path d="M0 66 C40 58,90 62,140 54 S210 60,260 48 S320 56,370 44 S440 50,500 46 L500 80 L0 80Z" fill="url(#write-g)" />
-                <path d="M0 66 C40 58,90 62,140 54 S210 60,260 48 S320 56,370 44 S440 50,500 46" fill="none" stroke="#BA7517" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </div>
-
-            {/* Network IO chart */}
-            <div className="db-chart-card">
-              <div className="db-chart-head">
-                <div className="db-chart-title">
-                  <Wifi size={13} className="db-chart-icon" />
-                  Network IO
-                </div>
-                <div className="db-chart-meta">
-                  <span className="db-chart-val">—</span>
-                </div>
-              </div>
-              <svg className="db-chart-svg" viewBox="0 0 500 80" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="net-g" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#534AB7" stopOpacity="0.13" />
-                    <stop offset="100%" stopColor="#534AB7" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <line x1="0" y1="20" x2="500" y2="20" stroke="#f0eeea" strokeWidth="0.5" />
-                <line x1="0" y1="50" x2="500" y2="50" stroke="#f0eeea" strokeWidth="0.5" />
-                <path d="M0 62 C50 50,80 58,130 42 S190 68,240 52 S300 38,350 55 S420 32,500 48 L500 80 L0 80Z" fill="url(#net-g)" />
-                <path d="M0 62 C50 50,80 58,130 42 S190 68,240 52 S300 38,350 55 S420 32,500 48" fill="none" stroke="#534AB7" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </div>
-
-          </div>
-        </div>
+  return (
+    <div className="db-donut-wrap">
+      <ResponsiveContainer width="100%" height={190}>
+        <PieChart>
+          <Pie data={clean} dataKey="value" nameKey="name" innerRadius={54} outerRadius={78} paddingAngle={3}>
+            {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
+          </Pie>
+          <Tooltip />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="db-donut-legend">
+        {clean.map(row => (
+          <span key={row.status || row.name}>
+            <i style={{ background: STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN }} />
+            {row.name}: {row.value}
+          </span>
+        ))}
       </div>
     </div>
   );
+}
+
+function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+  return (
+    <div className="db-service-list">
+      {rows.map(row => {
+        const Icon = iconFor(row.type);
+        return (
+          <div key={`${row.name}-${row.status}`} className="db-service-row">
+            <div className={`db-service-icon ${row.status.toLowerCase()}`}><Icon size={15} /></div>
+            <div>
+              <strong>{row.name}</strong>
+              <small>{row.description}</small>
+            </div>
+            <span className={`db-service-state ${row.status.toLowerCase()}`}>{row.status}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DiskTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  return (
+    <div className="db-tooltip">
+      <strong>{row.name}</strong>
+      <span>{row.usedGb} GB used of {row.totalGb} GB</span>
+      <span>{row.freeGb} GB free</span>
+    </div>
+  );
+}
+
+function relativeTime(value?: string) {
+  if (!value) return '-';
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return '-';
+  const diff = Date.now() - time;
+  if (diff < 60_000) return 'just now';
+  const minutes = Math.round(diff / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function prettyCommand(command?: string) {
+  if (!command) return 'Task';
+  return command.toLowerCase().split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }

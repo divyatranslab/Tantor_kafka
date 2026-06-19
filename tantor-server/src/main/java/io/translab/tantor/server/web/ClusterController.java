@@ -13,9 +13,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,9 +54,15 @@ public class ClusterController {
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
             m.put("status", c.getStatus());
-            m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
             m.put("bootstrapServers", c.getBootstrapServers());
-            m.put("managementLevel", externalMetadataValue(c, "managementMode"));
+            m.put("clusterId", c.getId().toString());
+            m.put("kafkaClusterId", kafkaClusterId(c));
+            m.put("managementLevel", managementLevel(c));
+            m.put("sourceLabel", sourceLabel(c));
+            m.put("accessLabel", accessLabel(c));
+            List<Map<String, Object>> hosts = clusterHosts(c);
+            m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
+            m.put("hosts", hosts);
             result.add(m);
         }
         return result;
@@ -71,9 +79,15 @@ public class ClusterController {
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
             m.put("status", c.getStatus());
-            m.put("nodeCount", c.getServices() != null ? c.getServices().size() : 0);
             m.put("bootstrapServers", c.getBootstrapServers());
-            m.put("managementLevel", externalMetadataValue(c, "managementMode"));
+            m.put("clusterId", c.getId().toString());
+            m.put("kafkaClusterId", kafkaClusterId(c));
+            m.put("managementLevel", managementLevel(c));
+            m.put("sourceLabel", sourceLabel(c));
+            m.put("accessLabel", accessLabel(c));
+            List<Map<String, Object>> hosts = clusterHosts(c);
+            m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
+            m.put("hosts", hosts);
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -536,6 +550,122 @@ public class ClusterController {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String kafkaClusterId(Cluster cluster) {
+        String externalId = externalMetadataValue(cluster, "kafkaClusterId");
+        return externalId == null ? "" : externalId;
+    }
+
+    private String managementLevel(Cluster cluster) {
+        String level = externalMetadataValue(cluster, "managementMode");
+        if (level != null && !level.isBlank()) {
+            return level;
+        }
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            return externalClusterService.isAgentManaged(cluster) ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY";
+        }
+        return "INTERNAL_MANAGED";
+    }
+
+    private String sourceLabel(Cluster cluster) {
+        return "EXTERNAL".equalsIgnoreCase(cluster.getMode()) ? "External" : "Internal";
+    }
+
+    private String accessLabel(Cluster cluster) {
+        if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            return "Full access";
+        }
+        return "AGENT_MANAGED".equalsIgnoreCase(managementLevel(cluster))
+                ? "Fully managed"
+                : "Metadata available";
+    }
+
+    private List<Map<String, Object>> clusterHosts(Cluster cluster) {
+        List<Map<String, Object>> hosts = new ArrayList<>();
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                hostRepository.findById(service.getHostId()).ifPresent(host -> {
+                    if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                            || "ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
+                        hosts.add(hostSummary(service, host));
+                    }
+                });
+            }
+        }
+
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && hosts.isEmpty()) {
+            Set<String> seen = hosts.stream()
+                    .map(item -> String.valueOf(item.getOrDefault("bootstrap", "")))
+                    .collect(Collectors.toSet());
+            for (io.translab.tantor.server.service.ExternalClusterService.ExternalBrokerRecord broker : externalClusterService.brokerRecords(cluster)) {
+                String bootstrap = broker.getBootstrap() == null ? "" : broker.getBootstrap();
+                if (!seen.contains(bootstrap)) {
+                    hosts.add(externalBrokerSummary(broker));
+                }
+            }
+        }
+        return hosts;
+    }
+
+    private Map<String, Object> hostSummary(ClusterServiceAssignment service, io.translab.tantor.server.domain.Host host) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("hostId", host.getId());
+        summary.put("hostname", host.getHostname());
+        summary.put("ipAddress", firstIp(host.getIpAddresses()));
+        summary.put("status", hostStatusService.effectiveStatus(host));
+        summary.put("role", service.getRole());
+        summary.put("lastHeartbeat", host.getLastHeartbeat());
+        summary.put("diskUsedGb", host.getDiskUsedGb());
+        summary.put("diskTotalGb", host.getDiskTotalGb());
+        summary.put("bootstrap", "");
+        return summary;
+    }
+
+    private Map<String, Object> externalBrokerSummary(io.translab.tantor.server.service.ExternalClusterService.ExternalBrokerRecord broker) {
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("hostId", "");
+        summary.put("hostname", broker.getHostname());
+        summary.put("ipAddress", extractBootstrapHost(broker.getBootstrap()));
+        summary.put("status", broker.isRunning() ? "ONLINE" : "OFFLINE");
+        summary.put("role", broker.getRole());
+        summary.put("lastHeartbeat", parseOffsetDateTime(broker.getLastSeen()));
+        summary.put("diskUsedGb", broker.getDiskUsedGb());
+        summary.put("diskTotalGb", broker.getDiskTotalGb());
+        summary.put("bootstrap", broker.getBootstrap());
+        return summary;
+    }
+
+    private OffsetDateTime parseOffsetDateTime(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String firstIp(String ipAddresses) {
+        if (ipAddresses == null || ipAddresses.isBlank() || "[]".equals(ipAddresses)) {
+            return "";
+        }
+        try {
+            List<String> ips = objectMapper.readValue(ipAddresses, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+            return ips.isEmpty() ? "" : ips.get(0);
+        } catch (Exception ignored) {
+            return ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
+        }
+    }
+
+    private String extractBootstrapHost(String bootstrap) {
+        if (bootstrap == null || bootstrap.isBlank()) {
+            return "";
+        }
+        String first = bootstrap.split(",")[0].trim();
+        int portIndex = first.lastIndexOf(':');
+        return portIndex > 0 ? first.substring(0, portIndex) : first;
     }
 
     private int[] parseKafkaVersion(String kafkaVersion) {

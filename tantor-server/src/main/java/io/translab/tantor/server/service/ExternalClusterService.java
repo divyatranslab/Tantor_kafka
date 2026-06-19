@@ -124,6 +124,7 @@ public class ExternalClusterService {
                         entry.getValue().getName(),
                         entry.getValue().getBootstrapServers()
                 ).isEmpty())
+                .filter(entry -> entry.getValue().isRunning())
                 .sorted(Map.Entry.comparingByValue(Comparator.comparing(
                         ExternalDiscoveryReport::getLastSeen,
                         Comparator.nullsLast(Comparator.reverseOrder())

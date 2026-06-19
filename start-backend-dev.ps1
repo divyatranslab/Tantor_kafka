@@ -34,26 +34,11 @@ $JavaExe = (Get-Command java.exe -ErrorAction SilentlyContinue).Source
 if (!$JavaExe) { throw "Java not found. Install JDK 21 or set JAVA_HOME." }
 
 # ── Locate JARs ─────────────────────────────────────────────────────────────
-$services = @(
-    @{
-        Name    = "ARTIFACT"
-        Display = "Tantor Artifact Repository"
-        Color   = "Magenta"
-        Jar     = Join-Path $RootDir "tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
-    },
-    @{
-        Name    = "SERVER"
-        Display = "Tantor Management Server"
-        Color   = "Green"
-        Jar     = Join-Path $RootDir "tantor-server\target\tantor-server-1.0.0.jar"
-    }
-)
+$ArtifactJar = Join-Path $RootDir "tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+$ServerJar   = Join-Path $RootDir "tantor-server\target\tantor-server-1.0.0.jar"
 
-foreach ($svc in $services) {
-    if (!(Test-Path $svc.Jar)) {
-        throw "$($svc.Display) JAR not found at $($svc.Jar). Run .\build.ps1 first."
-    }
-}
+if (!(Test-Path $ArtifactJar)) { throw "Artifact Repository JAR not found at $ArtifactJar. Run .\build.ps1 first." }
+if (!(Test-Path $ServerJar))   { throw "Management Server JAR not found at $ServerJar. Run .\build.ps1 first." }
 
 # ── Stop any already-running Tantor Java processes ───────────────────────────
 try {
@@ -73,90 +58,112 @@ try {
 
 # ── Banner ───────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "╔══════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║     Tantor Backend — Development Mode            ║" -ForegroundColor Cyan
-Write-Host "║     Press Ctrl+C to stop all services            ║" -ForegroundColor Cyan
-Write-Host "╚══════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "  Tantor Backend -- Development Mode      " -ForegroundColor Cyan
+Write-Host "  Press Ctrl+C to stop all services       " -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Start processes with async output events ─────────────────────────────────
-$processes = @()
-$eventIds  = @()
+# ── Start Artifact Repository ────────────────────────────────────────────────
+$artifactPsi = New-Object System.Diagnostics.ProcessStartInfo
+$artifactPsi.FileName               = $JavaExe
+$artifactPsi.Arguments              = "-jar ""$ArtifactJar"""
+$artifactPsi.WorkingDirectory       = $RootDir
+$artifactPsi.UseShellExecute        = $false
+$artifactPsi.RedirectStandardOutput = $true
+$artifactPsi.RedirectStandardError  = $true
+$artifactPsi.CreateNoWindow         = $true
 
-foreach ($svc in $services) {
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = $JavaExe
-    $psi.Arguments              = "-jar `"$($svc.Jar)`""
-    $psi.WorkingDirectory       = $RootDir
-    $psi.UseShellExecute        = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow         = $true
+$artifactProc = New-Object System.Diagnostics.Process
+$artifactProc.StartInfo = $artifactPsi
+$artifactProc.EnableRaisingEvents = $true
 
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    $proc.EnableRaisingEvents = $true
+Register-ObjectEvent -InputObject $artifactProc -EventName OutputDataReceived -SourceIdentifier "ARTIFACT_OUT" | Out-Null
+Register-ObjectEvent -InputObject $artifactProc -EventName ErrorDataReceived  -SourceIdentifier "ARTIFACT_ERR" | Out-Null
 
-    # Register events (no -Action; we process them on the main thread)
-    $outId = "$($svc.Name)_OUT"
-    $errId = "$($svc.Name)_ERR"
-    Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -SourceIdentifier $outId | Out-Null
-    Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived  -SourceIdentifier $errId | Out-Null
-    $eventIds += $outId, $errId
+$artifactProc.Start() | Out-Null
+$artifactProc.BeginOutputReadLine()
+$artifactProc.BeginErrorReadLine()
 
-    $proc.Start() | Out-Null
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
+Write-Host "[ARTIFACT] Tantor Artifact Repository started -- PID $($artifactProc.Id)" -ForegroundColor Magenta
 
-    $processes += $proc
-    Write-Host "[$($svc.Name)] $($svc.Display) started — PID $($proc.Id)" -ForegroundColor ([ConsoleColor]$svc.Color)
-}
+# ── Start Management Server ──────────────────────────────────────────────────
+$serverPsi = New-Object System.Diagnostics.ProcessStartInfo
+$serverPsi.FileName               = $JavaExe
+$serverPsi.Arguments              = "-jar ""$ServerJar"""
+$serverPsi.WorkingDirectory       = $RootDir
+$serverPsi.UseShellExecute        = $false
+$serverPsi.RedirectStandardOutput = $true
+$serverPsi.RedirectStandardError  = $true
+$serverPsi.CreateNoWindow         = $true
 
+$serverProc = New-Object System.Diagnostics.Process
+$serverProc.StartInfo = $serverPsi
+$serverProc.EnableRaisingEvents = $true
+
+Register-ObjectEvent -InputObject $serverProc -EventName OutputDataReceived -SourceIdentifier "SERVER_OUT" | Out-Null
+Register-ObjectEvent -InputObject $serverProc -EventName ErrorDataReceived  -SourceIdentifier "SERVER_ERR" | Out-Null
+
+$serverProc.Start() | Out-Null
+$serverProc.BeginOutputReadLine()
+$serverProc.BeginErrorReadLine()
+
+Write-Host "[SERVER  ] Tantor Management Server started -- PID $($serverProc.Id)" -ForegroundColor Green
 Write-Host ""
-
-# ── Build a lookup for prefix/color by source identifier ─────────────────────
-$prefixMap = @{}
-foreach ($svc in $services) {
-    $prefixMap["$($svc.Name)_OUT"] = $svc
-    $prefixMap["$($svc.Name)_ERR"] = $svc
-}
 
 # ── Main loop: drain events and print labelled lines ─────────────────────────
 try {
     while ($true) {
-        # Drain all queued events
-        while ($true) {
-            $ev = Get-Event -ErrorAction SilentlyContinue
-            if (!$ev) { break }
-
+        # Drain all queued events (Get-Event can return an array)
+        $events = @(Get-Event -ErrorAction SilentlyContinue)
+        foreach ($ev in $events) {
+            if ($null -eq $ev) { continue }
             $line = $ev.SourceEventArgs.Data
             if (![string]::IsNullOrEmpty($line)) {
-                $svc = $prefixMap[$ev.SourceIdentifier]
-                if ($svc) {
-                    $pad = $svc.Name.PadRight(8)
-                    Write-Host "[$pad] " -ForegroundColor ([ConsoleColor]$svc.Color) -NoNewline
+                $src = $ev.SourceIdentifier
+                if ($src -eq "ARTIFACT_OUT" -or $src -eq "ARTIFACT_ERR") {
+                    Write-Host "[ARTIFACT] " -ForegroundColor Magenta -NoNewline
                     Write-Host $line
-                } else {
+                }
+                elseif ($src -eq "SERVER_OUT" -or $src -eq "SERVER_ERR") {
+                    Write-Host "[SERVER  ] " -ForegroundColor Green -NoNewline
+                    Write-Host $line
+                }
+                else {
                     Write-Host $line
                 }
             }
-            Remove-Event -EventIdentifier $ev.EventIdentifier
+            Remove-Event -EventIdentifier $ev.EventIdentifier -ErrorAction SilentlyContinue
         }
 
         # Check if both processes have exited
-        $allExited = $true
-        foreach ($proc in $processes) {
-            if (!$proc.HasExited) { $allExited = $false; break }
-        }
-        if ($allExited) {
-            Write-Host ""
-            for ($i = 0; $i -lt $services.Count; $i++) {
-                $svc  = $services[$i]
-                $proc = $processes[$i]
-                $code = $proc.ExitCode
-                $color = if ($code -eq 0) { "Green" } else { "Red" }
-                Write-Host "[$($svc.Name)] $($svc.Display) exited with code $code" -ForegroundColor $color
+        $artifactDone = $artifactProc.HasExited
+        $serverDone   = $serverProc.HasExited
+
+        if ($artifactDone -and $serverDone) {
+            # Drain any remaining events after exit
+            Start-Sleep -Milliseconds 500
+            $remaining = @(Get-Event -ErrorAction SilentlyContinue)
+            foreach ($ev in $remaining) {
+                if ($null -eq $ev) { continue }
+                $line = $ev.SourceEventArgs.Data
+                if (![string]::IsNullOrEmpty($line)) {
+                    $src = $ev.SourceIdentifier
+                    if ($src -eq "ARTIFACT_OUT" -or $src -eq "ARTIFACT_ERR") {
+                        Write-Host "[ARTIFACT] " -ForegroundColor Magenta -NoNewline
+                        Write-Host $line
+                    }
+                    elseif ($src -eq "SERVER_OUT" -or $src -eq "SERVER_ERR") {
+                        Write-Host "[SERVER  ] " -ForegroundColor Green -NoNewline
+                        Write-Host $line
+                    }
+                }
+                Remove-Event -EventIdentifier $ev.EventIdentifier -ErrorAction SilentlyContinue
             }
+
+            Write-Host ""
+            Write-Host "[ARTIFACT] Exited with code $($artifactProc.ExitCode)" -ForegroundColor Yellow
+            Write-Host "[SERVER  ] Exited with code $($serverProc.ExitCode)" -ForegroundColor Yellow
             break
         }
 
@@ -164,22 +171,27 @@ try {
     }
 }
 finally {
-    Write-Host "`nShutting down..." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Shutting down..." -ForegroundColor Yellow
 
-    foreach ($id in $eventIds) {
-        Unregister-Event -SourceIdentifier $id -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier "ARTIFACT_OUT" -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier "ARTIFACT_ERR" -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier "SERVER_OUT"   -ErrorAction SilentlyContinue
+    Unregister-Event -SourceIdentifier "SERVER_ERR"   -ErrorAction SilentlyContinue
+
+    if ($artifactProc -and !$artifactProc.HasExited) {
+        Write-Host "Stopping Artifact Repository (PID $($artifactProc.Id))..." -ForegroundColor Yellow
+        try { $artifactProc.Kill() } catch {}
+        try { $artifactProc.WaitForExit(5000) | Out-Null } catch {}
+    }
+    if ($serverProc -and !$serverProc.HasExited) {
+        Write-Host "Stopping Management Server (PID $($serverProc.Id))..." -ForegroundColor Yellow
+        try { $serverProc.Kill() } catch {}
+        try { $serverProc.WaitForExit(5000) | Out-Null } catch {}
     }
 
-    foreach ($i in 0..($processes.Count - 1)) {
-        $proc = $processes[$i]
-        $svc  = $services[$i]
-        if ($proc -and !$proc.HasExited) {
-            Write-Host "Stopping $($svc.Display) (PID $($proc.Id))..." -ForegroundColor Yellow
-            try { $proc.Kill() } catch {}
-            $proc.WaitForExit(5000) | Out-Null
-        }
-        if ($proc) { $proc.Dispose() }
-    }
+    if ($artifactProc) { $artifactProc.Dispose() }
+    if ($serverProc)   { $serverProc.Dispose() }
 
     Write-Host "All services stopped." -ForegroundColor Green
 }

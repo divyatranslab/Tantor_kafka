@@ -90,6 +90,8 @@ export function ExternalClusters() {
   const [discoveriesLoading, setDiscoveriesLoading] = useState(false);
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [connectingKey, setConnectingKey] = useState('');
+  const [testingDiscoveryKey, setTestingDiscoveryKey] = useState('');
+  const [discoveryTestResults, setDiscoveryTestResults] = useState<Record<string, BootstrapResult>>({});
 
   const [form, setForm] = useState({
     name: '',
@@ -231,6 +233,38 @@ export function ExternalClusters() {
       setError(e.message || 'Failed to connect discovery');
     } finally {
       setConnectingKey('');
+    }
+  };
+
+  const testDiscovery = async (discovery: ExternalDiscovery) => {
+    if (!discovery.bootstrapServers) return;
+    setTestingDiscoveryKey(discovery.discoveryKey);
+    setDiscoveryTestResults(prev => {
+      const next = { ...prev };
+      delete next[discovery.discoveryKey];
+      return next;
+    });
+    try {
+      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bootstrapServers: discovery.bootstrapServers }),
+      });
+      const data = await res.json();
+      setDiscoveryTestResults(prev => ({ ...prev, [discovery.discoveryKey]: data }));
+    } catch (e: any) {
+      setDiscoveryTestResults(prev => ({
+        ...prev,
+        [discovery.discoveryKey]: {
+          success: false,
+          connected: false,
+          status: 'FAILED',
+          bootstrap_servers: discovery.bootstrapServers,
+          message: e.message || 'Bootstrap connection failed',
+        },
+      }));
+    } finally {
+      setTestingDiscoveryKey('');
     }
   };
 
@@ -532,7 +566,10 @@ export function ExternalClusters() {
                 <div className="empty-cell">Loading discovered clusters...</div>
               ) : discoveries.length === 0 ? (
                 <div className="empty-cell">No pending discoveries. Start the discovery agent on a Kafka VM, then refresh.</div>
-              ) : discoveries.map(discovery => (
+              ) : discoveries.map(discovery => {
+                const testResult = discoveryTestResults[discovery.discoveryKey];
+                const testPassed = Boolean(testResult && (testResult.success ?? testResult.connected));
+                return (
                 <div className="discovery-row" key={discovery.discoveryKey}>
                   <div className="discovery-main">
                     <div className="cluster-stack">
@@ -548,17 +585,39 @@ export function ExternalClusters() {
                       <span title={discovery.installPath}>Install: {discovery.installPath || '-'}</span>
                       <span title={discovery.logDirs}>Logs: {discovery.logDirs || '-'}</span>
                     </div>
+                    {testResult && (
+                      <div className={`bootstrap-result-terminal compact ${(testResult.success ?? testResult.connected) ? 'ok' : 'error'}`}>
+                        <div className="terminal-status">
+                          {(testResult.success ?? testResult.connected)
+                            ? 'Bootstrap connection successful.'
+                            : 'Bootstrap connection failed.'}
+                        </div>
+                        <pre>{bootstrapReport(testResult)}</pre>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    className="btn btn-primary-action"
-                    onClick={() => connectDiscovery(discovery)}
-                    disabled={connectingKey === discovery.discoveryKey}
-                  >
-                    {connectingKey === discovery.discoveryKey ? <RefreshCw size={14} className="spin" /> : <ExternalLink size={14} />}
-                    Connect
-                  </button>
+                  <div className="discovery-actions">
+                    <button
+                      className="btn"
+                      onClick={() => testDiscovery(discovery)}
+                      disabled={testingDiscoveryKey === discovery.discoveryKey || !discovery.bootstrapServers}
+                    >
+                      {testingDiscoveryKey === discovery.discoveryKey ? <RefreshCw size={14} className="spin" /> : <Activity size={14} />}
+                      Test
+                    </button>
+                    <button
+                      className="btn btn-primary-action"
+                      onClick={() => connectDiscovery(discovery)}
+                      disabled={!testPassed || connectingKey === discovery.discoveryKey}
+                      title={testPassed ? 'Connect this discovered cluster' : 'Test connection before connecting'}
+                    >
+                      {connectingKey === discovery.discoveryKey ? <RefreshCw size={14} className="spin" /> : <ExternalLink size={14} />}
+                      Connect
+                    </button>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

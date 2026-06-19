@@ -36,5 +36,3 @@ server.err
 # Artifacts and Heavy Files
 repository/
 test.tgz
-tantor-agent-linux
-tantor-discovery-agent-linux

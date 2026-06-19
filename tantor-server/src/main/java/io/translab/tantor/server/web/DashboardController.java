@@ -1,16 +1,35 @@
 package io.translab.tantor.server.web;
 
+import io.translab.tantor.server.domain.ActivityLog;
+import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.domain.HostParcel;
+import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.repository.ActivityLogRepository;
+import io.translab.tantor.server.repository.AlertRepository;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.repository.TaskRepository;
+import io.translab.tantor.server.service.HostStatusService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/ui/dashboard")
@@ -19,27 +38,309 @@ public class DashboardController {
 
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
-    private final io.translab.tantor.server.repository.AlertRepository alertRepository;
-    private final io.translab.tantor.server.repository.ActivityLogRepository activityLogRepository;
+    private final AlertRepository alertRepository;
+    private final ActivityLogRepository activityLogRepository;
+    private final TaskRepository taskRepository;
+    private final HostParcelRepository hostParcelRepository;
+    private final HostStatusService hostStatusService;
+
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> getDashboard() {
+        List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
+        List<Host> hosts = hostRepository.findAll();
+        List<Task> tasks = taskRepository.findAll();
+        List<HostParcel> parcels = hostParcelRepository.findAll();
+        List<ActivityLog> activities = activityLogRepository.findTop50ByOrderByCreatedAtDesc();
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("generatedAt", OffsetDateTime.now());
+        response.put("summary", summary(clusters, hosts, tasks, parcels, activities));
+        response.put("hostStatus", hostStatusChart(hosts));
+        response.put("clusterStatus", clusterStatusChart(clusters));
+        response.put("hostDiskUsage", hostDiskUsage(hosts));
+        response.put("taskStatus", taskStatusChart(tasks));
+        response.put("taskTimeline", taskTimeline(tasks));
+        response.put("runningServices", runningServices(clusters, hosts, parcels));
+        response.put("failedServices", failedServices(clusters, hosts, tasks, parcels));
+        response.put("recentActivities", recentActivities(activities));
+        response.put("recentTasks", recentTasks(tasks, clusters));
+        return ResponseEntity.ok(response);
+    }
 
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getOverviewStats() {
         Map<String, Object> stats = new HashMap<>();
-        
-        long totalClusters = clusterRepository.count();
-        long totalHosts = hostRepository.count();
-        long activeAlerts = alertRepository.countByStatus("ACTIVE");
+        List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
+        List<Host> hosts = hostRepository.findAll();
 
-        stats.put("totalClusters", totalClusters);
-        stats.put("totalHosts", totalHosts);
-        stats.put("activeAlerts", activeAlerts);
-        stats.put("healthyClusters", totalClusters); // Placeholder
-
+        stats.put("totalClusters", clusters.size());
+        stats.put("totalHosts", hosts.size());
+        stats.put("activeAlerts", alertRepository.countByStatus("ACTIVE"));
+        stats.put("healthyClusters", clusters.stream().filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus())).count());
         return ResponseEntity.ok(stats);
     }
 
     @GetMapping("/activity")
-    public ResponseEntity<List<io.translab.tantor.server.domain.ActivityLog>> getRecentActivity() {
+    public ResponseEntity<List<ActivityLog>> getRecentActivity() {
         return ResponseEntity.ok(activityLogRepository.findTop50ByOrderByCreatedAtDesc());
+    }
+
+    private Map<String, Object> summary(
+            List<Cluster> clusters,
+            List<Host> hosts,
+            List<Task> tasks,
+            List<HostParcel> parcels,
+            List<ActivityLog> activities
+    ) {
+        Map<String, Long> hostCounts = hosts.stream()
+                .collect(Collectors.groupingBy(host -> normalizeStatus(hostStatusService.effectiveStatus(host)), Collectors.counting()));
+        Map<String, Long> clusterCounts = clusters.stream()
+                .collect(Collectors.groupingBy(cluster -> normalizeStatus(cluster.getStatus()), Collectors.counting()));
+        Map<String, Long> taskCounts = tasks.stream()
+                .collect(Collectors.groupingBy(task -> normalizeStatus(task.getStatus()), Collectors.counting()));
+
+        long externalClusters = clusters.stream().filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode())).count();
+        long internalClusters = clusters.size() - externalClusters;
+        long activeParcels = parcels.stream().filter(HostParcel::isActive).count();
+        long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalHosts", hosts.size());
+        summary.put("activeHosts", hostCounts.getOrDefault("ONLINE", 0L));
+        summary.put("offlineHosts", hostCounts.getOrDefault("OFFLINE", 0L));
+        summary.put("pendingHosts", hostCounts.getOrDefault("PENDING", 0L));
+        summary.put("totalClusters", clusters.size());
+        summary.put("activeClusters", clusterCounts.getOrDefault("SUCCESS", 0L));
+        summary.put("failedClusters", clusterCounts.getOrDefault("FAILED", 0L));
+        summary.put("externalClusters", externalClusters);
+        summary.put("internalClusters", internalClusters);
+        summary.put("activeAlerts", alertRepository.countByStatus("ACTIVE"));
+        summary.put("runningTasks", taskCounts.getOrDefault("PENDING", 0L) + taskCounts.getOrDefault("IN_PROGRESS", 0L));
+        summary.put("failedTasks", taskCounts.getOrDefault("FAILED", 0L));
+        summary.put("activeParcels", activeParcels);
+        summary.put("failedParcels", failedParcels);
+        summary.put("runningServices", runningServiceCount(clusters, hosts, parcels));
+        summary.put("failedServices", failedServiceCount(clusters, hosts, tasks, parcels));
+        summary.put("firstClusterCreatedAt", clusters.stream().map(Cluster::getCreatedAt).filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null));
+        summary.put("latestClusterCreatedAt", clusters.stream().map(Cluster::getCreatedAt).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
+        summary.put("lastActivityAt", activities.stream().map(ActivityLog::getCreatedAt).filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null));
+        return summary;
+    }
+
+    private List<Map<String, Object>> hostStatusChart(List<Host> hosts) {
+        Map<String, Long> counts = hosts.stream()
+                .collect(Collectors.groupingBy(host -> normalizeStatus(hostStatusService.effectiveStatus(host)), LinkedHashMap::new, Collectors.counting()));
+        return orderedStatusRows(counts, List.of("ONLINE", "OFFLINE", "PENDING"));
+    }
+
+    private List<Map<String, Object>> clusterStatusChart(List<Cluster> clusters) {
+        Map<String, Long> counts = clusters.stream()
+                .collect(Collectors.groupingBy(cluster -> normalizeStatus(cluster.getStatus()), LinkedHashMap::new, Collectors.counting()));
+        return orderedStatusRows(counts, List.of("SUCCESS", "FAILED", "RUNNING", "DELETING", "PENDING"));
+    }
+
+    private List<Map<String, Object>> taskStatusChart(List<Task> tasks) {
+        Map<String, Long> counts = tasks.stream()
+                .collect(Collectors.groupingBy(task -> normalizeStatus(task.getStatus()), LinkedHashMap::new, Collectors.counting()));
+        return orderedStatusRows(counts, List.of("SUCCESS", "FAILED", "PENDING", "IN_PROGRESS"));
+    }
+
+    private List<Map<String, Object>> orderedStatusRows(Map<String, Long> counts, List<String> order) {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String status : order) {
+            long count = counts.getOrDefault(status, 0L);
+            if (count > 0 || rows.isEmpty()) {
+                rows.add(statusRow(status, count));
+            }
+        }
+        counts.entrySet().stream()
+                .filter(entry -> !order.contains(entry.getKey()))
+                .forEach(entry -> rows.add(statusRow(entry.getKey(), entry.getValue())));
+        return rows;
+    }
+
+    private Map<String, Object> statusRow(String status, long count) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", title(status));
+        row.put("status", status);
+        row.put("value", count);
+        return row;
+    }
+
+    private List<Map<String, Object>> hostDiskUsage(List<Host> hosts) {
+        return hosts.stream()
+                .filter(host -> !(host.getId() != null
+                        && host.getId().startsWith("external-")
+                        && "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))))
+                .filter(host -> host.getDiskTotalGb() != null && host.getDiskTotalGb() > 0)
+                .sorted(Comparator.comparingLong(this::diskUsedPercent).reversed())
+                .limit(8)
+                .map(host -> {
+                    long total = host.getDiskTotalGb();
+                    long used = host.getDiskUsedGb() == null ? 0L : host.getDiskUsedGb();
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", host.getHostname() == null || host.getHostname().isBlank() ? host.getId() : host.getHostname());
+                    row.put("hostId", host.getId());
+                    row.put("status", hostStatusService.effectiveStatus(host));
+                    row.put("usedGb", used);
+                    row.put("freeGb", Math.max(total - used, 0));
+                    row.put("totalGb", total);
+                    row.put("usedPct", diskUsedPercent(host));
+                    row.put("lastHeartbeat", host.getLastHeartbeat());
+                    return row;
+                })
+                .toList();
+    }
+
+    private long diskUsedPercent(Host host) {
+        if (host.getDiskTotalGb() == null || host.getDiskTotalGb() <= 0) {
+            return 0;
+        }
+        long used = host.getDiskUsedGb() == null ? 0L : host.getDiskUsedGb();
+        return Math.min(100, Math.round((used * 100.0) / host.getDiskTotalGb()));
+    }
+
+    private List<Map<String, Object>> taskTimeline(List<Task> tasks) {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate start = LocalDate.now(zone).minusDays(6);
+        Map<LocalDate, List<Task>> byDay = tasks.stream()
+                .filter(task -> task.getCreatedAt() != null)
+                .collect(Collectors.groupingBy(task -> task.getCreatedAt().toLocalDate()));
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < 7; i++) {
+            LocalDate day = start.plusDays(i);
+            List<Task> dayTasks = byDay.getOrDefault(day, List.of());
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", day.toString());
+            row.put("label", day.getMonth().toString().substring(0, 3) + " " + day.getDayOfMonth());
+            row.put("success", countTasks(dayTasks, "SUCCESS"));
+            row.put("failed", countTasks(dayTasks, "FAILED"));
+            row.put("running", countTasks(dayTasks, "PENDING") + countTasks(dayTasks, "IN_PROGRESS"));
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    private long countTasks(List<Task> tasks, String status) {
+        return tasks.stream().filter(task -> status.equalsIgnoreCase(task.getStatus())).count();
+    }
+
+    private List<Map<String, Object>> runningServices(List<Cluster> clusters, List<Host> hosts, List<HostParcel> parcels) {
+        List<Map<String, Object>> services = new ArrayList<>();
+        long onlineHosts = hosts.stream().filter(hostStatusService::isOnline).count();
+        long activeClusters = clusters.stream().filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus())).count();
+        long activeExternal = clusters.stream()
+                .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
+                .filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus()))
+                .count();
+        long activeParcels = parcels.stream().filter(HostParcel::isActive).count();
+
+        services.add(serviceRow("Tantor Backend API", "Management API is serving this dashboard", "RUNNING", "platform"));
+        services.add(serviceRow("Agent fleet", onlineHosts + " active host" + plural(onlineHosts), onlineHosts > 0 ? "RUNNING" : "IDLE", "agent"));
+        services.add(serviceRow("Kafka clusters", activeClusters + " active cluster" + plural(activeClusters), activeClusters > 0 ? "RUNNING" : "IDLE", "kafka"));
+        services.add(serviceRow("External cluster control", activeExternal + " connected external cluster" + plural(activeExternal), activeExternal > 0 ? "RUNNING" : "IDLE", "external"));
+        services.add(serviceRow("Active parcels", activeParcels + " active parcel" + plural(activeParcels), activeParcels > 0 ? "RUNNING" : "IDLE", "parcel"));
+        return services;
+    }
+
+    private List<Map<String, Object>> failedServices(List<Cluster> clusters, List<Host> hosts, List<Task> tasks, List<HostParcel> parcels) {
+        List<Map<String, Object>> services = new ArrayList<>();
+        long offlineHosts = hosts.stream().filter(host -> "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))).count();
+        long failedClusters = clusters.stream().filter(cluster -> "FAILED".equalsIgnoreCase(cluster.getStatus())).count();
+        long deletingClusters = clusters.stream().filter(cluster -> "DELETING".equalsIgnoreCase(cluster.getStatus())).count();
+        long failedTasks = tasks.stream().filter(task -> "FAILED".equalsIgnoreCase(task.getStatus())).count();
+        long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
+
+        if (offlineHosts > 0) services.add(serviceRow("Offline agents", offlineHosts + " host" + plural(offlineHosts) + " missing heartbeat", "FAILED", "agent"));
+        if (failedClusters > 0) services.add(serviceRow("Failed clusters", failedClusters + " cluster" + plural(failedClusters) + " failed", "FAILED", "kafka"));
+        if (deletingClusters > 0) services.add(serviceRow("Cleanup in progress", deletingClusters + " cluster cleanup task" + plural(deletingClusters), "RUNNING", "cleanup"));
+        if (failedTasks > 0) services.add(serviceRow("Failed tasks", failedTasks + " task" + plural(failedTasks) + " need review", "FAILED", "task"));
+        if (failedParcels > 0) services.add(serviceRow("Failed parcel actions", failedParcels + " parcel action" + plural(failedParcels), "FAILED", "parcel"));
+        return services;
+    }
+
+    private long runningServiceCount(List<Cluster> clusters, List<Host> hosts, List<HostParcel> parcels) {
+        long onlineHosts = hosts.stream().filter(hostStatusService::isOnline).count();
+        long activeClusters = clusters.stream().filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus())).count();
+        long activeParcels = parcels.stream().filter(HostParcel::isActive).count();
+        return 1 + onlineHosts + activeClusters + activeParcels;
+    }
+
+    private long failedServiceCount(List<Cluster> clusters, List<Host> hosts, List<Task> tasks, List<HostParcel> parcels) {
+        long offlineHosts = hosts.stream().filter(host -> "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))).count();
+        long failedClusters = clusters.stream().filter(cluster -> "FAILED".equalsIgnoreCase(cluster.getStatus())).count();
+        long failedTasks = tasks.stream().filter(task -> "FAILED".equalsIgnoreCase(task.getStatus())).count();
+        long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
+        return offlineHosts + failedClusters + failedTasks + failedParcels;
+    }
+
+    private Map<String, Object> serviceRow(String name, String description, String status, String type) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", name);
+        row.put("description", description);
+        row.put("status", status);
+        row.put("type", type);
+        return row;
+    }
+
+    private List<Map<String, Object>> recentActivities(List<ActivityLog> activities) {
+        Map<String, ActivityLog> unique = new LinkedHashMap<>();
+        for (ActivityLog activity : activities) {
+            String key = normalizeStatus(activity.getLevel()) + "|" + activity.getMessage() + "|" + activity.getClusterId();
+            unique.putIfAbsent(key, activity);
+            if (unique.size() >= 8) {
+                break;
+            }
+        }
+        return unique.values().stream().map(activity -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", activity.getId());
+            row.put("level", activity.getLevel());
+            row.put("message", activity.getMessage());
+            row.put("clusterId", activity.getClusterId());
+            row.put("createdAt", activity.getCreatedAt());
+            return row;
+        }).toList();
+    }
+
+    private List<Map<String, Object>> recentTasks(List<Task> tasks, List<Cluster> clusters) {
+        Map<String, String> clusterNames = clusters.stream()
+                .collect(Collectors.toMap(cluster -> cluster.getId().toString(), Cluster::getName, (a, b) -> a));
+        return tasks.stream()
+                .sorted(Comparator.comparing(Task::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(8)
+                .map(task -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("id", task.getId());
+                    row.put("command", task.getCommand());
+                    row.put("status", task.getStatus());
+                    row.put("hostId", task.getHostId());
+                    row.put("clusterId", task.getClusterId());
+                    row.put("clusterName", task.getClusterId() == null ? "" : clusterNames.getOrDefault(task.getClusterId().toString(), ""));
+                    row.put("createdAt", task.getCreatedAt());
+                    row.put("updatedAt", task.getUpdatedAt());
+                    row.put("errorMsg", task.getErrorMsg());
+                    return row;
+                }).toList();
+    }
+
+    private String normalizeStatus(String status) {
+        return status == null || status.isBlank() ? "UNKNOWN" : status.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String title(String value) {
+        String normalized = value == null ? "Unknown" : value.toLowerCase(Locale.ROOT).replace('_', ' ');
+        String[] words = normalized.split(" ");
+        List<String> titled = new ArrayList<>();
+        for (String word : words) {
+            if (word.isBlank()) continue;
+            titled.add(word.substring(0, 1).toUpperCase(Locale.ROOT) + word.substring(1));
+        }
+        return titled.isEmpty() ? "Unknown" : String.join(" ", titled);
+    }
+
+    private String plural(long count) {
+        return count == 1 ? "" : "s";
     }
 }
