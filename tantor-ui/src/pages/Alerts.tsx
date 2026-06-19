@@ -1,89 +1,183 @@
-import { useState, useEffect } from 'react';
-import { ShieldAlert, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
-import './AuditLogs.css'; // Reuse audit log styles for table
+import { useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle, CheckCircle, Clock, Database, HardDrive, RefreshCw, Server,
+  ShieldAlert
+} from 'lucide-react';
+import './Alerts.css';
+
+interface AlertRow {
+  id: string;
+  severity: string;
+  title: string;
+  description?: string;
+  clusterId?: string;
+  clusterName?: string;
+  hostId?: string;
+  hostIp?: string;
+  status?: string;
+  createdAt?: string;
+  errorLog?: string;
+  source?: string;
+}
 
 export function Alerts() {
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const fetchAlerts = () => {
+  const fetchAlerts = async () => {
     setLoading(true);
-    fetch('/api/v1/ui/alerts')
-      .then(res => res.json())
-      .then(setAlerts)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    setError('');
+    try {
+      const res = await fetch('/api/v1/ui/alerts');
+      if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
+      setAlerts(await res.json());
+    } catch (e: any) {
+      setError(e.message || 'Failed to load alerts');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchAlerts();
   }, []);
 
-  const getIcon = (severity: string) => {
-    switch (severity) {
-      case 'CRITICAL': return <AlertTriangle size={18} style={{ color: 'var(--color-error)' }} />;
-      case 'WARNING': return <AlertTriangle size={18} style={{ color: 'var(--color-warning)' }} />;
-      default: return <ShieldAlert size={18} style={{ color: 'var(--color-info)' }} />;
-    }
-  };
+  const summary = useMemo(() => {
+    const critical = alerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
+    const warning = alerts.filter(alert => alert.severity?.toUpperCase() === 'WARNING').length;
+    const clusters = new Set(alerts.map(alert => alert.clusterId).filter(Boolean)).size;
+    return { critical, warning, clusters };
+  }, [alerts]);
 
   return (
-    <div className="audit-page animate-fade-in">
-      <header className="page-header flex-between">
+    <div className="alerts-page animate-fade-in">
+      <header className="alerts-hero">
         <div>
+          <span className={`alerts-state ${alerts.length ? 'needs-attention' : 'healthy'}`}>
+            {alerts.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
+            {alerts.length ? 'Live system needs attention' : 'All systems healthy'}
+          </span>
           <h1>Active Alerts</h1>
-          <p>System health anomalies and configuration warnings</p>
+          <p>Runtime health, failed tasks, storage pressure, and cluster availability signals.</p>
         </div>
-        <button className="btn" onClick={fetchAlerts}>
+        <button className="alerts-refresh" onClick={fetchAlerts}>
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
           Refresh
         </button>
       </header>
 
-      <div className="glass-panel" style={{ padding: 0, overflow: 'hidden' }}>
+      {error && <div className="alerts-banner">{error}</div>}
+
+      <section className="alerts-summary">
+        <SummaryCard label="Critical" value={summary.critical} tone={summary.critical ? 'bad' : 'good'} icon={ShieldAlert} />
+        <SummaryCard label="Warnings" value={summary.warning} tone={summary.warning ? 'warn' : 'good'} icon={AlertTriangle} />
+        <SummaryCard label="Impacted Clusters" value={summary.clusters} tone={summary.clusters ? 'bad' : 'good'} icon={Database} />
+      </section>
+
+      <section className="alerts-panel">
         {loading ? (
-          <div className="state-center" style={{ padding: '3rem' }}>
-            <RefreshCw className="spin" size={24} style={{ color: 'var(--accent-primary)', marginBottom: '1rem' }} />
-            <p>Loading alerts...</p>
+          <div className="alerts-empty">
+            <RefreshCw className="spin" size={24} />
+            <strong>Loading alerts...</strong>
+            <span>Checking cluster tasks, hosts, disk usage, and runtime state.</span>
           </div>
         ) : alerts.length === 0 ? (
-          <div className="state-center" style={{ padding: '3rem' }}>
-            <CheckCircle size={48} style={{ color: 'var(--color-success)', marginBottom: '1rem' }} />
-            <h3>All Systems Healthy</h3>
-            <p style={{ color: 'var(--text-secondary)' }}>No active alerts or warnings triggered.</p>
+          <div className="alerts-empty healthy">
+            <CheckCircle size={44} />
+            <strong>No active alerts</strong>
+            <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
           </div>
         ) : (
-          <table className="audit-table">
-            <thead>
-              <tr>
-                <th style={{ width: '50px' }}></th>
-                <th style={{ width: '180px' }}>Triggered At</th>
-                <th style={{ width: '120px' }}>Severity</th>
-                <th>Title & Description</th>
-                <th style={{ width: '200px' }}>Cluster ID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {alerts.map((alert) => (
-                <tr key={alert.id}>
-                  <td style={{ textAlign: 'center' }}>{getIcon(alert.severity)}</td>
-                  <td className="mono" style={{ fontSize: '0.85rem' }}>{new Date(alert.createdAt).toLocaleString()}</td>
-                  <td>
-                    <span className={`tag ${alert.severity.toLowerCase()}`}>{alert.severity}</span>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{alert.title}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{alert.description}</div>
-                  </td>
-                  <td className="mono" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    {alert.clusterId || '-'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="alerts-list">
+            {alerts.map(alert => (
+              <article key={alert.id} className={`alert-card ${severityTone(alert.severity)}`}>
+                <div className="alert-card-icon">
+                  {alert.source === 'host' ? <Server size={18} /> : alert.source === 'task' ? <Clock size={18} /> : <HardDrive size={18} />}
+                </div>
+                <div className="alert-card-body">
+                  <div className="alert-card-top">
+                    <div>
+                      <span className="alert-source">{sourceLabel(alert.source)}</span>
+                      <h2>{alert.title}</h2>
+                    </div>
+                    <span className={`alert-severity ${severityTone(alert.severity)}`}>{alert.severity || 'INFO'}</span>
+                  </div>
+
+                  {alert.description && <p>{alert.description}</p>}
+
+                  <div className="alert-meta">
+                    <Meta label="Cluster" value={clusterLabel(alert)} />
+                    <Meta label="Cluster ID" value={alert.clusterId || '-'} mono />
+                    <Meta label="Host / IP" value={hostLabel(alert)} />
+                    <Meta label="Status" value={alert.status || '-'} />
+                    <Meta label="Detected" value={formatDateTime(alert.createdAt) || '-'} />
+                  </div>
+
+                  {alert.errorLog && (
+                    <pre className="alert-log">{alert.errorLog}</pre>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
     </div>
   );
+}
+
+function SummaryCard({ label, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: any }) {
+  return (
+    <article className={`alerts-summary-card ${tone}`}>
+      <div><Icon size={17} /></div>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function Meta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="alert-meta-item">
+      <span>{label}</span>
+      <b className={mono ? 'mono' : ''}>{value}</b>
+    </div>
+  );
+}
+
+function severityTone(severity?: string) {
+  const normalized = severity?.toUpperCase();
+  if (normalized === 'CRITICAL') return 'bad';
+  if (normalized === 'WARNING') return 'warn';
+  return 'info';
+}
+
+function sourceLabel(source?: string) {
+  if (!source) return 'Runtime';
+  return source.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function clusterLabel(alert: AlertRow) {
+  if (alert.clusterName && alert.clusterName !== '-') return alert.clusterName;
+  return alert.clusterId || '-';
+}
+
+function hostLabel(alert: AlertRow) {
+  const host = alert.hostId && alert.hostId !== '-' ? alert.hostId : '';
+  const ip = alert.hostIp && alert.hostIp !== '-' ? alert.hostIp : '';
+  if (host && ip) return `${host} / ${ip}`;
+  return host || ip || '-';
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString([], {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

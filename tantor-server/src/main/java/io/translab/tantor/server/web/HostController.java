@@ -33,7 +33,9 @@ public class HostController {
 
     @GetMapping
     public ResponseEntity<List<Host>> getAllHosts() {
-        List<Host> hosts = hostRepository.findAll();
+        List<Host> hosts = hostRepository.findAll().stream()
+                .filter(hostStatusService::isInfrastructureHost)
+                .toList();
         hosts.forEach(host -> host.setStatus(hostStatusService.effectiveStatus(host)));
         return ResponseEntity.ok(hosts);
     }

@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -48,20 +50,22 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> getDashboard() {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
         List<Host> hosts = hostRepository.findAll();
+        List<Host> infrastructureHosts = hosts.stream().filter(hostStatusService::isInfrastructureHost).toList();
         List<Task> tasks = taskRepository.findAll();
         List<HostParcel> parcels = hostParcelRepository.findAll();
         List<ActivityLog> activities = activityLogRepository.findTop50ByOrderByCreatedAtDesc();
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("generatedAt", OffsetDateTime.now());
-        response.put("summary", summary(clusters, hosts, tasks, parcels, activities));
-        response.put("hostStatus", hostStatusChart(hosts));
+        response.put("summary", summary(clusters, infrastructureHosts, tasks, parcels, activities));
+        response.put("hostStatus", hostStatusChart(infrastructureHosts));
         response.put("clusterStatus", clusterStatusChart(clusters));
-        response.put("hostDiskUsage", hostDiskUsage(hosts));
+        response.put("clusterHealth", clusterHealth(clusters, infrastructureHosts, tasks));
+        response.put("hostDiskUsage", hostDiskUsage(infrastructureHosts));
         response.put("taskStatus", taskStatusChart(tasks));
         response.put("taskTimeline", taskTimeline(tasks));
-        response.put("runningServices", runningServices(clusters, hosts, parcels));
-        response.put("failedServices", failedServices(clusters, hosts, tasks, parcels));
+        response.put("runningServices", runningServices(clusters, infrastructureHosts, parcels));
+        response.put("failedServices", failedServices(clusters, infrastructureHosts, tasks, parcels));
         response.put("recentActivities", recentActivities(activities));
         response.put("recentTasks", recentTasks(tasks, clusters));
         return ResponseEntity.ok(response);
@@ -71,7 +75,7 @@ public class DashboardController {
     public ResponseEntity<Map<String, Object>> getOverviewStats() {
         Map<String, Object> stats = new HashMap<>();
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
-        List<Host> hosts = hostRepository.findAll();
+        List<Host> hosts = hostRepository.findAll().stream().filter(hostStatusService::isInfrastructureHost).toList();
 
         stats.put("totalClusters", clusters.size());
         stats.put("totalHosts", hosts.size());
@@ -139,6 +143,89 @@ public class DashboardController {
         return orderedStatusRows(counts, List.of("SUCCESS", "FAILED", "RUNNING", "DELETING", "PENDING"));
     }
 
+    private List<Map<String, Object>> clusterHealth(List<Cluster> clusters, List<Host> hosts, List<Task> tasks) {
+        Map<String, Host> hostById = hosts.stream()
+                .collect(Collectors.toMap(Host::getId, host -> host, (a, b) -> a));
+        Map<String, Task> latestTaskByCluster = tasks.stream()
+                .filter(task -> task.getClusterId() != null)
+                .sorted(Comparator.comparing(Task::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .collect(Collectors.toMap(task -> task.getClusterId().toString(), task -> task, (first, ignored) -> first, LinkedHashMap::new));
+
+        return clusters.stream()
+                .sorted(Comparator.comparing(Cluster::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(cluster -> clusterHealthRow(cluster, hostById, latestTaskByCluster.get(cluster.getId().toString())))
+                .toList();
+    }
+
+    private Map<String, Object> clusterHealthRow(Cluster cluster, Map<String, Host> hostById, Task latestTask) {
+        List<Host> assignedHosts = assignedInfrastructureHosts(cluster, hostById);
+        String status = normalizeStatus(cluster.getStatus());
+        String health = "HEALTHY";
+        String reason = "Cluster record is active";
+
+        if ("DELETING".equals(status)) {
+            health = "DELETING";
+            reason = "Cleanup is in progress";
+        } else if ("FAILED".equals(status)) {
+            health = "FAILED";
+            reason = latestTask != null && latestTask.getErrorMsg() != null && !latestTask.getErrorMsg().isBlank()
+                    ? shortText(latestTask.getErrorMsg(), 140)
+                    : "Cluster lifecycle task failed";
+        } else if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            if ("SUCCESS".equals(status)) {
+                health = "HEALTHY";
+                reason = "External cluster is connected";
+            } else {
+                health = "FAILED";
+                reason = "External bootstrap or discovery health is not successful";
+            }
+        } else if (assignedHosts.stream().anyMatch(host -> "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host)))) {
+            health = "FAILED";
+            reason = "One or more assigned host agents are offline";
+        } else if (assignedHosts.stream().anyMatch(host -> diskUsedPercent(host) >= 95)) {
+            health = "FAILED";
+            reason = "Assigned host storage is full";
+        } else if (assignedHosts.stream().anyMatch(host -> diskUsedPercent(host) >= 85)) {
+            health = "WARNING";
+            reason = "Assigned host storage is near capacity";
+        } else if ("SUCCESS".equals(status) && !assignedHosts.isEmpty() && !clusterBrokerPortListening(cluster, assignedHosts)) {
+            health = "FAILED";
+            reason = "Broker port " + brokerPort(cluster) + " is not reachable from the management server";
+        } else if ("SUCCESS".equals(status)) {
+            health = "HEALTHY";
+            reason = "Deployment succeeded and assigned agents are online";
+        } else {
+            health = status;
+            reason = "Cluster status is " + title(status);
+        }
+
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", cluster.getId());
+        row.put("name", cluster.getName());
+        row.put("mode", cluster.getMode());
+        row.put("kafkaVersion", cluster.getKafkaVersion());
+        row.put("source", "EXTERNAL".equalsIgnoreCase(cluster.getMode()) ? "External" : "Internal");
+        row.put("status", health);
+        row.put("reason", reason);
+        row.put("createdAt", cluster.getCreatedAt());
+        row.put("bootstrapServers", cluster.getBootstrapServers());
+        row.put("hostCount", assignedHosts.isEmpty() && cluster.getServices() != null ? cluster.getServices().size() : assignedHosts.size());
+        row.put("latestTaskStatus", latestTask == null ? null : latestTask.getStatus());
+        row.put("latestTaskCommand", latestTask == null ? null : latestTask.getCommand());
+        return row;
+    }
+
+    private List<Host> assignedInfrastructureHosts(Cluster cluster, Map<String, Host> hostById) {
+        if (cluster.getServices() == null) {
+            return List.of();
+        }
+        return cluster.getServices().stream()
+                .map(service -> hostById.get(service.getHostId()))
+                .filter(Objects::nonNull)
+                .filter(hostStatusService::isInfrastructureHost)
+                .toList();
+    }
+
     private List<Map<String, Object>> taskStatusChart(List<Task> tasks) {
         Map<String, Long> counts = tasks.stream()
                 .collect(Collectors.groupingBy(task -> normalizeStatus(task.getStatus()), LinkedHashMap::new, Collectors.counting()));
@@ -200,6 +287,93 @@ public class DashboardController {
         return Math.min(100, Math.round((used * 100.0) / host.getDiskTotalGb()));
     }
 
+    private boolean clusterBrokerPortListening(Cluster cluster, List<Host> assignedHosts) {
+        int port = brokerPort(cluster);
+        for (Host host : assignedHosts) {
+            String ip = hostIp(host);
+            if (ip == null || ip.isBlank()) {
+                continue;
+            }
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(ip, port), 600);
+                return true;
+            } catch (Exception ignored) {
+                // Try the next assigned host.
+            }
+        }
+        return false;
+    }
+
+    private int brokerPort(Cluster cluster) {
+        Integer bootstrapPort = firstBootstrapPort(cluster.getBootstrapServers());
+        if (bootstrapPort != null) {
+            return bootstrapPort;
+        }
+        Integer configPort = configInt(cluster.getConfigJson(), "listener_port");
+        return configPort == null ? 9092 : configPort;
+    }
+
+    private Integer firstBootstrapPort(String bootstrapServers) {
+        if (bootstrapServers == null || bootstrapServers.isBlank()) {
+            return null;
+        }
+        String endpoint = bootstrapServers.split(",")[0].trim();
+        int colon = endpoint.lastIndexOf(':');
+        if (colon < 0 || colon == endpoint.length() - 1) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(endpoint.substring(colon + 1));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private Integer configInt(String configJson, String key) {
+        if (configJson == null || configJson.isBlank()) {
+            return null;
+        }
+        String quotedKey = "\"" + key + "\"";
+        int keyIndex = configJson.indexOf(quotedKey);
+        if (keyIndex < 0) {
+            return null;
+        }
+        int colon = configJson.indexOf(':', keyIndex + quotedKey.length());
+        if (colon < 0) {
+            return null;
+        }
+        int start = colon + 1;
+        while (start < configJson.length() && !Character.isDigit(configJson.charAt(start))) {
+            start++;
+        }
+        int end = start;
+        while (end < configJson.length() && Character.isDigit(configJson.charAt(end))) {
+            end++;
+        }
+        if (start == end) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(configJson.substring(start, end));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private String hostIp(Host host) {
+        if (host == null || host.getIpAddresses() == null || host.getIpAddresses().isBlank()) {
+            return null;
+        }
+        String cleaned = host.getIpAddresses().replace("[", "").replace("]", "").replace("\"", "");
+        for (String value : cleaned.split(",")) {
+            String ip = value.trim();
+            if (!ip.isBlank() && !"localhost".equalsIgnoreCase(ip) && !"127.0.0.1".equals(ip)) {
+                return ip;
+            }
+        }
+        return cleaned.split(",")[0].trim();
+    }
+
     private List<Map<String, Object>> taskTimeline(List<Task> tasks) {
         ZoneId zone = ZoneId.systemDefault();
         LocalDate start = LocalDate.now(zone).minusDays(6);
@@ -251,8 +425,12 @@ public class DashboardController {
         long deletingClusters = clusters.stream().filter(cluster -> "DELETING".equalsIgnoreCase(cluster.getStatus())).count();
         long failedTasks = tasks.stream().filter(task -> "FAILED".equalsIgnoreCase(task.getStatus())).count();
         long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
+        long fullDiskHosts = hosts.stream().filter(host -> diskUsedPercent(host) >= 95).count();
+        long warningDiskHosts = hosts.stream().filter(host -> diskUsedPercent(host) >= 85 && diskUsedPercent(host) < 95).count();
 
         if (offlineHosts > 0) services.add(serviceRow("Offline agents", offlineHosts + " host" + plural(offlineHosts) + " missing heartbeat", "FAILED", "agent"));
+        if (fullDiskHosts > 0) services.add(serviceRow("Storage full", fullDiskHosts + " host" + plural(fullDiskHosts) + " at or above 95% disk usage", "FAILED", "storage"));
+        if (warningDiskHosts > 0) services.add(serviceRow("Storage pressure", warningDiskHosts + " host" + plural(warningDiskHosts) + " above 85% disk usage", "WARNING", "storage"));
         if (failedClusters > 0) services.add(serviceRow("Failed clusters", failedClusters + " cluster" + plural(failedClusters) + " failed", "FAILED", "kafka"));
         if (deletingClusters > 0) services.add(serviceRow("Cleanup in progress", deletingClusters + " cluster cleanup task" + plural(deletingClusters), "RUNNING", "cleanup"));
         if (failedTasks > 0) services.add(serviceRow("Failed tasks", failedTasks + " task" + plural(failedTasks) + " need review", "FAILED", "task"));
@@ -272,7 +450,8 @@ public class DashboardController {
         long failedClusters = clusters.stream().filter(cluster -> "FAILED".equalsIgnoreCase(cluster.getStatus())).count();
         long failedTasks = tasks.stream().filter(task -> "FAILED".equalsIgnoreCase(task.getStatus())).count();
         long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
-        return offlineHosts + failedClusters + failedTasks + failedParcels;
+        long diskIssues = hosts.stream().filter(host -> diskUsedPercent(host) >= 85).count();
+        return offlineHosts + failedClusters + failedTasks + failedParcels + diskIssues;
     }
 
     private Map<String, Object> serviceRow(String name, String description, String status, String type) {
@@ -342,5 +521,13 @@ public class DashboardController {
 
     private String plural(long count) {
         return count == 1 ? "" : "s";
+    }
+
+    private String shortText(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        String compact = value.replaceAll("\\s+", " ").trim();
+        return compact.length() <= maxLength ? compact : compact.substring(0, maxLength - 1) + "...";
     }
 }

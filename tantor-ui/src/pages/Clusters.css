@@ -5,6 +5,9 @@
   padding: 20px;
   background: #f5f4f1;
   min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .page-header.flex-between {
@@ -117,8 +120,9 @@
   background: #ffffff;
   border: 0.5px solid #e2e0db;
   border-radius: 10px;
-  overflow: hidden;
+  /* overflow: hidden; */
   box-shadow: 0 1px 4px rgba(26, 26, 24, 0.04);
+  min-width: 0;
 }
 
 .clusters-inventory-header {
@@ -163,7 +167,9 @@
 
 .clusters-table-wrap {
   width: 100%;
-  overflow-x: auto;
+  max-width: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
 .clusters-table {

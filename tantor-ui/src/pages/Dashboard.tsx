@@ -53,6 +53,18 @@ interface ServiceRow {
   type: string;
 }
 
+interface ClusterHealthRow {
+  id: string;
+  name: string;
+  mode?: string;
+  kafkaVersion?: string;
+  source?: string;
+  status: string;
+  reason: string;
+  hostCount?: number;
+  bootstrapServers?: string;
+}
+
 interface ActivityRow {
   id: string;
   level: string;
@@ -77,6 +89,7 @@ interface DashboardPayload {
   summary: DashboardSummary;
   hostStatus: ChartRow[];
   clusterStatus: ChartRow[];
+  clusterHealth: ClusterHealthRow[];
   hostDiskUsage: ChartRow[];
   taskStatus: ChartRow[];
   taskTimeline: ChartRow[];
@@ -108,6 +121,7 @@ const emptyDashboard: DashboardPayload = {
   },
   hostStatus: [],
   clusterStatus: [],
+  clusterHealth: [],
   hostDiskUsage: [],
   taskStatus: [],
   taskTimeline: [],
@@ -210,6 +224,7 @@ export function Dashboard() {
     if (type === 'parcel') return Database;
     if (type === 'task') return Activity;
     if (type === 'cleanup') return RefreshCw;
+    if (type === 'storage') return HardDrive;
     return ShieldCheck;
   };
 
@@ -221,6 +236,11 @@ export function Dashboard() {
             <span />
             {platformState === 'Healthy' ? 'Live system healthy' : 'Live system needs attention'}
           </div>
+          {platformState !== 'Healthy' && (
+            <button className="db-alert-link" onClick={() => navigate('/alerts')}>
+              View alerts
+            </button>
+          )}
           <h1>Tantor Kafka Operations</h1>
           <p>Real-time inventory, service health, task activity, and agent heartbeat state.</p>
         </div>
@@ -250,6 +270,31 @@ export function Dashboard() {
             </div>
           </article>
         ))}
+      </section>
+
+      <section className="db-cluster-health">
+        <PanelTitle icon={Network} title="Cluster Health" detail={`${dashboard.clusterHealth.length} tracked clusters`} />
+        {dashboard.clusterHealth.length ? (
+          <div className="db-cluster-list">
+            {dashboard.clusterHealth.map(cluster => (
+              <button
+                key={cluster.id}
+                className={`db-cluster-card ${healthTone(cluster.status)}`}
+                onClick={() => navigate(`/clusters/${cluster.id}`)}
+              >
+                <span className="db-cluster-dot" />
+                <div>
+                  <strong>{cluster.name || 'Unnamed cluster'}</strong>
+                  <small>{cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'} - {cluster.hostCount || 0} node{cluster.hostCount === 1 ? '' : 's'}</small>
+                  <em>{cluster.reason}</em>
+                </div>
+                <b>{statusLabel(cluster.status)}</b>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <EmptyPanel text="No cluster records yet." compact />
+        )}
       </section>
 
       <section className="db-main-grid">
@@ -409,6 +454,19 @@ function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: st
       })}
     </div>
   );
+}
+
+function healthTone(status: string) {
+  const normalized = status?.toUpperCase();
+  if (normalized === 'HEALTHY' || normalized === 'SUCCESS') return 'good';
+  if (normalized === 'WARNING' || normalized === 'DELETING' || normalized === 'PENDING' || normalized === 'RUNNING') return 'warn';
+  return 'bad';
+}
+
+function statusLabel(status: string) {
+  if (!status) return 'Unknown';
+  if (status.toUpperCase() === 'HEALTHY') return 'Healthy';
+  return status.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function DiskTooltip({ active, payload }: any) {

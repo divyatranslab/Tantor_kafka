@@ -38,4 +38,18 @@ public class HostStatusService {
     public boolean isOnline(Host host) {
         return "ONLINE".equalsIgnoreCase(effectiveStatus(host));
     }
+
+    public boolean isDiscoveryAgent(Host host) {
+        if (host == null) {
+            return false;
+        }
+        String version = host.getAgentVersion();
+        String id = host.getId();
+        return (version != null && version.toLowerCase().contains("discovery"))
+                || (id != null && id.toLowerCase().startsWith("external-"));
+    }
+
+    public boolean isInfrastructureHost(Host host) {
+        return !isDiscoveryAgent(host);
+    }
 }

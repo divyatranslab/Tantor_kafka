@@ -6,7 +6,6 @@ import {
   Globe,
   Package,
   PlayCircle,
-  Activity,
   ShieldAlert,
   Bell,
   LineChart,
@@ -19,27 +18,28 @@ const navSections = [
   {
     label: 'Overview',
     items: [
-      { icon: LayoutDashboard, label: 'Home',     path: '/' },
-      { icon: Network,         label: 'Clusters', path: '/clusters' },
-      { icon: Globe,           label: 'External Clusters', path: '/external-clusters' },
-      { icon: Server,          label: 'Hosts',    path: '/hosts' },
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+      { icon: Server, label: 'Hosts', path: '/hosts' },
+      { icon: Network, label: 'Clusters', path: '/clusters' },
+
+
+      { icon: Globe, label: 'External Clusters', path: '/external-clusters' },
     ],
   },
   {
     label: 'Observability',
     items: [
-      { icon: LineChart,   label: 'Monitoring',  path: '/monitoring' },
-      { icon: Bell,        label: 'Alerts',      path: '/alerts' },
-      { icon: Activity,    label: 'Diagnostics', path: '/diagnostics' },
+      { icon: LineChart, label: 'Monitoring', path: '/monitoring' },
+      { icon: Bell, label: 'Alerts', path: '/alerts' },
     ],
   },
   {
     label: 'Management',
     items: [
-      { icon: ShieldAlert,  label: 'Audits',        path: '/audit' },
-      { icon: PlayCircle,   label: 'Commands',       path: '/commands' },
-      { icon: Package,      label: 'Parcels',        path: '/artifacts' },
-      { icon: Settings,     label: 'Administration', path: '/admin' },
+      { icon: ShieldAlert, label: 'Audits', path: '/audit' },
+      { icon: PlayCircle, label: 'Commands', path: '/commands' },
+      { icon: Package, label: 'Artifacts', path: '/artifacts' },
+      { icon: Settings, label: 'Administration', path: '/admin' },
     ],
   },
 ];
