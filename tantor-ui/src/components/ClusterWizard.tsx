@@ -121,10 +121,29 @@ export default function ClusterWizard() {
   const [portCheckResults, setPortCheckResults] = useState<{host: string; port: number; free: boolean; message: string}[]>([]);
   const [portCheckDone, setPortCheckDone] = useState(false);
 
+  const parseIpList = (raw: any): string[] => {
+    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
+    if (typeof raw === 'string' && raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
+      } catch {}
+    }
+    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
+    return [];
+  };
+
+  const displayIp = (host: any) => {
+    const ips = parseIpList(host.ipAddress || host.ipAddresses);
+    return ips.find(ip => ip.startsWith('192.168.'))
+      || ips.find(ip => !ip.startsWith('127.') && !ip.startsWith('172.'))
+      || ips[0]
+      || '127.0.0.1';
+  };
   useEffect(() => {
     fetch('/api/v1/ui/hosts')
       .then(res => res.json())
-      .then(data => setHosts(data.map((h: any) => ({ ...h, ip_address: h.ipAddress || h.ipAddresses || '127.0.0.1' }))))
+      .then(data => setHosts(data.map((h: any) => ({ ...h, ip_address: displayIp(h) }))))
       .catch(() => setHosts([]));
 
     setVersionsLoading(true);

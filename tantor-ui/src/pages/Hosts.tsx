@@ -47,11 +47,24 @@ export function Hosts() {
     return () => clearInterval(t);
   }, []);
 
-  const parseIps = (raw: any) => {
+  const parseIpList = (raw: any): string[] => {
+    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
     if (typeof raw === 'string' && raw.startsWith('[')) {
-      try { return JSON.parse(raw).join(', '); } catch {}
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
+      } catch {}
     }
-    return raw || 'Unknown';
+    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
+    return [];
+  };
+
+  const displayIp = (raw: any) => {
+    const ips = parseIpList(raw);
+    return ips.find(ip => ip.startsWith('192.168.'))
+      || ips.find(ip => !ip.startsWith('127.') && !ip.startsWith('172.'))
+      || ips[0]
+      || 'Unknown';
   };
 
   const activeHosts = hosts.filter(h => h.status !== 'PENDING');
@@ -99,7 +112,7 @@ export function Hosts() {
                 </td>
               </tr>
             ) : activeHosts.map(host => {
-              const ip = parseIps(host.ipAddresses);
+              const ip = displayIp(host.ipAddresses);
               const cpu = host.cpuUsagePct ? Math.round(host.cpuUsagePct) : 0;
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
@@ -179,7 +192,7 @@ export function Hosts() {
               <div key={host.id} className="pending-node">
                 <div className="pending-node-info">
                   <p className="name">{host.hostname}</p>
-                  <p className="ip">{parseIps(host.ipAddresses)}</p>
+                  <p className="ip">{displayIp(host.ipAddresses)}</p>
                 </div>
                 <div className="pending-node-actions">
                   <button
