@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   Package, Upload, CheckCircle, XCircle, ChevronDown, ChevronUp,
   Loader2, HardDrive, X, RefreshCw, Server, DownloadCloud,
@@ -116,7 +116,7 @@ export function Artifacts() {
     form.append('overwrite', 'true');
 
     try {
-      const res = await fetch(`${artifactRepoBaseUrl}/api/v1/artifacts`, { method: 'POST', body: form });
+      const res = await fetch('/api/v1/artifacts', { method: 'POST', body: form });
       if (res.ok) {
         setUploadMsg({ text: `Uploaded ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`, ok: true });
         setShowUploadModal(false);
@@ -193,7 +193,7 @@ export function Artifacts() {
     setActingKey(key);
     setUploadMsg(null);
     try {
-      const res = await fetch(`${artifactRepoBaseUrl}/api/v1/artifacts/${ver.id}`, {
+      const res = await fetch(`/api/v1/artifacts/${ver.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -486,3 +486,4 @@ function actionIcon(action: ParcelAction) {
     remove: Trash2,
   }[action];
 }
+
