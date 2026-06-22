@@ -38,6 +38,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
+    private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -554,7 +555,14 @@ public class ClusterController {
 
     private String kafkaClusterId(Cluster cluster) {
         String externalId = externalMetadataValue(cluster, "kafkaClusterId");
-        return externalId == null ? "" : externalId;
+        if (externalId != null && !externalId.isBlank()) {
+            return externalId;
+        }
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                || !("SUCCESS".equalsIgnoreCase(cluster.getStatus()) || "ACTIVE".equalsIgnoreCase(cluster.getStatus()))) {
+            return "";
+        }
+        return kafkaAdminService.getKafkaClusterId(cluster.getId());
     }
 
     private String managementLevel(Cluster cluster) {

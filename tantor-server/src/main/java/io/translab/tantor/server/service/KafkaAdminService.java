@@ -206,6 +206,21 @@ public class KafkaAdminService {
         }
     }
 
+    public String getKafkaClusterId(UUID clusterId) {
+        AdminClient client = getAdminClient(clusterId);
+        try {
+            String id = client.describeCluster().clusterId().get();
+            return id == null ? "" : id;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            refreshAdminClient(clusterId);
+            return "";
+        } catch (ExecutionException e) {
+            refreshAdminClient(clusterId);
+            return "";
+        }
+    }
+
     public void refreshAdminClient(UUID clusterId) {
         AdminClient oldClient = adminClients.remove(clusterId);
         if (oldClient != null) {
