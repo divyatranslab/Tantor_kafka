@@ -90,10 +90,7 @@ export function Clusters() {
   const inProgress = (status: string) =>
     ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(status);
 
-  const shortId = (value?: string) => {
-    if (!value) return '-';
-    return value.length > 13 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
-  };
+  const displayKafkaClusterId = (value?: string) => value && value.trim() ? value : '-';
 
   const formatHeartbeat = (value?: string) => {
     if (!value) return '-';
@@ -189,7 +186,6 @@ export function Clusters() {
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Cluster ID</th>
                   <th>Kafka Cluster ID</th>
                   <th>Host / IP</th>
                   <th>Environment</th>
@@ -222,14 +218,10 @@ export function Clusters() {
                           </div>
                         </div>
                       </td>
+
                       <td>
-                        <span className="mono-chip" title={cluster.clusterId || cluster.id}>
-                          {shortId(cluster.clusterId || cluster.id)}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="mono-muted" title={cluster.kafkaClusterId || ''}>
-                          {shortId(cluster.kafkaClusterId)}
+                        <span className="mono-muted kafka-id-value" title={cluster.kafkaClusterId || ''}>
+                          {displayKafkaClusterId(cluster.kafkaClusterId)}
                         </span>
                       </td>
                       <td>

@@ -174,7 +174,7 @@
 
 .clusters-table {
   width: 100%;
-  min-width: 1220px;
+  min-width: 1180px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -221,46 +221,41 @@
 
 .clusters-table th:nth-child(1),
 .clusters-table td:nth-child(1) {
-  width: 185px;
+  width: 190px;
 }
 
 .clusters-table th:nth-child(2),
 .clusters-table td:nth-child(2) {
-  width: 115px;
+  width: 185px;
 }
 
 .clusters-table th:nth-child(3),
 .clusters-table td:nth-child(3) {
-  width: 115px;
+  width: 220px;
 }
 
 .clusters-table th:nth-child(4),
 .clusters-table td:nth-child(4) {
-  width: 175px;
+  width: 110px;
 }
 
 .clusters-table th:nth-child(5),
 .clusters-table td:nth-child(5) {
-  width: 100px;
+  width: 120px;
 }
 
 .clusters-table th:nth-child(6),
 .clusters-table td:nth-child(6) {
-  width: 110px;
+  width: 125px;
 }
 
 .clusters-table th:nth-child(7),
 .clusters-table td:nth-child(7) {
-  width: 112px;
+  width: 190px;
 }
 
 .clusters-table th:nth-child(8),
 .clusters-table td:nth-child(8) {
-  width: 190px;
-}
-
-.clusters-table th:nth-child(9),
-.clusters-table td:nth-child(9) {
   width: 128px;
 }
 
@@ -333,6 +328,12 @@
 
 .mono-muted {
   color: #6f6d67;
+}
+
+.kafka-id-value {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 .host-cell {
