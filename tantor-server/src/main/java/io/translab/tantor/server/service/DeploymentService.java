@@ -146,10 +146,13 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void deleteClusterFromHost(UUID clusterId, String hostId, String configJsonStr) {
+    public void deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
         Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
         try {
             Map<String, Object> params = new java.util.HashMap<>();
+            if (version != null && !version.isBlank()) {
+                params.put("version", version);
+            }
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -190,7 +193,7 @@ public class DeploymentService {
     private void applyDefaultKafkaPaths(Map<String, Object> params) {
         Object installDir = params.get("kafka_install_dir");
         if (installDir == null || String.valueOf(installDir).isBlank()) {
-            params.put("kafka_install_dir", "/opt/tantor/kafka");
+            params.put("kafka_install_dir", "/opt");
         }
     }
 

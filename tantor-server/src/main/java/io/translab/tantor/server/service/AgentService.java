@@ -133,7 +133,11 @@ public class AgentService {
         String status = currentTask.getStatus();
         
         if ("FAILED".equals(status)) {
-            cluster.setStatus("FAILED");
+            if ("UPGRADE_KAFKA".equals(command) && upgradeRollbackCompleted(currentTask)) {
+                cluster.setStatus("SUCCESS");
+            } else {
+                cluster.setStatus("FAILED");
+            }
         } else if ("VALIDATING".equals(status)) {
             cluster.setStatus("VALIDATING");
         } else if ("RUNNING".equals(status) || "IN_PROGRESS".equals(status)) {
@@ -169,6 +173,12 @@ public class AgentService {
             }
         }
         clusterRepository.save(cluster);
+    }
+
+    private boolean upgradeRollbackCompleted(Task task) {
+        String error = task.getErrorMsg() == null ? "" : task.getErrorMsg();
+        String logs = task.getLogOutput() == null ? "" : task.getLogOutput();
+        return error.contains("Rollback completed") || logs.contains("Rollback completed");
     }
 
     @SuppressWarnings("unchecked")

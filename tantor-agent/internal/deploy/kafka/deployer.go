@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
-	"net"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
@@ -25,6 +25,19 @@ type Deployer struct {
 	cfg    *config.Config
 	client *client.APIClient
 	exec   executor.Executor
+}
+
+type kafkaRolePaths struct {
+	LogDirs           string
+	MetadataLogDir    string
+	AppLogDir         string
+	MetaPropertiesDir string
+}
+
+type kafkaInstallPaths struct {
+	BaseDir      string
+	VersionedDir string
+	ActiveDir    string
 }
 
 func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Executor) *Deployer {
@@ -42,21 +55,40 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		logs.WriteString(formatted + "\n")
 	}
 
-	installDir := t.Parameters["kafka_install_dir"]
-	if installDir == "" {
-		installDir = "/opt/tantor/kafka" // Linux friendly default
-	}
+	installPaths := resolveKafkaInstallPaths(t)
+	installDir := installPaths.VersionedDir
+	activeInstallDir := installPaths.ActiveDir
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
-		dataDir = filepath.Join(installDir, "data")
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
+	paths := resolveKafkaRolePaths(t, installDir, dataDir)
 
 	log("Starting cross-platform Kafka Deployment Workflow...")
+	log("Kafka install base directory: %s", installPaths.BaseDir)
+	log("Kafka versioned binary directory: %s", installDir)
+	log("Kafka active symlink: %s -> %s", activeInstallDir, installDir)
+	log("Kafka data base directory: %s", dataDir)
+	if paths.LogDirs != "" {
+		log("Broker data directory: %s", paths.LogDirs)
+	}
+	if paths.MetadataLogDir != "" {
+		log("KRaft metadata directory: %s", paths.MetadataLogDir)
+	}
+	if paths.AppLogDir != "" {
+		log("Kafka application log directory: %s", paths.AppLogDir)
+	}
 
 	// 1. Create directories
+	os.MkdirAll(installPaths.BaseDir, 0755)
 	os.MkdirAll(installDir, 0755)
 	os.MkdirAll(dataDir, 0755)
 	os.MkdirAll(d.cfg.Paths.ArtifactsDir, 0755)
+	for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
+		if dir != "" {
+			os.MkdirAll(dir, 0755)
+		}
+	}
 
 	// 2. Download TAR
 	destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
@@ -110,6 +142,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	os.RemoveAll(tmpExtractDir)
 	log("Artifact extracted to %s", installDir)
 
+	if err := d.ensureActiveSymlink(ctx, activeInstallDir, installDir); err != nil {
+		return logs.String(), err
+	}
+	log("Kafka active symlink updated: %s -> %s", activeInstallDir, installDir)
+
 	// 5.5 Fix SELinux contexts for extracted files (RHEL/CentOS)
 	if d.isSELinuxEnabled(ctx) {
 		log("SELinux detected — relabeling Kafka files...")
@@ -133,6 +170,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		_, err = d.client.DownloadArtifact(jmxUrl, jmxJarPath)
 		if err != nil {
 			log("Warning: Failed to download JMX agent from artifact repo: %v", err)
+			os.Remove(jmxJarPath)
 		}
 	} else {
 		log("Warning: No jmx_artifact_url provided. Falling back to Maven repo1...")
@@ -158,23 +196,23 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	log("Configs generated successfully")
 
 	// 7.5 Format KRaft Storage (only on fresh deploy)
-	logDirs := t.Parameters["log_dirs"]
-	if logDirs == "" {
-		logDirs = filepath.Join(dataDir, "kafka-logs")
-	}
-
-	metaPropsPath := filepath.Join(logDirs, "meta.properties")
+	metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
 	if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 		log("Fresh deployment detected — formatting KRaft storage...")
-		storageScript := filepath.Join(installDir, "bin", "kafka-storage.sh")
-		configPath := filepath.Join(installDir, "config/kraft/server.properties")
+		storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
+		configPath := filepath.Join(activeInstallDir, "config/kraft/server.properties")
 		
-		uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-		if err != nil {
-			return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+		clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+		if clusterUUID == "" {
+			uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
+			if err != nil {
+				return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+			}
+			clusterUUID = strings.TrimSpace(uuidOut)
+			log("Generated cluster UUID: %s", clusterUUID)
+		} else {
+			log("Using shared cluster UUID: %s", clusterUUID)
 		}
-		clusterUUID := strings.TrimSpace(uuidOut)
-		log("Generated cluster UUID: %s", clusterUUID)
 		
 		_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
 		if err != nil {
@@ -186,7 +224,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	// 8. Systemd Service
-	if err := d.createSystemdService(ctx, "root", installDir, t); err != nil {
+	if err := d.createSystemdService(ctx, "root", activeInstallDir, t); err != nil {
 		return logs.String(), err
 	}
 	log("Systemd service created")
@@ -202,7 +240,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	log("Kafka service started successfully")
 
 	// 10. Post-Deployment Validation
-	if err := d.validateDeployment(ctx, t, installDir, &logs); err != nil {
+	if err := d.validateDeployment(ctx, t, activeInstallDir, &logs); err != nil {
 		return logs.String(), fmt.Errorf("deployment validation failed: %w", err)
 	}
 	log("All deployment validations passed ✓")
@@ -259,28 +297,48 @@ check2:
 	log("  ✓ kafka.service is active")
 
 	log("Validation [3/6]: Checking KRaft metadata...")
-	logDirs := t.Parameters["log_dirs"]
-	if logDirs == "" {
-		logDirs = filepath.Join(t.Parameters["kafka_data_dir"], "kafka-logs") // Fixed empty string issue below
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		installPaths := resolveKafkaInstallPaths(t)
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
-	if logDirs == "" { // Use standard default if still empty
-		logDirs = filepath.Join(installDir, "data", "kafka-logs")
-	}
-	if _, err := os.Stat(filepath.Join(logDirs, "meta.properties")); err != nil {
-		return fmt.Errorf("KRaft meta.properties not found in %s", logDirs)
+	paths := resolveKafkaRolePaths(t, installDir, dataDir)
+	if _, err := os.Stat(filepath.Join(paths.MetaPropertiesDir, "meta.properties")); err != nil {
+		return fmt.Errorf("KRaft meta.properties not found in %s", paths.MetaPropertiesDir)
 	}
 	log("  ✓ KRaft meta.properties exists")
 
-	log("Validation [4/6]: Checking broker port %s...", listenerPort)
-	for i := 0; i < 10; i++ {
-		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ss -tlnp | grep :%s", listenerPort))
-		if err == nil {
-			log("  ✓ Broker listening on port %s", listenerPort)
-			goto check5
-		}
-		time.Sleep(3 * time.Second)
+	role, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
+	controllerPort := t.Parameters["controller_port"]
+	if controllerPort == "" {
+		controllerPort = "9093"
 	}
-	return fmt.Errorf("broker port %s not listening after 30s", listenerPort)
+
+	log("Validation [4/6]: Checking service ports for %s...", role)
+	if isBroker {
+		for i := 0; i < 10; i++ {
+			_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ss -tlnp | grep :%s", listenerPort))
+			if err == nil {
+				log("  ✓ Broker listening on port %s", listenerPort)
+				goto controllerPortCheck
+			}
+			time.Sleep(3 * time.Second)
+		}
+		return fmt.Errorf("broker port %s not listening after 30s", listenerPort)
+	}
+
+controllerPortCheck:
+	if isController {
+		for i := 0; i < 10; i++ {
+			_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ss -tlnp | grep :%s", controllerPort))
+			if err == nil {
+				log("  ✓ Controller listening on port %s", controllerPort)
+				goto check5
+			}
+			time.Sleep(3 * time.Second)
+		}
+		return fmt.Errorf("controller port %s not listening after 30s", controllerPort)
+	}
 
 check5:
 	log("Validation [5/6]: Checking JMX Exporter javaagent...")
@@ -305,6 +363,142 @@ check5:
 	return nil
 }
 
+func normalizeKRaftRole(rawRole string) (string, bool, bool) {
+	switch rawRole {
+	case "broker":
+		return "broker", true, false
+	case "controller":
+		return "controller", false, true
+	case "broker_controller", "":
+		return "broker,controller", true, true
+	default:
+		if strings.Contains(rawRole, "broker") && strings.Contains(rawRole, "controller") {
+			return "broker,controller", true, true
+		}
+		return rawRole, strings.Contains(rawRole, "broker"), strings.Contains(rawRole, "controller")
+	}
+}
+
+func defaultKafkaDataDir(baseInstallDir string) string {
+	baseDir := filepath.Clean(baseInstallDir)
+	if baseDir == "." || baseDir == string(filepath.Separator) || baseDir == "/opt" {
+		return "/data/kafka"
+	}
+	return filepath.Join(baseDir, "kafka-data")
+}
+
+func resolveKafkaInstallPaths(t *api.Task) kafkaInstallPaths {
+	baseDir := strings.TrimSpace(t.Parameters["kafka_install_base_dir"])
+	if baseDir == "" {
+		baseDir = strings.TrimSpace(t.Parameters["kafka_install_dir"])
+	}
+	if baseDir == "" {
+		baseDir = "/opt"
+	}
+
+	baseDir = filepath.Clean(baseDir)
+	version := strings.TrimSpace(t.Parameters["target_version"])
+	if version == "" {
+		version = strings.TrimSpace(t.Parameters["version"])
+	}
+	if version == "" {
+		version = "unknown"
+	}
+	scalaVersion := strings.TrimSpace(t.Parameters["scala_version"])
+	if scalaVersion == "" {
+		scalaVersion = "2.13"
+	}
+
+	versionedName := kafkaVersionedDirName(scalaVersion, version)
+	baseName := filepath.Base(baseDir)
+	if strings.HasPrefix(baseName, "kafka_") {
+		parent := filepath.Dir(baseDir)
+		return kafkaInstallPaths{BaseDir: parent, VersionedDir: baseDir, ActiveDir: filepath.Join(parent, "kafka")}
+	}
+	if baseName == "kafka" {
+		parent := filepath.Dir(baseDir)
+		return kafkaInstallPaths{BaseDir: parent, VersionedDir: filepath.Join(parent, versionedName), ActiveDir: baseDir}
+	}
+
+	return kafkaInstallPaths{BaseDir: baseDir, VersionedDir: filepath.Join(baseDir, versionedName), ActiveDir: filepath.Join(baseDir, "kafka")}
+}
+
+func kafkaVersionedDirName(scalaVersion, kafkaVersion string) string {
+	clean := func(value string) string {
+		replacer := strings.NewReplacer("/", "-", "\\", "-", " ", "-", ":", "-", "..", "-")
+		value = replacer.Replace(strings.TrimSpace(value))
+		value = strings.Trim(value, ".-")
+		if value == "" {
+			return "unknown"
+		}
+		return value
+	}
+	return fmt.Sprintf("kafka_%s-%s", clean(scalaVersion), clean(kafkaVersion))
+}
+
+func (d *Deployer) ensureActiveSymlink(ctx context.Context, activeDir, versionedDir string) error {
+	if info, err := os.Lstat(activeDir); err == nil && info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("%s already exists and is not a symlink; move or remove it before using production symlink layout", activeDir)
+	}
+	if _, _, err := d.exec.RunSudo(ctx, "ln", "-sfn", versionedDir, activeDir); err != nil {
+		return fmt.Errorf("failed to create Kafka active symlink %s -> %s: %w", activeDir, versionedDir, err)
+	}
+	return nil
+}
+
+func resolveKafkaRolePaths(t *api.Task, installDir, dataDir string) kafkaRolePaths {
+	_, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
+
+	appLogBaseDir := strings.TrimSpace(t.Parameters["kafka_app_log_dir"])
+	if appLogBaseDir == "" {
+		appLogBaseDir = filepath.Join(filepath.Dir(installDir), "kafka-logs")
+	}
+
+	paths := kafkaRolePaths{}
+	if isBroker {
+		paths.LogDirs = strings.TrimSpace(t.Parameters["log_dirs"])
+		if paths.LogDirs == "" {
+			paths.LogDirs = filepath.Join(dataDir, "broker-data")
+		}
+		paths.MetadataLogDir = strings.TrimSpace(t.Parameters["metadata_log_dir"])
+		if paths.MetadataLogDir == "" {
+			paths.MetadataLogDir = filepath.Join(dataDir, "broker-metadata")
+		}
+		paths.AppLogDir = filepath.Join(appLogBaseDir, "kafka-broker")
+	}
+
+	if isController && !isBroker {
+		paths.MetadataLogDir = strings.TrimSpace(t.Parameters["metadata_log_dir"])
+		if paths.MetadataLogDir == "" {
+			paths.MetadataLogDir = filepath.Join(dataDir, "controller-data", "metadata")
+		}
+		paths.AppLogDir = filepath.Join(appLogBaseDir, "kafka-controller")
+	}
+
+	paths.MetaPropertiesDir = paths.MetadataLogDir
+	if paths.MetaPropertiesDir == "" {
+		paths.MetaPropertiesDir = paths.LogDirs
+	}
+	if paths.MetaPropertiesDir == "" {
+		paths.MetaPropertiesDir = filepath.Join(dataDir, "broker-metadata")
+	}
+
+	return paths
+}
+
+func buildKRaftListeners(hostname, listenerPort, controllerPort string, isBroker, isController bool) string {
+	listeners := make([]string, 0, 2)
+	if isBroker {
+		listeners = append(listeners, fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort))
+	}
+	if isController {
+		listeners = append(listeners, fmt.Sprintf("CONTROLLER://%s:%s", hostname, controllerPort))
+	}
+	if len(listeners) == 0 {
+		listeners = append(listeners, fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort))
+	}
+	return strings.Join(listeners, ",")
+}
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
 	nodeId := t.Parameters["node_id"]
 	if nodeId == "" {
@@ -316,10 +510,8 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		quorumVoters = fmt.Sprintf("%s@%s:9093", nodeId, hostname)
 	}
 
-	role := t.Parameters["role"]
-	if role == "broker_controller" || role == "" {
-		role = "broker,controller"
-	}
+	rawRole := t.Parameters["role"]
+	role, isBroker, isController := normalizeKRaftRole(rawRole)
 
 	listenerPort := t.Parameters["listener_port"]
 	if listenerPort == "" {
@@ -331,10 +523,13 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		controllerPort = "9093"
 	}
 
-	logDirs := t.Parameters["log_dirs"]
-	if logDirs == "" {
-		logDirs = filepath.Join(dataDir, "kafka-logs")
+	listeners := buildKRaftListeners(hostname, listenerPort, controllerPort, isBroker, isController)
+	advertisedListeners := ""
+	if isBroker {
+		advertisedListeners = fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort)
 	}
+
+	paths := resolveKafkaRolePaths(t, installDir, dataDir)
 
 	numPartitions := t.Parameters["num_partitions"]
 	if numPartitions == "" {
@@ -347,25 +542,33 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	}
 
 	props := struct {
-		NodeId         string
-		QuorumVoters   string
-		Hostname       string
-		LogDirs        string
-		Role           string
-		ListenerPort   string
-		ControllerPort string
-		NumPartitions  string
-		RepFactor      string
+		NodeId              string
+		QuorumVoters        string
+		Hostname            string
+		LogDirs             string
+		MetadataLogDir      string
+		Role                string
+		Listeners           string
+		AdvertisedListeners string
+		ListenerPort        string
+		ControllerPort      string
+		NumPartitions       string
+		RepFactor           string
+		IsBroker            bool
 	}{
-		NodeId:         nodeId,
-		QuorumVoters:   quorumVoters,
-		Hostname:       hostname,
-		LogDirs:        logDirs,
-		Role:           role,
-		ListenerPort:   listenerPort,
-		ControllerPort: controllerPort,
-		NumPartitions:  numPartitions,
-		RepFactor:      repFactor,
+		NodeId:              nodeId,
+		QuorumVoters:        quorumVoters,
+		Hostname:            hostname,
+		LogDirs:             paths.LogDirs,
+		MetadataLogDir:      paths.MetadataLogDir,
+		Role:                role,
+		Listeners:           listeners,
+		AdvertisedListeners: advertisedListeners,
+		ListenerPort:        listenerPort,
+		ControllerPort:      controllerPort,
+		NumPartitions:       numPartitions,
+		RepFactor:           repFactor,
+		IsBroker:            isBroker,
 	}
 
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
@@ -373,13 +576,11 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 
 func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error) {
 	var logs strings.Builder
-	installDir := t.Parameters["kafka_install_dir"]
-	if installDir == "" {
-		installDir = "C:\\opt\\tantor\\kafka"
-	}
+	installPaths := resolveKafkaInstallPaths(t)
+	installDir := installPaths.ActiveDir
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
-		dataDir = filepath.Join(installDir, "data")
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
 
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
@@ -399,6 +600,190 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 	return logs.String(), nil
 }
 
+func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
+	var logs strings.Builder
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+		slog.Info(formatted)
+	}
+
+	installPaths := resolveKafkaInstallPaths(t)
+	targetVersion := strings.TrimSpace(t.Parameters["target_version"])
+	if targetVersion == "" {
+		targetVersion = strings.TrimSpace(t.Parameters["version"])
+	}
+	if targetVersion == "" {
+		return logs.String(), fmt.Errorf("target Kafka version is required")
+	}
+
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
+	}
+
+	log("Starting Kafka upgrade workflow...")
+	log("Target version: %s", targetVersion)
+	log("Kafka install base directory: %s", installPaths.BaseDir)
+	log("Target versioned binary directory: %s", installPaths.VersionedDir)
+	log("Active symlink: %s", installPaths.ActiveDir)
+	log("Preserving data directory: %s", dataDir)
+
+	previousTarget, err := d.activeSymlinkTarget(ctx, installPaths.ActiveDir)
+	if err != nil {
+		return logs.String(), err
+	}
+	log("Current active Kafka binary directory: %s", previousTarget)
+
+	if err := d.stageUpgradeBinaries(ctx, t, installPaths.VersionedDir, log); err != nil {
+		return logs.String(), err
+	}
+	if err := d.ensureKafkaBinaryVersion(ctx, installPaths.VersionedDir, targetVersion, log); err != nil {
+		return logs.String(), err
+	}
+
+	log("Stopping Kafka service...")
+	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
+
+	if err := d.ensureActiveSymlink(ctx, installPaths.ActiveDir, installPaths.VersionedDir); err != nil {
+		return logs.String(), err
+	}
+	log("Kafka software switched to version %s", targetVersion)
+
+	if err := d.generateConfigs(ctx, t, installPaths.ActiveDir, dataDir); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("failed to regenerate Kafka configs: %w", err)
+	}
+	log("Kafka configs regenerated with existing data paths")
+
+	if err := d.createSystemdService(ctx, "root", installPaths.ActiveDir, t); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("failed to update kafka.service: %w", err)
+	}
+
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "daemon-reload"); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("failed to reload systemd: %w", err)
+	}
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka"); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("failed to restart kafka: %w", err)
+	}
+	log("Kafka service restarted successfully")
+
+	if err := d.validateDeployment(ctx, t, installPaths.ActiveDir, &logs); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("upgrade validation failed: %w", err)
+	}
+	if err := d.ensureKafkaBinaryVersion(ctx, installPaths.ActiveDir, targetVersion, log); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		return logs.String(), fmt.Errorf("post-upgrade version validation failed: %w", err)
+	}
+
+	log("Kafka upgrade validations passed")
+	return logs.String(), nil
+}
+
+func (d *Deployer) activeSymlinkTarget(ctx context.Context, activeDir string) (string, error) {
+	info, err := os.Lstat(activeDir)
+	if err != nil {
+		return "", fmt.Errorf("active Kafka symlink %s does not exist; deploy the cluster with the production symlink layout before upgrading: %w", activeDir, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return "", fmt.Errorf("%s is not a symlink; upgrade/rollback requires the production versioned directory layout", activeDir)
+	}
+
+	out, _, err := d.exec.Run(ctx, "readlink", "-f", activeDir)
+	if err == nil && strings.TrimSpace(out) != "" {
+		return strings.TrimSpace(out), nil
+	}
+
+	target, err := os.Readlink(activeDir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read active Kafka symlink %s: %w", activeDir, err)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(activeDir), target)
+	}
+	return filepath.Clean(target), nil
+}
+
+func (d *Deployer) stageUpgradeBinaries(ctx context.Context, t *api.Task, targetDir string, log func(string, ...interface{})) error {
+	startScript := filepath.Join(targetDir, "bin", "kafka-server-start.sh")
+	if _, err := os.Stat(startScript); err == nil {
+		log("Kafka target binaries already staged at %s", targetDir)
+		_, _, _ = d.exec.RunSudo(ctx, "bash", "-c", fmt.Sprintf("find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true", shellQuote(targetDir)))
+		return nil
+	}
+
+	parcelDir := strings.TrimSpace(t.Parameters["parcel_dir"])
+	if parcelDir == "" {
+		return fmt.Errorf("active parcel directory is required for upgrade; distribute and activate the target Kafka parcel first")
+	}
+
+	log("Staging Kafka binaries from active parcel: %s", parcelDir)
+	script := fmt.Sprintf(
+		"set -e; test -d %s; rm -rf %s; mkdir -p %s %s; cp -a %s/. %s/; chmod -R a+rX %s; find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true",
+		shellQuote(parcelDir),
+		shellQuote(targetDir),
+		shellQuote(filepath.Dir(targetDir)),
+		shellQuote(targetDir),
+		shellQuote(parcelDir),
+		shellQuote(targetDir),
+		shellQuote(targetDir),
+		shellQuote(targetDir),
+	)
+	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+		return fmt.Errorf("failed to stage target Kafka binaries: %w, out: %s, err: %s", err, out, errOut)
+	}
+	log("Kafka target binaries staged at %s", targetDir)
+	return nil
+}
+
+func (d *Deployer) ensureKafkaBinaryVersion(ctx context.Context, installDir, expectedVersion string, log func(string, ...interface{})) error {
+	versionScript := filepath.Join(installDir, "bin", "kafka-topics.sh")
+	out, errOut, err := d.exec.Run(ctx, versionScript, "--version")
+	if err != nil {
+		return fmt.Errorf("failed to read Kafka binary version from %s: %w, err: %s", versionScript, err, errOut)
+	}
+	actual := strings.TrimSpace(out)
+	log("Kafka binary version detected at %s: %s", installDir, actual)
+	if actual != expectedVersion {
+		return fmt.Errorf("Kafka binary version mismatch: expected %s but found %s", expectedVersion, actual)
+	}
+	return nil
+}
+
+func (d *Deployer) rollbackUpgrade(ctx context.Context, activeDir, previousTarget string, logs *strings.Builder) {
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+		slog.Warn(formatted)
+	}
+
+	log("Upgrade failed; starting automatic rollback to %s", previousTarget)
+	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
+	if _, _, err := d.exec.RunSudo(ctx, "ln", "-sfn", previousTarget, activeDir); err != nil {
+		log("Rollback failed while restoring active symlink: %v", err)
+		return
+	}
+	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka"); err != nil {
+		log("Rollback symlink restored, but kafka restart failed: %v", err)
+		return
+	}
+	log("Rollback completed; Kafka active symlink restored to %s", previousTarget)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func isUsableJar(path string) bool {
+	data, err := os.ReadFile(path)
+	return err == nil && len(data) >= 2 && data[0] == 'P' && data[1] == 'K'
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
 	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
@@ -413,21 +798,42 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 
 	jmxPort := t.Parameters["jmx_port"]
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		installPaths := resolveKafkaInstallPaths(t)
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
+	}
+	paths := resolveKafkaRolePaths(t, installDir, dataDir)
+
+	jmxAgentPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
+	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
+	if !isUsableJar(jmxAgentPath) {
+		jmxAgentPath = ""
+		jmxConfigPath = ""
+	}
 
 	props := struct {
-		User       string
-		Group      string
-		JavaHome   string
-		InstallDir string
-		HeapSize   string
-		JmxPort    string
+		User         string
+		Group        string
+		JavaHome     string
+		InstallDir   string
+		HeapSize     string
+		JmxPort      string
+		JmxAgentPath string
+		JmxConfigPath string
+		AppLogDir    string
+		ConfigPath   string
 	}{
-		User:       user,
-		Group:      user,
-		JavaHome:   javaHome,
-		InstallDir: installDir,
-		HeapSize:   heapSize,
-		JmxPort:    jmxPort,
+		User:          user,
+		Group:         user,
+		JavaHome:      javaHome,
+		InstallDir:    installDir,
+		HeapSize:      heapSize,
+		JmxPort:       jmxPort,
+		JmxAgentPath:  jmxAgentPath,
+		JmxConfigPath: jmxConfigPath,
+		AppLogDir:     paths.AppLogDir,
+		ConfigPath:    filepath.Join(installDir, "config/kraft/server.properties"),
 	}
 
 	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, "/etc/systemd/system/kafka.service")
@@ -466,15 +872,10 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 		slog.Info(formatted)
 	}
 
-	installDir := t.Parameters["kafka_install_dir"]
-	if installDir == "" {
-		installDir = "/data/apps/kafka/install"
-	}
-	dataDir := filepath.Dir(installDir)
-	if dataDir == "/data/apps/kafka" {
-		// Only delete if it's the expected structure
-	} else {
-		dataDir = installDir // Fallback just to delete install
+	installPaths := resolveKafkaInstallPaths(t)
+	dataDir := t.Parameters["kafka_data_dir"]
+	if dataDir == "" {
+		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
 
 	log("Starting Kafka cleanup process...")
@@ -497,7 +898,11 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	time.Sleep(2 * time.Second)
 
 	// 3. Remove files
-	log("Purging directories: %s", dataDir)
+	log("Removing Kafka active symlink: %s", installPaths.ActiveDir)
+	d.exec.RunSudo(ctx, "rm", "-f", installPaths.ActiveDir)
+	log("Removing Kafka versioned binary directory: %s", installPaths.VersionedDir)
+	d.exec.RunSudo(ctx, "rm", "-rf", installPaths.VersionedDir)
+	log("Purging Kafka data directory: %s", dataDir)
 	d.exec.RunSudo(ctx, "rm", "-rf", dataDir)
 
 	// 4. Validate ports are free

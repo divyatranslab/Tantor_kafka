@@ -36,6 +36,7 @@ export interface ClusterConfig {
   heap_size: string;
   kafka_install_dir?: string;
   kafka_data_dir?: string;
+  kafka_app_log_dir?: string;
 }
 
 const KRAFT_ROLES = [
@@ -104,17 +105,20 @@ export default function ClusterWizard() {
   const [config, setConfig] = useState<ClusterConfig>({
     replication_factor: 3,
     num_partitions: 3,
-    log_dirs: '/var/lib/kafka/data',
+    log_dirs: '',
     listener_port: 9092,
     controller_port: 9093,
     heap_size: '1G',
     kafka_install_dir: '',
     kafka_data_dir: '',
+    kafka_app_log_dir: '',
   });
 
   const [portError, setPortError] = useState('');
   const [installDirError, setInstallDirError] = useState('');
   const [dataDirError, setDataDirError] = useState('');
+  const [brokerDataDirError, setBrokerDataDirError] = useState('');
+  const [appLogDirError, setAppLogDirError] = useState('');
 
   // Port check state
   const [portCheckLoading, setPortCheckLoading] = useState(false);
@@ -203,8 +207,10 @@ export default function ClusterWizard() {
     else setPortError('');
   }, [config.listener_port]);
 
-  useEffect(() => { setInstallDirError(validateDeployPath(config.kafka_install_dir || '', 'Install Directory')); }, [config.kafka_install_dir]);
-  useEffect(() => { setDataDirError(validateDeployPath(config.kafka_data_dir || '', 'Data Directory')); }, [config.kafka_data_dir]);
+  useEffect(() => { setInstallDirError(validateDeployPath(config.kafka_install_dir || '', 'Install Base Directory'));  }, [config.kafka_install_dir]);
+  useEffect(() => { setDataDirError(validateDeployPath(config.kafka_data_dir || '', 'Data Base Directory')); }, [config.kafka_data_dir]);
+  useEffect(() => { setBrokerDataDirError(validateDeployPath(config.log_dirs || '', 'Broker Data Directory')); }, [config.log_dirs]);
+  useEffect(() => { setAppLogDirError(validateDeployPath(config.kafka_app_log_dir || '', 'Application Log Base Directory')); }, [config.kafka_app_log_dir]);
   useEffect(() => {
     setPortCheckDone(false);
     setPortCheckResults([]);
@@ -255,7 +261,11 @@ export default function ClusterWizard() {
           ...config,
           zookeeper_port: mode === 'zookeeper' ? config.controller_port : undefined,
           kafka_install_dir: config.kafka_install_dir?.trim() || undefined,
+          kafka_install_base_dir: config.kafka_install_dir?.trim() || undefined,
+          scala_version: selectedArtifact?.scala_version || undefined,
           kafka_data_dir: config.kafka_data_dir?.trim() || undefined,
+          kafka_app_log_dir: config.kafka_app_log_dir?.trim() || undefined,
+          log_dirs: config.log_dirs?.trim() || undefined,
         },
         environment: environment.trim().toLowerCase(),
         artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
@@ -290,12 +300,27 @@ export default function ClusterWizard() {
   const brokerCount = assignedRoles.filter(r => r === 'broker' || r === 'broker_controller' || r === 'broker_zookeeper').length;
   const zookeeperCount = assignedRoles.filter(r => r === 'zookeeper' || r === 'broker_zookeeper').length;
   const rfExceedsBrokers = config.replication_factor > brokerCount && brokerCount > 0;
-  const pathsValid = !installDirError && !dataDirError;
+  const pathsValid = !installDirError && !dataDirError && !brokerDataDirError && !appLogDirError;
   const portsValid = !portError && portCheckDone && portCheckResults.length > 0 && portCheckResults.every(r => r.free);
   const step3Valid = !rfExceedsBrokers && pathsValid && portsValid;
   const zookeeperSupported = !kafkaVersion || supportsZooKeeper(kafkaVersion);
   const zookeeperDeprecated = kafkaVersion ? isZooKeeperDeprecated(kafkaVersion) : false;
   const modeHasRequiredRoles = mode === 'kraft' ? (hasBroker && hasController) : (hasBroker && hasZooKeeper);
+  const roleRequirementText = mode === 'kraft'
+    ? !hasBroker && !hasController
+      ? 'KRaft needs at least one broker and one controller. For a single VM, choose Broker + Controller.'
+      : !hasBroker
+        ? 'Add a Broker node, or use Broker + Controller on a single VM.'
+        : !hasController
+          ? 'Add a Controller node, or use Broker + Controller on a single VM.'
+          : ''
+    : !hasBroker && !hasZooKeeper
+      ? 'ZooKeeper mode needs at least one broker and one ZooKeeper node. For a single VM, choose Broker + ZooKeeper.'
+      : !hasBroker
+        ? 'Add a Broker node, or use Broker + ZooKeeper on a single VM.'
+        : !hasZooKeeper
+          ? 'Add a ZooKeeper node, or use Broker + ZooKeeper on a single VM.'
+          : '';
 
   const availableRoles = mode === 'kraft' ? KRAFT_ROLES : ZOOKEEPER_ROLES;
 
@@ -394,8 +419,11 @@ export default function ClusterWizard() {
             ) : (
               <div className="wz-space-y">
                 <p className="wz-role-info-text">
-                  Assign one role to each host. Use a combined role when a host runs both services.
+                  Assign one role to each host. Use Broker + Controller for a single-node KRaft cluster, or place Broker and Controller on separate hosts.
                 </p>
+                {roleRequirementText && (
+                  <p className="wz-role-requirement"><AlertTriangle size={13} /> {roleRequirementText}</p>
+                )}
                 <div className="wz-host-list">
                   {hosts.map(host => {
                     const hostRoles = assignments[host.id] || [];
@@ -454,9 +482,10 @@ export default function ClusterWizard() {
                 <p className="wz-hint">Memory allocated to the Kafka JVM.</p>
               </div>
               <div>
-                <label className="wz-label">Log Directory</label>
-                <input type="text" value={config.log_dirs} onChange={e => setConfig({ ...config, log_dirs: e.target.value })} placeholder="/var/lib/kafka/data" className="wz-input mono" />
-                <p className="wz-hint">Primary directory for topic partition data.</p>
+                <label className="wz-label">Broker Data Directory Override</label>
+                <input type="text" value={config.log_dirs} onChange={e => setConfig({ ...config, log_dirs: e.target.value })} placeholder="Default: data base/broker-data" className={`wz-input mono ${brokerDataDirError ? 'error' : ''}`} />
+                <p className="wz-hint">Optional Kafka log.dirs override for broker topic partitions.</p>
+                {brokerDataDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {brokerDataDirError}</p>}
               </div>
             </div>
 
@@ -564,14 +593,25 @@ export default function ClusterWizard() {
             
             <div className="wz-grid-2">
               <div>
-                <label className="wz-label">Install Directory</label>
-                <input type="text" value={config.kafka_install_dir} onChange={e => setConfig({ ...config, kafka_install_dir: e.target.value })} placeholder="Default: /opt/tantor/kafka" className={`wz-input mono ${installDirError ? 'error' : ''}`} />
+                <label className="wz-label">Install Base Directory</label>
+                <input type="text" value={config.kafka_install_dir} onChange={e => setConfig({ ...config, kafka_install_dir: e.target.value })} placeholder="Default: /opt" className={`wz-input mono ${installDirError ? 'error' : ''}`} />
+                <p className="wz-hint">Creates kafka_2.13-&lt;version&gt; and a stable kafka symlink below this base path. Optional; defaults to /opt.</p>
                 {installDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {installDirError}</p>}
               </div>
               <div>
-                <label className="wz-label">Data Directory Override</label>
-                <input type="text" value={config.kafka_data_dir} onChange={e => setConfig({ ...config, kafka_data_dir: e.target.value })} placeholder="Default: /var/lib/kafka" className={`wz-input mono ${dataDirError ? 'error' : ''}`} />
+                <label className="wz-label">Data Base Directory</label>
+                <input type="text" value={config.kafka_data_dir} onChange={e => setConfig({ ...config, kafka_data_dir: e.target.value })} placeholder="Default: /data/kafka" className={`wz-input mono ${dataDirError ? 'error' : ''}`} />
+                <p className="wz-hint">Creates broker-data, broker-metadata, or controller-data below this path.</p>
                 {dataDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {dataDirError}</p>}
+              </div>
+            </div>
+
+            <div className="wz-grid-2">
+              <div>
+                <label className="wz-label">Application Log Base Directory</label>
+                <input type="text" value={config.kafka_app_log_dir} onChange={e => setConfig({ ...config, kafka_app_log_dir: e.target.value })} placeholder="Example: /srv/yawar/kafka-logs" className={`wz-input mono ${appLogDirError ? 'error' : ''}`} />
+                <p className="wz-hint">Creates kafka-broker or kafka-controller for server.log and controller.log.</p>
+                {appLogDirError && <p className="wz-error-text"><AlertTriangle size={12} /> {appLogDirError}</p>}
               </div>
             </div>
           </div>
@@ -622,8 +662,12 @@ export default function ClusterWizard() {
                 <span className="wz-review-value">{config.num_partitions}</span>
                 <span className="wz-review-label">JVM Heap</span>
                 <span className="wz-review-value">{config.heap_size}</span>
-                <span className="wz-review-label">Log Directory</span>
-                <span className="wz-review-value">{config.log_dirs}</span>
+                {config.log_dirs && (
+                  <>
+                    <span className="wz-review-label">Broker Data Override</span>
+                    <span className="wz-review-value">{config.log_dirs}</span>
+                  </>
+                )}
                 <span className="wz-review-label">Listener Port</span>
                 <span className="wz-review-value">{config.listener_port}</span>
                 {mode === 'kraft' && (
@@ -640,14 +684,20 @@ export default function ClusterWizard() {
                 )}
                 {config.kafka_install_dir && (
                   <>
-                    <span className="wz-review-label">Install Dir Override</span>
+                    <span className="wz-review-label">Install Base Dir Override</span>
                     <span className="wz-review-value">{config.kafka_install_dir}</span>
                   </>
                 )}
                 {config.kafka_data_dir && (
                   <>
-                    <span className="wz-review-label">Data Dir Override</span>
+                    <span className="wz-review-label">Data Base Dir</span>
                     <span className="wz-review-value">{config.kafka_data_dir}</span>
+                  </>
+                )}
+                {config.kafka_app_log_dir && (
+                  <>
+                    <span className="wz-review-label">App Log Base Dir</span>
+                    <span className="wz-review-value">{config.kafka_app_log_dir}</span>
                   </>
                 )}
               </div>

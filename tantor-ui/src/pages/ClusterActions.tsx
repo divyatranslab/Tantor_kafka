@@ -96,7 +96,7 @@ export function ClusterActions() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to schedule upgrade.');
       }
-      setUpgradeMsg(`Upgrade to Kafka ${targetVersion} scheduled. Watch Deployment Logs for progress.`);
+      setUpgradeMsg(`Upgrade to Kafka ${targetVersion} scheduled. Watch Deployment Logs for symlink switch, validation, and automatic rollback details.`);
       await fetchUpgradeContext();
     } catch (e: any) {
       setUpgradeMsg(e.message || 'Failed to schedule upgrade.');
@@ -152,7 +152,7 @@ export function ClusterActions() {
             </div>
 
             <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1rem', lineHeight: 1.5 }}>
-              Current cluster version: <strong>Kafka {cluster?.kafkaVersion || '-'}</strong>. Choose a newer active parcel, then Tantor will preserve the existing data directory while switching the Kafka runtime files.
+              Current cluster version: <strong>Kafka {cluster?.kafkaVersion || '-'}</strong>. Choose a newer active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 260px) 1fr', gap: '0.75rem', alignItems: 'center' }}>

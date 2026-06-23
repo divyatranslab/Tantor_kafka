@@ -13,14 +13,17 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -437,6 +440,8 @@ public class ClusterController {
         }
 
         config.put("mode", deploymentMode);
+        config.put("version", request.getKafka_version());
+        config.putIfAbsent("kafka_install_dir", "/opt");
         if ("zookeeper".equals(deploymentMode)) {
             int zookeeperPort = parseIntConfig(config.get("zookeeper_port"), parseIntConfig(config.get("controller_port"), 2181));
             int zookeeperPeerPort = parseIntConfig(config.get("zookeeper_peer_port"), 2888);
@@ -454,8 +459,17 @@ public class ClusterController {
             int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
             config.put("controller_port", controllerPort);
             config.put("quorum_voters", buildQuorumVoters(request.getServices(), controllerPort));
+            config.putIfAbsent("cluster_uuid", generateKafkaClusterUuid());
         }
         return config;
+    }
+
+    private String generateKafkaClusterUuid() {
+        UUID uuid = UUID.randomUUID();
+        ByteBuffer buffer = ByteBuffer.allocate(16);
+        buffer.putLong(uuid.getMostSignificantBits());
+        buffer.putLong(uuid.getLeastSignificantBits());
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
     }
 
     private String buildQuorumVoters(List<ServiceAssignmentReq> services, int controllerPort) {
@@ -769,7 +783,7 @@ public class ClusterController {
         cluster.setStatus("DELETING");
         clusterRepository.save(cluster);
         for (ClusterServiceAssignment svc : cluster.getServices()) {
-            deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(), cluster.getConfigJson());
+            deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(), cluster.getKafkaVersion(), cluster.getConfigJson());
         }
         return true;
     }

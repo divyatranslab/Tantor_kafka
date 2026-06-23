@@ -1165,6 +1165,24 @@
   font-weight: 500;
 }
 
+
+.wz-role-requirement {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: -0.5rem 0 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(184, 119, 0, 0.24);
+  border-radius: var(--radius-sm);
+  background: #fff7e6;
+  color: #7a4d00;
+  font-size: 0.78rem;
+  font-weight: 550;
+}
+
+.wz-role-requirement svg {
+  flex-shrink: 0;
+}
 .wz-role-info-text {
   font-size: 0.82rem;
   color: var(--text-secondary);

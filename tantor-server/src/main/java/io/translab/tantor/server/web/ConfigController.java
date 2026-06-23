@@ -46,19 +46,16 @@ public class ConfigController {
         
         Map<String, Object> staticConfigs = new HashMap<>();
         Map<String, Object> deploymentConfig = new HashMap<>();
-        String installDir = "/data/apps/kafka/install";
         
         try {
             if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
                 deploymentConfig = objectMapper.readValue(cluster.getConfigJson(), Map.class);
-                if (deploymentConfig.containsKey("kafka_install_dir")) {
-                    installDir = String.valueOf(deploymentConfig.get("kafka_install_dir"));
-                }
             }
         } catch(Exception e) {
             deploymentConfig = new HashMap<>();
         }
 
+        String installDir = activeKafkaInstallDir(deploymentConfig);
         Map<String, Object> activeProperties = buildActiveServerProperties(cluster, deploymentConfig, installDir);
         String activeFilePath = activeServerConfigPath(cluster, installDir);
         
@@ -71,6 +68,45 @@ public class ConfigController {
         return ResponseEntity.ok(response);
     }
 
+    private String activeKafkaInstallDir(Map<String, Object> config) {
+        String configured = stringConfig(config, "kafka_install_base_dir", stringConfig(config, "kafka_install_dir", "/opt")).trim();
+        if (configured.isBlank()) {
+            configured = "/opt";
+        }
+        configured = trimTrailingSlash(configured);
+        if (configured.endsWith("/kafka")) {
+            return configured;
+        }
+        String leaf = configured.substring(configured.lastIndexOf('/') + 1);
+        if (leaf.startsWith("kafka_")) {
+            int lastSlash = configured.lastIndexOf('/');
+            return (lastSlash <= 0 ? "" : configured.substring(0, lastSlash)) + "/kafka";
+        }
+        return configured + "/kafka";
+    }
+
+    private String defaultKafkaDataDir(Map<String, Object> config) {
+        String configured = stringConfig(config, "kafka_install_base_dir", stringConfig(config, "kafka_install_dir", "/opt")).trim();
+        if (configured.isBlank()) {
+            configured = "/opt";
+        }
+        configured = trimTrailingSlash(configured);
+        if ("/opt".equals(configured) || "/".equals(configured)) {
+            return "/data/kafka";
+        }
+        if (configured.endsWith("/kafka")) {
+            int lastSlash = configured.lastIndexOf('/');
+            configured = lastSlash <= 0 ? "/" : configured.substring(0, lastSlash);
+        }
+        return trimTrailingSlash(configured) + "/kafka-data";
+    }
+
+    private String trimTrailingSlash(String value) {
+        while (value.length() > 1 && value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
     private List<Map<String, Object>> buildConfigFiles(
             Cluster cluster,
             Map<String, Object> config,
@@ -141,7 +177,7 @@ public class ConfigController {
         String nodeId = firstNodeId(cluster, config);
         String listenerPort = stringConfig(config, "listener_port", firstBootstrapPort(cluster, "9092"));
         String controllerPort = stringConfig(config, "controller_port", "9093");
-        String dataDir = stringConfig(config, "kafka_data_dir", installDir + "/data");
+        String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
         String logDirs = stringConfig(config, "log_dirs", dataDir + "/kafka-logs");
         String role = processRoles(stringConfig(config, "role", firstServiceRole(cluster)));
         String quorumVoters = stringConfig(config, "quorum_voters", nodeId + "@" + host + ":" + controllerPort);
@@ -171,7 +207,7 @@ public class ConfigController {
         String host = firstBrokerHost(cluster, config);
         String nodeId = firstNodeId(cluster, config);
         String listenerPort = stringConfig(config, "listener_port", firstBootstrapPort(cluster, "9092"));
-        String dataDir = stringConfig(config, "kafka_data_dir", installDir + "/data");
+        String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
         String logDirs = stringConfig(config, "log_dirs", dataDir + "/kafka-logs");
         String zookeeperConnect = stringConfig(config, "zookeeper_connect", host + ":" + stringConfig(config, "zookeeper_port", "2181"));
 
@@ -191,7 +227,7 @@ public class ConfigController {
 
     private Map<String, Object> buildZooKeeperProperties(Map<String, Object> config, String installDir) {
         Map<String, Object> props = new LinkedHashMap<>();
-        String dataDir = stringConfig(config, "zookeeper_data_dir", installDir + "/zookeeper-data");
+        String dataDir = stringConfig(config, "zookeeper_data_dir", defaultKafkaDataDir(config) + "/zookeeper-data");
         props.put("tickTime", "2000");
         props.put("initLimit", "10");
         props.put("syncLimit", "5");

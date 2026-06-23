@@ -14,6 +14,7 @@ Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 {{if ne .JmxPort ""}}Environment="JMX_PORT={{.JmxPort}}"{{end}}
 {{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}=7071:{{.JmxConfigPath}}"{{end}}
+{{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
 Restart=on-failure
@@ -65,14 +66,16 @@ controller.quorum.voters={{.QuorumVoters}}
 
 # Listeners
 listeners={{.Listeners}}
-inter.broker.listener.name=PLAINTEXT
-{{if .AdvertisedListeners}}advertised.listeners={{.AdvertisedListeners}}{{end}}
+{{if .IsBroker}}inter.broker.listener.name=PLAINTEXT
+{{end}}{{if .AdvertisedListeners}}advertised.listeners={{.AdvertisedListeners}}
+{{end}}
 controller.listener.names=CONTROLLER
 listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
 
-# Log Directories
-log.dirs={{.LogDirs}}
-
+# Kafka Data Directories
+{{if .LogDirs}}log.dirs={{.LogDirs}}
+{{end}}{{if .MetadataLogDir}}metadata.log.dir={{.MetadataLogDir}}
+{{end}}
 # Internal Topic Settings
 num.partitions={{.NumPartitions}}
 offsets.topic.replication.factor={{.RepFactor}}
@@ -92,9 +95,10 @@ advertised.listeners=PLAINTEXT://{{.Hostname}}:{{.ListenerPort}}
 zookeeper.connect={{.ZooKeeperConnect}}
 zookeeper.connection.timeout.ms=18000
 
-# Log Directories
-log.dirs={{.LogDirs}}
-
+# Kafka Data Directories
+{{if .LogDirs}}log.dirs={{.LogDirs}}
+{{end}}{{if .MetadataLogDir}}metadata.log.dir={{.MetadataLogDir}}
+{{end}}
 # Internal Topic Settings
 num.partitions={{.NumPartitions}}
 offsets.topic.replication.factor={{.RepFactor}}
