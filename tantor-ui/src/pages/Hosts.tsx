@@ -129,7 +129,7 @@ export function Hosts() {
           status: body.status || prev.status,
           logOutput: body.logOutput || prev.logOutput,
           errorMsg: body.errorMsg || '',
-          loading: body.status === 'PENDING' || body.status === 'IN_PROGRESS',
+          loading: ['PENDING', 'IN_PROGRESS', 'RUNNING'].includes(String(body.status || '').toUpperCase()),
         } : prev);
       } catch (e) {
         console.error(e);

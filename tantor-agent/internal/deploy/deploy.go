@@ -68,6 +68,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.deactivateParcel(ctx, t)
 	case "REMOVE_PARCEL":
 		return e.removeParcel(ctx, t)
+	case "CHECK_PREREQUISITES":
+		return e.checkPrerequisites(ctx, t)
 	default:
 		return &api.TaskResult{
 			TaskID:   t.TaskID,
