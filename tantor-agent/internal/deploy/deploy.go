@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
@@ -211,6 +212,63 @@ func (e *Engine) updateKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskR
 	}, nil
 }
 
+func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	var logs strings.Builder
+	failed := 0
+	warned := 0
+
+	logLine := func(status, name, detail string) {
+		logs.WriteString(fmt.Sprintf("[%s] %s - %s\n", status, name, detail))
+	}
+	run := func(name string, required bool, command string, args ...string) {
+		out, errOut, err := e.exec.Run(ctx, command, args...)
+		detail := strings.TrimSpace(out)
+		if detail == "" {
+			detail = strings.TrimSpace(errOut)
+		}
+		if detail == "" {
+			detail = command + " " + strings.Join(args, " ")
+		}
+		if err != nil {
+			if required {
+				failed++
+				logLine("FAIL", name, fmt.Sprintf("%v: %s", err, detail))
+			} else {
+				warned++
+				logLine("WARN", name, fmt.Sprintf("%v: %s", err, detail))
+			}
+			return
+		}
+		logLine("PASS", name, detail)
+	}
+
+	logs.WriteString("Tantor host prerequisite check\n")
+	logs.WriteString("================================\n")
+	run("Agent user", false, "id", "-un")
+	run("OS release", false, "bash", "-lc", "cat /etc/os-release | head -5")
+	run("Java runtime", true, "bash", "-lc", "java -version 2>&1 | head -1")
+	run("Systemd available", true, "bash", "-lc", "command -v systemctl && systemctl --version | head -1")
+	run("Bash available", true, "bash", "-lc", "command -v bash")
+	run("Tar available", true, "bash", "-lc", "command -v tar")
+	run("Primary routable IP", true, "bash", "-lc", "dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}'); ipaddr=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"src\"){print $(i+1); exit}}'); test -n \"$ipaddr\" || { echo no primary source IP found; exit 1; }; case \"$ipaddr\" in 127.*|169.254.*|172.17.*|172.18.*) echo unusable primary IP $ipaddr on $dev; exit 1;; esac; echo primary IP $ipaddr on $dev")
+	run("Static IP method", false, "bash", "-lc", "dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}'); if ! command -v nmcli >/dev/null 2>&1; then echo nmcli not installed; exit 1; fi; con=$(nmcli -t -f NAME,DEVICE con show --active | awk -F: -v d=\"$dev\" '$2==d{print $1; exit}'); test -n \"$con\" || { echo no active NetworkManager connection for $dev; exit 1; }; method=$(nmcli -g ipv4.method con show \"$con\" | head -1); if [ \"$method\" = manual ]; then echo $dev uses static/manual IPv4 via $con; else echo $dev uses IPv4 method $method, confirm DHCP reservation/static IP before Kafka deploy; exit 1; fi")
+	run("Kernel vm.max_map_count", false, "bash", "-lc", "value=$(sysctl -n vm.max_map_count 2>/dev/null); test -n \"$value\" || { echo vm.max_map_count unavailable; exit 1; }; if [ \"$value\" -lt 262144 ]; then echo vm.max_map_count=$value, recommended >=262144 for large Kafka deployments; exit 1; else echo vm.max_map_count=$value; fi")
+	run("Open file limit", false, "bash", "-lc", "limit=$(ulimit -n); if [ \"$limit\" -lt 100000 ]; then echo nofile=$limit, recommended >=100000; exit 1; else echo nofile=$limit; fi")
+	run("Disk space", true, "bash", "-lc", "df -h / /opt 2>/dev/null | tail -n +1")
+	run("Memory", true, "bash", "-lc", "free -m")
+	run("/opt writable", true, "bash", "-lc", "test -w /opt && echo /opt is writable")
+	run("Kafka ports free", true, "bash", "-lc", "if ss -tln | grep -E ':(9092|9093|7071)\\b'; then echo ports already in use; exit 1; else echo ports 9092, 9093, 7071 are free; fi")
+	run("Sudo/systemctl access", false, "bash", "-lc", "systemctl list-unit-files >/dev/null && echo systemctl can list units")
+
+	logs.WriteString("================================\n")
+	if failed > 0 {
+		msg := fmt.Sprintf("Prerequisite check failed: %d required checks failed, %d warnings", failed, warned)
+		logs.WriteString(msg + "\n")
+		return e.fail(t, msg+"\n"+logs.String()), nil
+	}
+	logs.WriteString(fmt.Sprintf("Prerequisite check passed with %d warnings\n", warned))
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
+}
 func (e *Engine) fail(t *api.Task, msg string) *api.TaskResult {
 	slog.Error("Task failed", "taskId", t.TaskID, "error", msg)
 	return &api.TaskResult{

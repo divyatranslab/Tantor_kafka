@@ -1,11 +1,22 @@
 import { useState, useEffect } from 'react';
-import { Terminal, Cpu, HardDrive, RefreshCw, Trash2, X } from 'lucide-react';
+import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
 import './Hosts.css';
+
+type PrereqModalState = {
+  host: any;
+  taskId?: string;
+  status: string;
+  logOutput: string;
+  errorMsg: string;
+  loading: boolean;
+};
 
 export function Hosts() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
+  const [prereqModal, setPrereqModal] = useState<PrereqModalState | null>(null);
 
   const fetchHosts = async () => {
     setLoading(true);
@@ -26,6 +37,7 @@ export function Hosts() {
   };
 
   const deleteHost = async (id: string) => {
+    setOpenMenuHostId(null);
     if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
@@ -41,11 +53,74 @@ export function Hosts() {
     }
   };
 
+  const startPrerequisiteCheck = async (host: any) => {
+    setOpenMenuHostId(null);
+    setPrereqModal({
+      host,
+      status: 'QUEUING',
+      logOutput: 'Queuing prerequisite check on the agent...',
+      errorMsg: '',
+      loading: true,
+    });
+
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${host.id}/check-prerequisites`, { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPrereqModal({
+          host,
+          status: 'FAILED',
+          logOutput: '',
+          errorMsg: body.message || 'Failed to queue prerequisite check.',
+          loading: false,
+        });
+        return;
+      }
+      setPrereqModal({
+        host,
+        taskId: body.taskId,
+        status: 'PENDING',
+        logOutput: 'Task queued. Waiting for agent to pick it up...',
+        errorMsg: '',
+        loading: true,
+      });
+    } catch (e) {
+      setPrereqModal({
+        host,
+        status: 'FAILED',
+        logOutput: '',
+        errorMsg: 'Network error while queuing prerequisite check.',
+        loading: false,
+      });
+    }
+  };
+
   useEffect(() => {
     fetchHosts();
     const t = setInterval(fetchHosts, 5000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (!prereqModal?.taskId || !prereqModal.loading) return;
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/v1/ui/hosts/${prereqModal.host.id}/check-prerequisites/${prereqModal.taskId}`);
+        if (!res.ok) return;
+        const body = await res.json();
+        setPrereqModal(prev => prev ? {
+          ...prev,
+          status: body.status || prev.status,
+          logOutput: body.logOutput || prev.logOutput,
+          errorMsg: body.errorMsg || '',
+          loading: body.status === 'PENDING' || body.status === 'IN_PROGRESS',
+        } : prev);
+      } catch (e) {
+        console.error(e);
+      }
+    }, 1500);
+    return () => clearInterval(poll);
+  }, [prereqModal?.taskId, prereqModal?.host?.id, prereqModal?.loading]);
 
   const parseIpList = (raw: any): string[] => {
     if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
@@ -71,8 +146,7 @@ export function Hosts() {
   const pendingHosts = hosts.filter(h => h.status === 'PENDING');
 
   return (
-    <div className="hosts-page animate-fade-in">
-
+    <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
       <header className="page-header flex-between">
         <div>
           <h1>Infrastructure fleet</h1>
@@ -94,6 +168,7 @@ export function Hosts() {
           <thead>
             <tr>
               <th>Status</th>
+              <th>Availability</th>
               <th>Hostname</th>
               <th>IP address</th>
               <th>Agent version</th>
@@ -105,9 +180,9 @@ export function Hosts() {
           <tbody>
             {activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <div className="empty-state">
-                    {loading ? 'Loading connected agents…' : 'No agents connected yet.'}
+                    {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
                 </td>
               </tr>
@@ -117,6 +192,7 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
+              const available = host.available !== false;
 
               return (
                 <tr key={host.id}>
@@ -125,16 +201,26 @@ export function Hosts() {
                       {host.status ?? 'OFFLINE'}
                     </span>
                   </td>
+                  <td>
+                    <div className="availability-cell">
+                      <span className={`availability-badge ${available ? 'available' : 'unavailable'}`}>
+                        {available ? 'Available' : 'Unavailable'}
+                      </span>
+                      {!available && (
+                        <div className="cluster-lock">
+                          <span>{host.clusterName || 'Assigned cluster'}</span>
+                          <code>{host.clusterId}</code>
+                        </div>
+                      )}
+                    </div>
+                  </td>
                   <td className="font-medium">{host.hostname}</td>
                   <td className="text-secondary">{ip}</td>
                   <td className="text-secondary">{host.agentVersion || 'N/A'}</td>
                   <td>
                     <div className="metric-bar">
                       <div className="bar-track">
-                        <div
-                          className={`bar-fill ${cpu > 80 ? 'danger' : 'normal'}`}
-                          style={{ width: `${cpu}%` }}
-                        />
+                        <div className={`bar-fill ${cpu > 80 ? 'danger' : 'normal'}`} style={{ width: `${cpu}%` }} />
                       </div>
                       <span>{cpu}%</span>
                     </div>
@@ -142,26 +228,28 @@ export function Hosts() {
                   <td>
                     <div className="metric-bar">
                       <div className="bar-track">
-                        <div
-                          className={`bar-fill ${mem > 85 ? 'warning' : 'normal'}`}
-                          style={{ width: `${mem}%` }}
-                        />
+                        <div className={`bar-fill ${mem > 85 ? 'warning' : 'normal'}`} style={{ width: `${mem}%` }} />
                       </div>
                       <span>{mem}%</span>
                     </div>
                   </td>
                   <td>
-                    <div className="actions">
-                      <button className="btn icon-only" title="View metrics"><Cpu size={14} /></button>
-                      <button className="btn icon-only" title="View storage"><HardDrive size={14} /></button>
-                      <button className="btn icon-only" title="SSH terminal"><Terminal size={14} /></button>
+                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
                       <button
-                        className="btn icon-only danger"
-                        title="Remove node"
-                        onClick={() => deleteHost(host.id)}
+                        className="btn icon-only"
+                        title="Node actions"
+                        onClick={() => setOpenMenuHostId(openMenuHostId === host.id ? null : host.id)}
                       >
-                        <Trash2 size={14} />
+                        <MoreVertical size={16} />
                       </button>
+                      {openMenuHostId === host.id && (
+                        <div className="host-action-menu">
+                          <button onClick={() => startPrerequisiteCheck(host)}>Check prerequisite</button>
+                          <button className="danger" onClick={() => deleteHost(host.id)}>
+                            <Trash2 size={13} /> Remove node
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -171,10 +259,34 @@ export function Hosts() {
         </table>
       </div>
 
+      {prereqModal && (
+        <div className="modal-overlay" onClick={() => setPrereqModal(null)}>
+          <div className="modal prerequisite-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2>Prerequisite check</h2>
+                <p className="modal-subtitle">{prereqModal.host.hostname} - {displayIp(prereqModal.host.ipAddresses)}</p>
+              </div>
+              <button className="modal-close" onClick={() => setPrereqModal(null)}>
+                <X size={14} />
+              </button>
+            </div>
+            <div className={`prereq-status ${(prereqModal.status || '').toLowerCase()}`}>
+              {prereqModal.loading ? 'Running' : prereqModal.status}
+            </div>
+            <pre className="terminal-output">
+{prereqModal.errorMsg ? `${prereqModal.errorMsg}\n\n` : ''}{prereqModal.logOutput || 'Waiting for output...'}
+            </pre>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setPrereqModal(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
-
             <div className="modal-header">
               <h2>Add a new node</h2>
               <button className="modal-close" onClick={() => setShowEnrollModal(false)}>
@@ -195,17 +307,10 @@ export function Hosts() {
                   <p className="ip">{displayIp(host.ipAddresses)}</p>
                 </div>
                 <div className="pending-node-actions">
-                  <button
-                    className="btn btn-primary-action"
-                    onClick={() => approveHost(host.id)}
-                  >
+                  <button className="btn btn-primary-action" onClick={() => approveHost(host.id)}>
                     Connect
                   </button>
-                  <button
-                    className="btn icon-only danger"
-                    title="Reject & remove"
-                    onClick={() => deleteHost(host.id)}
-                  >
+                  <button className="btn icon-only danger" title="Reject & remove" onClick={() => deleteHost(host.id)}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -214,11 +319,8 @@ export function Hosts() {
 
             <hr className="modal-divider" />
             <div className="modal-footer">
-              <button className="btn" onClick={() => setShowEnrollModal(false)}>
-                Close
-              </button>
+              <button className="btn" onClick={() => setShowEnrollModal(false)}>Close</button>
             </div>
-
           </div>
         </div>
       )}

@@ -325,3 +325,134 @@
   justify-content: flex-end;
   margin-top: 1.25rem;
 }
+/* Availability */
+.availability-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.availability-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.availability-badge.available {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.availability-badge.unavailable {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.cluster-lock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+
+.cluster-lock code {
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  word-break: break-all;
+}
+
+.menu-anchor {
+  position: relative;
+  width: fit-content;
+}
+
+.host-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--bg-surface);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 30;
+}
+
+.host-action-menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  padding: 8px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.host-action-menu button:hover {
+  background: var(--bg-raised);
+}
+
+.host-action-menu button.danger {
+  color: var(--color-danger);
+}
+
+.prerequisite-modal {
+  max-width: 900px;
+}
+
+.modal-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.prereq-status {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-info-light);
+  color: var(--color-info);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.prereq-status.success {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.prereq-status.failed {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
+
+.terminal-output {
+  min-height: 320px;
+  max-height: 56vh;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  background: #05070b;
+  color: #d1fae5;
+  border: 1px solid #111827;
+  border-radius: var(--radius-md);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
