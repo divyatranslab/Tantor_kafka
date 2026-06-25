@@ -93,7 +93,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	// 2. Download TAR
 	destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
 	log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
-	
+
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
@@ -117,7 +117,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
 	}
-	
+
 	// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
 	err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil || path == tmpExtractDir {
@@ -161,7 +161,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	jmxDir := filepath.Join(installDir, "jmx")
 	os.MkdirAll(jmxDir, 0755)
 	jmxJarPath := filepath.Join(jmxDir, "jmx_prometheus_javaagent.jar")
-	
+
 	log("Downloading JMX Exporter to %s", jmxJarPath)
 
 	jmxUrl := t.Parameters["jmx_artifact_url"]
@@ -200,8 +200,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 		log("Fresh deployment detected — formatting KRaft storage...")
 		storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-		configPath := filepath.Join(activeInstallDir, "config/kraft/server.properties")
-		
+		configPath := configPathForTask(activeInstallDir, t)
+
 		clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
 		if clusterUUID == "" {
 			uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
@@ -213,7 +213,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		} else {
 			log("Using shared cluster UUID: %s", clusterUUID)
 		}
-		
+
 		_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
 		if err != nil {
 			return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
@@ -224,6 +224,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	// 8. Systemd Service
+	serviceName := serviceNameForTask(t)
 	if err := d.createSystemdService(ctx, "root", activeInstallDir, t); err != nil {
 		return logs.String(), err
 	}
@@ -232,12 +233,12 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	// 9. Start Service
 	_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 	if err == nil {
-		_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka")
+		_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName)
 	}
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to start service: %w", err)
 	}
-	log("Kafka service started successfully")
+	log("Kafka service %s started successfully", serviceName)
 
 	// 10. Post-Deployment Validation
 	if err := d.validateDeployment(ctx, t, activeInstallDir, &logs); err != nil {
@@ -290,11 +291,12 @@ func (d *Deployer) validateDeployment(ctx context.Context, t *api.Task, installD
 
 check2:
 	log("Validation [2/6]: Checking systemd service status...")
-	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", "kafka")
+	serviceName := serviceNameForTask(t)
+	out, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", serviceName)
 	if err != nil || strings.TrimSpace(out) != "active" {
-		return fmt.Errorf("kafka.service is not active: %s", out)
+		return fmt.Errorf("%s.service is not active: %s", serviceName, out)
 	}
-	log("  ✓ kafka.service is active")
+	log("  ✓ %s.service is active", serviceName)
 
 	log("Validation [3/6]: Checking KRaft metadata...")
 	dataDir := t.Parameters["kafka_data_dir"]
@@ -499,6 +501,62 @@ func buildKRaftListeners(hostname, listenerPort, controllerPort string, isBroker
 	}
 	return strings.Join(listeners, ",")
 }
+func serviceNameForTask(t *api.Task) string {
+	serviceName := strings.TrimSpace(t.Parameters["systemd_service"])
+	if serviceName == "" {
+		serviceName = strings.TrimSpace(t.Parameters["service_name"])
+	}
+	if serviceName != "" {
+		return strings.TrimSuffix(serviceName, ".service")
+	}
+
+	rawRole := strings.TrimSpace(t.Parameters["service_role"])
+	if rawRole == "" {
+		rawRole = strings.TrimSpace(t.Parameters["role"])
+	}
+	switch rawRole {
+	case "controller":
+		return "controller"
+	case "zookeeper":
+		return "zookeeper"
+	case "broker_controller", "broker_zookeeper":
+		return "kafka"
+	default:
+		return "broker"
+	}
+}
+
+func configPathForTask(installDir string, t *api.Task) string {
+	configured := strings.TrimSpace(t.Parameters["config_path"])
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			return configured
+		}
+		return filepath.Join(installDir, "config", "kraft", configured)
+	}
+
+	configured = strings.TrimSpace(t.Parameters["config_file"])
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			return configured
+		}
+		if configured == "zookeeper.properties" || configured == "server.properties" {
+			return filepath.Join(installDir, "config", configured)
+		}
+		return filepath.Join(installDir, "config", "kraft", configured)
+	}
+
+	switch serviceNameForTask(t) {
+	case "controller":
+		return filepath.Join(installDir, "config", "kraft", "controller.properties")
+	case "broker":
+		return filepath.Join(installDir, "config", "kraft", "broker.properties")
+	case "zookeeper":
+		return filepath.Join(installDir, "config", "zookeeper.properties")
+	default:
+		return filepath.Join(installDir, "config", "kraft", "server.properties")
+	}
+}
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
 	nodeId := t.Parameters["node_id"]
 	if nodeId == "" {
@@ -510,7 +568,10 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		quorumVoters = fmt.Sprintf("%s@%s:9093", nodeId, hostname)
 	}
 
-	rawRole := t.Parameters["role"]
+	rawRole := t.Parameters["service_role"]
+	if rawRole == "" {
+		rawRole = t.Parameters["role"]
+	}
 	role, isBroker, isController := normalizeKRaftRole(rawRole)
 
 	listenerPort := t.Parameters["listener_port"]
@@ -571,7 +632,7 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		IsBroker:            isBroker,
 	}
 
-	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, filepath.Join(installDir, "config/kraft/server.properties"))
+	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, configPathForTask(installDir, t))
 }
 
 func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error) {
@@ -590,11 +651,11 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 
 	// Restart if requested
 	if t.Parameters["restart"] == "true" {
-		_, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka")
+		_, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", serviceNameForTask(t))
 		if err != nil {
 			return logs.String(), fmt.Errorf("failed to restart kafka: %w", err)
 		}
-		logs.WriteString("Kafka service restarted\n")
+		logs.WriteString(fmt.Sprintf("Kafka service %s restarted\n", serviceNameForTask(t)))
 	}
 
 	return logs.String(), nil
@@ -643,7 +704,7 @@ func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	log("Stopping Kafka service...")
-	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
+	d.exec.RunSudo(ctx, "systemctl", "stop", serviceNameForTask(t))
 
 	if err := d.ensureActiveSymlink(ctx, installPaths.ActiveDir, installPaths.VersionedDir); err != nil {
 		return logs.String(), err
@@ -651,32 +712,32 @@ func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
 	log("Kafka software switched to version %s", targetVersion)
 
 	if err := d.generateConfigs(ctx, t, installPaths.ActiveDir, dataDir); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("failed to regenerate Kafka configs: %w", err)
 	}
 	log("Kafka configs regenerated with existing data paths")
 
 	if err := d.createSystemdService(ctx, "root", installPaths.ActiveDir, t); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("failed to update kafka.service: %w", err)
 	}
 
 	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "daemon-reload"); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("failed to reload systemd: %w", err)
 	}
-	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka"); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", serviceNameForTask(t)); err != nil {
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("failed to restart kafka: %w", err)
 	}
 	log("Kafka service restarted successfully")
 
 	if err := d.validateDeployment(ctx, t, installPaths.ActiveDir, &logs); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("upgrade validation failed: %w", err)
 	}
 	if err := d.ensureKafkaBinaryVersion(ctx, installPaths.ActiveDir, targetVersion, log); err != nil {
-		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs)
+		d.rollbackUpgrade(ctx, installPaths.ActiveDir, previousTarget, &logs, t)
 		return logs.String(), fmt.Errorf("post-upgrade version validation failed: %w", err)
 	}
 
@@ -754,7 +815,7 @@ func (d *Deployer) ensureKafkaBinaryVersion(ctx context.Context, installDir, exp
 	return nil
 }
 
-func (d *Deployer) rollbackUpgrade(ctx context.Context, activeDir, previousTarget string, logs *strings.Builder) {
+func (d *Deployer) rollbackUpgrade(ctx context.Context, activeDir, previousTarget string, logs *strings.Builder, t *api.Task) {
 	log := func(msg string, args ...interface{}) {
 		formatted := fmt.Sprintf(msg, args...)
 		logs.WriteString(formatted + "\n")
@@ -762,13 +823,13 @@ func (d *Deployer) rollbackUpgrade(ctx context.Context, activeDir, previousTarge
 	}
 
 	log("Upgrade failed; starting automatic rollback to %s", previousTarget)
-	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
+	d.exec.RunSudo(ctx, "systemctl", "stop", serviceNameForTask(t))
 	if _, _, err := d.exec.RunSudo(ctx, "ln", "-sfn", previousTarget, activeDir); err != nil {
 		log("Rollback failed while restoring active symlink: %v", err)
 		return
 	}
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
-	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", "kafka"); err != nil {
+	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", serviceNameForTask(t)); err != nil {
 		log("Rollback symlink restored, but kafka restart failed: %v", err)
 		return
 	}
@@ -805,24 +866,26 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 	paths := resolveKafkaRolePaths(t, installDir, dataDir)
 
+	serviceName := serviceNameForTask(t)
 	jmxAgentPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
 	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
-	if !isUsableJar(jmxAgentPath) {
+	if serviceName == "controller" || !isUsableJar(jmxAgentPath) {
+		jmxPort = ""
 		jmxAgentPath = ""
 		jmxConfigPath = ""
 	}
 
 	props := struct {
-		User         string
-		Group        string
-		JavaHome     string
-		InstallDir   string
-		HeapSize     string
-		JmxPort      string
-		JmxAgentPath string
+		User          string
+		Group         string
+		JavaHome      string
+		InstallDir    string
+		HeapSize      string
+		JmxPort       string
+		JmxAgentPath  string
 		JmxConfigPath string
-		AppLogDir    string
-		ConfigPath   string
+		AppLogDir     string
+		ConfigPath    string
 	}{
 		User:          user,
 		Group:         user,
@@ -833,10 +896,10 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		JmxAgentPath:  jmxAgentPath,
 		JmxConfigPath: jmxConfigPath,
 		AppLogDir:     paths.AppLogDir,
-		ConfigPath:    filepath.Join(installDir, "config/kraft/server.properties"),
+		ConfigPath:    configPathForTask(installDir, t),
 	}
 
-	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, "/etc/systemd/system/kafka.service")
+	return d.writeTemplateToSudoFile(ctx, SystemdTemplate, props, filepath.Join("/etc/systemd/system", serviceName+".service"))
 }
 
 func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, data interface{}, dest string) error {
@@ -844,7 +907,7 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 	if err != nil {
 		return err
 	}
-	
+
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return err
@@ -860,7 +923,7 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 	if err := os.WriteFile(dest, content, 0644); err != nil {
 		return fmt.Errorf("failed to write template to %s: %w", dest, err)
 	}
-	
+
 	return nil
 }
 
@@ -880,15 +943,18 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	log("Starting Kafka cleanup process...")
 
-	// 1. Stop and disable systemd service
-	log("Stopping kafka.service...")
-	d.exec.RunSudo(ctx, "systemctl", "stop", "kafka")
-	d.exec.RunSudo(ctx, "systemctl", "disable", "kafka")
+	// 1. Stop and disable systemd services
+	log("Stopping Kafka systemd services...")
+	for _, service := range []string{"broker", "controller", "kafka"} {
+		d.exec.RunSudo(ctx, "systemctl", "stop", service)
+		d.exec.RunSudo(ctx, "systemctl", "disable", service)
+	}
 
-	log("Removing systemd unit file...")
-	d.exec.RunSudo(ctx, "rm", "-f", "/etc/systemd/system/kafka.service")
+	log("Removing systemd unit files...")
+	for _, unit := range []string{"broker.service", "controller.service", "kafka.service"} {
+		d.exec.RunSudo(ctx, "rm", "-f", filepath.Join("/etc/systemd/system", unit))
+	}
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
-
 	// 2. Kill remaining processes on ports
 	log("Terminating processes on port 9092, 9093, 9095, 7071...")
 	d.exec.RunSudo(ctx, "fuser", "-k", "9092/tcp")

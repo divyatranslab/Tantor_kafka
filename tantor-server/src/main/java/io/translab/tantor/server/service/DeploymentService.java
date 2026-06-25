@@ -35,7 +35,12 @@ public class DeploymentService {
             params.put("version", version);
             params.put("node_id", nodeId != null ? nodeId : "1");
             params.put("quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093");
-            params.put("role", role != null ? role : "broker_controller");
+            String normalizedRole = role != null && !role.isBlank() ? role : "broker_controller";
+            params.put("role", normalizedRole);
+            params.put("service_role", normalizedRole);
+            params.put("service_name", systemdServiceName(normalizedRole));
+            params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("config_file", configFileForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -73,7 +78,12 @@ public class DeploymentService {
             params.put("target_version", targetVersion);
             params.put("previous_version", currentVersion);
             params.put("node_id", nodeId != null ? nodeId : "1");
-            params.put("role", role != null ? role : "broker_controller");
+            String normalizedRole = role != null && !role.isBlank() ? role : "broker_controller";
+            params.put("role", normalizedRole);
+            params.put("service_role", normalizedRole);
+            params.put("service_name", systemdServiceName(normalizedRole));
+            params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("config_file", configFileForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -167,6 +177,20 @@ public class DeploymentService {
         log.info("Dispatched DELETE_CLUSTER task for host {} in cluster {}", hostId, clusterId);
     }
 
+
+    private String systemdServiceName(String role) {
+        if ("controller".equals(role)) return "controller";
+        if ("zookeeper".equals(role)) return "zookeeper";
+        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
+        return "broker";
+    }
+
+    private String configFileForRole(String role) {
+        if ("controller".equals(role)) return "controller.properties";
+        if ("zookeeper".equals(role)) return "zookeeper.properties";
+        if ("broker_controller".equals(role)) return "server.properties";
+        return "broker.properties";
+    }
     private Task createTask(UUID clusterId, String hostId, String command) {
         Task task = new Task();
         task.setClusterId(clusterId);

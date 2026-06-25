@@ -63,6 +63,7 @@ public class ConfigController {
         staticConfigs.put("properties", activeProperties);
         staticConfigs.put("deploymentParameters", deploymentConfig);
         staticConfigs.put("configFiles", buildConfigFiles(cluster, deploymentConfig, installDir, activeFilePath, activeProperties));
+        response.put("serviceTopology", buildServiceTopology(cluster, deploymentConfig, installDir));
         response.put("staticConfigs", staticConfigs);
 
         return ResponseEntity.ok(response);
@@ -115,6 +116,22 @@ public class ConfigController {
             Map<String, Object> activeProperties
     ) {
         List<Map<String, Object>> files = new ArrayList<>();
+
+        if ("kraft".equalsIgnoreCase(cluster.getMode()) && cluster.getServices() != null && !cluster.getServices().isEmpty()) {
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                files.add(configFile(
+                        serviceConfigId(service),
+                        serviceConfigLabel(service),
+                        serviceConfigDescription(service),
+                        serviceConfigPath(service.getRole(), cluster.getMode(), installDir),
+                        service.getRole(),
+                        true,
+                        buildKraftServiceProperties(cluster, config, installDir, service)
+                ));
+            }
+            return files;
+        }
+
         files.add(configFile(
                 "active-server",
                 "Active Server Config",
@@ -138,7 +155,6 @@ public class ConfigController {
         }
         return files;
     }
-
     private Map<String, Object> configFile(
             String id,
             String label,
@@ -159,6 +175,135 @@ public class ConfigController {
         return file;
     }
 
+    private List<Map<String, Object>> buildServiceTopology(Cluster cluster, Map<String, Object> config, String installDir) {
+        List<Map<String, Object>> topology = new ArrayList<>();
+        if (cluster.getServices() == null) {
+            return topology;
+        }
+        String dataDir = defaultKafkaDataDir(config);
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("hostId", service.getHostId());
+            item.put("hostAddress", hostAddressForService(service));
+            item.put("role", service.getRole());
+            item.put("nodeId", service.getNodeId());
+            item.put("serviceName", serviceNameForRole(service.getRole()));
+            item.put("systemdUnit", serviceNameForRole(service.getRole()) + ".service");
+            item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), installDir));
+            item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(config, "listener_port", "9092") : "");
+            item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(config, "controller_port", "9093") : "");
+            item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(config, dataDir) : "");
+            item.put("metadataLogDir", metadataLogDirForRole(service.getRole(), config, dataDir));
+            topology.add(item);
+        }
+        return topology;
+    }
+
+    private String serviceConfigId(ClusterServiceAssignment service) {
+        return service.getRole() + "-" + (service.getNodeId() == null ? "unknown" : service.getNodeId());
+    }
+
+    private String serviceConfigLabel(ClusterServiceAssignment service) {
+        String role = service.getRole() == null ? "Kafka" : service.getRole().replace('_', ' ');
+        return capitalizeWords(role) + " Node " + (service.getNodeId() == null ? "" : service.getNodeId());
+    }
+
+    private String serviceConfigDescription(ClusterServiceAssignment service) {
+        return serviceNameForRole(service.getRole()) + ".service config for host " + service.getHostId();
+    }
+
+    private String serviceConfigPath(String role, String mode, String installDir) {
+        if ("zookeeper".equalsIgnoreCase(mode)) {
+            if ("zookeeper".equals(role)) return installDir + "/config/zookeeper.properties";
+            return installDir + "/config/server.properties";
+        }
+        if ("controller".equals(role)) return installDir + "/config/kraft/controller.properties";
+        if ("broker".equals(role)) return installDir + "/config/kraft/broker.properties";
+        return installDir + "/config/kraft/server.properties";
+    }
+
+    private Map<String, Object> buildKraftServiceProperties(Cluster cluster, Map<String, Object> config, String installDir, ClusterServiceAssignment service) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        String role = service.getRole();
+        String host = hostAddressForService(service);
+        String nodeId = service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId());
+        String listenerPort = stringConfig(config, "listener_port", "9092");
+        String controllerPort = stringConfig(config, "controller_port", "9093");
+        String dataDir = defaultKafkaDataDir(config);
+        String quorumVoters = stringConfig(config, "quorum_voters", nodeId + "@" + host + ":" + controllerPort);
+
+        props.put("process.roles", processRoles(role));
+        props.put("node.id", nodeId);
+        props.put("controller.quorum.voters", quorumVoters);
+        if (isBrokerRole(role) && isControllerRole(role)) {
+            props.put("listeners", "PLAINTEXT://" + host + ":" + listenerPort + ",CONTROLLER://" + host + ":" + controllerPort);
+        } else if (isControllerRole(role)) {
+            props.put("listeners", "CONTROLLER://" + host + ":" + controllerPort);
+        } else {
+            props.put("listeners", "PLAINTEXT://" + host + ":" + listenerPort);
+        }
+        if (isBrokerRole(role)) {
+            props.put("advertised.listeners", "PLAINTEXT://" + host + ":" + listenerPort);
+            props.put("inter.broker.listener.name", "PLAINTEXT");
+            props.put("log.dirs", brokerLogDirs(config, dataDir));
+        }
+        props.put("controller.listener.names", "CONTROLLER");
+        props.put("listener.security.protocol.map", "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL");
+        props.put("metadata.log.dir", metadataLogDirForRole(role, config, dataDir));
+        props.put("num.partitions", stringConfig(config, "num_partitions", "1"));
+        String replicationFactor = stringConfig(config, "replication_factor", "1");
+        props.put("offsets.topic.replication.factor", replicationFactor);
+        props.put("transaction.state.log.replication.factor", replicationFactor);
+        props.put("transaction.state.log.min.isr", "1");
+        return props;
+    }
+
+    private String hostAddressForService(ClusterServiceAssignment service) {
+        if (service == null || service.getHostId() == null || service.getHostId().isBlank()) {
+            return "localhost";
+        }
+        String ip = hostRepository.findById(service.getHostId())
+                .map(host -> firstAddressFromJson(host.getIpAddresses()))
+                .orElse("");
+        return ip.isBlank() ? service.getHostId() : ip;
+    }
+
+    private String serviceNameForRole(String role) {
+        if ("controller".equals(role)) return "controller";
+        if ("zookeeper".equals(role)) return "zookeeper";
+        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
+        return "broker";
+    }
+
+    private String brokerLogDirs(Map<String, Object> config, String dataDir) {
+        String configured = stringConfig(config, "log_dirs", "");
+        return configured.isBlank() ? dataDir + "/broker-data" : configured;
+    }
+
+    private String metadataLogDirForRole(String role, Map<String, Object> config, String dataDir) {
+        String configured = stringConfig(config, "metadata_log_dir", "");
+        if (!configured.isBlank()) return configured;
+        if ("controller".equals(role)) return dataDir + "/controller-data/metadata";
+        return dataDir + "/broker-metadata";
+    }
+
+    private boolean isBrokerRole(String role) {
+        return "broker".equals(role) || "broker_controller".equals(role) || "broker_zookeeper".equals(role);
+    }
+
+    private boolean isControllerRole(String role) {
+        return "controller".equals(role) || "broker_controller".equals(role);
+    }
+
+    private String capitalizeWords(String value) {
+        StringBuilder result = new StringBuilder();
+        for (String part : value.split(" ")) {
+            if (part.isBlank()) continue;
+            if (result.length() > 0) result.append(' ');
+            result.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
+        }
+        return result.toString();
+    }
     private String activeServerConfigPath(Cluster cluster, String installDir) {
         return "zookeeper".equalsIgnoreCase(cluster.getMode())
                 ? installDir + "/config/server.properties"

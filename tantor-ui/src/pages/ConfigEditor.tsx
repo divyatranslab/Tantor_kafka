@@ -10,13 +10,28 @@ interface BrokerConfigs {
 
 interface ConfigPayload {
   dynamicConfigs: BrokerConfigs;
+  serviceTopology?: ServiceTopologyItem[];
   staticConfigs: {
     filePath: string;
     properties: Record<string, any>;
+    deploymentParameters?: Record<string, any>;
     configFiles?: StaticConfigFile[];
   };
 }
 
+interface ServiceTopologyItem {
+  hostId: string;
+  hostAddress: string;
+  role: string;
+  nodeId: number;
+  serviceName: string;
+  systemdUnit: string;
+  configPath: string;
+  listenerPort?: string;
+  controllerPort?: string;
+  logDirs?: string;
+  metadataLogDir?: string;
+}
 interface StaticConfigFile {
   id: string;
   label: string;
@@ -127,6 +142,69 @@ export function ConfigEditor() {
     }
   };
 
+  const renderTopology = () => {
+    const topology = payload?.serviceTopology || [];
+    const deployment = payload?.staticConfigs.deploymentParameters || {};
+    if (!topology.length && !deployment.cluster_uuid && !deployment.quorum_voters && !deployment.bootstrap_servers) return null;
+
+    return (
+      <div className="table-card" style={{ marginBottom: '1.5rem' }}>
+        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
+          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Kafka Service Topology</h3>
+        </div>
+        <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
+          <div>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Kafka Cluster UUID</div>
+            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.cluster_uuid || 'Not available'}</code>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Controller Quorum</div>
+            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.quorum_voters || 'Not available'}</code>
+          </div>
+          <div>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Bootstrap Servers</div>
+            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.bootstrap_servers || 'Not available'}</code>
+          </div>
+        </div>
+        {topology.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table" style={{ fontSize: '0.8125rem' }}>
+              <thead>
+                <tr>
+                  <th>Node ID</th>
+                  <th>Role</th>
+                  <th>Host</th>
+                  <th>Systemd Unit</th>
+                  <th>Config File</th>
+                  <th>Data Paths</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topology.map(item => (
+                  <tr key={`${item.hostId}-${item.role}-${item.nodeId}`}>
+                    <td><code>{item.nodeId}</code></td>
+                    <td style={{ textTransform: 'capitalize' }}>{item.role.replace('_', ' ')}</td>
+                    <td>
+                      <div>{item.hostAddress}</div>
+                      <code style={{ fontSize: '0.72rem', color: '#6b7280' }}>{item.hostId}</code>
+                    </td>
+                    <td><code>{item.systemdUnit}</code></td>
+                    <td><code style={{ wordBreak: 'break-all' }}>{item.configPath}</code></td>
+                    <td>
+                      {item.logDirs && <div><span style={{ color: '#6b7280' }}>log.dirs:</span> <code>{item.logDirs}</code></div>}
+                      {item.metadataLogDir && <div><span style={{ color: '#6b7280' }}>metadata:</span> <code>{item.metadataLogDir}</code></div>}
+                      {item.listenerPort && <div><span style={{ color: '#6b7280' }}>broker port:</span> <code>{item.listenerPort}</code></div>}
+                      {item.controllerPort && <div><span style={{ color: '#6b7280' }}>controller port:</span> <code>{item.controllerPort}</code></div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
   const renderConfigurationTable = () => {
     if (!payload) return null;
 
@@ -240,7 +318,7 @@ export function ConfigEditor() {
   };
 
   return (
-    <div className="topics-tab" style={{ maxWidth: '1000px' }}>
+    <div className="topics-tab" style={{ maxWidth: '1200px' }}>
       <div className="topics-header">
         <div>
           <h2>Cluster Configuration</h2>
@@ -307,6 +385,8 @@ export function ConfigEditor() {
           </button>
         </div>
       </div>
+
+      {renderTopology()}
 
       <div className="table-card">
         <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

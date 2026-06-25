@@ -54,8 +54,8 @@ const ZOOKEEPER_ROLES = [
 const EXCLUSIVE_GROUPS: Record<string, string[]> = {
   broker_controller: ['broker', 'controller', 'broker_zookeeper', 'zookeeper'],
   broker_zookeeper: ['broker', 'zookeeper', 'broker_controller', 'controller'],
-  broker: ['broker_controller', 'broker_zookeeper', 'controller', 'zookeeper'],
-  controller: ['broker_controller', 'broker_zookeeper', 'broker', 'zookeeper'],
+  broker: ['broker_controller', 'broker_zookeeper', 'zookeeper'],
+  controller: ['broker_controller', 'broker_zookeeper', 'zookeeper'],
   zookeeper: ['broker_zookeeper', 'broker_controller', 'broker', 'controller'],
 };
 
@@ -232,14 +232,20 @@ export default function ClusterWizard() {
   };
 
   const buildServices = (): ServiceAssignment[] => {
-    let brokerId = 1, controllerId = 101, zookeeperId = 201, otherId = 301;
+    let controllerId = 1, brokerId = 1001, zookeeperId = 2001, otherId = 3001;
     const svcs: ServiceAssignment[] = [];
     for (const [hostId, roles] of Object.entries(assignments)) {
       for (const role of roles) {
+        if (mode === 'kraft' && role === 'broker_controller') {
+          svcs.push({ host_id: hostId, role: 'controller', node_id: controllerId++ });
+          svcs.push({ host_id: hostId, role: 'broker', node_id: brokerId++ });
+          continue;
+        }
+
         let nid: number;
         if (role === 'controller') nid = controllerId++;
         else if (role === 'zookeeper') nid = zookeeperId++;
-        else if (role === 'broker_controller' || role === 'broker_zookeeper' || role === 'broker') nid = brokerId++;
+        else if (role === 'broker_zookeeper' || role === 'broker') nid = brokerId++;
         else nid = otherId++;
         svcs.push({ host_id: hostId, role, node_id: nid });
       }
@@ -308,7 +314,7 @@ export default function ClusterWizard() {
   const modeHasRequiredRoles = mode === 'kraft' ? (hasBroker && hasController) : (hasBroker && hasZooKeeper);
   const roleRequirementText = mode === 'kraft'
     ? !hasBroker && !hasController
-      ? 'KRaft needs at least one broker and one controller. For a single VM, choose Broker + Controller.'
+      ? 'KRaft needs at least one broker and one controller. A VM can run both services when needed.'
       : !hasBroker
         ? 'Add a Broker node, or use Broker + Controller on a single VM.'
         : !hasController
@@ -419,7 +425,7 @@ export default function ClusterWizard() {
             ) : (
               <div className="wz-space-y">
                 <p className="wz-role-info-text">
-                  Assign one role to each host. Use Broker + Controller for a single-node KRaft cluster, or place Broker and Controller on separate hosts.
+                  Assign one or more services to each host. In KRaft, Broker and Controller can run together on the same VM or be split across VMs.
                 </p>
                 {roleRequirementText && (
                   <p className="wz-role-requirement"><AlertTriangle size={13} /> {roleRequirementText}</p>
