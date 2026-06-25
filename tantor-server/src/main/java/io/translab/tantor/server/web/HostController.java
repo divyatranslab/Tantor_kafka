@@ -81,6 +81,23 @@ public class HostController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PostMapping("/{id}/mark-unavailable")
+    public ResponseEntity<?> markUnavailable(@PathVariable String id) {
+        return hostRepository.findById(id).map(host -> {
+            host.setStatus("UNAVAILABLE");
+            hostRepository.save(host);
+            return ResponseEntity.ok(hostSummary(host));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/mark-available")
+    public ResponseEntity<?> markAvailable(@PathVariable String id) {
+        return hostRepository.findById(id).map(host -> {
+            host.setStatus("ONLINE");
+            hostRepository.save(host);
+            return ResponseEntity.ok(hostSummary(host));
+        }).orElse(ResponseEntity.notFound().build());
+    }
     @PostMapping("/{id}/approve")
     public ResponseEntity<Host> approveHost(@PathVariable String id) {
         return hostRepository.findById(id).map(host -> {

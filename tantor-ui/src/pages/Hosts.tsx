@@ -53,6 +53,22 @@ export function Hosts() {
     }
   };
 
+  const setHostAvailability = async (host: any, available: boolean) => {
+    setOpenMenuHostId(null);
+    try {
+      const action = available ? 'mark-available' : 'mark-unavailable';
+      const res = await fetch(`/api/v1/ui/hosts/${host.id}/${action}`, { method: 'POST' });
+      if (res.ok) {
+        fetchHosts();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        alert(body.message || 'Failed to update host availability.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Network error while updating host availability.');
+    }
+  };
   const startPrerequisiteCheck = async (host: any) => {
     setOpenMenuHostId(null);
     setPrereqModal({
@@ -245,6 +261,11 @@ export function Hosts() {
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
                           <button onClick={() => startPrerequisiteCheck(host)}>Check prerequisite</button>
+                          {host.status === 'UNAVAILABLE' ? (
+                            <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
+                          ) : (
+                            <button onClick={() => setHostAvailability(host, false)}>Mark unavailable</button>
+                          )}
                           <button className="danger" onClick={() => deleteHost(host.id)}>
                             <Trash2 size={13} /> Remove node
                           </button>
