@@ -59,7 +59,7 @@ type KafkaVersionInfo = {
 };
 
 type DeploymentMode = 'kraft' | 'zookeeper';
-type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'broker_zookeeper' | 'zookeeper';
+type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate' | 'broker_zookeeper' | 'zookeeper';
 type FlowStage = 'landing' | 'details' | 'preview';
 type ConfigMode = 'default' | 'custom';
 type ConfigKind = 'server' | 'broker' | 'controller' | 'zookeeper';
@@ -112,6 +112,11 @@ const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string 
     label: 'Controller',
     detail: 'Controller process only using controller.properties.',
   },
+  {
+    id: 'separate',
+    label: 'Broker and Controller',
+    detail: 'Two JVMs on the same VM using broker.properties and controller.properties.',
+  },
 ];
 
 const ZOOKEEPER_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
@@ -131,6 +136,81 @@ const ZOOKEEPER_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: str
     detail: 'ZooKeeper process only using zookeeper.properties.',
   },
 ];
+
+const COMMON_CONFIG_KINDS: ConfigKind[] = ['server', 'broker', 'controller'];
+
+function defaultCommonRows(kind: ConfigKind): PropertyRow[] {
+  if (kind === 'controller') {
+    return [
+      { key: 'controller.quorum.election.timeout.ms', value: '5000' },
+      { key: 'controller.quorum.fetch.timeout.ms', value: '5000' },
+      { key: 'controller.quorum.election.backoff.max.ms', value: '5000' },
+      { key: 'controller.quorum.request.timeout.ms', value: '10000' },
+      { key: 'metadata.log.segment.bytes', value: '1073741824' },
+      { key: 'metadata.log.segment.ms', value: '604800000' },
+      { key: 'metadata.max.retention.bytes', value: '-1' },
+      { key: 'metadata.max.retention.ms', value: '604800000' },
+      { key: 'num.network.threads', value: '8' },
+      { key: 'num.io.threads', value: '16' },
+      { key: 'socket.send.buffer.bytes', value: '102400' },
+      { key: 'socket.receive.buffer.bytes', value: '102400' },
+      { key: 'socket.request.max.bytes', value: '104857600' },
+    ];
+  }
+
+  const brokerRows: PropertyRow[] = [
+    { key: 'num.partitions', value: '1' },
+    { key: 'auto.create.topics.enable', value: 'false' },
+    { key: 'default.replication.factor', value: '', required: true },
+    { key: 'min.insync.replicas', value: '', required: true },
+    { key: 'offsets.topic.replication.factor', value: '3' },
+    { key: 'offsets.topic.num.partitions', value: '50' },
+    { key: 'transaction.state.log.replication.factor', value: '3' },
+    { key: 'transaction.state.log.min.isr', value: '2' },
+    { key: 'message.max.bytes', value: '15728640' },
+    { key: 'replica.fetch.max.bytes', value: '15728640' },
+    { key: 'fetch.message.max.bytes', value: '15728640' },
+    { key: 'socket.request.max.bytes', value: '104857600' },
+    { key: 'log.segment.bytes', value: '1073741824' },
+    { key: 'log.retention.hours', value: '72' },
+    { key: 'log.retention.check.interval.ms', value: '300000' },
+    { key: 'num.replica.fetchers', value: '4' },
+    { key: 'replica.lag.time.max.ms', value: '30000' },
+    { key: 'num.network.threads', value: '8' },
+    { key: 'num.io.threads', value: '8' },
+    { key: 'socket.send.buffer.bytes', value: '102400' },
+    { key: 'socket.receive.buffer.bytes', value: '102400' },
+    { key: 'group.initial.rebalance.delay.ms', value: '0' },
+    { key: 'broker.rack', value: 'rack1' },
+  ];
+
+  if (kind === 'broker') return brokerRows;
+
+  return [
+    ...brokerRows,
+    { key: 'controller.quorum.election.timeout.ms', value: '5000' },
+    { key: 'controller.quorum.fetch.timeout.ms', value: '5000' },
+    { key: 'controller.quorum.election.backoff.max.ms', value: '5000' },
+    { key: 'controller.quorum.request.timeout.ms', value: '10000' },
+    { key: 'metadata.log.segment.bytes', value: '1073741824' },
+    { key: 'metadata.log.segment.ms', value: '604800000' },
+    { key: 'metadata.max.retention.bytes', value: '-1' },
+    { key: 'metadata.max.retention.ms', value: '604800000' },
+  ];
+}
+
+function setRowsValue(rows: PropertyRow[], key: string, value: string): PropertyRow[] {
+  return rows.map(row => row.key === key ? { ...row, value } : row);
+}
+
+function syncCommonRows(rows: PropertyRow[], config: Record<string, any>): PropertyRow[] {
+  return rows.map(row => {
+    if (row.key === 'default.replication.factor' && config.replication_factor) return { ...row, value: String(config.replication_factor) };
+    if (row.key === 'min.insync.replicas' && config.min_insync_replicas) return { ...row, value: String(config.min_insync_replicas) };
+    if (row.key === 'num.partitions' && config.num_partitions) return { ...row, value: String(config.num_partitions) };
+    return row;
+  });
+}
 
 function parseIpList(raw: any): string[] {
   if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
@@ -162,7 +242,7 @@ function validatePath(value: string, label: string): string {
 
 function serializeProperties(rows: PropertyRow[]): string {
   return rows
-    .filter(row => row.key.trim() && !UI_ONLY_PROPERTY_KEYS.has(row.key.trim()))
+    .filter(row => row.key.trim() && !UI_ONLY_PROPERTY_KEYS.has(row.key.trim()) && String(row.value).trim())
     .map(row => `${row.key.trim()}=${row.value}`)
     .join('\n');
 }
@@ -186,7 +266,7 @@ export function ClusterDeployment() {
 
   const [clusterName, setClusterName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
-  const [environment, setEnvironment] = useState('');
+  const [environment, setEnvironment] = useState('DEV');
   const [clusterConfigMode, setClusterConfigMode] = useState<ConfigMode>('default');
   const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('kraft');
   const [installDir, setInstallDir] = useState('/opt');
@@ -198,8 +278,6 @@ export function ClusterDeployment() {
   const [zookeeperPeerPort, setZookeeperPeerPort] = useState(2888);
   const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
   const [numPartitions, setNumPartitions] = useState(1);
-  const [replicationFactorValue, setReplicationFactorValue] = useState('');
-  const [minIsrValue, setMinIsrValue] = useState('');
 
   const [nodeSearch, setNodeSearch] = useState('');
   const [nodeDropdownOpen, setNodeDropdownOpen] = useState(false);
@@ -207,6 +285,13 @@ export function ClusterDeployment() {
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [rolesByHost, setRolesByHost] = useState<Record<string, RoleChoice>>({});
   const [configsByService, setConfigsByService] = useState<Record<string, NodeConfigState>>({});
+  const [commonConfigs, setCommonConfigs] = useState<Record<ConfigKind, PropertyRow[]>>({
+    server: defaultCommonRows('server'),
+    broker: defaultCommonRows('broker'),
+    controller: defaultCommonRows('controller'),
+    zookeeper: [],
+  });
+  const [commonConfigKind, setCommonConfigKind] = useState<ConfigKind>('server');
   const [configModalHostId, setConfigModalHostId] = useState<string | null>(null);
   const [commonConfigOpen, setCommonConfigOpen] = useState(false);
   const [prereqResults, setPrereqResults] = useState<Record<string, PrereqResult>>({});
@@ -244,8 +329,12 @@ export function ClusterDeployment() {
         setZookeeperPeerPort(Number(cfg.zookeeper_peer_port || 2888));
         setZookeeperElectionPort(Number(cfg.zookeeper_election_port || 3888));
         setNumPartitions(Number(cfg.num_partitions || 1));
-        setReplicationFactorValue(String(cfg.replication_factor || ''));
-        setMinIsrValue(String(cfg.min_insync_replicas || ''));
+        setCommonConfigs(prev => ({
+          ...prev,
+          server: syncCommonRows(prev.server, cfg),
+          broker: syncCommonRows(prev.broker, cfg),
+          controller: syncCommonRows(prev.controller, cfg),
+        }));
       })
       .catch(error => {
         console.error(error);
@@ -309,12 +398,12 @@ export function ClusterDeployment() {
 
   const brokerCount = selectedHosts.filter(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
-    return role === 'broker_controller' || role === 'broker' || role === 'broker_zookeeper';
+    return role === 'broker_controller' || role === 'broker' || role === 'separate' || role === 'broker_zookeeper';
   }).length;
 
   const controllerCount = selectedHosts.filter(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
-    return role === 'broker_controller' || role === 'controller';
+    return role === 'broker_controller' || role === 'controller' || role === 'separate';
   }).length;
 
   const zookeeperCount = selectedHosts.filter(host => {
@@ -337,7 +426,7 @@ export function ClusterDeployment() {
     if (deploymentMode === 'zookeeper' && zookeeperCount > 1 && zookeeperCount % 2 === 0) items.push('Even ZooKeeper count selected. Odd ZooKeeper count is recommended for quorum voting.');
     if (isAddNodeMode && selectedHosts.some(host => {
       const role = rolesByHost[host.id] || defaultRoleForMode;
-      return role === 'controller' || role === 'broker_controller' || role === 'broker_zookeeper' || role === 'zookeeper';
+      return role === 'controller' || role === 'broker_controller' || role === 'separate' || role === 'broker_zookeeper' || role === 'zookeeper';
     })) {
       items.push('Adding quorum nodes changes cluster membership. Existing nodes may need updated configs and restart sequencing.');
     }
@@ -368,9 +457,16 @@ export function ClusterDeployment() {
   };
 
   const defaultRowsForKind = (kind: ConfigKind): PropertyRow[] => {
-    return [
+    const rows: PropertyRow[] = [
       { key: ipRowKeyForKind(kind), value: '', required: true, locked: true },
     ];
+    if (kind === 'server' || kind === 'broker') {
+      rows.push(
+        { key: 'default.replication.factor', value: '', required: true },
+        { key: 'min.insync.replicas', value: '', required: true },
+      );
+    }
+    return rows;
   };
 
   const defaultHeapForKind = (kind: ConfigKind) => {
@@ -390,6 +486,7 @@ export function ClusterDeployment() {
     if (role === 'broker_zookeeper') return ['server'];
     if (role === 'broker') return ['broker'];
     if (role === 'controller') return ['controller'];
+    if (role === 'separate') return ['broker', 'controller'];
     return ['zookeeper'];
   };
 
@@ -414,36 +511,37 @@ export function ClusterDeployment() {
       mode: 'custom',
       rows: cfg.rows.map(row => row.key === key ? { ...row, value } : row),
     });
+    if (key === 'default.replication.factor' || key === 'min.insync.replicas') {
+      setCommonConfigs(prev => ({
+        ...prev,
+        server: setRowsValue(prev.server, key, value),
+        broker: setRowsValue(prev.broker, key, value),
+      }));
+      setClusterConfigMode('custom');
+    }
   };
 
-  const commonConfigRows: PropertyRow[] = [
-    { key: 'listener_port', value: String(listenerPort), required: true },
-    deploymentMode === 'kraft'
-      ? { key: 'controller_port', value: String(controllerPort), required: true }
-      : { key: 'zookeeper_port', value: String(controllerPort), required: true },
-    ...(deploymentMode === 'zookeeper' ? [
-      { key: 'zookeeper_peer_port', value: String(zookeeperPeerPort), required: true },
-      { key: 'zookeeper_election_port', value: String(zookeeperElectionPort), required: true },
-    ] : []),
-    { key: 'num.partitions', value: String(numPartitions), required: true },
-    { key: 'default.replication.factor', value: replicationFactorValue, required: true },
-    { key: 'min.insync.replicas', value: minIsrValue, required: true },
-  ];
+  const commonConfigValue = (key: string) => {
+    const row = commonConfigs.server.find(item => item.key === key)
+      || commonConfigs.broker.find(item => item.key === key)
+      || commonConfigs.controller.find(item => item.key === key);
+    return row?.value.trim() || '';
+  };
 
-  const updateCommonConfigValue = (key: string, value: string) => {
-    const numeric = Number.parseInt(value || '0', 10);
-    if (key === 'listener_port') setListenerPort(Number.isFinite(numeric) ? numeric : 0);
-    if (key === 'controller_port' || key === 'zookeeper_port') setControllerPort(Number.isFinite(numeric) ? numeric : 0);
-    if (key === 'zookeeper_peer_port') setZookeeperPeerPort(Number.isFinite(numeric) ? numeric : 0);
-    if (key === 'zookeeper_election_port') setZookeeperElectionPort(Number.isFinite(numeric) ? numeric : 0);
-    if (key === 'num.partitions') setNumPartitions(Number.isFinite(numeric) ? numeric : 0);
-    if (key === 'default.replication.factor') setReplicationFactorValue(value);
-    if (key === 'min.insync.replicas') setMinIsrValue(value);
+  const updateCommonConfigValue = (kind: ConfigKind, key: string, value: string) => {
+    setCommonConfigs(prev => ({
+      ...prev,
+      [kind]: setRowsValue(prev[kind], key, value),
+    }));
+    if (key === 'num.partitions') {
+      const numeric = Number.parseInt(value || '0', 10);
+      setNumPartitions(Number.isFinite(numeric) ? numeric : 0);
+    }
     setClusterConfigMode('custom');
   };
 
-  const configuredReplicationFactor = Number.parseInt(replicationFactorValue || String(replication.factor), 10);
-  const configuredMinIsr = Number.parseInt(minIsrValue || String(replication.minIsr), 10);
+  const configuredReplicationFactor = Number.parseInt(commonConfigValue('default.replication.factor') || String(replication.factor), 10);
+  const configuredMinIsr = Number.parseInt(commonConfigValue('min.insync.replicas') || String(replication.minIsr), 10);
 
   const missingRequiredConfigs = selectedHosts.flatMap(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -456,14 +554,14 @@ export function ClusterDeployment() {
   });
 
   const configValidationErrors = [
-    ...commonConfigRows
+    ...COMMON_CONFIG_KINDS.flatMap(kind => commonConfigs[kind]
       .filter(row => row.required && !String(row.value).trim())
-      .map(row => `Common config requires ${row.key}.`),
-    commonConfigRows.some(row => row.required && String(row.value).trim() && (!/^\d+$/.test(String(row.value).trim()) || Number(row.value) < 1))
+      .map(row => `${configFileName(kind)} requires ${row.key}.`)),
+    COMMON_CONFIG_KINDS.flatMap(kind => commonConfigs[kind]).some(row => row.required && String(row.value).trim() && (!/^\d+$/.test(String(row.value).trim()) || Number(row.value) < 1))
       ? 'Common numeric properties must be positive numbers.'
       : '',
-    replicationFactorValue && Number(replicationFactorValue) > brokerCount ? 'default.replication.factor cannot be greater than broker count.' : '',
-    minIsrValue && replicationFactorValue && Number(minIsrValue) > Number(replicationFactorValue) ? 'min.insync.replicas cannot be greater than default.replication.factor.' : '',
+    commonConfigValue('default.replication.factor') && Number(commonConfigValue('default.replication.factor')) > brokerCount ? 'default.replication.factor cannot be greater than broker count.' : '',
+    commonConfigValue('min.insync.replicas') && commonConfigValue('default.replication.factor') && Number(commonConfigValue('min.insync.replicas')) > Number(commonConfigValue('default.replication.factor')) ? 'min.insync.replicas cannot be greater than default.replication.factor.' : '',
   ].filter(Boolean);
 
   const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors];
@@ -473,8 +571,12 @@ export function ClusterDeployment() {
     && selectedHosts.length > 0
     && brokerCount > 0
     && (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0)
-    && pathErrors.length === 0
-    && configBlockingIssues.length === 0;
+    && pathErrors.length === 0;
+
+  const serviceTemplate = (kind: ConfigKind, cfg: NodeConfigState) => {
+    const commonRows = commonConfigs[kind] || [];
+    return serializeProperties([...commonRows, ...cfg.rows]);
+  };
 
   const buildServices = (): ServiceAssignment[] => {
     const usedNodeIds = new Set((existingCluster?.hosts || [])
@@ -493,19 +595,24 @@ export function ClusterDeployment() {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize });
       } else if (role === 'broker_zookeeper') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker_zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize });
+      } else if (role === 'separate') {
+        const brokerCfg = configFor('broker');
+        const controllerCfg = configFor('controller');
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize });
       } else if (role === 'zookeeper') {
         const cfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), heap_size: cfg.heapSize });
       } else {
         const cfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('broker', cfg), heap_size: cfg.heapSize });
       }
     });
 
@@ -647,7 +754,7 @@ export function ClusterDeployment() {
         kafka_version: kafkaVersion,
         mode: deploymentMode,
         services: buildServices(),
-        environment: environment.trim().toLowerCase(),
+        environment: environment.trim(),
         artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
         config: {
           configuration_mode: clusterConfigMode,
@@ -662,7 +769,7 @@ export function ClusterDeployment() {
           zookeeper_port: deploymentMode === 'zookeeper' ? controllerPort : undefined,
           zookeeper_peer_port: zookeeperPeerPort,
           zookeeper_election_port: zookeeperElectionPort,
-          num_partitions: numPartitions,
+          num_partitions: Number(commonConfigValue('num.partitions') || numPartitions),
           replication_factor: configuredReplicationFactor,
           min_insync_replicas: configuredMinIsr,
         },
@@ -727,9 +834,29 @@ export function ClusterDeployment() {
               : 'Define the cluster, select nodes, and choose roles.'
             : 'Run prerequisites across every selected node before deployment.'}</p>
         </div>
-        <div className="cd-stage-tabs" aria-label="Deployment progress">
-          <span className={stage === 'details' ? 'active' : ''}>Details</span>
-          <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+        <div className="cd-header-side">
+          {stage === 'details' && (
+            <div className="cd-top-controls header">
+              <div>
+                <span>Configuration</span>
+                <div className="cd-segmented">
+                  <button className={clusterConfigMode === 'default' ? 'active' : ''} onClick={() => setClusterConfigMode('default')} disabled={isAddNodeMode}>Default</button>
+                  <button className={clusterConfigMode === 'custom' ? 'active' : ''} onClick={() => setClusterConfigMode('custom')} disabled={isAddNodeMode}>Custom</button>
+                </div>
+              </div>
+              <div>
+                <span>Cluster mode</span>
+                <div className="cd-segmented">
+                  <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
+                  <button className={deploymentMode === 'zookeeper' ? 'active' : ''} onClick={() => changeDeploymentMode('zookeeper')} disabled={isAddNodeMode}>ZooKeeper</button>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="cd-stage-tabs" aria-label="Deployment progress">
+            <span className={stage === 'details' ? 'active' : ''}>Details</span>
+            <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+          </div>
         </div>
       </header>
 
@@ -748,22 +875,6 @@ export function ClusterDeployment() {
               <Settings2 size={18} />
               <h2>Cluster Details</h2>
             </div>
-            <div className="cd-top-controls">
-              <div>
-                <span>Configuration</span>
-                <div className="cd-segmented">
-                  <button className={clusterConfigMode === 'default' ? 'active' : ''} onClick={() => setClusterConfigMode('default')} disabled={isAddNodeMode}>Default</button>
-                  <button className={clusterConfigMode === 'custom' ? 'active' : ''} onClick={() => setClusterConfigMode('custom')} disabled={isAddNodeMode}>Custom</button>
-                </div>
-              </div>
-              <div>
-                <span>Cluster mode</span>
-                <div className="cd-segmented">
-                  <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
-                  <button className={deploymentMode === 'zookeeper' ? 'active' : ''} onClick={() => changeDeploymentMode('zookeeper')} disabled={isAddNodeMode}>ZooKeeper</button>
-                </div>
-              </div>
-            </div>
             <div className="cd-grid-2">
               <label className="cd-field">
                 <span>Cluster name</span>
@@ -780,10 +891,21 @@ export function ClusterDeployment() {
                   {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
                 </select>
               </label>
-              <label className="cd-field">
+              <div className="cd-field">
                 <span>Environment</span>
-                <input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="prod, qa, staging" disabled={isAddNodeMode} />
-              </label>
+                <div className="cd-env-buttons">
+                  {['SIT', 'UAT', 'DEV'].map(env => (
+                    <button
+                      key={env}
+                      className={environment.toUpperCase() === env ? 'active' : ''}
+                      onClick={() => setEnvironment(env)}
+                      disabled={isAddNodeMode}
+                    >
+                      {env === 'DEV' ? 'Dev' : env}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 
@@ -910,19 +1032,6 @@ export function ClusterDeployment() {
               ))}
             </div>
 
-            <div className="cd-calculated">
-              <span>Broker count: <strong>{brokerCount}</strong></span>
-              {deploymentMode === 'kraft'
-                ? <span>Controller count: <strong>{controllerCount}</strong></span>
-                : <span>ZooKeeper count: <strong>{zookeeperCount}</strong></span>}
-              <span>Replication factor: <strong>{Number.isFinite(configuredReplicationFactor) ? configuredReplicationFactor : 'Required'}</strong></span>
-              <span>Min ISR: <strong>{Number.isFinite(configuredMinIsr) ? configuredMinIsr : 'Required'}</strong></span>
-            </div>
-            {configBlockingIssues.length > 0 && (
-              <div className="cd-inline-errors">
-                {configBlockingIssues.map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
-              </div>
-            )}
           </section>
 
           <div className="cd-footer-actions">
@@ -966,13 +1075,18 @@ export function ClusterDeployment() {
                 {warnings.map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
               </div>
             )}
+            {configBlockingIssues.length > 0 && (
+              <div className="cd-inline-errors">
+                {configBlockingIssues.map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
+              </div>
+            )}
           </section>
 
           <section className="cd-panel">
             <div className="cd-panel-title">
               <CheckCircle2 size={18} />
               <h2>Prerequisites</h2>
-              <button className="cd-primary-btn small" disabled={checkingPrereqs || selectedHosts.length === 0} onClick={checkPrerequisites}>
+              <button className="cd-primary-btn small" disabled={checkingPrereqs || selectedHosts.length === 0 || configBlockingIssues.length > 0} onClick={checkPrerequisites}>
                 {checkingPrereqs ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                 Check prerequisites on all nodes
               </button>
@@ -996,7 +1110,7 @@ export function ClusterDeployment() {
 
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Back to details</button>
-            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying} onClick={deployCluster}>
+            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || configBlockingIssues.length > 0} onClick={deployCluster}>
               {deploying ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
               {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>
@@ -1067,11 +1181,22 @@ export function ClusterDeployment() {
               </button>
             </div>
             <div className="cd-config-modal-body">
+              <div className="cd-config-tabs">
+                {COMMON_CONFIG_KINDS.map(kind => (
+                  <button
+                    key={kind}
+                    className={commonConfigKind === kind ? 'active' : ''}
+                    onClick={() => setCommonConfigKind(kind)}
+                  >
+                    {configFileName(kind)}
+                  </button>
+                ))}
+              </div>
               <PropertyTable
-                rows={commonConfigRows}
+                rows={commonConfigs[commonConfigKind]}
                 hostIp=""
                 onUseHostIp={() => {}}
-                onChange={updateCommonConfigValue}
+                onChange={(key, value) => updateCommonConfigValue(commonConfigKind, key, value)}
               />
             </div>
             <div className="cd-config-modal-footer">
