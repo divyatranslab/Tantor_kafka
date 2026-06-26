@@ -111,6 +111,7 @@ public class AgentService {
                 taskRepository.save(task);
                 log.info("Task {} completed with status: {}", taskId, dto.getStatus());
                 parcelService.processTaskResult(task);
+                cancelPendingClusterDeploymentTasks(task);
 
                 if (task.getClusterId() != null) {
                     clusterRepository.findById(task.getClusterId()).ifPresent(cluster -> updateClusterStatus(cluster, task));
@@ -126,8 +127,26 @@ public class AgentService {
         } catch (IllegalArgumentException e) {
             log.error("Invalid task ID format: {}", dto.getTaskId(), e);
         }
-    }
-
+    }
+    private void cancelPendingClusterDeploymentTasks(Task failedTask) {
+        if (failedTask.getClusterId() == null
+                || !"INSTALL_KAFKA".equals(failedTask.getCommand())
+                || !"FAILED".equals(failedTask.getStatus())) {
+            return;
+        }
+
+        taskRepository.findByClusterIdOrderByCreatedAtDesc(failedTask.getClusterId()).stream()
+                .filter(task -> !task.getId().equals(failedTask.getId()))
+                .filter(task -> "INSTALL_KAFKA".equals(task.getCommand()))
+                .filter(task -> "PENDING".equals(task.getStatus()))
+                .forEach(task -> {
+                    task.setStatus("CANCELLED");
+                    task.setErrorMsg("Cancelled because another node failed during cluster deployment.");
+                    taskRepository.save(task);
+                    log.warn("Cancelled pending deployment task {} after failure of {}", task.getId(), failedTask.getId());
+                });
+    }
+
     private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
         String command = currentTask.getCommand();
         String status = currentTask.getStatus();

@@ -172,6 +172,7 @@ public class ClusterController {
                 .sorted((left, right) -> Boolean.compare(!isControllerRole(left.getRole()), !isControllerRole(right.getRole())))
                 .toList();
         for (ServiceAssignmentReq svc : deployOrder) {
+            String serviceConfigJson = buildServiceConfigJson(deploymentConfig, svc);
             deploymentService.deployKafkaToHost(
                 cluster.getId(),
                 svc.getHost_id(),
@@ -181,7 +182,7 @@ public class ClusterController {
                 String.valueOf(svc.getNode_id()),
                 quorumVoters,
                 svc.getRole(),
-                configJsonStr
+                serviceConfigJson
             );
         }
         
@@ -354,6 +355,34 @@ public class ClusterController {
         private String host_id;
         private String role;
         private Integer node_id;
+        private String configuration_mode;
+        private String properties_template;
+        private String heap_size;
+    }
+
+    private String buildServiceConfigJson(Map<String, Object> deploymentConfig, ServiceAssignmentReq svc) {
+        Map<String, Object> serviceConfig = new HashMap<>(deploymentConfig);
+        if (svc.getConfiguration_mode() != null && !svc.getConfiguration_mode().isBlank()) {
+            serviceConfig.put("configuration_mode", svc.getConfiguration_mode());
+        }
+        if (svc.getHeap_size() != null && !svc.getHeap_size().isBlank()) {
+            serviceConfig.put("heap_size", svc.getHeap_size());
+        }
+        if (svc.getProperties_template() != null && !svc.getProperties_template().isBlank()) {
+            String role = svc.getRole();
+            if ("controller".equals(role)) {
+                serviceConfig.put("controller_properties_template", svc.getProperties_template());
+            } else if ("broker".equals(role)) {
+                serviceConfig.put("broker_properties_template", svc.getProperties_template());
+            } else {
+                serviceConfig.put("server_properties_template", svc.getProperties_template());
+            }
+        }
+        try {
+            return objectMapper.writeValueAsString(serviceConfig);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 
     private ResponseEntity<Map<String, String>> validateDeployRequest(DeployClusterRequest request) {

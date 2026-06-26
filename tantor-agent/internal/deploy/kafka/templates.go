@@ -80,7 +80,9 @@ listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL,
 num.partitions={{.NumPartitions}}
 offsets.topic.replication.factor={{.RepFactor}}
 transaction.state.log.replication.factor={{.RepFactor}}
-transaction.state.log.min.isr=1
+default.replication.factor={{.RepFactor}}
+min.insync.replicas={{.MinInsyncReplicas}}
+transaction.state.log.min.isr={{.MinInsyncReplicas}}
 `
 
 const ZooKeeperBrokerPropertiesTemplate = `

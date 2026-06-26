@@ -83,7 +83,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	os.MkdirAll(installPaths.BaseDir, 0755)
 	os.MkdirAll(installDir, 0755)
 	os.MkdirAll(dataDir, 0755)
-	os.MkdirAll(d.cfg.Paths.ArtifactsDir, 0755)
+	artifactWorkDir := kafkaArtifactWorkDir(t, d.cfg.Paths.ArtifactsDir)
+	os.MkdirAll(artifactWorkDir, 0755)
 	for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
 		if dir != "" {
 			os.MkdirAll(dir, 0755)
@@ -91,7 +92,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	// 2. Download TAR
-	destPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
+	destPath := filepath.Join(artifactWorkDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
 	log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
 
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
@@ -111,7 +112,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	log("Checksum verified successfully")
 
 	// 4. Extract TAR (using tar command which exists on Windows 10+)
-	tmpExtractDir := filepath.Join(d.cfg.Paths.ArtifactsDir, "extract_"+t.TaskID)
+	tmpExtractDir := filepath.Join(artifactWorkDir, "extract_"+t.TaskID)
 	os.MkdirAll(tmpExtractDir, 0755)
 	_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
 	if err != nil {
@@ -438,6 +439,17 @@ func kafkaVersionedDirName(scalaVersion, kafkaVersion string) string {
 	return fmt.Sprintf("kafka_%s-%s", clean(scalaVersion), clean(kafkaVersion))
 }
 
+func kafkaArtifactWorkDir(t *api.Task, fallback string) string {
+	configured := strings.TrimSpace(t.Parameters["artifact_load_dir"])
+	if configured == "" {
+		configured = strings.TrimSpace(t.Parameters["artifacts_dir"])
+	}
+	if configured == "" {
+		return fallback
+	}
+	return filepath.Clean(configured)
+}
+
 func (d *Deployer) ensureActiveSymlink(ctx context.Context, activeDir, versionedDir string) error {
 	if info, err := os.Lstat(activeDir); err == nil && info.Mode()&os.ModeSymlink == 0 {
 		return fmt.Errorf("%s already exists and is not a symlink; move or remove it before using production symlink layout", activeDir)
@@ -601,6 +613,10 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 	if repFactor == "" {
 		repFactor = "1"
 	}
+	minInsyncReplicas := t.Parameters["min_insync_replicas"]
+	if minInsyncReplicas == "" {
+		minInsyncReplicas = "1"
+	}
 
 	props := struct {
 		NodeId              string
@@ -615,6 +631,7 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		ControllerPort      string
 		NumPartitions       string
 		RepFactor           string
+		MinInsyncReplicas   string
 		IsBroker            bool
 	}{
 		NodeId:              nodeId,
@@ -629,10 +646,117 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir,
 		ControllerPort:      controllerPort,
 		NumPartitions:       numPartitions,
 		RepFactor:           repFactor,
+		MinInsyncReplicas:   minInsyncReplicas,
 		IsBroker:            isBroker,
 	}
 
+	if customTemplate := customPropertiesTemplateForTask(t); strings.TrimSpace(customTemplate) != "" {
+		content := mergeCustomKafkaProperties(customTemplate, map[string]string{
+			"process.roles":                            role,
+			"node.id":                                  nodeId,
+			"broker.id":                                ternaryString(isBroker, nodeId, ""),
+			"controller.listener.names":                "CONTROLLER",
+			"listeners":                                listeners,
+			"advertised.listeners":                     advertisedListeners,
+			"listener.security.protocol.map":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+			"inter.broker.listener.name":               ternaryString(isBroker, "PLAINTEXT", ""),
+			"controller.quorum.voters":                 quorumVoters,
+			"controller.quorum.bootstrap.servers":      quorumBootstrapServers(quorumVoters),
+			"log.dirs":                                 ternaryString(isBroker, paths.LogDirs, ""),
+			"metadata.log.dir":                         paths.MetadataLogDir,
+			"num.partitions":                           numPartitions,
+			"default.replication.factor":               ternaryString(isBroker, repFactor, ""),
+			"offsets.topic.replication.factor":         ternaryString(isBroker, repFactor, ""),
+			"transaction.state.log.replication.factor": ternaryString(isBroker, repFactor, ""),
+			"min.insync.replicas":                      ternaryString(isBroker, minInsyncReplicas, ""),
+			"transaction.state.log.min.isr":            ternaryString(isBroker, minInsyncReplicas, ""),
+		})
+		return d.writeStringToSudoFile(ctx, content, configPathForTask(installDir, t))
+	}
+
 	return d.writeTemplateToSudoFile(ctx, ServerPropertiesTemplate, props, configPathForTask(installDir, t))
+}
+
+func customPropertiesTemplateForTask(t *api.Task) string {
+	role := strings.TrimSpace(t.Parameters["service_role"])
+	if role == "" {
+		role = strings.TrimSpace(t.Parameters["role"])
+	}
+	switch role {
+	case "controller":
+		return t.Parameters["controller_properties_template"]
+	case "broker":
+		return t.Parameters["broker_properties_template"]
+	case "broker_controller", "":
+		return t.Parameters["server_properties_template"]
+	default:
+		if strings.Contains(role, "broker") && strings.Contains(role, "controller") {
+			return t.Parameters["server_properties_template"]
+		}
+		return ""
+	}
+}
+
+func mergeCustomKafkaProperties(base string, overrides map[string]string) string {
+	var out strings.Builder
+	out.WriteString(strings.TrimRight(strings.ReplaceAll(base, "\r\n", "\n"), "\n"))
+	out.WriteString("\n\n# ---- Tantor generated deployment overrides ----\n")
+	for _, key := range orderedKafkaOverrideKeys() {
+		value, ok := overrides[key]
+		if !ok || strings.TrimSpace(value) == "" {
+			continue
+		}
+		out.WriteString(key)
+		out.WriteString("=")
+		out.WriteString(value)
+		out.WriteString("\n")
+	}
+	return out.String()
+}
+
+func orderedKafkaOverrideKeys() []string {
+	return []string{
+		"process.roles",
+		"node.id",
+		"broker.id",
+		"controller.listener.names",
+		"listeners",
+		"advertised.listeners",
+		"listener.security.protocol.map",
+		"inter.broker.listener.name",
+		"controller.quorum.voters",
+		"controller.quorum.bootstrap.servers",
+		"log.dirs",
+		"metadata.log.dir",
+		"num.partitions",
+		"default.replication.factor",
+		"offsets.topic.replication.factor",
+		"transaction.state.log.replication.factor",
+		"min.insync.replicas",
+		"transaction.state.log.min.isr",
+	}
+}
+
+func quorumBootstrapServers(quorumVoters string) string {
+	parts := strings.Split(quorumVoters, ",")
+	servers := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if idx := strings.Index(part, "@"); idx >= 0 && idx+1 < len(part) {
+			servers = append(servers, part[idx+1:])
+		}
+	}
+	return strings.Join(servers, ",")
+}
+
+func ternaryString(condition bool, yes, no string) string {
+	if condition {
+		return yes
+	}
+	return no
 }
 
 func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error) {
@@ -922,6 +1046,23 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 
 	if err := os.WriteFile(dest, content, 0644); err != nil {
 		return fmt.Errorf("failed to write template to %s: %w", dest, err)
+	}
+
+	return nil
+}
+
+func (d *Deployer) writeStringToSudoFile(ctx context.Context, content string, dest string) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
+	}
+
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write config to %s: %w", dest, err)
 	}
 
 	return nil

@@ -3,13 +3,13 @@ import {
   LayoutDashboard,
   Server,
   Network,
-  Globe,
   Package,
   PlayCircle,
   ShieldAlert,
   Bell,
   LineChart,
   Settings,
+  Rocket,
 } from 'lucide-react';
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
@@ -19,11 +19,9 @@ const navSections = [
     label: 'Overview',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-      { icon: Server, label: 'Hosts', path: '/hosts' },
       { icon: Network, label: 'Clusters', path: '/clusters' },
-
-
-      { icon: Globe, label: 'External Clusters', path: '/external-clusters' },
+      { icon: Server, label: 'Hosts', path: '/hosts' },
+      { icon: Rocket, label: 'Cluster Deployment', path: '/cluster-deployment' },
     ],
   },
   {
