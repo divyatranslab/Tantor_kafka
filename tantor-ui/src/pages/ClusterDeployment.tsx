@@ -58,15 +58,16 @@ type KafkaVersionInfo = {
   id?: string;
 };
 
-type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate';
+type DeploymentMode = 'kraft' | 'zookeeper';
+type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'broker_zookeeper' | 'zookeeper';
 type FlowStage = 'landing' | 'details' | 'preview';
 type ConfigMode = 'default' | 'custom';
-type ConfigKind = 'server' | 'broker' | 'controller';
+type ConfigKind = 'server' | 'broker' | 'controller' | 'zookeeper';
 type PrereqStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
 
 type ServiceAssignment = {
   host_id: string;
-  role: 'broker_controller' | 'broker' | 'controller';
+  role: RoleChoice;
   node_id: number;
   configuration_mode: ConfigMode;
   properties_template: string;
@@ -93,9 +94,9 @@ type PrereqResult = {
   errorMsg: string;
 };
 
-const UI_ONLY_PROPERTY_KEYS = new Set(['node.host', 'advertised.host', 'controller.host']);
+const UI_ONLY_PROPERTY_KEYS = new Set(['node.host', 'advertised.host', 'controller.host', 'zookeeper.host']);
 
-const ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
+const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
   {
     id: 'broker_controller',
     label: 'Broker + Controller',
@@ -111,205 +112,25 @@ const ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
     label: 'Controller',
     detail: 'Controller process only using controller.properties.',
   },
-  {
-    id: 'separate',
-    label: 'Separate Broker and Controller',
-    detail: 'Two Kafka services on the same VM using broker.properties and controller.properties.',
-  },
 ];
 
-const DEFAULT_CONTROLLER_PROPERTIES = `# =============================================================
-# KRaft Controller Configuration
-# =============================================================
-process.roles=controller
-node.id=101
-
-# ---- Listeners ----
-controller.listener.names=CONTROLLER
-listeners=CONTROLLER://192.168.253.143:9093
-listener.security.protocol.map=CONTROLLER:PLAINTEXT
-
-# ---- KRaft Quorum ----
-controller.quorum.voters=101@192.168.253.143:9093,102@192.168.253.136:9093
-controller.quorum.bootstrap.servers=192.168.253.143:9093,192.168.253.136:9093
-
-# ---- Metadata Storage ----
-metadata.log.dir=/apache/kafka/controller-data/metadata
-
-# ---- KRaft Timing ----
-controller.quorum.election.timeout.ms=5000
-controller.quorum.fetch.timeout.ms=5000
-controller.quorum.election.backoff.max.ms=5000
-controller.quorum.request.timeout.ms=10000
-
-# ---- Metadata Retention ----
-metadata.log.segment.bytes=1073741824
-metadata.log.segment.ms=604800000
-metadata.max.retention.bytes=-1
-metadata.max.retention.ms=604800000
-
-# ---- Network ----
-num.network.threads=8
-num.io.threads=16
-socket.send.buffer.bytes=102400
-socket.receive.buffer.bytes=102400
-socket.request.max.bytes=104857600`;
-
-const DEFAULT_BROKER_PROPERTIES = `# =============================================================
-# KRaft Broker Configuration
-# =============================================================
-process.roles=broker
-node.id=1
-broker.id=1
-broker.rack=rack1
-
-# ---- Listeners ----
-listeners=PLAINTEXT://192.168.253.143:9092
-advertised.listeners=PLAINTEXT://192.168.253.143:9092
-listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-inter.broker.listener.name=PLAINTEXT
-
-# ---- KRaft Quorum ----
-controller.listener.names=CONTROLLER
-controller.quorum.voters=101@192.168.253.143:9093,102@192.168.253.136:9093
-controller.quorum.bootstrap.servers=192.168.253.143:9093,192.168.253.136:9093
-
-# ---- Metadata Storage ----
-metadata.log.dir=/apache/kafka/broker-metadata
-
-# ---- Data Storage ----
-log.dirs=/apache/kafka/data
-num.recovery.threads.per.data.dir=2
-
-# ---- Topic Defaults ----
-num.partitions=1
-auto.create.topics.enable=false
-default.replication.factor=3
-min.insync.replicas=2
-
-# ---- Internal Topic Replication ----
-offsets.topic.replication.factor=3
-offsets.topic.num.partitions=50
-transaction.state.log.replication.factor=3
-transaction.state.log.min.isr=2
-
-# ---- Message Size ----
-message.max.bytes=15728640
-replica.fetch.max.bytes=15728640
-socket.request.max.bytes=104857600
-fetch.message.max.bytes=15728640
-
-# ---- Log Retention ----
-log.segment.bytes=1073741824
-log.retention.hours=72
-log.retention.check.interval.ms=300000
-
-# ---- Replication ----
-num.replica.fetchers=4
-replica.lag.time.max.ms=30000
-
-# ---- Network & IO ----
-num.network.threads=8
-num.io.threads=8
-socket.send.buffer.bytes=102400
-socket.receive.buffer.bytes=102400
-
-# ---- Consumer Group ----
-group.initial.rebalance.delay.ms=0`;
-
-const DEFAULT_SERVER_PROPERTIES = `#############################
-# KRaft Combined Server
-#############################
-process.roles=broker,controller
-node.id=101
-
-#############################
-# Listeners
-#############################
-listeners=PLAINTEXT://192.168.253.143:9092,CONTROLLER://192.168.253.143:9093
-advertised.listeners=PLAINTEXT://192.168.253.143:9092
-listener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
-inter.broker.listener.name=PLAINTEXT
-controller.listener.names=CONTROLLER
-
-#############################
-# Controller Quorum
-#############################
-controller.quorum.voters=101@192.168.253.143:9093,102@192.168.253.136:9093
-controller.quorum.bootstrap.servers=192.168.253.143:9093,192.168.253.136:9093
-
-#############################
-# Storage
-#############################
-log.dirs=/apache/kafka/data
-metadata.log.dir=/apache/kafka/controller-data/metadata
-
-#############################
-# Topic Defaults
-#############################
-num.partitions=1
-auto.create.topics.enable=false
-default.replication.factor=3
-min.insync.replicas=2
-
-#############################
-# Internal Topics
-#############################
-offsets.topic.replication.factor=3
-offsets.topic.num.partitions=50
-transaction.state.log.replication.factor=3
-transaction.state.log.min.isr=2
-
-#############################
-# Message Size
-#############################
-message.max.bytes=15728640
-replica.fetch.max.bytes=15728640
-fetch.message.max.bytes=15728640
-socket.request.max.bytes=104857600
-
-#############################
-# Log Retention
-#############################
-log.segment.bytes=1073741824
-log.retention.hours=72
-log.retention.check.interval.ms=300000
-
-#############################
-# Replication
-#############################
-num.replica.fetchers=4
-replica.lag.time.max.ms=30000
-
-#############################
-# Network
-#############################
-num.network.threads=8
-num.io.threads=8
-socket.send.buffer.bytes=102400
-socket.receive.buffer.bytes=102400
-
-#############################
-# Controller Settings
-#############################
-controller.quorum.election.timeout.ms=5000
-controller.quorum.fetch.timeout.ms=5000
-controller.quorum.election.backoff.max.ms=5000
-controller.quorum.request.timeout.ms=10000
-metadata.log.segment.bytes=1073741824
-metadata.log.segment.ms=604800000
-metadata.max.retention.bytes=-1
-metadata.max.retention.ms=604800000
-
-#############################
-# Consumer Groups
-#############################
-group.initial.rebalance.delay.ms=0
-
-#############################
-# Rack Awareness
-#############################
-broker.rack=rack1`;
+const ZOOKEEPER_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
+  {
+    id: 'broker_zookeeper',
+    label: 'Broker + ZooKeeper',
+    detail: 'One VM participates as a Kafka broker and ZooKeeper node.',
+  },
+  {
+    id: 'broker',
+    label: 'Broker',
+    detail: 'Broker process only using server.properties.',
+  },
+  {
+    id: 'zookeeper',
+    label: 'ZooKeeper',
+    detail: 'ZooKeeper process only using zookeeper.properties.',
+  },
+];
 
 function parseIpList(raw: any): string[] {
   if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
@@ -339,21 +160,6 @@ function validatePath(value: string, label: string): string {
   return '';
 }
 
-function parseProperties(template: string): PropertyRow[] {
-  const rows: PropertyRow[] = [];
-  template.split(/\r?\n/).forEach(line => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) return;
-    const eq = trimmed.indexOf('=');
-    if (eq <= 0) return;
-    rows.push({
-      key: trimmed.slice(0, eq).trim(),
-      value: trimmed.slice(eq + 1).trim(),
-    });
-  });
-  return rows;
-}
-
 function serializeProperties(rows: PropertyRow[]): string {
   return rows
     .filter(row => row.key.trim() && !UI_ONLY_PROPERTY_KEYS.has(row.key.trim()))
@@ -381,13 +187,19 @@ export function ClusterDeployment() {
   const [clusterName, setClusterName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
   const [environment, setEnvironment] = useState('');
+  const [clusterConfigMode, setClusterConfigMode] = useState<ConfigMode>('default');
+  const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('kraft');
   const [installDir, setInstallDir] = useState('/opt');
   const [dataDir, setDataDir] = useState('/data/kafka');
   const [logDir, setLogDir] = useState('/var/log/kafka');
   const [artifactLoadDir, setArtifactLoadDir] = useState('/srv/yawar/kafka-artifacts');
   const [listenerPort, setListenerPort] = useState(9092);
   const [controllerPort, setControllerPort] = useState(9093);
+  const [zookeeperPeerPort, setZookeeperPeerPort] = useState(2888);
+  const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
   const [numPartitions, setNumPartitions] = useState(1);
+  const [replicationFactorValue, setReplicationFactorValue] = useState('');
+  const [minIsrValue, setMinIsrValue] = useState('');
 
   const [nodeSearch, setNodeSearch] = useState('');
   const [nodeDropdownOpen, setNodeDropdownOpen] = useState(false);
@@ -396,6 +208,7 @@ export function ClusterDeployment() {
   const [rolesByHost, setRolesByHost] = useState<Record<string, RoleChoice>>({});
   const [configsByService, setConfigsByService] = useState<Record<string, NodeConfigState>>({});
   const [configModalHostId, setConfigModalHostId] = useState<string | null>(null);
+  const [commonConfigOpen, setCommonConfigOpen] = useState(false);
   const [prereqResults, setPrereqResults] = useState<Record<string, PrereqResult>>({});
   const [checkingPrereqs, setCheckingPrereqs] = useState(false);
   const [deploying, setDeploying] = useState(false);
@@ -419,14 +232,20 @@ export function ClusterDeployment() {
         setClusterName(cluster.name || '');
         setKafkaVersion(cluster.kafkaVersion || '');
         setEnvironment(cluster.environment || '');
+        setDeploymentMode(cluster.mode === 'zookeeper' ? 'zookeeper' : 'kraft');
         const cfg = cluster.config || {};
+        setClusterConfigMode(String(cfg.configuration_mode || 'default') === 'custom' ? 'custom' : 'default');
         setInstallDir(String(cfg.kafka_install_base_dir || cfg.kafka_install_dir || '/opt'));
         setDataDir(String(cfg.kafka_data_dir || '/data/kafka'));
         setLogDir(String(cfg.kafka_app_log_dir || '/var/log/kafka'));
         setArtifactLoadDir(String(cfg.artifact_load_dir || '/srv/yawar/kafka-artifacts'));
         setListenerPort(Number(cfg.listener_port || 9092));
         setControllerPort(Number(cfg.controller_port || 9093));
+        setZookeeperPeerPort(Number(cfg.zookeeper_peer_port || 2888));
+        setZookeeperElectionPort(Number(cfg.zookeeper_election_port || 3888));
         setNumPartitions(Number(cfg.num_partitions || 1));
+        setReplicationFactorValue(String(cfg.replication_factor || ''));
+        setMinIsrValue(String(cfg.min_insync_replicas || ''));
       })
       .catch(error => {
         console.error(error);
@@ -484,14 +303,23 @@ export function ClusterDeployment() {
     return needle.includes(nodeSearch.toLowerCase());
   });
 
+  const roleOptions = deploymentMode === 'zookeeper' ? ZOOKEEPER_ROLE_OPTIONS : KRAFT_ROLE_OPTIONS;
+  const allRoleOptions = [...KRAFT_ROLE_OPTIONS, ...ZOOKEEPER_ROLE_OPTIONS];
+  const defaultRoleForMode = deploymentMode === 'zookeeper' ? 'broker_zookeeper' : 'broker_controller';
+
   const brokerCount = selectedHosts.filter(host => {
-    const role = rolesByHost[host.id] || 'broker_controller';
-    return role === 'broker_controller' || role === 'broker' || role === 'separate';
+    const role = rolesByHost[host.id] || defaultRoleForMode;
+    return role === 'broker_controller' || role === 'broker' || role === 'broker_zookeeper';
   }).length;
 
   const controllerCount = selectedHosts.filter(host => {
-    const role = rolesByHost[host.id] || 'broker_controller';
-    return role === 'broker_controller' || role === 'controller' || role === 'separate';
+    const role = rolesByHost[host.id] || defaultRoleForMode;
+    return role === 'broker_controller' || role === 'controller';
+  }).length;
+
+  const zookeeperCount = selectedHosts.filter(host => {
+    const role = rolesByHost[host.id] || defaultRoleForMode;
+    return role === 'broker_zookeeper' || role === 'zookeeper';
   }).length;
 
   const replication = useMemo(() => {
@@ -503,16 +331,18 @@ export function ClusterDeployment() {
   const warnings = useMemo(() => {
     const items: string[] = [];
     if (brokerCount === 1) items.push('Only one broker selected. Kafka will run without data replication.');
-    if (controllerCount === 1) items.push('Only one controller selected. Controller failover will not be available.');
-    if (controllerCount > 1 && controllerCount % 2 === 0) items.push('Even controller count selected. Odd controller count is recommended for quorum voting.');
+    if (deploymentMode === 'kraft' && controllerCount === 1) items.push('Only one controller selected. Controller failover will not be available.');
+    if (deploymentMode === 'kraft' && controllerCount > 1 && controllerCount % 2 === 0) items.push('Even controller count selected. Odd controller count is recommended for quorum voting.');
+    if (deploymentMode === 'zookeeper' && zookeeperCount === 1) items.push('Only one ZooKeeper selected. ZooKeeper failover will not be available.');
+    if (deploymentMode === 'zookeeper' && zookeeperCount > 1 && zookeeperCount % 2 === 0) items.push('Even ZooKeeper count selected. Odd ZooKeeper count is recommended for quorum voting.');
     if (isAddNodeMode && selectedHosts.some(host => {
-      const role = rolesByHost[host.id] || 'broker_controller';
-      return role === 'controller' || role === 'broker_controller' || role === 'separate';
+      const role = rolesByHost[host.id] || defaultRoleForMode;
+      return role === 'controller' || role === 'broker_controller' || role === 'broker_zookeeper' || role === 'zookeeper';
     })) {
-      items.push('Adding a controller changes KRaft quorum. Existing nodes may need updated configs and restart sequencing.');
+      items.push('Adding quorum nodes changes cluster membership. Existing nodes may need updated configs and restart sequencing.');
     }
     return items;
-  }, [brokerCount, controllerCount, isAddNodeMode, rolesByHost, selectedHosts]);
+  }, [brokerCount, controllerCount, defaultRoleForMode, deploymentMode, isAddNodeMode, rolesByHost, selectedHosts, zookeeperCount]);
 
   const pathErrors = [
     validatePath(installDir, 'Install directory'),
@@ -530,50 +360,37 @@ export function ClusterDeployment() {
 
   const configKey = (hostId: string, kind: ConfigKind) => `${hostId}:${kind}`;
 
-  const defaultTemplateForKind = (kind: ConfigKind) => {
-    if (kind === 'server') return DEFAULT_SERVER_PROPERTIES;
-    if (kind === 'broker') return DEFAULT_BROKER_PROPERTIES;
-    return DEFAULT_CONTROLLER_PROPERTIES;
-  };
-
   const ipRowKeyForKind = (kind: ConfigKind) => {
     if (kind === 'broker') return 'advertised.host';
     if (kind === 'controller') return 'controller.host';
+    if (kind === 'zookeeper') return 'zookeeper.host';
     return 'node.host';
   };
 
-  const requiredKeysForKind = (kind: ConfigKind) => [
-    ipRowKeyForKind(kind),
-    'default.replication.factor',
-    'min.insync.replicas',
-  ];
-
   const defaultRowsForKind = (kind: ConfigKind): PropertyRow[] => {
-    const existing = parseProperties(defaultTemplateForKind(kind)).filter(row => !requiredKeysForKind(kind).includes(row.key));
     return [
       { key: ipRowKeyForKind(kind), value: '', required: true, locked: true },
-      { key: 'default.replication.factor', value: '', required: true, locked: true },
-      { key: 'min.insync.replicas', value: '', required: true, locked: true },
-      ...existing,
     ];
   };
 
   const defaultHeapForKind = (kind: ConfigKind) => {
-    if (kind === 'controller') return '512M';
+    if (kind === 'controller' || kind === 'zookeeper') return '512M';
     return '1G';
   };
 
   const configFileName = (kind: ConfigKind) => {
     if (kind === 'server') return 'server.properties';
     if (kind === 'broker') return 'broker.properties';
+    if (kind === 'zookeeper') return 'zookeeper.properties';
     return 'controller.properties';
   };
 
   const configKindsForRole = (role: RoleChoice): ConfigKind[] => {
     if (role === 'broker_controller') return ['server'];
+    if (role === 'broker_zookeeper') return ['server'];
     if (role === 'broker') return ['broker'];
     if (role === 'controller') return ['controller'];
-    return ['broker', 'controller'];
+    return ['zookeeper'];
   };
 
   const serviceConfigFor = (hostId: string, kind: ConfigKind): NodeConfigState => {
@@ -599,20 +416,37 @@ export function ClusterDeployment() {
     });
   };
 
-  const configValuesForKey = (key: string) => selectedHosts.flatMap(host => {
-    const role = rolesByHost[host.id] || 'broker_controller';
-    return configKindsForRole(role)
-      .map(kind => serviceConfigFor(host.id, kind).rows.find(row => row.key === key)?.value.trim() || '')
-      .filter(Boolean);
-  });
+  const commonConfigRows: PropertyRow[] = [
+    { key: 'listener_port', value: String(listenerPort), required: true },
+    deploymentMode === 'kraft'
+      ? { key: 'controller_port', value: String(controllerPort), required: true }
+      : { key: 'zookeeper_port', value: String(controllerPort), required: true },
+    ...(deploymentMode === 'zookeeper' ? [
+      { key: 'zookeeper_peer_port', value: String(zookeeperPeerPort), required: true },
+      { key: 'zookeeper_election_port', value: String(zookeeperElectionPort), required: true },
+    ] : []),
+    { key: 'num.partitions', value: String(numPartitions), required: true },
+    { key: 'default.replication.factor', value: replicationFactorValue, required: true },
+    { key: 'min.insync.replicas', value: minIsrValue, required: true },
+  ];
 
-  const replicationFactorValues = configValuesForKey('default.replication.factor');
-  const minIsrValues = configValuesForKey('min.insync.replicas');
-  const configuredReplicationFactor = Number.parseInt(replicationFactorValues[0] || String(replication.factor), 10);
-  const configuredMinIsr = Number.parseInt(minIsrValues[0] || String(replication.minIsr), 10);
+  const updateCommonConfigValue = (key: string, value: string) => {
+    const numeric = Number.parseInt(value || '0', 10);
+    if (key === 'listener_port') setListenerPort(Number.isFinite(numeric) ? numeric : 0);
+    if (key === 'controller_port' || key === 'zookeeper_port') setControllerPort(Number.isFinite(numeric) ? numeric : 0);
+    if (key === 'zookeeper_peer_port') setZookeeperPeerPort(Number.isFinite(numeric) ? numeric : 0);
+    if (key === 'zookeeper_election_port') setZookeeperElectionPort(Number.isFinite(numeric) ? numeric : 0);
+    if (key === 'num.partitions') setNumPartitions(Number.isFinite(numeric) ? numeric : 0);
+    if (key === 'default.replication.factor') setReplicationFactorValue(value);
+    if (key === 'min.insync.replicas') setMinIsrValue(value);
+    setClusterConfigMode('custom');
+  };
+
+  const configuredReplicationFactor = Number.parseInt(replicationFactorValue || String(replication.factor), 10);
+  const configuredMinIsr = Number.parseInt(minIsrValue || String(replication.minIsr), 10);
 
   const missingRequiredConfigs = selectedHosts.flatMap(host => {
-    const role = rolesByHost[host.id] || 'broker_controller';
+    const role = rolesByHost[host.id] || defaultRoleForMode;
     return configKindsForRole(role).flatMap(kind => {
       const cfg = serviceConfigFor(host.id, kind);
       return cfg.rows
@@ -622,10 +456,14 @@ export function ClusterDeployment() {
   });
 
   const configValidationErrors = [
-    new Set(replicationFactorValues).size > 1 ? 'All selected services must use the same default.replication.factor.' : '',
-    new Set(minIsrValues).size > 1 ? 'All selected services must use the same min.insync.replicas.' : '',
-    replicationFactorValues.some(value => !/^\d+$/.test(value) || Number(value) < 1) ? 'default.replication.factor must be a positive number.' : '',
-    minIsrValues.some(value => !/^\d+$/.test(value) || Number(value) < 1) ? 'min.insync.replicas must be a positive number.' : '',
+    ...commonConfigRows
+      .filter(row => row.required && !String(row.value).trim())
+      .map(row => `Common config requires ${row.key}.`),
+    commonConfigRows.some(row => row.required && String(row.value).trim() && (!/^\d+$/.test(String(row.value).trim()) || Number(row.value) < 1))
+      ? 'Common numeric properties must be positive numbers.'
+      : '',
+    replicationFactorValue && Number(replicationFactorValue) > brokerCount ? 'default.replication.factor cannot be greater than broker count.' : '',
+    minIsrValue && replicationFactorValue && Number(minIsrValue) > Number(replicationFactorValue) ? 'min.insync.replicas cannot be greater than default.replication.factor.' : '',
   ].filter(Boolean);
 
   const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors];
@@ -634,7 +472,7 @@ export function ClusterDeployment() {
     && kafkaVersion
     && selectedHosts.length > 0
     && brokerCount > 0
-    && controllerCount > 0
+    && (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0)
     && pathErrors.length === 0
     && configBlockingIssues.length === 0;
 
@@ -651,19 +489,20 @@ export function ClusterDeployment() {
     const services: ServiceAssignment[] = [];
 
     selectedHosts.forEach(host => {
-      const role = rolesByHost[host.id] || 'broker_controller';
+      const role = rolesByHost[host.id] || defaultRoleForMode;
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
         services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
-      } else if (role === 'separate') {
-        const controllerCfg = configFor('controller');
-        const brokerCfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serializeProperties(controllerCfg.rows), heap_size: controllerCfg.heapSize });
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serializeProperties(brokerCfg.rows), heap_size: brokerCfg.heapSize });
+      } else if (role === 'broker_zookeeper') {
+        const cfg = configFor('server');
+        services.push({ host_id: host.id, role: 'broker_zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
         services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
+      } else if (role === 'zookeeper') {
+        const cfg = configFor('zookeeper');
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
       } else {
         const cfg = configFor('broker');
         services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
@@ -677,7 +516,9 @@ export function ClusterDeployment() {
     setSelectedNodeIds(draftNodeIds);
     setRolesByHost(prev => {
       const next: Record<string, RoleChoice> = {};
-      draftNodeIds.forEach(id => { next[id] = prev[id] || 'broker_controller'; });
+      draftNodeIds.forEach(id => {
+        next[id] = roleOptions.some(role => role.id === prev[id]) ? prev[id] : defaultRoleForMode;
+      });
       return next;
     });
     setPrereqResults({});
@@ -697,6 +538,23 @@ export function ClusterDeployment() {
       delete next[hostId];
       return next;
     });
+  };
+
+  const changeDeploymentMode = (mode: DeploymentMode) => {
+    setDeploymentMode(mode);
+    const nextDefaultRole: RoleChoice = mode === 'zookeeper' ? 'broker_zookeeper' : 'broker_controller';
+    setRolesByHost(() => {
+      const next: Record<string, RoleChoice> = {};
+      selectedNodeIds.forEach(id => { next[id] = nextDefaultRole; });
+      return next;
+    });
+    setConfigsByService({});
+    setPrereqResults({});
+    if (mode === 'kraft') {
+      setControllerPort(9093);
+    } else {
+      setControllerPort(2181);
+    }
   };
 
   const checkPrerequisites = async () => {
@@ -787,11 +645,12 @@ export function ClusterDeployment() {
       const payload = {
         name: clusterName.trim(),
         kafka_version: kafkaVersion,
-        mode: 'kraft',
+        mode: deploymentMode,
         services: buildServices(),
         environment: environment.trim().toLowerCase(),
         artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
         config: {
+          configuration_mode: clusterConfigMode,
           kafka_install_dir: installDir.trim(),
           kafka_install_base_dir: installDir.trim(),
           kafka_data_dir: dataDir.trim(),
@@ -800,6 +659,9 @@ export function ClusterDeployment() {
           scala_version: selectedArtifact?.scala_version || '2.13',
           listener_port: listenerPort,
           controller_port: controllerPort,
+          zookeeper_port: deploymentMode === 'zookeeper' ? controllerPort : undefined,
+          zookeeper_peer_port: zookeeperPeerPort,
+          zookeeper_election_port: zookeeperElectionPort,
           num_partitions: numPartitions,
           replication_factor: configuredReplicationFactor,
           min_insync_replicas: configuredMinIsr,
@@ -886,6 +748,22 @@ export function ClusterDeployment() {
               <Settings2 size={18} />
               <h2>Cluster Details</h2>
             </div>
+            <div className="cd-top-controls">
+              <div>
+                <span>Configuration</span>
+                <div className="cd-segmented">
+                  <button className={clusterConfigMode === 'default' ? 'active' : ''} onClick={() => setClusterConfigMode('default')} disabled={isAddNodeMode}>Default</button>
+                  <button className={clusterConfigMode === 'custom' ? 'active' : ''} onClick={() => setClusterConfigMode('custom')} disabled={isAddNodeMode}>Custom</button>
+                </div>
+              </div>
+              <div>
+                <span>Cluster mode</span>
+                <div className="cd-segmented">
+                  <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
+                  <button className={deploymentMode === 'zookeeper' ? 'active' : ''} onClick={() => changeDeploymentMode('zookeeper')} disabled={isAddNodeMode}>ZooKeeper</button>
+                </div>
+              </div>
+            </div>
             <div className="cd-grid-2">
               <label className="cd-field">
                 <span>Cluster name</span>
@@ -909,20 +787,14 @@ export function ClusterDeployment() {
             </div>
           </section>
 
-          <section className="cd-panel cd-config-guidance">
-            <div className="cd-panel-title">
-              <FileText size={18} />
-              <h2>Configuration Files</h2>
-            </div>
-            <p className="cd-muted">
-              Configuration is selected per node after you choose roles. Each node row opens only the file that applies to that role: server.properties, broker.properties, controller.properties, or broker plus controller files for separate services.
-            </p>
-          </section>
-
           <section className="cd-panel">
             <div className="cd-panel-title">
               <Server size={18} />
               <h2>Deployment Paths</h2>
+              <button className="cd-secondary-btn compact" onClick={() => setCommonConfigOpen(true)}>
+                <FileText size={14} />
+                Config
+              </button>
             </div>
             <div className="cd-grid-2">
               <label className="cd-field">
@@ -940,18 +812,6 @@ export function ClusterDeployment() {
               <label className="cd-field">
                 <span>Artifact/load directory</span>
                 <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} disabled={isAddNodeMode} />
-              </label>
-              <label className="cd-field">
-                <span>Broker port</span>
-                <input type="number" value={listenerPort} onChange={e => setListenerPort(Number(e.target.value))} disabled={isAddNodeMode} />
-              </label>
-              <label className="cd-field">
-                <span>Controller port</span>
-                <input type="number" value={controllerPort} onChange={e => setControllerPort(Number(e.target.value))} disabled={isAddNodeMode} />
-              </label>
-              <label className="cd-field">
-                <span>Default partitions</span>
-                <input type="number" min={1} value={numPartitions} onChange={e => setNumPartitions(Number(e.target.value))} disabled={isAddNodeMode} />
               </label>
             </div>
             {pathErrors.length > 0 && (
@@ -999,7 +859,7 @@ export function ClusterDeployment() {
                           <span className="cd-checkbox">{checked && <Check size={12} />}</span>
                           <span>
                             <strong>{host.hostname}</strong>
-                            <small>{displayIp(host)} {disabled ? `- ${host.available === false ? 'unavailable' : host.status}` : ''}</small>
+                            <small>{displayIp(host)} {disabled ? `- ${host.available === false ? 'Kafka Already Deployed' : host.status}` : ''}</small>
                           </span>
                         </button>
                       );
@@ -1025,15 +885,20 @@ export function ClusterDeployment() {
                       <span>{displayIp(host)}</span>
                     </div>
                   </div>
-                  <select
-                    value={rolesByHost[host.id] || 'broker_controller'}
-                    onChange={e => {
-                      setRolesByHost(prev => ({ ...prev, [host.id]: e.target.value as RoleChoice }));
-                      setPrereqResults({});
-                    }}
-                  >
-                    {ROLE_OPTIONS.map(role => <option key={role.id} value={role.id}>{role.label}</option>)}
-                  </select>
+                  <div className="cd-role-buttons">
+                    {roleOptions.map(role => (
+                      <button
+                        key={role.id}
+                        className={(rolesByHost[host.id] || defaultRoleForMode) === role.id ? 'active' : ''}
+                        onClick={() => {
+                          setRolesByHost(prev => ({ ...prev, [host.id]: role.id }));
+                          setPrereqResults({});
+                        }}
+                      >
+                        {role.label}
+                      </button>
+                    ))}
+                  </div>
                   <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
                     <FileText size={14} />
                     Configuration
@@ -1047,15 +912,12 @@ export function ClusterDeployment() {
 
             <div className="cd-calculated">
               <span>Broker count: <strong>{brokerCount}</strong></span>
-              <span>Controller count: <strong>{controllerCount}</strong></span>
+              {deploymentMode === 'kraft'
+                ? <span>Controller count: <strong>{controllerCount}</strong></span>
+                : <span>ZooKeeper count: <strong>{zookeeperCount}</strong></span>}
               <span>Replication factor: <strong>{Number.isFinite(configuredReplicationFactor) ? configuredReplicationFactor : 'Required'}</strong></span>
               <span>Min ISR: <strong>{Number.isFinite(configuredMinIsr) ? configuredMinIsr : 'Required'}</strong></span>
             </div>
-            {warnings.length > 0 && (
-              <div className="cd-warning-list">
-                {warnings.map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
-              </div>
-            )}
             {configBlockingIssues.length > 0 && (
               <div className="cd-inline-errors">
                 {configBlockingIssues.map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
@@ -1079,7 +941,7 @@ export function ClusterDeployment() {
             </div>
             <div className="cd-preview-list">
               {selectedHosts.map(host => {
-                const role = ROLE_OPTIONS.find(item => item.id === (rolesByHost[host.id] || 'broker_controller'));
+                const role = allRoleOptions.find(item => item.id === (rolesByHost[host.id] || defaultRoleForMode));
                 const result = prereqResults[host.id];
                 return (
                   <div className="cd-preview-row" key={host.id}>
@@ -1099,6 +961,11 @@ export function ClusterDeployment() {
                 );
               })}
             </div>
+            {warnings.length > 0 && (
+              <div className="cd-warning-list">
+                {warnings.map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
+              </div>
+            )}
           </section>
 
           <section className="cd-panel">
@@ -1142,7 +1009,7 @@ export function ClusterDeployment() {
             <div className="cd-config-modal-header">
               <div>
                 <h2>Configuration</h2>
-                <p>{configModalHost.hostname} - {ROLE_OPTIONS.find(role => role.id === (rolesByHost[configModalHost.id] || 'broker_controller'))?.label}</p>
+                <p>{configModalHost.hostname} - {allRoleOptions.find(role => role.id === (rolesByHost[configModalHost.id] || defaultRoleForMode))?.label}</p>
               </div>
               <button className="cd-icon-btn" onClick={() => setConfigModalHostId(null)} title="Close configuration">
                 <X size={16} />
@@ -1150,14 +1017,14 @@ export function ClusterDeployment() {
             </div>
 
             <div className="cd-config-modal-body">
-              {configKindsForRole(rolesByHost[configModalHost.id] || 'broker_controller').map(kind => {
+              {configKindsForRole(rolesByHost[configModalHost.id] || defaultRoleForMode).map(kind => {
                 const cfg = serviceConfigFor(configModalHost.id, kind);
                 return (
                   <div className="cd-node-config-editor" key={kind}>
                     <div className="cd-node-config-top">
                       <div>
                         <h3>{configFileName(kind)}</h3>
-                        <p>Tantor will append generated values for this node during deployment.</p>
+                        <p>Fill the node-specific values for this service.</p>
                       </div>
                       <div className="cd-config-controls">
                         <label className="cd-heap-field">
@@ -1168,20 +1035,6 @@ export function ClusterDeployment() {
                             placeholder={defaultHeapForKind(kind)}
                           />
                         </label>
-                        <div className="cd-segmented">
-                          <button
-                            className={cfg.mode === 'default' ? 'active' : ''}
-                            onClick={() => updateServiceConfig(configModalHost.id, kind, { mode: 'default', rows: defaultRowsForKind(kind) })}
-                          >
-                            Default
-                          </button>
-                          <button
-                            className={cfg.mode === 'custom' ? 'active' : ''}
-                            onClick={() => updateServiceConfig(configModalHost.id, kind, { mode: 'custom' })}
-                          >
-                            Custom
-                          </button>
-                        </div>
                       </div>
                     </div>
                     <PropertyTable
@@ -1197,6 +1050,32 @@ export function ClusterDeployment() {
 
             <div className="cd-config-modal-footer">
               <button className="cd-secondary-btn" onClick={() => setConfigModalHostId(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {commonConfigOpen && (
+        <div className="cd-modal-backdrop" onClick={() => setCommonConfigOpen(false)}>
+          <div className="cd-config-modal common" onClick={e => e.stopPropagation()}>
+            <div className="cd-config-modal-header">
+              <div>
+                <h2>Common Configuration</h2>
+                <p>{deploymentMode === 'kraft' ? 'KRaft' : 'ZooKeeper'} properties shared across selected nodes.</p>
+              </div>
+              <button className="cd-icon-btn" onClick={() => setCommonConfigOpen(false)} title="Close common configuration">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="cd-config-modal-body">
+              <PropertyTable
+                rows={commonConfigRows}
+                hostIp=""
+                onUseHostIp={() => {}}
+                onChange={updateCommonConfigValue}
+              />
+            </div>
+            <div className="cd-config-modal-footer">
+              <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)}>Done</button>
             </div>
           </div>
         </div>
@@ -1231,7 +1110,7 @@ function PropertyTable({
             <tr key={row.key} className={row.required && !row.value.trim() ? 'required-missing' : ''}>
               <td>
                 <span className="cd-prop-key">{row.key}</span>
-                {row.required && <small>Required</small>}
+                {row.required && <small><b>*</b> Required</small>}
               </td>
               <td>
                 <input
@@ -1241,7 +1120,7 @@ function PropertyTable({
                 />
               </td>
               <td>
-                {row.key.includes('host') ? (
+                {hostIp && row.key.includes('host') ? (
                   <button type="button" onClick={onUseHostIp}>Use {hostIp}</button>
                 ) : (
                   <button type="button" onClick={() => {

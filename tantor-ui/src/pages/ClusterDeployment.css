@@ -126,14 +126,37 @@
   gap: 0.85rem;
 }
 
+.cd-top-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.cd-top-controls > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cd-top-controls span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.cd-top-controls .cd-segmented {
+  margin-bottom: 0;
+}
+
 .cd-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
 }
 
-.cd-field span,
-.cd-config-box span {
+.cd-field span {
   color: var(--text-secondary);
   font-size: 0.78rem;
   font-weight: 650;
@@ -141,7 +164,6 @@
 
 .cd-field input,
 .cd-field select,
-.cd-selected-node select,
 .cd-search input {
   width: 100%;
   min-height: 38px;
@@ -156,7 +178,6 @@
 
 .cd-field input:focus,
 .cd-field select:focus,
-.cd-selected-node select:focus,
 .cd-search input:focus {
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px rgba(83, 74, 183, 0.12);
@@ -195,31 +216,6 @@
 .cd-segmented button.active {
   background: var(--accent-primary);
   color: #fff;
-}
-
-.cd-config-editors {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.8rem;
-}
-
-.cd-config-box {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.cd-config-box textarea {
-  height: 260px;
-  resize: vertical;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: #fbfbf9;
-  color: var(--text-primary);
-  padding: 0.75rem;
-  font: 0.75rem/1.45 Consolas, 'SF Mono', monospace;
-  outline: none;
 }
 
 .cd-template-summary {
@@ -410,7 +406,7 @@
 }
 
 .cd-selected-node {
-  grid-template-columns: minmax(230px, 1fr) minmax(220px, 320px) auto auto;
+  grid-template-columns: minmax(210px, 1fr) minmax(360px, 1.4fr) auto auto;
 }
 
 .cd-preview-row {
@@ -449,6 +445,36 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+.cd-role-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+
+.cd-role-buttons button {
+  min-height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cd-role-buttons button:hover {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.cd-role-buttons button.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-light);
+  color: var(--accent-primary);
 }
 
 .cd-calculated {
@@ -759,10 +785,16 @@
 
 .cd-property-table small {
   display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
   margin-top: 0.25rem;
   color: var(--color-warning);
   font-size: 0.68rem;
   font-weight: 700;
+}
+
+.cd-property-table small b {
+  color: var(--color-danger);
 }
 
 .cd-property-table input {
@@ -812,8 +844,7 @@
 
 @media (max-width: 900px) {
   .cd-choice-grid,
-  .cd-grid-2,
-  .cd-config-editors {
+  .cd-grid-2 {
     grid-template-columns: 1fr;
   }
 
