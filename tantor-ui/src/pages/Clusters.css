@@ -256,7 +256,65 @@
 
 .clusters-table th:nth-child(8),
 .clusters-table td:nth-child(8) {
-  width: 128px;
+  width: 96px;
+}
+
+.btn.icon-only {
+  width: 32px;
+  padding: 0;
+}
+
+.cluster-menu-anchor {
+  position: relative;
+  justify-content: flex-end;
+}
+
+.cluster-action-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 190px;
+  padding: 6px;
+  border: 0.5px solid #e2e0db;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(26, 26, 24, 0.16);
+}
+
+.cluster-action-menu button {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #3e3d39;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cluster-action-menu button:hover:not(:disabled) {
+  background: #f5f4f1;
+}
+
+.cluster-action-menu button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.cluster-action-menu button.danger {
+  color: #791f1f;
+}
+
+.cluster-action-menu button.danger:hover {
+  background: #fcebeb;
 }
 
 .cluster-title-cell {

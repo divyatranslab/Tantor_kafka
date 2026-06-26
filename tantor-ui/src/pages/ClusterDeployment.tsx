@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   Check,
@@ -30,6 +30,22 @@ type Host = {
   ipAddresses?: string;
   ipAddress?: string;
   ip_address?: string;
+};
+
+type ClusterHost = {
+  hostId?: string;
+  role?: string;
+  nodeId?: number;
+};
+
+type ExistingCluster = {
+  id: string;
+  name: string;
+  kafkaVersion: string;
+  mode: string;
+  environment?: string;
+  config?: Record<string, any>;
+  hosts?: ClusterHost[];
 };
 
 type KafkaVersionInfo = {
@@ -320,11 +336,16 @@ function activeStatus(status: string): boolean {
 
 export function ClusterDeployment() {
   const navigate = useNavigate();
-  const [stage, setStage] = useState<FlowStage>('landing');
+  const [searchParams] = useSearchParams();
+  const addClusterId = searchParams.get('mode') === 'add' ? searchParams.get('clusterId') : null;
+  const isAddNodeMode = Boolean(addClusterId);
+  const [stage, setStage] = useState<FlowStage>(isAddNodeMode ? 'details' : 'landing');
   const [hosts, setHosts] = useState<Host[]>([]);
   const [versions, setVersions] = useState<KafkaVersionInfo[]>([]);
+  const [existingCluster, setExistingCluster] = useState<ExistingCluster | null>(null);
   const [loadingHosts, setLoadingHosts] = useState(true);
   const [loadingVersions, setLoadingVersions] = useState(true);
+  const [loadingCluster, setLoadingCluster] = useState(false);
 
   const [clusterName, setClusterName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
@@ -352,6 +373,37 @@ export function ClusterDeployment() {
     loadHosts();
     loadVersions();
   }, []);
+
+  useEffect(() => {
+    if (!addClusterId) return;
+    setStage('details');
+    setLoadingCluster(true);
+    fetch(`/api/v1/ui/clusters/${addClusterId}`)
+      .then(res => {
+        if (!res.ok) throw new Error('Cluster not found');
+        return res.json();
+      })
+      .then((cluster: ExistingCluster) => {
+        setExistingCluster(cluster);
+        setClusterName(cluster.name || '');
+        setKafkaVersion(cluster.kafkaVersion || '');
+        setEnvironment(cluster.environment || '');
+        const cfg = cluster.config || {};
+        setInstallDir(String(cfg.kafka_install_base_dir || cfg.kafka_install_dir || '/opt'));
+        setDataDir(String(cfg.kafka_data_dir || '/data/kafka'));
+        setLogDir(String(cfg.kafka_app_log_dir || '/var/log/kafka'));
+        setArtifactLoadDir(String(cfg.artifact_load_dir || '/srv/yawar/kafka-artifacts'));
+        setListenerPort(Number(cfg.listener_port || 9092));
+        setControllerPort(Number(cfg.controller_port || 9093));
+        setNumPartitions(Number(cfg.num_partitions || 1));
+      })
+      .catch(error => {
+        console.error(error);
+        alert('Failed to load cluster details for add-node mode.');
+        navigate('/clusters');
+      })
+      .finally(() => setLoadingCluster(false));
+  }, [addClusterId, navigate]);
 
   const loadHosts = async () => {
     setLoadingHosts(true);
@@ -422,8 +474,14 @@ export function ClusterDeployment() {
     if (brokerCount === 1) items.push('Only one broker selected. Kafka will run without data replication.');
     if (controllerCount === 1) items.push('Only one controller selected. Controller failover will not be available.');
     if (controllerCount > 1 && controllerCount % 2 === 0) items.push('Even controller count selected. Odd controller count is recommended for quorum voting.');
+    if (isAddNodeMode && selectedHosts.some(host => {
+      const role = rolesByHost[host.id] || 'broker_controller';
+      return role === 'controller' || role === 'broker_controller' || role === 'separate';
+    })) {
+      items.push('Adding a controller changes KRaft quorum. Existing nodes may need updated configs and restart sequencing.');
+    }
     return items;
-  }, [brokerCount, controllerCount]);
+  }, [brokerCount, controllerCount, isAddNodeMode, rolesByHost, selectedHosts]);
 
   const pathErrors = [
     validatePath(installDir, 'Install directory'),
@@ -488,8 +546,15 @@ export function ClusterDeployment() {
   };
 
   const buildServices = (): ServiceAssignment[] => {
-    let controllerId = 101;
-    let brokerId = 1;
+    const usedNodeIds = new Set((existingCluster?.hosts || [])
+      .map(host => Number(host.nodeId || 0))
+      .filter(id => id > 0));
+    const allocateNodeId = (start: number) => {
+      let next = start;
+      while (usedNodeIds.has(next)) next++;
+      usedNodeIds.add(next);
+      return next;
+    };
     const services: ServiceAssignment[] = [];
 
     selectedHosts.forEach(host => {
@@ -497,18 +562,18 @@ export function ClusterDeployment() {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: controllerId++, configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
       } else if (role === 'separate') {
         const controllerCfg = configFor('controller');
         const brokerCfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'controller', node_id: controllerId++, configuration_mode: controllerCfg.mode, properties_template: controllerCfg.template, heap_size: controllerCfg.heapSize });
-        services.push({ host_id: host.id, role: 'broker', node_id: brokerId++, configuration_mode: brokerCfg.mode, properties_template: brokerCfg.template, heap_size: brokerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: controllerCfg.template, heap_size: controllerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: brokerCfg.template, heap_size: brokerCfg.heapSize });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: controllerId++, configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
       } else {
         const cfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'broker', node_id: brokerId++, configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
       }
     });
 
@@ -648,7 +713,10 @@ export function ClusterDeployment() {
         },
       };
 
-      const res = await fetch('/api/v1/ui/clusters/deploy', {
+      const url = isAddNodeMode && addClusterId
+        ? `/api/v1/ui/clusters/${addClusterId}/nodes`
+        : '/api/v1/ui/clusters/deploy';
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -667,7 +735,7 @@ export function ClusterDeployment() {
     }
   };
 
-  if (stage === 'landing') {
+  if (stage === 'landing' && !isAddNodeMode) {
     return (
       <div className="cluster-deploy-page animate-fade-in">
         <header className="cd-header">
@@ -697,8 +765,12 @@ export function ClusterDeployment() {
     <div className="cluster-deploy-page animate-fade-in">
       <header className="cd-header">
         <div>
-          <h1>{stage === 'details' ? 'Create Kafka Cluster' : 'Preview Deployment'}</h1>
-          <p>{stage === 'details' ? 'Define the cluster, select nodes, and choose roles.' : 'Run prerequisites across every selected node before deployment.'}</p>
+          <h1>{stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}</h1>
+          <p>{stage === 'details'
+            ? isAddNodeMode
+              ? 'Existing cluster details are loaded. Select new nodes and roles to add.'
+              : 'Define the cluster, select nodes, and choose roles.'
+            : 'Run prerequisites across every selected node before deployment.'}</p>
         </div>
         <div className="cd-stage-tabs" aria-label="Deployment progress">
           <span className={stage === 'details' ? 'active' : ''}>Details</span>
@@ -708,6 +780,14 @@ export function ClusterDeployment() {
 
       {stage === 'details' ? (
         <div className="cd-layout">
+          {loadingCluster && (
+            <section className="cd-panel">
+              <div className="cd-template-summary">
+                <Loader2 size={16} className="spin" />
+                <span>Loading existing cluster details...</span>
+              </div>
+            </section>
+          )}
           <section className="cd-panel">
             <div className="cd-panel-title">
               <Settings2 size={18} />
@@ -716,11 +796,11 @@ export function ClusterDeployment() {
             <div className="cd-grid-2">
               <label className="cd-field">
                 <span>Cluster name</span>
-                <input value={clusterName} onChange={e => setClusterName(e.target.value)} placeholder="production-kraft" />
+                <input value={clusterName} onChange={e => setClusterName(e.target.value)} placeholder="production-kraft" disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Kafka version</span>
-                <select value={kafkaVersion} onChange={e => setKafkaVersion(e.target.value)} disabled={loadingVersions || versions.length === 0}>
+                <select value={kafkaVersion} onChange={e => setKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
                   {availableVersions.map(version => (
                     <option key={version.version} value={version.version}>
                       {version.version} ({version.size_mb} MB)
@@ -731,7 +811,7 @@ export function ClusterDeployment() {
               </label>
               <label className="cd-field">
                 <span>Environment</span>
-                <input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="prod, qa, staging" />
+                <input value={environment} onChange={e => setEnvironment(e.target.value)} placeholder="prod, qa, staging" disabled={isAddNodeMode} />
               </label>
             </div>
           </section>
@@ -754,31 +834,31 @@ export function ClusterDeployment() {
             <div className="cd-grid-2">
               <label className="cd-field">
                 <span>Install directory</span>
-                <input value={installDir} onChange={e => setInstallDir(e.target.value)} />
+                <input value={installDir} onChange={e => setInstallDir(e.target.value)} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Data directory</span>
-                <input value={dataDir} onChange={e => setDataDir(e.target.value)} />
+                <input value={dataDir} onChange={e => setDataDir(e.target.value)} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Log directory</span>
-                <input value={logDir} onChange={e => setLogDir(e.target.value)} />
+                <input value={logDir} onChange={e => setLogDir(e.target.value)} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Artifact/load directory</span>
-                <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} />
+                <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Broker port</span>
-                <input type="number" value={listenerPort} onChange={e => setListenerPort(Number(e.target.value))} />
+                <input type="number" value={listenerPort} onChange={e => setListenerPort(Number(e.target.value))} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Controller port</span>
-                <input type="number" value={controllerPort} onChange={e => setControllerPort(Number(e.target.value))} />
+                <input type="number" value={controllerPort} onChange={e => setControllerPort(Number(e.target.value))} disabled={isAddNodeMode} />
               </label>
               <label className="cd-field">
                 <span>Default partitions</span>
-                <input type="number" min={1} value={numPartitions} onChange={e => setNumPartitions(Number(e.target.value))} />
+                <input type="number" min={1} value={numPartitions} onChange={e => setNumPartitions(Number(e.target.value))} disabled={isAddNodeMode} />
               </label>
             </div>
             {pathErrors.length > 0 && (
@@ -886,9 +966,9 @@ export function ClusterDeployment() {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" onClick={() => setStage('landing')}>Back</button>
+            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('landing')}>Back</button>
             <button className="cd-primary-btn" disabled={!canPreview} onClick={() => setStage('preview')}>
-              Preview
+              {isAddNodeMode ? 'Preview add node' : 'Preview'}
             </button>
           </div>
         </div>
@@ -953,7 +1033,7 @@ export function ClusterDeployment() {
             <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Back to details</button>
             <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying} onClick={deployCluster}>
               {deploying ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
-              Deploy
+              {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>
           </div>
         </div>

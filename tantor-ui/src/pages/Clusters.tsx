@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusCircle, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink } from 'lucide-react';
+import { MoreVertical, PlusCircle, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCw, RotateCcw, ServerCog } from 'lucide-react';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -37,6 +37,7 @@ export function Clusters() {
   const navigate = useNavigate();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const fetchClusters = async () => {
     setLoading(true);
@@ -70,6 +71,35 @@ export function Clusters() {
       }
     } catch {
       alert('An error occurred while deleting.');
+    }
+  };
+
+  const triggerRollingRestart = async (cluster: ClusterInfo) => {
+    if (!window.confirm(`Start rolling restart for '${cluster.name}'?`)) return;
+    try {
+      const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, { method: 'POST' });
+      if (res.ok) {
+        alert('Rolling restart scheduled. Watch cluster actions/logs for progress.');
+      } else {
+        alert('Failed to schedule rolling restart.');
+      }
+    } catch {
+      alert('Network error while scheduling rolling restart.');
+    }
+  };
+
+  const triggerNormalRestart = async (cluster: ClusterInfo) => {
+    if (!window.confirm(`Restart all Kafka services for '${cluster.name}' at once?`)) return;
+    try {
+      const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/normal-restart`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        alert(`Normal restart scheduled for ${data.tasks || 0} service(s).`);
+      } else {
+        alert(data.error || 'Failed to schedule normal restart.');
+      }
+    } catch {
+      alert('Network error while scheduling normal restart.');
     }
   };
 
@@ -130,7 +160,7 @@ export function Clusters() {
   useEffect(() => { fetchClusters(); }, []);
 
   return (
-    <div className="clusters-page animate-fade-in">
+    <div className="clusters-page animate-fade-in" onClick={() => setOpenMenuId(null)}>
       <header className="page-header flex-between">
         <div>
           <h1>Kafka clusters</h1>
@@ -143,7 +173,7 @@ export function Clusters() {
           </button>
           <button
             className="btn btn-primary-action"
-            onClick={() => navigate('/clusters/new')}
+            onClick={() => navigate('/cluster-deployment')}
           >
             <PlusCircle size={13} />
             Add cluster
@@ -166,7 +196,7 @@ export function Clusters() {
           </p>
           <button
             className="btn btn-primary-action"
-            onClick={() => navigate('/clusters/new')}
+            onClick={() => navigate('/cluster-deployment')}
           >
             <PlusCircle size={13} /> Add first cluster
           </button>
@@ -268,23 +298,38 @@ export function Clusters() {
                         </div>
                       </td>
                       <td>
-                        <div className="row-actions" onClick={e => e.stopPropagation()}>
+                        <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
                           <button
-                            className="btn"
-                            onClick={() => {
-                              if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/topics`);
-                            }}
-                            disabled={!isClickable(cluster)}
+                            className="btn icon-only"
+                            onClick={() => setOpenMenuId(openMenuId === cluster.id ? null : cluster.id)}
+                            title="Cluster actions"
                           >
-                            Open
+                            <MoreVertical size={16} />
                           </button>
-                          <button
-                            className="btn btn-icon-danger"
-                            onClick={e => deleteCluster(e, cluster.id, cluster.name)}
-                            title="Remove cluster"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {openMenuId === cluster.id && (
+                            <div className="cluster-action-menu">
+                              <button onClick={() => navigate(`/clusters/${cluster.id}/topics`)} disabled={!isClickable(cluster)}>
+                                <ExternalLink size={14} />
+                                Open
+                              </button>
+                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                                <RotateCcw size={14} />
+                                Rolling restart
+                              </button>
+                              <button onClick={() => triggerNormalRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                                <RotateCw size={14} />
+                                Normal restart
+                              </button>
+                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                                <ServerCog size={14} />
+                                Add node
+                              </button>
+                              <button className="danger" onClick={e => deleteCluster(e, cluster.id, cluster.name)}>
+                                <Trash2 size={14} />
+                                Delete
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

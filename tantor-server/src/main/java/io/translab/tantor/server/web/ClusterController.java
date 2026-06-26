@@ -61,6 +61,7 @@ public class ClusterController {
             m.put("bootstrapServers", c.getBootstrapServers());
             m.put("clusterId", c.getId().toString());
             m.put("kafkaClusterId", kafkaClusterId(c));
+            m.put("config", parseConfigJson(c.getConfigJson()));
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
@@ -86,6 +87,7 @@ public class ClusterController {
             m.put("bootstrapServers", c.getBootstrapServers());
             m.put("clusterId", c.getId().toString());
             m.put("kafkaClusterId", kafkaClusterId(c));
+            m.put("config", parseConfigJson(c.getConfigJson()));
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
@@ -189,6 +191,103 @@ public class ClusterController {
         activityAlertService.logActivity("INFO", "Initialized deployment for cluster: " + request.getName(), cluster.getId());
         
         return ResponseEntity.ok(Map.of("id", cluster.getId().toString()));
+    }
+
+    @PostMapping("/{id}/nodes")
+    public ResponseEntity<Map<String, String>> addNodesToCluster(@PathVariable UUID id, @RequestBody DeployClusterRequest request) {
+        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
+        if (optionalCluster.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        Cluster cluster = optionalCluster.get();
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Use Existing cluster flow for external clusters."));
+        }
+        if (request.getServices() == null || request.getServices().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Select at least one node to add."));
+        }
+
+        String deploymentMode = normalizeDeploymentMode(cluster.getMode());
+        ResponseEntity<Map<String, String>> validationError = validateAddNodeRequest(cluster, request, deploymentMode);
+        if (validationError != null) {
+            return validationError;
+        }
+
+        List<ServiceAssignmentReq> allServices = new ArrayList<>();
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment existing : cluster.getServices()) {
+                ServiceAssignmentReq svc = new ServiceAssignmentReq();
+                svc.setHost_id(existing.getHostId());
+                svc.setRole(existing.getRole());
+                svc.setNode_id(existing.getNodeId());
+                allServices.add(svc);
+            }
+        }
+        allServices.addAll(request.getServices());
+
+        DeployClusterRequest mergedRequest = new DeployClusterRequest();
+        mergedRequest.setName(cluster.getName());
+        mergedRequest.setKafka_version(cluster.getKafkaVersion());
+        mergedRequest.setMode(deploymentMode);
+        mergedRequest.setEnvironment(cluster.getEnvironment());
+        mergedRequest.setArtifactUrl(request.getArtifactUrl());
+        Map<String, Object> mergedConfig = new HashMap<>(parseConfigJson(cluster.getConfigJson()));
+        if (request.getConfig() != null) {
+            mergedConfig.putAll(request.getConfig());
+        }
+        mergedRequest.setConfig(mergedConfig);
+        mergedRequest.setServices(allServices);
+
+        Map<String, Object> deploymentConfig = buildDeploymentConfig(mergedRequest, deploymentMode);
+        String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
+        String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
+
+        if (cluster.getServices() == null) {
+            cluster.setServices(new ArrayList<>());
+        }
+        for (ServiceAssignmentReq sa : request.getServices()) {
+            ClusterServiceAssignment assign = new ClusterServiceAssignment();
+            assign.setCluster(cluster);
+            assign.setHostId(sa.getHost_id());
+            assign.setRole(sa.getRole());
+            assign.setNodeId(sa.getNode_id());
+            cluster.getServices().add(assign);
+        }
+        cluster.setStatus("RUNNING");
+        cluster.setBootstrapServers(String.valueOf(deploymentConfig.getOrDefault("bootstrap_servers", cluster.getBootstrapServers())));
+        try {
+            cluster.setConfigJson(objectMapper.writeValueAsString(deploymentConfig));
+        } catch (Exception e) {
+            // keep existing config if serialization fails
+        }
+        clusterRepository.save(cluster);
+
+        for (ServiceAssignmentReq sa : request.getServices()) {
+            hostRepository.findById(sa.getHost_id()).ifPresent(host -> {
+                host.setClusterId(cluster.getId());
+                hostRepository.save(host);
+            });
+        }
+
+        List<ServiceAssignmentReq> deployOrder = request.getServices().stream()
+                .sorted((left, right) -> Boolean.compare(!isControllerRole(left.getRole()), !isControllerRole(right.getRole())))
+                .toList();
+        for (ServiceAssignmentReq svc : deployOrder) {
+            deploymentService.deployKafkaToHost(
+                    cluster.getId(),
+                    svc.getHost_id(),
+                    cluster.getKafkaVersion(),
+                    finalArtifactUrl,
+                    "",
+                    String.valueOf(svc.getNode_id()),
+                    quorumVoters,
+                    svc.getRole(),
+                    buildServiceConfigJson(deploymentConfig, svc)
+            );
+        }
+
+        activityAlertService.logActivity("INFO", "Scheduled node addition for cluster: " + cluster.getName(), cluster.getId());
+        return ResponseEntity.ok(Map.of("id", cluster.getId().toString(), "status", "scheduled"));
     }
 
     @PostMapping("/external")
@@ -471,6 +570,65 @@ public class ClusterController {
         return null;
     }
 
+    private ResponseEntity<Map<String, String>> validateAddNodeRequest(Cluster cluster, DeployClusterRequest request, String deploymentMode) {
+        Set<String> assignmentKeys = new HashSet<>();
+        Set<Integer> nodeIds = new HashSet<>();
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment existing : cluster.getServices()) {
+                if (existing.getNodeId() != null) {
+                    nodeIds.add(existing.getNodeId());
+                }
+                for (String roleKind : serviceRoleKinds(existing.getRole())) {
+                    assignmentKeys.add(existing.getHostId() + "::" + roleKind);
+                }
+            }
+        }
+
+        for (ServiceAssignmentReq service : request.getServices()) {
+            if (service.getHost_id() == null || service.getHost_id().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a host."));
+            }
+            if (service.getRole() == null || service.getRole().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a role."));
+            }
+            if (!isRoleAllowedForMode(service.getRole(), deploymentMode)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Role " + service.getRole() + " is not valid for " + deploymentMode + " deployments."));
+            }
+            if (service.getNode_id() == null || service.getNode_id() <= 0) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            if (!nodeIds.add(service.getNode_id())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Node id " + service.getNode_id() + " is already used in this cluster."));
+            }
+            for (String roleKind : serviceRoleKinds(service.getRole())) {
+                String assignmentKey = service.getHost_id() + "::" + roleKind;
+                if (!assignmentKeys.add(assignmentKey)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "Host " + service.getHost_id() + " already has a " + roleKind + " service in this cluster."));
+                }
+            }
+
+            io.translab.tantor.server.domain.Host host = hostRepository.findById(service.getHost_id()).orElse(null);
+            if (host == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + service.getHost_id() + " was not found."));
+            }
+            String effectiveStatus = hostStatusService.effectiveStatus(host);
+            if (!"ONLINE".equalsIgnoreCase(effectiveStatus)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Host " + service.getHost_id() + " is not online. Current status: " + effectiveStatus + "."));
+            }
+            if (host.getClusterId() != null && !cluster.getId().equals(host.getClusterId())) {
+                java.util.Optional<Cluster> activeCluster = clusterRepository.findById(host.getClusterId())
+                        .filter(existing -> !"DELETED".equals(existing.getStatus()));
+                if (activeCluster.isPresent()) {
+                    return ResponseEntity.badRequest().body(Map.of(
+                            "error",
+                            "Host " + service.getHost_id() + " is already assigned to cluster " + activeCluster.get().getName() + "."
+                    ));
+                }
+            }
+        }
+        return null;
+    }
+
     private Map<String, Object> buildDeploymentConfig(DeployClusterRequest request, String deploymentMode) {
         Map<String, Object> config = new HashMap<>();
         if (request.getConfig() != null) {
@@ -725,6 +883,17 @@ public class ClusterController {
         return kafkaAdminService.getKafkaClusterId(cluster.getId());
     }
 
+    private Map<String, Object> parseConfigJson(String configJson) {
+        if (configJson == null || configJson.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(configJson, Map.class);
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
     private String managementLevel(Cluster cluster) {
         String level = externalMetadataValue(cluster, "managementMode");
         if (level != null && !level.isBlank()) {
@@ -783,6 +952,7 @@ public class ClusterController {
         summary.put("ipAddress", firstIp(host.getIpAddresses()));
         summary.put("status", hostStatusService.effectiveStatus(host));
         summary.put("role", service.getRole());
+        summary.put("nodeId", service.getNodeId());
         summary.put("lastHeartbeat", host.getLastHeartbeat());
         summary.put("diskUsedGb", host.getDiskUsedGb());
         summary.put("diskTotalGb", host.getDiskTotalGb());
