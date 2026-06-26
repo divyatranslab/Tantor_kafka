@@ -250,7 +250,7 @@ export function Dashboard() {
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Refresh
           </button>
-          <button className="db-btn primary" onClick={() => navigate('/clusters/new')}>
+          <button className="db-btn primary" onClick={() => navigate('/cluster-deployment')}>
             <Plus size={14} />
             New cluster
           </button>

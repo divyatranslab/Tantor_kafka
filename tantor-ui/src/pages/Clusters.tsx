@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MoreVertical, PlusCircle, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCw, RotateCcw, ServerCog } from 'lucide-react';
+import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCw, RotateCcw, ServerCog } from 'lucide-react';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -171,13 +171,6 @@ export function Clusters() {
             <RefreshCw size={13} className={loading ? 'spin' : ''} />
             Refresh
           </button>
-          <button
-            className="btn btn-primary-action"
-            onClick={() => navigate('/cluster-deployment')}
-          >
-            <PlusCircle size={13} />
-            Add cluster
-          </button>
         </div>
       </header>
 
@@ -198,7 +191,7 @@ export function Clusters() {
             className="btn btn-primary-action"
             onClick={() => navigate('/cluster-deployment')}
           >
-            <PlusCircle size={13} /> Add first cluster
+            <Network size={13} /> Cluster Deployment
           </button>
         </div>
       ) : (
