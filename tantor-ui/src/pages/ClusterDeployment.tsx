@@ -73,9 +73,16 @@ type ServiceAssignment = {
   heap_size: string;
 };
 
+type PropertyRow = {
+  key: string;
+  value: string;
+  required?: boolean;
+  locked?: boolean;
+};
+
 type NodeConfigState = {
   mode: ConfigMode;
-  template: string;
+  rows: PropertyRow[];
   heapSize: string;
 };
 
@@ -85,6 +92,8 @@ type PrereqResult = {
   logOutput: string;
   errorMsg: string;
 };
+
+const UI_ONLY_PROPERTY_KEYS = new Set(['node.host', 'advertised.host', 'controller.host']);
 
 const ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
   {
@@ -330,6 +339,28 @@ function validatePath(value: string, label: string): string {
   return '';
 }
 
+function parseProperties(template: string): PropertyRow[] {
+  const rows: PropertyRow[] = [];
+  template.split(/\r?\n/).forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) return;
+    rows.push({
+      key: trimmed.slice(0, eq).trim(),
+      value: trimmed.slice(eq + 1).trim(),
+    });
+  });
+  return rows;
+}
+
+function serializeProperties(rows: PropertyRow[]): string {
+  return rows
+    .filter(row => row.key.trim() && !UI_ONLY_PROPERTY_KEYS.has(row.key.trim()))
+    .map(row => `${row.key.trim()}=${row.value}`)
+    .join('\n');
+}
+
 function activeStatus(status: string): boolean {
   return ['PENDING', 'IN_PROGRESS', 'RUNNING', 'QUEUED'].includes(String(status || '').toUpperCase());
 }
@@ -490,13 +521,6 @@ export function ClusterDeployment() {
     validatePath(artifactLoadDir, 'Artifact/load directory'),
   ].filter(Boolean);
 
-  const canPreview = clusterName.trim()
-    && kafkaVersion
-    && selectedHosts.length > 0
-    && brokerCount > 0
-    && controllerCount > 0
-    && pathErrors.length === 0;
-
   const configModalHost = configModalHostId
     ? selectedHosts.find(host => host.id === configModalHostId) || null
     : null;
@@ -510,6 +534,28 @@ export function ClusterDeployment() {
     if (kind === 'server') return DEFAULT_SERVER_PROPERTIES;
     if (kind === 'broker') return DEFAULT_BROKER_PROPERTIES;
     return DEFAULT_CONTROLLER_PROPERTIES;
+  };
+
+  const ipRowKeyForKind = (kind: ConfigKind) => {
+    if (kind === 'broker') return 'advertised.host';
+    if (kind === 'controller') return 'controller.host';
+    return 'node.host';
+  };
+
+  const requiredKeysForKind = (kind: ConfigKind) => [
+    ipRowKeyForKind(kind),
+    'default.replication.factor',
+    'min.insync.replicas',
+  ];
+
+  const defaultRowsForKind = (kind: ConfigKind): PropertyRow[] => {
+    const existing = parseProperties(defaultTemplateForKind(kind)).filter(row => !requiredKeysForKind(kind).includes(row.key));
+    return [
+      { key: ipRowKeyForKind(kind), value: '', required: true, locked: true },
+      { key: 'default.replication.factor', value: '', required: true, locked: true },
+      { key: 'min.insync.replicas', value: '', required: true, locked: true },
+      ...existing,
+    ];
   };
 
   const defaultHeapForKind = (kind: ConfigKind) => {
@@ -532,18 +578,65 @@ export function ClusterDeployment() {
 
   const serviceConfigFor = (hostId: string, kind: ConfigKind): NodeConfigState => {
     const existing = configsByService[configKey(hostId, kind)];
-    return existing || { mode: 'default', template: defaultTemplateForKind(kind), heapSize: defaultHeapForKind(kind) };
+    return existing || { mode: 'default', rows: defaultRowsForKind(kind), heapSize: defaultHeapForKind(kind) };
   };
 
   const updateServiceConfig = (hostId: string, kind: ConfigKind, patch: Partial<NodeConfigState>) => {
     setConfigsByService(prev => {
-      const current = prev[configKey(hostId, kind)] || { mode: 'default', template: defaultTemplateForKind(kind), heapSize: defaultHeapForKind(kind) };
+      const current = prev[configKey(hostId, kind)] || { mode: 'default', rows: defaultRowsForKind(kind), heapSize: defaultHeapForKind(kind) };
       return {
         ...prev,
         [configKey(hostId, kind)]: { ...current, ...patch },
       };
     });
   };
+
+  const updatePropertyValue = (hostId: string, kind: ConfigKind, key: string, value: string) => {
+    const cfg = serviceConfigFor(hostId, kind);
+    updateServiceConfig(hostId, kind, {
+      mode: 'custom',
+      rows: cfg.rows.map(row => row.key === key ? { ...row, value } : row),
+    });
+  };
+
+  const configValuesForKey = (key: string) => selectedHosts.flatMap(host => {
+    const role = rolesByHost[host.id] || 'broker_controller';
+    return configKindsForRole(role)
+      .map(kind => serviceConfigFor(host.id, kind).rows.find(row => row.key === key)?.value.trim() || '')
+      .filter(Boolean);
+  });
+
+  const replicationFactorValues = configValuesForKey('default.replication.factor');
+  const minIsrValues = configValuesForKey('min.insync.replicas');
+  const configuredReplicationFactor = Number.parseInt(replicationFactorValues[0] || String(replication.factor), 10);
+  const configuredMinIsr = Number.parseInt(minIsrValues[0] || String(replication.minIsr), 10);
+
+  const missingRequiredConfigs = selectedHosts.flatMap(host => {
+    const role = rolesByHost[host.id] || 'broker_controller';
+    return configKindsForRole(role).flatMap(kind => {
+      const cfg = serviceConfigFor(host.id, kind);
+      return cfg.rows
+        .filter(row => row.required && !row.value.trim())
+        .map(row => `${host.hostname}: ${configFileName(kind)} requires ${row.key}`);
+    });
+  });
+
+  const configValidationErrors = [
+    new Set(replicationFactorValues).size > 1 ? 'All selected services must use the same default.replication.factor.' : '',
+    new Set(minIsrValues).size > 1 ? 'All selected services must use the same min.insync.replicas.' : '',
+    replicationFactorValues.some(value => !/^\d+$/.test(value) || Number(value) < 1) ? 'default.replication.factor must be a positive number.' : '',
+    minIsrValues.some(value => !/^\d+$/.test(value) || Number(value) < 1) ? 'min.insync.replicas must be a positive number.' : '',
+  ].filter(Boolean);
+
+  const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors];
+
+  const canPreview = clusterName.trim()
+    && kafkaVersion
+    && selectedHosts.length > 0
+    && brokerCount > 0
+    && controllerCount > 0
+    && pathErrors.length === 0
+    && configBlockingIssues.length === 0;
 
   const buildServices = (): ServiceAssignment[] => {
     const usedNodeIds = new Set((existingCluster?.hosts || [])
@@ -562,18 +655,18 @@ export function ClusterDeployment() {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
       } else if (role === 'separate') {
         const controllerCfg = configFor('controller');
         const brokerCfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: controllerCfg.template, heap_size: controllerCfg.heapSize });
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: brokerCfg.template, heap_size: brokerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serializeProperties(controllerCfg.rows), heap_size: controllerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serializeProperties(brokerCfg.rows), heap_size: brokerCfg.heapSize });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
       } else {
         const cfg = configFor('broker');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: cfg.template, heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serializeProperties(cfg.rows), heap_size: cfg.heapSize });
       }
     });
 
@@ -708,8 +801,8 @@ export function ClusterDeployment() {
           listener_port: listenerPort,
           controller_port: controllerPort,
           num_partitions: numPartitions,
-          replication_factor: replication.factor,
-          min_insync_replicas: replication.minIsr,
+          replication_factor: configuredReplicationFactor,
+          min_insync_replicas: configuredMinIsr,
         },
       };
 
@@ -955,12 +1048,17 @@ export function ClusterDeployment() {
             <div className="cd-calculated">
               <span>Broker count: <strong>{brokerCount}</strong></span>
               <span>Controller count: <strong>{controllerCount}</strong></span>
-              <span>Replication factor: <strong>{replication.factor}</strong></span>
-              <span>Min ISR: <strong>{replication.minIsr}</strong></span>
+              <span>Replication factor: <strong>{Number.isFinite(configuredReplicationFactor) ? configuredReplicationFactor : 'Required'}</strong></span>
+              <span>Min ISR: <strong>{Number.isFinite(configuredMinIsr) ? configuredMinIsr : 'Required'}</strong></span>
             </div>
             {warnings.length > 0 && (
               <div className="cd-warning-list">
                 {warnings.map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
+              </div>
+            )}
+            {configBlockingIssues.length > 0 && (
+              <div className="cd-inline-errors">
+                {configBlockingIssues.map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
               </div>
             )}
           </section>
@@ -1073,7 +1171,7 @@ export function ClusterDeployment() {
                         <div className="cd-segmented">
                           <button
                             className={cfg.mode === 'default' ? 'active' : ''}
-                            onClick={() => updateServiceConfig(configModalHost.id, kind, { mode: 'default', template: defaultTemplateForKind(kind) })}
+                            onClick={() => updateServiceConfig(configModalHost.id, kind, { mode: 'default', rows: defaultRowsForKind(kind) })}
                           >
                             Default
                           </button>
@@ -1086,10 +1184,11 @@ export function ClusterDeployment() {
                         </div>
                       </div>
                     </div>
-                    <ConfigEditorBox
-                      label={configFileName(kind)}
-                      value={cfg.template}
-                      onChange={value => updateServiceConfig(configModalHost.id, kind, { mode: 'custom', template: value })}
+                    <PropertyTable
+                      rows={cfg.rows}
+                      hostIp={displayIp(configModalHost)}
+                      onUseHostIp={() => updatePropertyValue(configModalHost.id, kind, ipRowKeyForKind(kind), displayIp(configModalHost))}
+                      onChange={(key, value) => updatePropertyValue(configModalHost.id, kind, key, value)}
                     />
                   </div>
                 );
@@ -1106,12 +1205,58 @@ export function ClusterDeployment() {
   );
 }
 
-function ConfigEditorBox({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function PropertyTable({
+  rows,
+  hostIp,
+  onUseHostIp,
+  onChange,
+}: {
+  rows: PropertyRow[];
+  hostIp: string;
+  onUseHostIp: () => void;
+  onChange: (key: string, value: string) => void;
+}) {
   return (
-    <label className="cd-config-box">
-      <span>{label}</span>
-      <textarea value={value} onChange={e => onChange(e.target.value)} spellCheck={false} />
-    </label>
+    <div className="cd-property-table-wrap">
+      <table className="cd-property-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={row.key} className={row.required && !row.value.trim() ? 'required-missing' : ''}>
+              <td>
+                <span className="cd-prop-key">{row.key}</span>
+                {row.required && <small>Required</small>}
+              </td>
+              <td>
+                <input
+                  value={row.value}
+                  onChange={e => onChange(row.key, e.target.value)}
+                  placeholder={row.required ? 'Required before preview' : ''}
+                />
+              </td>
+              <td>
+                {row.key.includes('host') ? (
+                  <button type="button" onClick={onUseHostIp}>Use {hostIp}</button>
+                ) : (
+                  <button type="button" onClick={() => {
+                    const next = window.prompt(`Edit ${row.key}`, row.value);
+                    if (next !== null) onChange(row.key, next);
+                  }}>
+                    Edit
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

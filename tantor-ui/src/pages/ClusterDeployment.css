@@ -698,6 +698,105 @@
   margin-bottom: 0.15rem;
 }
 
+.cd-property-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.cd-property-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cd-property-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 36px;
+  padding: 0 0.65rem;
+  background: #f5f4f1;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.cd-property-table td {
+  padding: 0.5rem 0.65rem;
+  border-top: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+
+.cd-property-table th:nth-child(1),
+.cd-property-table td:nth-child(1) {
+  width: 34%;
+}
+
+.cd-property-table th:nth-child(2),
+.cd-property-table td:nth-child(2) {
+  width: 48%;
+}
+
+.cd-property-table th:nth-child(3),
+.cd-property-table td:nth-child(3) {
+  width: 18%;
+}
+
+.cd-property-table tr.required-missing {
+  background: var(--color-warning-light);
+}
+
+.cd-prop-key {
+  display: block;
+  font: 0.76rem/1.3 Consolas, 'SF Mono', monospace;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.cd-property-table small {
+  display: inline-flex;
+  margin-top: 0.25rem;
+  color: var(--color-warning);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.cd-property-table input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  font: 0.76rem/1.3 Consolas, 'SF Mono', monospace;
+  outline: none;
+}
+
+.cd-property-table input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(83, 74, 183, 0.12);
+}
+
+.cd-property-table button {
+  min-height: 30px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.cd-property-table button:hover {
+  background: var(--bg-raised);
+}
+
 @keyframes cd-progress {
   from { transform: translateX(-40%); }
   to { transform: translateX(190%); }
