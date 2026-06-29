@@ -129,3 +129,29 @@
 .sidebar-nav::-webkit-scrollbar       { width: 4px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
 .sidebar-nav::-webkit-scrollbar-thumb { background: #e8e6e1; border-radius: 2px; }
+.nav-item-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-subitems {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.nav-item-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: currentColor;
+  opacity: 0.5;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.nav-item.active-parent {
+  color: #1a1a18;
+  font-weight: 500;
+}

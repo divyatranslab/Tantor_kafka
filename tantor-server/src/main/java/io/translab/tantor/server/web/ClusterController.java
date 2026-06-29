@@ -37,6 +37,7 @@ public class ClusterController {
     private final io.translab.tantor.server.repository.HostRepository hostRepository;
     private final io.translab.tantor.server.repository.HostParcelRepository hostParcelRepository;
     private final io.translab.tantor.server.service.BrokerMetricsCacheService brokerMetricsCacheService;
+    private final io.translab.tantor.server.service.ClusterOverviewService clusterOverviewService;
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
@@ -115,6 +116,14 @@ public class ClusterController {
             response.put("brokers", brokers);
             return ResponseEntity.ok(response);
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @GetMapping("/{id}/overview")
+    public ResponseEntity<io.translab.tantor.server.dto.ClusterOverviewDto> getClusterOverview(@PathVariable java.util.UUID id) {
+        if (clusterRepository.findById(id).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(clusterOverviewService.getOverview(id));
     }
 
     @PostMapping("/deploy")

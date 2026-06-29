@@ -36,6 +36,17 @@ public class KafkaAdminService {
     }
 
     private AdminClient createAdminClient(UUID clusterId) {
+        Properties props = getKafkaClientProperties(clusterId);
+        log.info("Creating AdminClient for cluster {} with bootstrap {}", clusterId, props.get(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG));
+        return AdminClient.create(props);
+    }
+
+    /**
+     * Builds the common connection properties used by Admin, Consumer and Producer clients.
+     * Keeping this in one place prevents topic message operations from accidentally targeting
+     * a different listener than the rest of the cluster-management API.
+     */
+    public Properties getKafkaClientProperties(UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
 
@@ -95,8 +106,7 @@ public class KafkaAdminService {
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
         props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
 
-        log.info("Creating AdminClient for cluster {} with bootstrap {}", clusterId, props.get(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG));
-        return AdminClient.create(props);
+        return props;
     }
 
     public Map<String, Object> inspectBootstrapServers(String bootstrapServers) {
@@ -255,10 +265,10 @@ public class KafkaAdminService {
         }
     }
 
-    public io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto> listTopicsPaginated(UUID clusterId, int page, int size, String search, String sortBy) {
+    public io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto> listTopicsPaginated(UUID clusterId, int page, int size, String search, String sortBy, boolean includeInternal) {
         AdminClient client = getAdminClient(clusterId);
         try {
-            ListTopicsOptions options = new ListTopicsOptions().listInternal(false);
+            ListTopicsOptions options = new ListTopicsOptions().listInternal(includeInternal);
             Set<String> allTopicNames = client.listTopics(options).names().get();
 
             // Filter and Sort in memory
@@ -288,6 +298,18 @@ public class KafkaAdminService {
             if (!pagedNames.isEmpty()) {
                 DescribeTopicsResult describeTopicsResult = client.describeTopics(pagedNames);
                 Map<String, TopicDescription> descriptions = describeTopicsResult.allTopicNames().get();
+                List<TopicPartition> pagePartitions = descriptions.values().stream()
+                        .flatMap(desc -> desc.partitions().stream()
+                                .map(partition -> new TopicPartition(desc.name(), partition.partition())))
+                        .collect(Collectors.toList());
+                Map<TopicPartition, OffsetSpec> earliestRequest = pagePartitions.stream()
+                        .collect(Collectors.toMap(tp -> tp, ignored -> OffsetSpec.earliest()));
+                Map<TopicPartition, OffsetSpec> latestRequest = pagePartitions.stream()
+                        .collect(Collectors.toMap(tp -> tp, ignored -> OffsetSpec.latest()));
+                Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> earliest =
+                        client.listOffsets(earliestRequest).all().get();
+                Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latest =
+                        client.listOffsets(latestRequest).all().get();
 
                 for (String name : pagedNames) {
                     TopicDescription desc = descriptions.get(name);
@@ -296,12 +318,19 @@ public class KafkaAdminService {
                         long underReplicated = desc.partitions().stream()
                                 .filter(p -> p.replicas().size() > p.isr().size())
                                 .count();
+                        List<TopicPartition> partitions = desc.partitions().stream()
+                                .map(p -> new TopicPartition(name, p.partition()))
+                                .collect(Collectors.toList());
+                        long messageCount = partitions.stream().mapToLong(tp ->
+                                Math.max(0, latest.get(tp).offset() - earliest.get(tp).offset())).sum();
 
                         content.add(io.translab.tantor.server.dto.TopicSummaryDto.builder()
                                 .name(desc.name())
                                 .partitionCount(desc.partitions().size())
                                 .replicationFactor(replicationFactor)
                                 .underReplicated(underReplicated)
+                                .messageCount(messageCount)
+                                .internal(desc.isInternal())
                                 .build());
                     }
                 }

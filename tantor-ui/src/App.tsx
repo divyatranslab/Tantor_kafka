@@ -8,7 +8,9 @@ import { Monitoring } from './pages/Monitoring';
 import { Alerts } from './pages/Alerts';
 import { AuditLogs } from './pages/AuditLogs';
 import { ClusterDetails } from './pages/ClusterDetails';
+import { ClusterOverview } from './pages/ClusterOverview';
 import { Topics } from './pages/Topics';
+import { TopicDetails } from './pages/TopicDetails';
 import { Consumers } from './pages/Consumers';
 import { ConfigEditor } from './pages/ConfigEditor';
 import { Partitions } from './pages/Partitions';
@@ -17,24 +19,36 @@ import { DeploymentLogs } from './pages/DeploymentLogs';
 import { Brokers } from './pages/Brokers';
 import { ExternalClusters } from './pages/ExternalClusters';
 import { ClusterDeployment } from './pages/ClusterDeployment';
+import { LdapSettings } from './pages/LdapSettings';
+import { SchemaRegistry } from './pages/SchemaRegistry';
+import { KafkaConnect } from './pages/KafkaConnect';
+import UserManagement from './pages/UserManagement';
+import { ClusterProvider } from './contexts/ClusterContext';
+import { TopNavbar } from './components/TopNavbar';
 import './App.css';
 
 function App() {
   return (
-    <Router>
-      <div className="app-container">
-        <Sidebar />
-        <main className="main-content">
-          <Routes>
+    <ClusterProvider>
+      <Router>
+        <div className="app-container">
+          <Sidebar />
+          <main className="main-content">
+            <TopNavbar />
+            <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/hosts" element={<Hosts />} />
             <Route path="/clusters" element={<Clusters />} />
             <Route path="/cluster-deployment" element={<ClusterDeployment />} />
             <Route path="/external-clusters" element={<ExternalClusters />} />
+            <Route path="/schema-registry" element={<SchemaRegistry />} />
+            <Route path="/kafka-connect" element={<KafkaConnect />} />
             <Route path="/clusters/:id" element={<ClusterDetails />}>
+              <Route path="overview" element={<ClusterOverview />} />
               <Route path="brokers" element={<Brokers />} />
               <Route path="partitions" element={<Partitions />} />
               <Route path="topics" element={<Topics />} />
+              <Route path="topics/:topicName" element={<TopicDetails />} />
               <Route path="consumers" element={<Consumers />} />
               <Route path="config" element={<ConfigEditor />} />
               <Route path="actions" element={<ClusterActions />} />
@@ -44,6 +58,8 @@ function App() {
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/audit" element={<AuditLogs />} />
+            <Route path="/ldap-settings" element={<LdapSettings />} />
+            <Route path="/user-management" element={<UserManagement />} />
             {/* Fallback routes for pages not fully fleshed out yet */}
             <Route path="*" element={
               <div className="animate-fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
@@ -57,6 +73,7 @@ function App() {
         </main>
       </div>
     </Router>
+  </ClusterProvider>
   );
 }
 

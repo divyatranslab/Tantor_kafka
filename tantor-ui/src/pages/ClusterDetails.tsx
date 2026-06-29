@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart } from 'lucide-react';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -38,9 +38,9 @@ export function ClusterDetails() {
         }
     }
     
-    // Default redirect to brokers for valid clusters
+    // Default redirect to overview for valid clusters
     if (window.location.pathname === `/clusters/${id}`) {
-        navigate(`/clusters/${id}/brokers`, { replace: true });
+        navigate(`/clusters/${id}/overview`, { replace: true });
     }
   }, [cluster, id, navigate]);
 
@@ -49,6 +49,7 @@ export function ClusterDetails() {
   }
 
   const tabs = [
+    { to: `/clusters/${id}/overview`, icon: LineChart, label: 'Overview', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
