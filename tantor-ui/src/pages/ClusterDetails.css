@@ -98,6 +98,65 @@
   font-weight: 500;
 }
 
+.cluster-logs-page {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.cluster-logs-header {
+  display: grid;
+  gap: 14px;
+}
+
+.cluster-logs-header .breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.cluster-logs-header .breadcrumb span:first-child {
+  cursor: pointer;
+}
+
+.cluster-logs-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cluster-logs-title h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.cluster-logs-title p {
+  margin: 3px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.cluster-logs-title .status-badge {
+  margin-left: auto;
+}
+
+.cluster-tabs.cluster-logs-tabs nav span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-bottom: 2px solid var(--accent-primary);
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.cluster-logs-content {
+  margin-top: 16px;
+}
+
 .cluster-content {
   margin-top: 1.5rem;
 }

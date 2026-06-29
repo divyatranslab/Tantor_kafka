@@ -40,12 +40,12 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
-            params.put("config_file", configFileForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
 
             mergeConfigParams(params, configJsonStr);
+            params.put("config_file", configFileForRole(normalizedRole, String.valueOf(params.getOrDefault("mode", "kraft"))));
             
             applyDefaultKafkaPaths(params);
             applyActiveParcelParams(params, hostId, version);
@@ -83,12 +83,12 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
-            params.put("config_file", configFileForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
 
             mergeConfigParams(params, configJsonStr);
+            params.put("config_file", configFileForRole(normalizedRole, String.valueOf(params.getOrDefault("mode", "kraft"))));
             applyDefaultKafkaPaths(params);
             if (!applyActiveParcelParams(params, hostId, targetVersion)) {
                 throw new IllegalStateException("Kafka " + targetVersion + " is not active on host " + hostId + ".");
@@ -120,7 +120,7 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void restartService(UUID clusterId, String hostId, String serviceName) {
+    public UUID restartService(UUID clusterId, String hostId, String serviceName) {
         Task task = createTask(clusterId, hostId, "RESTART_SERVICE");
         
         try {
@@ -132,20 +132,52 @@ public class DeploymentService {
         }
 
         taskRepository.save(task);
+        return task.getId();
     }
 
     @Transactional
     public void updateKafkaConfig(UUID clusterId, String hostId, String configJsonStr, boolean restart) {
+        updateKafkaConfig(clusterId, hostId, "broker", "1", configJsonStr, "", restart);
+    }
+
+    @Transactional
+    public UUID updateKafkaConfig(
+            UUID clusterId,
+            String hostId,
+            String role,
+            String nodeId,
+            String configJsonStr,
+            String propertiesTemplate,
+            boolean restart
+    ) {
         Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
         try {
             Map<String, Object> params = new java.util.HashMap<>();
             params.put("restart", String.valueOf(restart));
+            String normalizedRole = role == null || role.isBlank() ? "broker" : role;
+            params.put("role", normalizedRole);
+            params.put("service_role", normalizedRole);
+            params.put("node_id", nodeId == null || nodeId.isBlank() ? "1" : nodeId);
+            params.put("service_name", systemdServiceName(normalizedRole));
+            params.put("systemd_service", systemdServiceName(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
 
             mergeConfigParams(params, configJsonStr);
+            params.put("config_file", configFileForRole(normalizedRole, String.valueOf(params.getOrDefault("mode", "kraft"))));
+            if (propertiesTemplate != null && !propertiesTemplate.isBlank()) {
+                if ("controller".equals(normalizedRole)) {
+                    params.put("controller_properties_template", propertiesTemplate);
+                } else if ("zookeeper".equals(normalizedRole)) {
+                    params.put("zookeeper_properties_template", propertiesTemplate);
+                } else if ("broker_controller".equals(normalizedRole)) {
+                    params.put("server_properties_template", propertiesTemplate);
+                } else {
+                    params.put("broker_properties_template", propertiesTemplate);
+                }
+            }
             applyDefaultKafkaPaths(params);
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -153,6 +185,7 @@ public class DeploymentService {
         }
 
         taskRepository.save(task);
+        return task.getId();
     }
 
     @Transactional
@@ -185,7 +218,10 @@ public class DeploymentService {
         return "broker";
     }
 
-    private String configFileForRole(String role) {
+    private String configFileForRole(String role, String mode) {
+        if ("zookeeper".equalsIgnoreCase(mode)) {
+            return "zookeeper".equals(role) ? "zookeeper.properties" : "server.properties";
+        }
         if ("controller".equals(role)) return "controller.properties";
         if ("zookeeper".equals(role)) return "zookeeper.properties";
         if ("broker_controller".equals(role)) return "server.properties";

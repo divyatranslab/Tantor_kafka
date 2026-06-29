@@ -1,5 +1,6 @@
 package io.translab.tantor.server.web;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.domain.Task;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.InetSocketAddress;
@@ -37,18 +39,21 @@ public class HostController {
     private final ClusterRepository clusterRepository;
     private final TaskRepository taskRepository;
     private final HostStatusService hostStatusService;
+    private final ObjectMapper objectMapper;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
         List<Map<String, Object>> hosts = hostRepository.findAll().stream()
-                .filter(hostStatusService::isInfrastructureHost)
                 .map(this::hostSummary)
                 .toList();
         return ResponseEntity.ok(hosts);
     }
 
     @PostMapping("/{id}/check-prerequisites")
-    public ResponseEntity<?> checkPrerequisites(@PathVariable String id) {
+    public ResponseEntity<?> checkPrerequisites(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> options
+    ) {
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -63,7 +68,18 @@ public class HostController {
         task.setHostId(id);
         task.setCommand("CHECK_PREREQUISITES");
         task.setStatus("PENDING");
-        task.setParameters("{}");
+        try {
+            Map<String, Object> parameters = new LinkedHashMap<>();
+            if (options != null) {
+                Object mode = options.get("mode");
+                Object requiredPorts = options.get("required_ports");
+                if (mode != null) parameters.put("mode", String.valueOf(mode));
+                if (requiredPorts != null) parameters.put("required_ports", String.valueOf(requiredPorts));
+            }
+            task.setParameters(objectMapper.writeValueAsString(parameters));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid prerequisite options."));
+        }
         taskRepository.save(task);
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
@@ -183,6 +199,9 @@ public class HostController {
         summary.put("ipAddresses", host.getIpAddresses());
         summary.put("osDetails", host.getOsDetails());
         summary.put("agentVersion", host.getAgentVersion());
+        boolean discoveryAgent = hostStatusService.isDiscoveryAgent(host);
+        summary.put("agentType", discoveryAgent ? "KAFKA_DISCOVERY" : "HOST");
+        summary.put("deployable", !discoveryAgent);
         summary.put("javaVersion", host.getJavaVersion());
         summary.put("status", effectiveStatus);
         summary.put("lastHeartbeat", host.getLastHeartbeat());

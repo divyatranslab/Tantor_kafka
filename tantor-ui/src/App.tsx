@@ -17,6 +17,7 @@ import { DeploymentLogs } from './pages/DeploymentLogs';
 import { Brokers } from './pages/Brokers';
 import { ExternalClusters } from './pages/ExternalClusters';
 import { ClusterDeployment } from './pages/ClusterDeployment';
+import { ClusterNodes } from './pages/ClusterNodes';
 import './App.css';
 
 function App() {
@@ -32,6 +33,7 @@ function App() {
             <Route path="/cluster-deployment" element={<ClusterDeployment />} />
             <Route path="/external-clusters" element={<ExternalClusters />} />
             <Route path="/clusters/:id" element={<ClusterDetails />}>
+              <Route path="nodes" element={<ClusterNodes />} />
               <Route path="brokers" element={<Brokers />} />
               <Route path="partitions" element={<Partitions />} />
               <Route path="topics" element={<Topics />} />

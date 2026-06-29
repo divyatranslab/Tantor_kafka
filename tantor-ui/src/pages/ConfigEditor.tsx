@@ -1,22 +1,18 @@
-import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Save, RefreshCw, Server, FileText, ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { FileText, Loader2, Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
+import './ConfigEditor.css';
 
-interface BrokerConfigs {
-  [brokerId: string]: {
-    [key: string]: { value: string; isReadOnly: boolean };
-  };
-}
-
-interface ConfigPayload {
-  dynamicConfigs: BrokerConfigs;
-  serviceTopology?: ServiceTopologyItem[];
-  staticConfigs: {
-    filePath: string;
-    properties: Record<string, any>;
-    deploymentParameters?: Record<string, any>;
-    configFiles?: StaticConfigFile[];
-  };
+interface StaticConfigFile {
+  id: string;
+  serviceId?: string;
+  hostId?: string;
+  nodeId?: number;
+  label: string;
+  description?: string;
+  path: string;
+  role?: string;
+  properties: Record<string, unknown>;
 }
 
 interface ServiceTopologyItem {
@@ -24,49 +20,43 @@ interface ServiceTopologyItem {
   hostAddress: string;
   role: string;
   nodeId: number;
-  serviceName: string;
   systemdUnit: string;
   configPath: string;
-  listenerPort?: string;
-  controllerPort?: string;
-  logDirs?: string;
-  metadataLogDir?: string;
-}
-interface StaticConfigFile {
-  id: string;
-  label: string;
-  description?: string;
-  path: string;
-  role?: string;
-  active?: boolean;
-  properties: Record<string, any>;
 }
 
-type ViewType = 'BROKER' | 'STATIC';
+interface ConfigPayload {
+  serviceTopology?: ServiceTopologyItem[];
+  staticConfigs: {
+    configFiles?: StaticConfigFile[];
+  };
+}
+
+const generatedKeys = new Set([
+  'process.roles', 'node.id', 'broker.id', 'listeners', 'advertised.listeners',
+  'controller.quorum.voters', 'controller.quorum.bootstrap.servers',
+  'zookeeper.connect', 'dataDir', 'clientPort', 'servers',
+]);
 
 export function ConfigEditor() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  const [viewType, setViewType] = useState<ViewType>('BROKER');
-  const [selectedStaticFileId, setSelectedStaticFileId] = useState('');
-  
-  // Bulk update state
-  const [configKey, setConfigKey] = useState('');
-  const [configValue, setConfigValue] = useState('');
   const [saving, setSaving] = useState(false);
-  const [applyToAgents, setApplyToAgents] = useState(false);
-  const [restart, setRestart] = useState(false);
-  const [isCurrentlyStatic, setIsCurrentlyStatic] = useState(false);
+  const [selectedHostId, setSelectedHostId] = useState('');
+  const [selectedFileId, setSelectedFileId] = useState('');
+  const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
+  const [newKey, setNewKey] = useState('');
+  const [newValue, setNewValue] = useState('');
+  const [restart, setRestart] = useState(true);
 
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/config`);
-      if (res.ok) setPayload(await res.json());
-    } catch (e) {
-      console.error(e);
+      const response = await fetch(`/api/v1/clusters/${id}/config`);
+      if (response.ok) setPayload(await response.json());
+    } catch (error) {
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -76,389 +66,151 @@ export function ConfigEditor() {
     fetchConfigs();
   }, [id]);
 
+  const files = payload?.staticConfigs.configFiles || [];
+  const topology = payload?.serviceTopology || [];
+  const hosts = useMemo(() => {
+    const unique = new Map<string, { id: string; address: string; services: number }>();
+    topology.forEach(service => {
+      const current = unique.get(service.hostId);
+      unique.set(service.hostId, {
+        id: service.hostId,
+        address: service.hostAddress,
+        services: (current?.services || 0) + 1,
+      });
+    });
+    return Array.from(unique.values());
+  }, [topology]);
+
   useEffect(() => {
-    const firstFile = payload?.staticConfigs.configFiles?.[0];
-    if (firstFile && !selectedStaticFileId) {
-      setSelectedStaticFileId(firstFile.id);
-    }
-  }, [payload, selectedStaticFileId]);
+    if (!selectedHostId && hosts[0]) setSelectedHostId(hosts[0].id);
+  }, [hosts, selectedHostId]);
 
-  const staticFiles = payload?.staticConfigs.configFiles?.length
-    ? payload.staticConfigs.configFiles
-    : payload ? [{
-        id: 'active-server',
-        label: 'Active Server Config',
-        description: 'server.properties used by the Kafka service',
-        path: payload.staticConfigs.filePath,
-        active: true,
-        role: 'server',
-        properties: payload.staticConfigs.properties,
-      }] : [];
+  const hostFiles = files.filter(file => !selectedHostId || file.hostId === selectedHostId);
+  const selectedFile = hostFiles.find(file => file.id === selectedFileId) || hostFiles[0];
 
-  const selectedStaticFile = staticFiles.find(file => file.id === selectedStaticFileId) || staticFiles[0];
+  useEffect(() => {
+    if (selectedFile && selectedFile.id !== selectedFileId) setSelectedFileId(selectedFile.id);
+  }, [selectedFile, selectedFileId]);
 
-  const handleBulkSave = async () => {
-    if (!configKey.trim() || !configValue.trim()) {
-      alert("Please enter both a configuration key and value.");
+  useEffect(() => {
+    if (!selectedFile) return;
+    setDraftProperties(Object.fromEntries(
+      Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
+    ));
+  }, [selectedFile?.id]);
+
+  const selectHost = (hostId: string) => {
+    setSelectedHostId(hostId);
+    const firstFile = files.find(file => file.hostId === hostId);
+    setSelectedFileId(firstFile?.id || '');
+  };
+
+  const addProperty = () => {
+    const key = newKey.trim();
+    if (!key || !/^[A-Za-z0-9._-]+$/.test(key)) {
+      alert('Enter a valid Kafka property key.');
       return;
     }
+    setDraftProperties(current => ({ ...current, [key]: newValue }));
+    setNewKey('');
+    setNewValue('');
+  };
 
-    if (isCurrentlyStatic && (!applyToAgents || !restart)) {
-      if (!confirm("Warning: You are updating a STATIC (read-only) configuration. It will NOT take effect unless you persist to server.properties and restart. Proceed anyway?")) {
-        return;
-      }
+  const saveConfiguration = async () => {
+    if (!selectedFile?.serviceId) {
+      alert('This configuration is not attached to a managed node service.');
+      return;
     }
-
     setSaving(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/config/bulk`, {
+      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          configKey: configKey.trim(),
-          configValue: configValue.trim(),
-          applyToAgents,
-          restart
-        })
+        body: JSON.stringify({ properties: draftProperties, restart }),
       });
-      if (res.ok) {
-        alert(`Successfully applied config ${configKey} to all brokers.`);
-        setConfigKey('');
-        setConfigValue('');
-        setIsCurrentlyStatic(false);
-        fetchConfigs();
-      } else {
-        try {
-          const errData = await res.json();
-          alert(`Failed to apply configuration: ${errData.message || res.statusText}`);
-        } catch {
-          alert(`Failed to apply configuration: ${res.statusText}`);
-        }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        alert(data.message || 'Failed to update configuration.');
+        return;
       }
-    } catch (e) {
-      alert("Error applying configuration. Please try again.");
+      navigate(`/clusters/${id}/logs`);
+    } catch {
+      alert('Network error while updating configuration.');
     } finally {
       setSaving(false);
     }
   };
 
-  const renderTopology = () => {
-    const topology = payload?.serviceTopology || [];
-    const deployment = payload?.staticConfigs.deploymentParameters || {};
-    if (!topology.length && !deployment.cluster_uuid && !deployment.quorum_voters && !deployment.bootstrap_servers) return null;
+  if (loading && !payload) {
+    return <div className="state-center"><Loader2 className="spin" /> Loading node configurations...</div>;
+  }
 
-    return (
-      <div className="table-card" style={{ marginBottom: '1.5rem' }}>
-        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)' }}>
-          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Kafka Service Topology</h3>
+  return (
+    <div className="node-config-page">
+      <header className="node-config-header">
+        <div><h2>Configuration Change</h2><p>Select a node, choose its configuration file, then apply the change to that service.</p></div>
+        <button onClick={fetchConfigs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
+      </header>
+
+      <section className="node-config-section">
+        <div className="node-config-section-title"><span>1</span><div><h3>Select node</h3><p>Each VM may contain one or more Kafka services.</p></div></div>
+        <div className="node-config-hosts">
+          {hosts.map(host => (
+            <button key={host.id} className={selectedHostId === host.id ? 'active' : ''} onClick={() => selectHost(host.id)}>
+              <Server size={16} /><span><strong>{host.address}</strong><small>{host.id} · {host.services} service{host.services === 1 ? '' : 's'}</small></span>
+            </button>
+          ))}
         </div>
-        <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem', borderBottom: '1px solid var(--border-color)' }}>
-          <div>
-            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Kafka Cluster UUID</div>
-            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.cluster_uuid || 'Not available'}</code>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Controller Quorum</div>
-            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.quorum_voters || 'Not available'}</code>
-          </div>
-          <div>
-            <div style={{ fontSize: '0.7rem', color: '#6b7280', fontWeight: 700, textTransform: 'uppercase' }}>Bootstrap Servers</div>
-            <code style={{ fontSize: '0.8rem', wordBreak: 'break-all' }}>{deployment.bootstrap_servers || 'Not available'}</code>
-          </div>
+      </section>
+
+      <section className="node-config-section">
+        <div className="node-config-section-title"><span>2</span><div><h3>Select configuration file</h3><p>Only files belonging to the selected node are shown.</p></div></div>
+        <div className="node-config-files">
+          {hostFiles.map(file => (
+            <button key={file.id} className={selectedFile?.id === file.id ? 'active' : ''} onClick={() => setSelectedFileId(file.id)}>
+              <FileText size={15} /><span><strong>{file.label}</strong><small>{file.path}</small></span>
+            </button>
+          ))}
         </div>
-        {topology.length > 0 && (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ fontSize: '0.8125rem' }}>
-              <thead>
-                <tr>
-                  <th>Node ID</th>
-                  <th>Role</th>
-                  <th>Host</th>
-                  <th>Systemd Unit</th>
-                  <th>Config File</th>
-                  <th>Data Paths</th>
-                </tr>
-              </thead>
+      </section>
+
+      {selectedFile ? (
+        <section className="node-config-section editor">
+          <div className="node-config-editor-head">
+            <div><h3>{selectedFile.label}</h3><p>{selectedFile.path}</p></div>
+            <label><input type="checkbox" checked={restart} onChange={event => setRestart(event.target.checked)} /> Restart this service after saving</label>
+          </div>
+
+          <div className="node-config-table-wrap">
+            <table className="node-config-table">
+              <thead><tr><th>Property</th><th>Value</th><th>Action</th></tr></thead>
               <tbody>
-                {topology.map(item => (
-                  <tr key={`${item.hostId}-${item.role}-${item.nodeId}`}>
-                    <td><code>{item.nodeId}</code></td>
-                    <td style={{ textTransform: 'capitalize' }}>{item.role.replace('_', ' ')}</td>
-                    <td>
-                      <div>{item.hostAddress}</div>
-                      <code style={{ fontSize: '0.72rem', color: '#6b7280' }}>{item.hostId}</code>
-                    </td>
-                    <td><code>{item.systemdUnit}</code></td>
-                    <td><code style={{ wordBreak: 'break-all' }}>{item.configPath}</code></td>
-                    <td>
-                      {item.logDirs && <div><span style={{ color: '#6b7280' }}>log.dirs:</span> <code>{item.logDirs}</code></div>}
-                      {item.metadataLogDir && <div><span style={{ color: '#6b7280' }}>metadata:</span> <code>{item.metadataLogDir}</code></div>}
-                      {item.listenerPort && <div><span style={{ color: '#6b7280' }}>broker port:</span> <code>{item.listenerPort}</code></div>}
-                      {item.controllerPort && <div><span style={{ color: '#6b7280' }}>controller port:</span> <code>{item.controllerPort}</code></div>}
-                    </td>
-                  </tr>
-                ))}
+                {Object.entries(draftProperties).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
+                  const generated = generatedKeys.has(key);
+                  return (
+                    <tr key={key}>
+                      <td><code>{key}</code>{generated && <small>Managed by Tantor</small>}</td>
+                      <td><input value={value} disabled={generated} onChange={event => setDraftProperties(current => ({ ...current, [key]: event.target.value }))} /></td>
+                      <td><button title={`Remove ${key}`} disabled={generated} onClick={() => setDraftProperties(current => { const next = { ...current }; delete next[key]; return next; })}><Trash2 size={14} /></button></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-    );
-  };
-  const renderConfigurationTable = () => {
-    if (!payload) return null;
 
-    if (viewType === 'STATIC') {
-      const staticProps = selectedStaticFile?.properties || {};
-      if (!staticProps || Object.keys(staticProps).length === 0) {
-        return <div className="empty-state">No properties available for this config file.</div>;
-      }
-      return (
-        <div style={{ padding: '1rem' }}>
-          <table className="data-table" style={{ fontSize: '0.8125rem', border: '1px solid var(--border-color)', borderRadius: '0.5rem' }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '0.75rem', backgroundColor: '#f9fafb' }}>Property</th>
-                <th style={{ textAlign: 'left', padding: '0.75rem', backgroundColor: '#f9fafb' }}>Configured Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(staticProps).map(([key, value]) => (
-                <tr
-                  key={key}
-                  style={{ borderTop: '1px solid var(--border-color)', cursor: 'pointer' }}
-                  onClick={() => {
-                    setConfigKey(key);
-                    setConfigValue(String(value ?? ''));
-                    setIsCurrentlyStatic(true);
-                    setApplyToAgents(true);
-                    setRestart(true);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)'}
-                  onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                  <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>{key}</td>
-                  <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem' }}>{String(value)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-
-    const dynamicConfigs = payload.dynamicConfigs;
-    if (!dynamicConfigs || Object.keys(dynamicConfigs).length === 0) {
-      return <div className="empty-state">No configuration data available. Ensure brokers are online.</div>;
-    }
-
-    return (
-      <div style={{ padding: '1rem', display: 'flex', gap: '1rem', overflowX: 'auto' }}>
-        {Object.entries(dynamicConfigs).map(([nodeId, configs]) => (
-          <div key={nodeId} style={{ minWidth: '450px', flex: 1, border: '1px solid var(--border-color)', borderRadius: '0.5rem' }}>
-            <div style={{ padding: '0.75rem', backgroundColor: '#f9fafb', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Server size={18} color="#4b5563" />
-              <span style={{ fontWeight: 500 }}>
-                Broker {nodeId}
-              </span>
-            </div>
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-              <table className="data-table" style={{ fontSize: '0.8125rem' }}>
-                <tbody>
-                  {Object.entries(configs)
-                    .filter(([k, _]) => !k.startsWith('ssl.') && !k.startsWith('sasl.')) // hide secrets
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([key, configObj]) => (
-                    <tr 
-                      key={key} 
-                      onClick={() => {
-                        setConfigKey(key);
-                        setConfigValue(configObj.value);
-                        setIsCurrentlyStatic(configObj.isReadOnly);
-                        if (configObj.isReadOnly) {
-                          setApplyToAgents(true);
-                          setRestart(true);
-                        } else {
-                          setApplyToAgents(false);
-                          setRestart(false);
-                        }
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}
-                      style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
-                      onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.05)'}
-                      onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                    >
-                      <td style={{ fontFamily: 'monospace', color: '#374151', padding: '0.5rem 0.75rem' }}>
-                        {key}
-                        <span style={{ 
-                            marginLeft: '8px', 
-                            fontSize: '0.65rem', 
-                            padding: '2px 6px', 
-                            borderRadius: '4px', 
-                            background: configObj.isReadOnly ? '#fef3c7' : '#dcfce7', 
-                            color: configObj.isReadOnly ? '#92400e' : '#166534', 
-                            border: `1px solid ${configObj.isReadOnly ? '#fde68a' : '#bbf7d0'}`,
-                            verticalAlign: 'middle',
-                            float: 'right'
-                          }}>
-                          {configObj.isReadOnly ? 'STATIC' : 'DYNAMIC'}
-                        </span>
-                      </td>
-                      <td style={{ fontFamily: 'monospace', color: '#2563eb', padding: '0.5rem 0.75rem', wordBreak: 'break-all', maxWidth: '200px' }}>{configObj.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="node-config-add">
+            <input placeholder="property.key" value={newKey} onChange={event => setNewKey(event.target.value)} />
+            <input placeholder="value" value={newValue} onChange={event => setNewValue(event.target.value)} />
+            <button onClick={addProperty}><Plus size={14} /> Add property</button>
           </div>
-        ))}
-      </div>
-    );
-  };
 
-  return (
-    <div className="topics-tab" style={{ maxWidth: '1200px' }}>
-      <div className="topics-header">
-        <div>
-          <h2>Cluster Configuration</h2>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>View properties and apply bulk changes dynamically.</p>
-        </div>
-        <button className="btn" onClick={fetchConfigs} disabled={loading}>
-          <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
-        </button>
-      </div>
-
-      <div className="table-card" style={{ marginBottom: '1.5rem', padding: '1.5rem' }}>
-        <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '1rem', margin: '0 0 1rem 0' }}>Bulk Update Configuration</h3>
-        
-        <div style={{ backgroundColor: '#eff6ff', borderLeft: '4px solid #3b82f6', padding: '1rem', marginBottom: '1.5rem', fontSize: '0.875rem', color: '#1e40af' }}>
-          By default, changes are applied <b>dynamically</b> to the live broker memory (zero downtime). Check the boxes below if you want to also persist the change to disk and restart the brokers.
-        </div>
-
-        <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.5rem' }}>
-              Configuration Key
-              {isCurrentlyStatic ? (
-                <span style={{ marginLeft: '8px', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>Requires Restart</span>
-              ) : configKey ? (
-                <span style={{ marginLeft: '8px', fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>Live Updatable</span>
-              ) : null}
-            </label>
-            <input 
-              type="text" 
-              value={configKey} 
-              onChange={e => {
-                setConfigKey(e.target.value);
-                setIsCurrentlyStatic(false);
-              }} 
-              placeholder="e.g. log.retention.hours"
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontFamily: 'monospace' }}
-            />
+          <div className="node-config-footer">
+            <span>Target: {selectedFile.hostId} · node {selectedFile.nodeId} · {selectedFile.role}</span>
+            <button onClick={saveConfiguration} disabled={saving}>{saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Save configuration</button>
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginBottom: '0.5rem' }}>Value</label>
-            <input 
-              type="text" 
-              value={configValue} 
-              onChange={e => setConfigValue(e.target.value)} 
-              placeholder="e.g. 168"
-              style={{ width: '100%', padding: '0.5rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontFamily: 'monospace' }}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '1.5rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', color: isCurrentlyStatic ? '#92400e' : 'inherit', fontWeight: isCurrentlyStatic ? 600 : 400 }}>
-              <input type="checkbox" checked={applyToAgents} onChange={e => { setApplyToAgents(e.target.checked); if (!e.target.checked) setRestart(false); }} />
-              Persist to disk
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', opacity: applyToAgents ? 1 : 0.5, color: isCurrentlyStatic ? '#92400e' : 'inherit', fontWeight: isCurrentlyStatic ? 600 : 400 }}>
-              <input type="checkbox" checked={restart} onChange={e => setRestart(e.target.checked)} disabled={!applyToAgents} />
-              Restart service immediately
-            </label>
-          </div>
-          <button className="btn btn-primary-action" onClick={handleBulkSave} disabled={saving}>
-            <Save size={16} /> {saving ? 'Applying...' : 'Apply to all brokers'}
-          </button>
-        </div>
-      </div>
-
-      {renderTopology()}
-
-      <div className="table-card">
-        <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 500 }}>Active Configurations</h3>
-          <div style={{ position: 'relative' }}>
-            <select
-              value={viewType === 'STATIC' && selectedStaticFile ? `STATIC:${selectedStaticFile.id}` : 'BROKER'}
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value === 'BROKER') {
-                  setViewType('BROKER');
-                  return;
-                }
-                setViewType('STATIC');
-                setSelectedStaticFileId(value.replace('STATIC:', ''));
-              }}
-              style={{
-                appearance: 'none',
-                padding: '0.5rem 2.5rem 0.5rem 1rem',
-                border: '1px solid #d1d5db',
-                borderRadius: '0.375rem',
-                backgroundColor: 'white',
-                fontSize: '0.875rem',
-                fontWeight: 500,
-                color: '#374151',
-                cursor: 'pointer',
-                outline: 'none',
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
-              }}
-            >
-              <option value="BROKER">Live Broker Configs</option>
-              {staticFiles.map(file => (
-                <option key={file.id} value={`STATIC:${file.id}`}>
-                  {file.label}{file.active ? ' (active)' : ''}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={16} color="#6b7280" style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          </div>
-        </div>
-
-        {payload && (
-          <div style={{ padding: '0.75rem 1rem', backgroundColor: '#f3f4f6', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8125rem', color: '#4b5563' }}>
-            <FileText size={14} />
-            <span style={{ fontWeight: 500 }}>Properties File Path:</span>
-            <code style={{ backgroundColor: '#e5e7eb', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', color: '#1f2937' }}>
-              {viewType === 'STATIC' && selectedStaticFile ? selectedStaticFile.path : 'Kafka AdminClient live memory'}
-            </code>
-            {viewType === 'STATIC' && selectedStaticFile?.description && (
-              <span style={{ color: '#6b7280', marginLeft: '0.5rem' }}>{selectedStaticFile.description}</span>
-            )}
-            <span style={{ 
-              marginLeft: 'auto', 
-              fontSize: '0.7rem', 
-              padding: '2px 8px', 
-              borderRadius: '12px', 
-              background: viewType === 'STATIC' ? '#f3e8ff' : '#dbeafe', 
-              color: viewType === 'STATIC' ? '#7e22ce' : '#1d4ed8', 
-              fontWeight: 600,
-              border: `1px solid ${viewType === 'STATIC' ? '#d8b4fe' : '#bfdbfe'}`
-            }}>
-              {viewType === 'STATIC' ? 'ACTIVE FILE CONTENT' : 'LIVE MEMORY (AdminClient)'}
-            </span>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="empty-state">Fetching active configs from cluster...</div>
-        ) : (
-          renderConfigurationTable()
-        )}
-      </div>
+        </section>
+      ) : <div className="empty-state">No managed configuration file is available for this node.</div>}
     </div>
   );
 }

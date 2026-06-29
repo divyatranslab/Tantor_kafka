@@ -117,16 +117,25 @@ public class ConfigController {
     ) {
         List<Map<String, Object>> files = new ArrayList<>();
 
-        if ("kraft".equalsIgnoreCase(cluster.getMode()) && cluster.getServices() != null && !cluster.getServices().isEmpty()) {
+        if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode()) && cluster.getServices() != null && !cluster.getServices().isEmpty()) {
             for (ClusterServiceAssignment service : cluster.getServices()) {
+                Map<String, Object> serviceConfig = serviceConfig(config, service);
+                String serviceInstallDir = activeKafkaInstallDir(serviceConfig);
+                Map<String, Object> properties = storedProperties(service);
+                if (properties.isEmpty()) {
+                    properties = "zookeeper".equalsIgnoreCase(cluster.getMode())
+                            ? buildZooKeeperServiceProperties(cluster, serviceConfig, serviceInstallDir, service)
+                            : buildKraftServiceProperties(cluster, serviceConfig, serviceInstallDir, service);
+                }
                 files.add(configFile(
                         serviceConfigId(service),
                         serviceConfigLabel(service),
                         serviceConfigDescription(service),
-                        serviceConfigPath(service.getRole(), cluster.getMode(), installDir),
+                        serviceConfigPath(service.getRole(), cluster.getMode(), serviceInstallDir),
                         service.getRole(),
                         true,
-                        buildKraftServiceProperties(cluster, config, installDir, service)
+                        properties,
+                        service
                 ));
             }
             return files;
@@ -139,7 +148,8 @@ public class ConfigController {
                 activeFilePath,
                 "server",
                 true,
-                activeProperties
+                activeProperties,
+                null
         ));
 
         if ("zookeeper".equalsIgnoreCase(cluster.getMode())) {
@@ -150,7 +160,8 @@ public class ConfigController {
                     installDir + "/config/zookeeper.properties",
                     "zookeeper",
                     false,
-                    buildZooKeeperProperties(config, installDir)
+                    buildZooKeeperProperties(config, installDir),
+                    null
             ));
         }
         return files;
@@ -162,7 +173,8 @@ public class ConfigController {
             String path,
             String role,
             boolean active,
-            Map<String, Object> properties
+            Map<String, Object> properties,
+            ClusterServiceAssignment service
     ) {
         Map<String, Object> file = new LinkedHashMap<>();
         file.put("id", id);
@@ -172,6 +184,11 @@ public class ConfigController {
         file.put("role", role);
         file.put("active", active);
         file.put("properties", properties);
+        if (service != null) {
+            file.put("serviceId", service.getId());
+            file.put("hostId", service.getHostId());
+            file.put("nodeId", service.getNodeId());
+        }
         return file;
     }
 
@@ -180,8 +197,9 @@ public class ConfigController {
         if (cluster.getServices() == null) {
             return topology;
         }
-        String dataDir = defaultKafkaDataDir(config);
         for (ClusterServiceAssignment service : cluster.getServices()) {
+            Map<String, Object> serviceConfig = serviceConfig(config, service);
+            String serviceInstallDir = activeKafkaInstallDir(serviceConfig);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("hostId", service.getHostId());
             item.put("hostAddress", hostAddressForService(service));
@@ -189,11 +207,11 @@ public class ConfigController {
             item.put("nodeId", service.getNodeId());
             item.put("serviceName", serviceNameForRole(service.getRole()));
             item.put("systemdUnit", serviceNameForRole(service.getRole()) + ".service");
-            item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), installDir));
-            item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(config, "listener_port", "9092") : "");
-            item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(config, "controller_port", "9093") : "");
-            item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(config, dataDir) : "");
-            item.put("metadataLogDir", metadataLogDirForRole(service.getRole(), config, dataDir));
+            item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), serviceInstallDir));
+            item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(serviceConfig, "listener_port", "9092") : "");
+            item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(serviceConfig, "controller_port", "9093") : "");
+            item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(serviceConfig, defaultKafkaDataDir(serviceConfig)) : "");
+            item.put("metadataLogDir", metadataLogDirForRole(service.getRole(), serviceConfig, defaultKafkaDataDir(serviceConfig)));
             topology.add(item);
         }
         return topology;
@@ -250,11 +268,41 @@ public class ConfigController {
         props.put("controller.listener.names", "CONTROLLER");
         props.put("listener.security.protocol.map", "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL");
         props.put("metadata.log.dir", metadataLogDirForRole(role, config, dataDir));
+        if (isBrokerRole(role)) {
+            props.put("num.partitions", stringConfig(config, "num_partitions", "1"));
+            String replicationFactor = stringConfig(config, "replication_factor", "1");
+            String minIsr = stringConfig(config, "min_insync_replicas", "1");
+            props.put("default.replication.factor", replicationFactor);
+            props.put("min.insync.replicas", minIsr);
+            props.put("offsets.topic.replication.factor", replicationFactor);
+            props.put("transaction.state.log.replication.factor", replicationFactor);
+            props.put("transaction.state.log.min.isr", minIsr);
+        }
+        return props;
+    }
+
+    private Map<String, Object> buildZooKeeperServiceProperties(Cluster cluster, Map<String, Object> config, String installDir, ClusterServiceAssignment service) {
+        if ("zookeeper".equals(service.getRole())) {
+            return buildZooKeeperProperties(config, installDir);
+        }
+        Map<String, Object> props = new LinkedHashMap<>();
+        String host = hostAddressForService(service);
+        String nodeId = service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId());
+        String listenerPort = stringConfig(config, "listener_port", "9092");
+        String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
+        props.put("broker.id", nodeId);
+        props.put("listeners", "PLAINTEXT://" + host + ":" + listenerPort);
+        props.put("advertised.listeners", "PLAINTEXT://" + host + ":" + listenerPort);
+        props.put("zookeeper.connect", stringConfig(config, "zookeeper_connect", "localhost:2181"));
+        props.put("zookeeper.connection.timeout.ms", "18000");
+        props.put("log.dirs", brokerLogDirs(config, dataDir));
         props.put("num.partitions", stringConfig(config, "num_partitions", "1"));
         String replicationFactor = stringConfig(config, "replication_factor", "1");
+        props.put("default.replication.factor", replicationFactor);
+        props.put("min.insync.replicas", stringConfig(config, "min_insync_replicas", "1"));
         props.put("offsets.topic.replication.factor", replicationFactor);
         props.put("transaction.state.log.replication.factor", replicationFactor);
-        props.put("transaction.state.log.min.isr", "1");
+        props.put("transaction.state.log.min.isr", stringConfig(config, "min_insync_replicas", "1"));
         return props;
     }
 
@@ -266,6 +314,31 @@ public class ConfigController {
                 .map(host -> firstAddressFromJson(host.getIpAddresses()))
                 .orElse("");
         return ip.isBlank() ? service.getHostId() : ip;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> serviceConfig(Map<String, Object> clusterConfig, ClusterServiceAssignment service) {
+        Map<String, Object> result = new HashMap<>(clusterConfig);
+        if (service.getConfigJson() == null || service.getConfigJson().isBlank()) return result;
+        try {
+            Map<String, Object> stored = objectMapper.readValue(service.getConfigJson(), Map.class);
+            if (stored != null) result.putAll(stored);
+        } catch (Exception ignored) {
+            // Fall back to cluster-level deployment settings for legacy assignments.
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> storedProperties(ClusterServiceAssignment service) {
+        if (service.getConfigJson() == null || service.getConfigJson().isBlank()) return new LinkedHashMap<>();
+        try {
+            Map<String, Object> stored = objectMapper.readValue(service.getConfigJson(), Map.class);
+            Object properties = stored == null ? null : stored.get("properties");
+            return properties instanceof Map<?, ?> ? new LinkedHashMap<>((Map<String, Object>) properties) : new LinkedHashMap<>();
+        } catch (Exception ignored) {
+            return new LinkedHashMap<>();
+        }
     }
 
     private String serviceNameForRole(String role) {
@@ -510,6 +583,72 @@ public class ConfigController {
         return value.trim();
     }
 
+    @PutMapping("/services/{serviceId}")
+    public ResponseEntity<?> updateServiceConfig(
+            @PathVariable UUID clusterId,
+            @PathVariable UUID serviceId,
+            @RequestBody ServiceConfigUpdateRequest request
+    ) throws JsonProcessingException {
+        Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
+        if (cluster == null) return ResponseEntity.notFound().build();
+        ClusterServiceAssignment service = cluster.getServices() == null ? null : cluster.getServices().stream()
+                .filter(item -> serviceId.equals(item.getId()))
+                .findFirst()
+                .orElse(null);
+        if (service == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Service assignment does not belong to this cluster."));
+        }
+        if (request.getProperties() == null || request.getProperties().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "At least one configuration property is required."));
+        }
+        for (String key : request.getProperties().keySet()) {
+            if (key == null || !key.matches("[A-Za-z0-9._-]+")) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Invalid configuration key: " + key));
+            }
+        }
+
+        Map<String, Object> deploymentConfig = new HashMap<>();
+        if (cluster.getConfigJson() != null && !cluster.getConfigJson().isBlank()) {
+            Map<String, Object> parsed = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+            if (parsed != null) deploymentConfig.putAll(parsed);
+        }
+        deploymentConfig.putAll(serviceConfig(deploymentConfig, service));
+        deploymentConfig.put("mode", cluster.getMode());
+        deploymentConfig.put("version", cluster.getKafkaVersion());
+
+        Map<String, Object> stored = new HashMap<>(deploymentConfig);
+        stored.put("properties", new LinkedHashMap<>(request.getProperties()));
+        service.setConfigJson(objectMapper.writeValueAsString(stored));
+        clusterRepository.save(cluster);
+
+        String propertiesTemplate = serializeProperties(request.getProperties());
+        UUID taskId = deploymentService.updateKafkaConfig(
+                clusterId,
+                service.getHostId(),
+                service.getRole(),
+                service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()),
+                objectMapper.writeValueAsString(deploymentConfig),
+                propertiesTemplate,
+                request.isRestart()
+        );
+        activityAlertService.logActivity(
+                "INFO",
+                "Updated " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
+                        + " on " + service.getHostId() + (request.isRestart() ? " and queued service restart" : ""),
+                clusterId
+        );
+        return ResponseEntity.ok(Map.of("taskId", taskId.toString(), "status", "scheduled"));
+    }
+
+    private String serializeProperties(Map<String, Object> properties) {
+        StringBuilder result = new StringBuilder();
+        properties.forEach((key, value) -> {
+            if ("servers".equals(key)) return;
+            result.append(key).append('=').append(value == null ? "" : String.valueOf(value).replace("\r", "").replace("\n", " ")).append('\n');
+        });
+        return result.toString();
+    }
+
     @PutMapping("/bulk")
     public ResponseEntity<?> updateConfigBulk(@PathVariable UUID clusterId, @RequestBody BulkConfigRequest request) throws JsonProcessingException {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
@@ -584,5 +723,11 @@ public class ConfigController {
         private String configValue;
         private boolean applyToAgents = false;
         private boolean restart = false;
+    }
+
+    @Data
+    public static class ServiceConfigUpdateRequest {
+        private Map<String, Object> properties;
+        private boolean restart = true;
     }
 }

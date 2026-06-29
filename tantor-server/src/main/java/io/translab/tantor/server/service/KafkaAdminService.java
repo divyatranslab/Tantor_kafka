@@ -206,6 +206,19 @@ public class KafkaAdminService {
         }
     }
 
+    public Integer getControllerId(UUID clusterId) {
+        try {
+            org.apache.kafka.common.Node controller = getAdminClient(clusterId).describeCluster().controller().get();
+            return controller == null ? null : controller.id();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (ExecutionException e) {
+            refreshAdminClient(clusterId);
+            return null;
+        }
+    }
+
     public String getKafkaClusterId(UUID clusterId) {
         AdminClient client = getAdminClient(clusterId);
         try {

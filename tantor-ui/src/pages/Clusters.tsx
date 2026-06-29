@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCw, RotateCcw, ServerCog } from 'lucide-react';
+import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Pencil, Settings, X } from 'lucide-react';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -38,6 +38,10 @@ export function Clusters() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [editingCluster, setEditingCluster] = useState<ClusterInfo | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEnvironment, setEditEnvironment] = useState('DEV');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const fetchClusters = async () => {
     setLoading(true);
@@ -78,28 +82,46 @@ export function Clusters() {
     if (!window.confirm(`Start rolling restart for '${cluster.name}'?`)) return;
     try {
       const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        alert('Rolling restart scheduled. Watch cluster actions/logs for progress.');
+        navigate(`/clusters/${cluster.id}/actions?restartTask=${encodeURIComponent(data.taskId || '')}`);
       } else {
-        alert('Failed to schedule rolling restart.');
+        alert(data.error || 'Failed to schedule rolling restart.');
       }
     } catch {
       alert('Network error while scheduling rolling restart.');
     }
   };
 
-  const triggerNormalRestart = async (cluster: ClusterInfo) => {
-    if (!window.confirm(`Restart all Kafka services for '${cluster.name}' at once?`)) return;
+  const openEditCluster = (cluster: ClusterInfo) => {
+    setEditingCluster(cluster);
+    setEditName(cluster.name);
+    setEditEnvironment((cluster.environment || 'DEV').toUpperCase());
+    setOpenMenuId(null);
+  };
+
+  const saveClusterEdit = async () => {
+    if (!editingCluster || !editName.trim()) return;
+    setSavingEdit(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/normal-restart`, { method: 'POST' });
+      const res = await fetch(`/api/v1/ui/clusters/${editingCluster.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: editName.trim(), environment: editEnvironment }),
+      });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        alert(`Normal restart scheduled for ${data.tasks || 0} service(s).`);
-      } else {
-        alert(data.error || 'Failed to schedule normal restart.');
+      if (!res.ok) {
+        alert(data.error || 'Failed to update cluster.');
+        return;
       }
+      setClusters(current => current.map(cluster => cluster.id === editingCluster.id
+        ? { ...cluster, name: data.name, environment: data.environment }
+        : cluster));
+      setEditingCluster(null);
     } catch {
-      alert('Network error while scheduling normal restart.');
+      alert('Network error while updating cluster.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -227,7 +249,7 @@ export function Clusters() {
                       key={cluster.id}
                       className={!isClickable(cluster) ? 'disabled' : ''}
                       onClick={() => {
-                        if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/topics`);
+                        if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/nodes`);
                       }}
                     >
                       <td>
@@ -301,17 +323,17 @@ export function Clusters() {
                           </button>
                           {openMenuId === cluster.id && (
                             <div className="cluster-action-menu">
-                              <button onClick={() => navigate(`/clusters/${cluster.id}/topics`)} disabled={!isClickable(cluster)}>
-                                <ExternalLink size={14} />
-                                Open
+                              <button onClick={() => openEditCluster(cluster)} disabled={!isClickable(cluster)}>
+                                <Pencil size={14} />
+                                Edit cluster
                               </button>
                               <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
                                 <RotateCcw size={14} />
                                 Rolling restart
                               </button>
-                              <button onClick={() => triggerNormalRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
-                                <RotateCw size={14} />
-                                Normal restart
+                              <button onClick={() => navigate(`/clusters/${cluster.id}/config`)} disabled={!isClickable(cluster)}>
+                                <Settings size={14} />
+                                Configuration change
                               </button>
                               <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
                                 <ServerCog size={14} />
@@ -332,6 +354,27 @@ export function Clusters() {
             </table>
           </div>
         </section>
+      )}
+      {editingCluster && (
+        <div className="cluster-edit-backdrop" onClick={() => setEditingCluster(null)}>
+          <div className="cluster-edit-dialog" onClick={event => event.stopPropagation()}>
+            <div className="cluster-edit-header">
+              <div><h2>Edit cluster</h2><p>{editingCluster.id}</p></div>
+              <button onClick={() => setEditingCluster(null)} title="Close"><X size={16} /></button>
+            </div>
+            <label><span>Cluster name</span><input value={editName} onChange={event => setEditName(event.target.value)} /></label>
+            <label>
+              <span>Environment</span>
+              <select value={editEnvironment} onChange={event => setEditEnvironment(event.target.value)}>
+                <option value="DEV">Dev</option><option value="SIT">SIT</option><option value="UAT">UAT</option>
+              </select>
+            </label>
+            <div className="cluster-edit-footer">
+              <button className="btn" onClick={() => setEditingCluster(null)}>Cancel</button>
+              <button className="btn btn-primary-action" onClick={saveClusterEdit} disabled={savingEdit || !editName.trim()}>{savingEdit ? 'Saving...' : 'Save changes'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

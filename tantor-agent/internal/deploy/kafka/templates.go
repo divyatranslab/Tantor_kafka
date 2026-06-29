@@ -36,7 +36,7 @@ User={{.User}}
 Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
-ExecStart={{.InstallDir}}/bin/zookeeper-server-start.sh {{.InstallDir}}/config/zookeeper.properties
+ExecStart={{.InstallDir}}/bin/zookeeper-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/zookeeper-server-stop.sh
 Restart=on-failure
 LimitNOFILE=100000
@@ -105,7 +105,9 @@ zookeeper.connection.timeout.ms=18000
 num.partitions={{.NumPartitions}}
 offsets.topic.replication.factor={{.RepFactor}}
 transaction.state.log.replication.factor={{.RepFactor}}
-transaction.state.log.min.isr=1
+default.replication.factor={{.RepFactor}}
+min.insync.replicas={{.MinInsyncReplicas}}
+transaction.state.log.min.isr={{.MinInsyncReplicas}}
 `
 
 const ZooKeeperPropertiesTemplate = `

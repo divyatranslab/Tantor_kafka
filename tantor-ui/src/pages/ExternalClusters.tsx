@@ -36,6 +36,7 @@ interface ExternalClusterSummary {
 }
 
 interface BootstrapResult {
+  name?: string;
   success?: boolean;
   connected?: boolean;
   status?: string;
@@ -43,6 +44,7 @@ interface BootstrapResult {
   bootstrap_servers?: string;
   security_protocol?: string;
   mode?: string;
+  kafkaMode?: string;
   clusterId?: string;
   kafka_cluster_id?: string;
   brokerCount?: number;
@@ -53,6 +55,10 @@ interface BootstrapResult {
   controllerId?: string | number;
   controller_id?: string | number;
   kafka_version?: string;
+  kafkaVersion?: string;
+  hostname?: string;
+  security?: string;
+  environment?: string;
   socket_results?: unknown[];
   message?: string;
 }
@@ -92,6 +98,7 @@ export function ExternalClusters() {
   const [connectingKey, setConnectingKey] = useState('');
   const [testingDiscoveryKey, setTestingDiscoveryKey] = useState('');
   const [discoveryTestResults, setDiscoveryTestResults] = useState<Record<string, BootstrapResult>>({});
+  const [selectedDiscoveryKey, setSelectedDiscoveryKey] = useState('');
 
   const [form, setForm] = useState({
     name: '',
@@ -152,56 +159,56 @@ export function ExternalClusters() {
     fetchClusters();
   }, []);
 
-  const testBootstrap = async () => {
-    if (!form.bootstrapServers.trim()) return;
+  const inspectDiscovery = async (discoveryKey: string) => {
+    const discovery = discoveries.find(item => item.discoveryKey === discoveryKey);
+    if (!discovery) return;
+    setSelectedDiscoveryKey(discoveryKey);
+    setForm(prev => ({
+      ...prev,
+      name: discovery.name || '',
+      environment: discovery.environment || 'unknown',
+      bootstrapServers: discovery.bootstrapServers || '',
+      kafkaVersion: discovery.kafkaVersion || '',
+      security: discovery.security || 'PLAINTEXT',
+    }));
     setTesting(true);
     setError('');
     setBanner('');
     setBootstrapResult(null);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bootstrapServers: form.bootstrapServers.trim() }),
-      });
+      const res = await fetch(`/api/v1/ui/external-clusters/discoveries/${encodeURIComponent(discoveryKey)}/inspect`);
       const data = await res.json();
       setBootstrapResult(data);
-      if (!res.ok || data.connected === false) {
-        throw new Error(data.message || 'Bootstrap connection failed');
+      if (!res.ok || data.connected !== true) {
+        throw new Error(data.message || 'The discovered Kafka endpoint is not reachable');
       }
-      setBanner('Bootstrap connection verified.');
+      setBanner('Kafka details fetched from the discovery agent and bootstrap server.');
     } catch (e: any) {
-      setError(e.message || 'Bootstrap test failed');
+      setError(e.message || 'Failed to inspect the discovered Kafka cluster');
     } finally {
       setTesting(false);
     }
   };
 
   const registerBootstrap = async () => {
-    if (!form.bootstrapServers.trim()) return;
+    if (!selectedDiscoveryKey || bootstrapResult?.connected !== true) return;
     setRegistering(true);
     setError('');
     setBanner('');
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
+      const res = await fetch(`/api/v1/ui/external-clusters/discoveries/${encodeURIComponent(selectedDiscoveryKey)}/connect`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          environment: form.environment.trim(),
-          bootstrapServers: form.bootstrapServers.trim(),
-          kafkaVersion: form.kafkaVersion.trim(),
-          security: form.security,
-        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || data.error || 'Failed to register external cluster');
-      setBanner(`External cluster ${data.name || form.name || 'registered'} added.`);
+      setBanner(`External cluster ${data.name || form.name || 'connected'} connected.`);
       setForm(prev => ({ ...prev, name: '', bootstrapServers: '', kafkaVersion: '' }));
+      setSelectedDiscoveryKey('');
       setBootstrapResult(null);
-      fetchClusters();
+      await fetchClusters();
+      if (data.id) navigate(`/clusters/${data.id}/nodes`);
     } catch (e: any) {
-      setError(e.message || 'Failed to register external cluster');
+      setError(e.message || 'Failed to connect external cluster');
     } finally {
       setRegistering(false);
     }
@@ -324,8 +331,8 @@ export function ExternalClusters() {
     <div className="external-page animate-fade-in">
       <header className="external-header">
         <div>
-          <h1>External Clusters</h1>
-          <p>Connect existing Kafka clusters by bootstrap metadata or by a Tantor discovery agent.</p>
+          <h1>Existing Kafka Clusters</h1>
+          <p>Connect Kafka installations reported by the Tantor Discovery Agent.</p>
         </div>
         <button className="btn" onClick={fetchClusters}>
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
@@ -345,14 +352,14 @@ export function ExternalClusters() {
           className={`connect-dropdown ${openPanel === 'bootstrap' ? 'active' : ''}`}
           onClick={() => setOpenPanel(openPanel === 'bootstrap' ? 'agent' : 'bootstrap')}
         >
-          <span><Globe size={17} /> Bootstrap dropdown</span>
+          <span><Globe size={17} /> Connect discovered cluster</span>
           <ChevronDown size={17} className={openPanel === 'bootstrap' ? 'rotate' : ''} />
         </button>
         <button
           className={`connect-dropdown ${openPanel === 'agent' ? 'active' : ''}`}
           onClick={() => setOpenPanel(openPanel === 'agent' ? 'bootstrap' : 'agent')}
         >
-          <span><Terminal size={17} /> Discovery Agent dropdown</span>
+          <span><Terminal size={17} /> Discovery Agent setup</span>
           <ChevronDown size={17} className={openPanel === 'agent' ? 'rotate' : ''} />
         </button>
       </section>
@@ -363,74 +370,81 @@ export function ExternalClusters() {
           <div className="panel-title-row">
             <Globe size={18} />
             <div>
-              <h2>Bootstrap Metadata</h2>
-              <p>Read-only connection for inventory, topics, brokers, and metadata.</p>
+              <h2>Bootstrap server</h2>
+              <p>Only Kafka endpoints reported by a running Discovery Agent are available here.</p>
             </div>
           </div>
 
-          <div className="warning-strip">
-            <AlertTriangle size={15} />
-            <span>No service restart or config file persistence until a discovery agent is attached.</span>
+          <div className="form-grid">
+            <label className="span-2">
+              Bootstrap URL from Discovery Agents
+              <div className="discovery-select-row">
+                <select
+                  value={selectedDiscoveryKey}
+                  onChange={e => inspectDiscovery(e.target.value)}
+                  disabled={discoveriesLoading}
+                >
+                  <option value="">{discoveriesLoading ? 'Loading Discovery Agents...' : 'Select a discovered Kafka endpoint'}</option>
+                  {discoveries.map(discovery => (
+                    <option key={discovery.discoveryKey} value={discovery.discoveryKey}>
+                      {discovery.bootstrapServers} - {discovery.hostname || discovery.name}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn icon-only" onClick={fetchDiscoveries} title="Refresh Discovery Agent endpoints">
+                  <RefreshCw size={14} className={discoveriesLoading ? 'spin' : ''} />
+                </button>
+              </div>
+            </label>
           </div>
 
-          <div className="form-grid">
-            <label>
-              Cluster name
-              <input
-                value={form.name}
-                onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="external-prod-kafka"
-              />
-            </label>
-            <label>
-              Environment
-              <input
-                value={form.environment}
-                onChange={e => setForm(prev => ({ ...prev, environment: e.target.value }))}
-                placeholder="prod"
-              />
-            </label>
-            <label className="span-2">
-              Bootstrap servers
-              <input
-                value={form.bootstrapServers}
-                onChange={e => setForm(prev => ({ ...prev, bootstrapServers: e.target.value }))}
-                placeholder="192.168.3.196:9092"
-              />
-            </label>
-            <label>
-              Kafka version
-              <input
-                value={form.kafkaVersion}
-                onChange={e => setForm(prev => ({ ...prev, kafkaVersion: e.target.value }))}
-                placeholder="Auto if known"
-              />
-            </label>
-          </div>
+          {!discoveriesLoading && discoveries.length === 0 && (
+            <div className="discovery-empty-inline">
+              <Server size={16} />
+              <span>No live Discovery Agent has reported Kafka yet. Start the agent on a Kafka VM, then refresh.</span>
+            </div>
+          )}
+
+          {testing && (
+            <div className="inspection-loading">
+              <RefreshCw size={15} className="spin" />
+              Fetching mode, Kafka version, cluster ID, and broker topology...
+            </div>
+          )}
 
           {bootstrapResult && (
-            <div className={`bootstrap-result-terminal ${(bootstrapResult.success ?? bootstrapResult.connected) ? 'ok' : 'error'}`}>
-              <div className="terminal-status">
-                {(bootstrapResult.success ?? bootstrapResult.connected)
-                  ? 'Bootstrap connection successful.'
-                  : 'Bootstrap connection failed.'}
+            <div className={`inspection-result ${(bootstrapResult.success ?? bootstrapResult.connected) ? 'ok' : 'error'}`}>
+              <div className="inspection-result-header">
+                {(bootstrapResult.success ?? bootstrapResult.connected) ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
+                <div>
+                  <strong>{bootstrapResult.name || form.name || 'Discovered Kafka cluster'}</strong>
+                  <span>{(bootstrapResult.success ?? bootstrapResult.connected) ? 'Bootstrap connection verified' : 'Bootstrap connection failed'}</span>
+                </div>
               </div>
-              <pre>{bootstrapReport(bootstrapResult)}</pre>
+              <div className="inspection-facts">
+                <div><span>Cluster ID</span><strong title={bootstrapResult.kafka_cluster_id || bootstrapResult.clusterId}>{bootstrapResult.kafka_cluster_id || bootstrapResult.clusterId || '-'}</strong></div>
+                <div><span>Mode</span><strong>{bootstrapResult.kafkaMode || bootstrapResult.mode || 'Unknown'}</strong></div>
+                <div><span>Kafka version</span><strong>{bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Unknown'}</strong></div>
+                <div><span>Brokers</span><strong>{bootstrapResult.brokerCount ?? bootstrapResult.brokers?.length ?? 0}</strong></div>
+                <div><span>Controller</span><strong>{bootstrapResult.controller_id ?? bootstrapResult.controllerId ?? '-'}</strong></div>
+                <div><span>Topics</span><strong>{bootstrapResult.topic_count ?? bootstrapResult.topicCount ?? 0}</strong></div>
+                <div><span>Security</span><strong>{bootstrapResult.security || bootstrapResult.security_protocol || 'PLAINTEXT'}</strong></div>
+                <div><span>Discovery host</span><strong>{bootstrapResult.hostname || '-'}</strong></div>
+              </div>
+              {bootstrapResult.message && !(bootstrapResult.success ?? bootstrapResult.connected) && (
+                <p className="inspection-error-message">{bootstrapResult.message}</p>
+              )}
             </div>
           )}
 
           <div className="panel-actions">
-            <button className="btn" onClick={testBootstrap} disabled={testing || !form.bootstrapServers.trim()}>
-              {testing ? <RefreshCw size={14} className="spin" /> : <Activity size={14} />}
-              Test
-            </button>
             <button
               className="btn btn-primary-action"
               onClick={registerBootstrap}
-              disabled={registering || !form.bootstrapServers.trim()}
+              disabled={registering || bootstrapResult?.connected !== true || !selectedDiscoveryKey}
             >
               {registering ? <RefreshCw size={14} className="spin" /> : <ExternalLink size={14} />}
-              Register
+              Connect cluster
             </button>
           </div>
         </div>

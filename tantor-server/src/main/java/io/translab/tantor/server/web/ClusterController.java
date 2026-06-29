@@ -98,6 +98,31 @@ public class ClusterController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateCluster(@PathVariable UUID id, @RequestBody UpdateClusterRequest request) {
+        Cluster cluster = clusterRepository.findById(id).orElse(null);
+        if (cluster == null) return ResponseEntity.notFound().build();
+        String name = request.getName() == null ? "" : request.getName().trim();
+        String environment = request.getEnvironment() == null ? "" : request.getEnvironment().trim().toUpperCase();
+        if (name.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster name is required."));
+        }
+        boolean duplicateName = clusterRepository.findByNameAndStatusNot(name, "DELETED")
+                .filter(existing -> !existing.getId().equals(id))
+                .isPresent();
+        if (duplicateName) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Another active cluster already uses this name."));
+        }
+        if (!Set.of("DEV", "SIT", "UAT").contains(environment)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Environment must be DEV, SIT, or UAT."));
+        }
+        cluster.setName(name);
+        cluster.setEnvironment(environment);
+        clusterRepository.save(cluster);
+        activityAlertService.logActivity("INFO", "Updated cluster details for " + name, id);
+        return ResponseEntity.ok(Map.of("id", id.toString(), "name", name, "environment", environment));
+    }
+
     @GetMapping("/{id}/tasks")
     public ResponseEntity<List<io.translab.tantor.server.domain.Task>> getClusterTasks(@PathVariable java.util.UUID id) {
         return clusterRepository.findById(id).map(cluster -> {
@@ -150,6 +175,7 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
+            assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             assignments.add(assign);
         }
         cluster.setServices(assignments);
@@ -171,7 +197,7 @@ public class ClusterController {
 
         String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
         List<ServiceAssignmentReq> deployOrder = request.getServices().stream()
-                .sorted((left, right) -> Boolean.compare(!isControllerRole(left.getRole()), !isControllerRole(right.getRole())))
+                .sorted((left, right) -> Boolean.compare(!isMetadataService(left.getRole()), !isMetadataService(right.getRole())))
                 .toList();
         for (ServiceAssignmentReq svc : deployOrder) {
             String serviceConfigJson = buildServiceConfigJson(deploymentConfig, svc);
@@ -239,6 +265,14 @@ public class ClusterController {
         mergedRequest.setServices(allServices);
 
         Map<String, Object> deploymentConfig = buildDeploymentConfig(mergedRequest, deploymentMode);
+        DeployClusterRequest persistedRequest = new DeployClusterRequest();
+        persistedRequest.setName(cluster.getName());
+        persistedRequest.setKafka_version(cluster.getKafkaVersion());
+        persistedRequest.setMode(deploymentMode);
+        persistedRequest.setEnvironment(cluster.getEnvironment());
+        persistedRequest.setConfig(new HashMap<>(parseConfigJson(cluster.getConfigJson())));
+        persistedRequest.setServices(allServices);
+        Map<String, Object> persistedClusterConfig = buildDeploymentConfig(persistedRequest, deploymentMode);
         String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
         String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
 
@@ -251,12 +285,13 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
+            assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             cluster.getServices().add(assign);
         }
         cluster.setStatus("RUNNING");
-        cluster.setBootstrapServers(String.valueOf(deploymentConfig.getOrDefault("bootstrap_servers", cluster.getBootstrapServers())));
+        cluster.setBootstrapServers(String.valueOf(persistedClusterConfig.getOrDefault("bootstrap_servers", cluster.getBootstrapServers())));
         try {
-            cluster.setConfigJson(objectMapper.writeValueAsString(deploymentConfig));
+            cluster.setConfigJson(objectMapper.writeValueAsString(persistedClusterConfig));
         } catch (Exception e) {
             // keep existing config if serialization fails
         }
@@ -270,7 +305,7 @@ public class ClusterController {
         }
 
         List<ServiceAssignmentReq> deployOrder = request.getServices().stream()
-                .sorted((left, right) -> Boolean.compare(!isControllerRole(left.getRole()), !isControllerRole(right.getRole())))
+                .sorted((left, right) -> Boolean.compare(!isMetadataService(left.getRole()), !isMetadataService(right.getRole())))
                 .toList();
         for (ServiceAssignmentReq svc : deployOrder) {
             deploymentService.deployKafkaToHost(
@@ -445,6 +480,12 @@ public class ClusterController {
     }
 
     @Data
+    static class UpdateClusterRequest {
+        private String name;
+        private String environment;
+    }
+
+    @Data
     static class UpgradeClusterRequest {
         private String targetVersion;
     }
@@ -471,6 +512,8 @@ public class ClusterController {
             String role = svc.getRole();
             if ("controller".equals(role)) {
                 serviceConfig.put("controller_properties_template", svc.getProperties_template());
+            } else if ("zookeeper".equals(role)) {
+                serviceConfig.put("zookeeper_properties_template", svc.getProperties_template());
             } else if ("broker".equals(role)) {
                 serviceConfig.put("broker_properties_template", svc.getProperties_template());
             } else {
@@ -504,6 +547,7 @@ public class ClusterController {
         Set<String> assignmentKeys = new HashSet<>();
         Set<Integer> nodeIds = new HashSet<>();
         boolean hasBroker = false;
+        int brokerCount = 0;
         boolean hasController = false;
         boolean hasZooKeeper = false;
         for (ServiceAssignmentReq service : request.getServices()) {
@@ -531,6 +575,7 @@ public class ClusterController {
 
             if (isBrokerRole(service.getRole())) {
                 hasBroker = true;
+                brokerCount++;
             }
             if (isControllerRole(service.getRole())) {
                 hasController = true;
@@ -560,6 +605,14 @@ public class ClusterController {
         }
         if (!hasBroker) {
             return ResponseEntity.badRequest().body(Map.of("error", "At least one broker node is required."));
+        }
+        int replicationFactor = parseIntConfig(request.getConfig() == null ? null : request.getConfig().get("replication_factor"), 1);
+        int minInSyncReplicas = parseIntConfig(request.getConfig() == null ? null : request.getConfig().get("min_insync_replicas"), 1);
+        if (replicationFactor < 1 || replicationFactor > brokerCount) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Replication factor must be between 1 and the selected broker count (" + brokerCount + ")."));
+        }
+        if (minInSyncReplicas < 1 || minInSyncReplicas > replicationFactor) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Minimum in-sync replicas must be between 1 and the replication factor (" + replicationFactor + ")."));
         }
         if (zookeeperMode && !hasZooKeeper) {
             return ResponseEntity.badRequest().body(Map.of("error", "ZooKeeper deployments require at least one ZooKeeper or broker-zookeeper node."));
@@ -593,6 +646,9 @@ public class ClusterController {
             }
             if (!isRoleAllowedForMode(service.getRole(), deploymentMode)) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Role " + service.getRole() + " is not valid for " + deploymentMode + " deployments."));
+            }
+            if (!"broker".equals(service.getRole())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Online Add Node currently supports broker services only. Controller and ZooKeeper voter changes require a dedicated quorum reconfiguration workflow."));
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
@@ -638,6 +694,9 @@ public class ClusterController {
         config.put("mode", deploymentMode);
         config.put("version", request.getKafka_version());
         config.putIfAbsent("kafka_install_dir", "/opt");
+        int listenerPort = parseIntConfig(config.get("listener_port"), 9092);
+        config.put("listener_port", listenerPort);
+        config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
         if ("zookeeper".equals(deploymentMode)) {
             int zookeeperPort = parseIntConfig(config.get("zookeeper_port"), parseIntConfig(config.get("controller_port"), 2181));
             int zookeeperPeerPort = parseIntConfig(config.get("zookeeper_peer_port"), 2888);
@@ -652,9 +711,7 @@ public class ClusterController {
                 config.put("zookeeper_servers", zookeeperServers);
             }
         } else {
-            int listenerPort = parseIntConfig(config.get("listener_port"), 9092);
             int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
-            config.put("listener_port", listenerPort);
             config.put("controller_port", controllerPort);
             config.put("quorum_voters", buildQuorumVoters(request.getServices(), controllerPort));
             config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
@@ -847,6 +904,10 @@ public class ClusterController {
 
     private boolean isZooKeeperRole(String role) {
         return "zookeeper".equals(role) || "broker_zookeeper".equals(role);
+    }
+
+    private boolean isMetadataService(String role) {
+        return isControllerRole(role) || isZooKeeperRole(role);
     }
 
     private String normalizeDeploymentMode(String mode) {

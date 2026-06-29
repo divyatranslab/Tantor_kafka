@@ -209,6 +209,7 @@ export function Hosts() {
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
               const available = host.available !== false;
+              const discoveryAgent = host.agentType === 'KAFKA_DISCOVERY';
 
               return (
                 <tr key={host.id}>
@@ -232,7 +233,12 @@ export function Hosts() {
                   </td>
                   <td className="font-medium">{host.hostname}</td>
                   <td className="text-secondary">{ip}</td>
-                  <td className="text-secondary">{host.agentVersion || 'N/A'}</td>
+                  <td className="text-secondary">
+                    <div className="agent-kind-cell">
+                      <span>{host.agentVersion || 'N/A'}</span>
+                      <small>{discoveryAgent ? 'Kafka discovery' : 'Host management'}</small>
+                    </div>
+                  </td>
                   <td>
                     <div className="metric-bar">
                       <div className="bar-track">
@@ -250,6 +256,9 @@ export function Hosts() {
                     </div>
                   </td>
                   <td>
+                    {discoveryAgent ? (
+                      <span className="discovery-managed-label">Managed from Existing Clusters</span>
+                    ) : (
                     <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
                       <button
                         className="btn icon-only"
@@ -272,6 +281,7 @@ export function Hosts() {
                         </div>
                       )}
                     </div>
+                    )}
                   </td>
                 </tr>
               );

@@ -317,6 +317,44 @@
   background: #fcebeb;
 }
 
+.cluster-edit-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 22, 24, 0.48);
+}
+
+.cluster-edit-dialog {
+  width: min(460px, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dedbd5;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(20, 22, 24, 0.24);
+}
+
+.cluster-edit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cluster-edit-header h2 { margin: 0; font-size: 17px; }
+.cluster-edit-header p { margin: 3px 0 0; color: #77746e; font: 11px Consolas, monospace; }
+.cluster-edit-header button { width: 32px; height: 32px; border: 1px solid #e2e0db; border-radius: 6px; background: #fff; cursor: pointer; }
+
+.cluster-edit-dialog label { display: grid; gap: 6px; }
+.cluster-edit-dialog label span { color: #5f5e5a; font-size: 12px; font-weight: 650; }
+.cluster-edit-dialog input,
+.cluster-edit-dialog select { min-height: 38px; padding: 7px 9px; border: 1px solid #d8d5cf; border-radius: 6px; background: #fff; font: inherit; }
+.cluster-edit-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+
 .cluster-title-cell {
   display: flex;
   align-items: center;

@@ -27,4 +27,7 @@ public class ClusterServiceAssignment {
 
     @Column(name = "node_id")
     private Integer nodeId;
+
+    @Column(name = "config_json", columnDefinition = "TEXT")
+    private String configJson;
 }
