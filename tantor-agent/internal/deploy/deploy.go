@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"io.translab/tantor-agent/internal/client"
@@ -259,7 +260,10 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 	run("Disk space", true, "bash", "-lc", "df -h / /opt 2>/dev/null | tail -n +1")
 	run("Memory", true, "bash", "-lc", "free -m")
 	run("/opt writable", true, "bash", "-lc", "test -w /opt && echo /opt is writable")
-	run("Kafka ports free", true, "bash", "-lc", "if ss -tln | grep -E ':(9092|9093|7071)\\b'; then echo ports already in use; exit 1; else echo ports 9092, 9093, 7071 are free; fi")
+	ports := prerequisitePorts(t.Parameters["required_ports"])
+	portPattern := strings.Join(ports, "|")
+	portList := strings.Join(ports, ", ")
+	run("Deployment ports free", true, "bash", "-lc", fmt.Sprintf("if ss -tln | grep -E ':(%s)\\b'; then echo ports already in use; exit 1; else echo ports %s are free; fi", portPattern, portList))
 	run("Sudo/systemctl access", false, "bash", "-lc", "systemctl list-unit-files >/dev/null && echo systemctl can list units")
 
 	logs.WriteString("================================\n")
@@ -270,6 +274,23 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 	}
 	logs.WriteString(fmt.Sprintf("Prerequisite check passed with %d warnings\n", warned))
 	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
+}
+
+func prerequisitePorts(raw string) []string {
+	validPort := regexp.MustCompile(`^[0-9]{1,5}$`)
+	seen := map[string]bool{}
+	ports := make([]string, 0)
+	for _, value := range strings.Split(raw, ",") {
+		port := strings.TrimSpace(value)
+		if validPort.MatchString(port) && !seen[port] {
+			seen[port] = true
+			ports = append(ports, port)
+		}
+	}
+	if len(ports) == 0 {
+		return []string{"9092", "9093", "7071"}
+	}
+	return ports
 }
 func (e *Engine) fail(t *api.Task, msg string) *api.TaskResult {
 	slog.Error("Task failed", "taskId", t.TaskID, "error", msg)

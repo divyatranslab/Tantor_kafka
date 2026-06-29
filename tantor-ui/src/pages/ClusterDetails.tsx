@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart } from 'lucide-react';
+import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal } from 'lucide-react';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -17,6 +17,7 @@ interface ClusterInfo {
 export function ClusterDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export function ClusterDetails() {
     
     // Redirect to logs if actively deploying/deleting
     if (cluster.mode !== 'EXTERNAL' && cluster.status !== 'SUCCESS' && cluster.status !== 'FAILED' && cluster.status !== 'DELETED') {
-        if (window.location.pathname === `/clusters/${id}` || window.location.pathname === `/clusters/${id}/topics` || window.location.pathname === `/clusters/${id}/brokers`) {
+        if (window.location.pathname === `/clusters/${id}` || window.location.pathname === `/clusters/${id}/nodes` || window.location.pathname === `/clusters/${id}/topics` || window.location.pathname === `/clusters/${id}/brokers`) {
              navigate(`/clusters/${id}/logs`, { replace: true });
              return;
         }
@@ -48,8 +49,41 @@ export function ClusterDetails() {
     return <div className="state-center"><RefreshCw className="spin" /> Loading cluster...</div>;
   }
 
+  const isLogsView = location.pathname === `/clusters/${id}/logs`;
+
+  if (isLogsView) {
+    return (
+      <div className="cluster-details-page cluster-logs-page animate-fade-in">
+        <header className="cluster-logs-header">
+          <div className="breadcrumb">
+            <span onClick={() => navigate('/clusters')}>Clusters</span>
+            <span>/</span>
+            <strong>{cluster.name}</strong>
+          </div>
+          <div className="cluster-logs-title">
+            <div className="icon-wrap"><Terminal size={20} /></div>
+            <div>
+              <h1>Deployment Logs</h1>
+              <p>{cluster.name} · Kafka {cluster.kafkaVersion} · {cluster.mode}</p>
+            </div>
+            <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
+              <div className="status-dot" /> {cluster.status}
+            </div>
+          </div>
+        </header>
+        <div className="cluster-tabs cluster-logs-tabs">
+          <nav><span className="active"><Terminal size={16} /> Logs</span></nav>
+        </div>
+        <div className="cluster-content cluster-logs-content">
+          <Outlet />
+        </div>
+      </div>
+    );
+  }
+
   const tabs = [
     { to: `/clusters/${id}/overview`, icon: LineChart, label: 'Overview', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/nodes`, icon: Network, label: 'Nodes', disabled: false },
     { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },

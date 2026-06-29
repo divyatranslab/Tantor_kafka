@@ -49,7 +49,8 @@ public class HostStatusService {
         String version = host.getAgentVersion();
         String id = host.getId();
         return (version != null && version.toLowerCase().contains("discovery"))
-                || (id != null && id.toLowerCase().startsWith("external-"));
+                || (id != null && (id.toLowerCase().startsWith("external-")
+                || id.toLowerCase().startsWith("discovery-")));
     }
 
     public boolean isInfrastructureHost(Host host) {

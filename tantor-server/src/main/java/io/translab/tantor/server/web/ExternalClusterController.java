@@ -26,6 +26,11 @@ public class ExternalClusterController {
         return ResponseEntity.ok(externalClusterService.listPendingDiscoveries());
     }
 
+    @GetMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/inspect")
+    public ResponseEntity<Map<String, Object>> inspectDiscovery(@PathVariable String discoveryKey) {
+        return ResponseEntity.ok(externalClusterService.inspectDiscovery(discoveryKey));
+    }
+
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/test")
     public ResponseEntity<Map<String, Object>> testBootstrap(@RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
         return ResponseEntity.ok(externalClusterService.testBootstrap(request.getBootstrapServers()));

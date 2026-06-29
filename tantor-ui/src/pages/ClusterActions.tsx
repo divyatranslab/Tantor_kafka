@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle } from 'lucide-react';
 
 interface ClusterInfo {
@@ -20,8 +20,10 @@ interface HostParcel {
 
 export function ClusterActions() {
   const { id } = useParams<{ id: string }>();
-  const [taskId, setTaskId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>('');
+  const [searchParams] = useSearchParams();
+  const restartTaskFromUrl = searchParams.get('restartTask');
+  const [taskId, setTaskId] = useState<string | null>(restartTaskFromUrl);
+  const [status, setStatus] = useState<string>(restartTaskFromUrl ? 'Loading restart progress...' : '');
   const [loading, setLoading] = useState(false);
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [parcels, setParcels] = useState<HostParcel[]>([]);
@@ -53,7 +55,8 @@ export function ClusterActions() {
         setTaskId(data.taskId);
         setStatus("Initialization started...");
       } else {
-        alert("Failed to trigger rolling restart.");
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Failed to trigger rolling restart.");
       }
     } catch (e) {
       alert("Error triggering rolling restart.");
@@ -198,14 +201,14 @@ export function ClusterActions() {
               <div>
                 <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Rolling Restart</h3>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  {isExternal ? 'Queue restart through the discovery agent' : 'Safely restart brokers one-by-one'}
+                  {isExternal ? 'Queue restart through the discovery agent' : 'Restart quorum services and brokers one at a time'}
                 </p>
               </div>
             </div>
             <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1.5rem', lineHeight: 1.5 }}>
               {isExternal
                 ? 'External clusters require a running discovery agent on the broker VM before Tantor can perform service control. Bootstrap-only external clusters remain read-only.'
-                : 'The orchestrator will restart each broker node sequentially. It automatically waits for the node to rejoin the cluster and for all partitions to become fully replicated before proceeding to the next node.'}
+                : 'The orchestrator restarts non-leader controllers or ZooKeeper members first, then the active controller and brokers. It waits for each agent task, all brokers, and all replicas to become healthy before continuing. Zero-downtime restart requires at least two brokers and three metadata quorum nodes.'}
             </p>
             <button 
               className="btn btn-primary-action"
