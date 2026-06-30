@@ -1,6 +1,6 @@
 agent:
-  host_id: "agent-node-196"
-  server_url: "http://192.168.3.142:8443"
+  host_id: "agent-node-yawar"
+  server_url: "http://192.168.3.68:8443"
   cert_file: "/etc/tantor/certs/agent.crt"
   key_file: "/etc/tantor/certs/agent.key"
   ca_cert: "/etc/tantor/certs/ca.crt"

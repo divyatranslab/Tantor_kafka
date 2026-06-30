@@ -199,30 +199,45 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 	// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 	if deploymentModeForTask(t) == "kraft" {
 		metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
+		clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+		nodeID := strings.TrimSpace(t.Parameters["node_id"])
+		if clusterUUID == "" || nodeID == "" {
+			return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
+		}
 		if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 			log("Fresh deployment detected — formatting KRaft storage...")
 			storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
 			configPath := configPathForTask(activeInstallDir, t)
-
-			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-			if clusterUUID == "" {
-				uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-				if err != nil {
-					return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+			formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
+			if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
+				_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
+				if isController {
+					initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
+					if initialControllers == "" {
+						return logs.String(), fmt.Errorf("initial_controllers is required to format a dynamic KRaft controller")
+					}
+					formatArgs = append(formatArgs, "--initial-controllers", initialControllers)
+				} else {
+					formatArgs = append(formatArgs, "--no-initial-controllers")
 				}
-				clusterUUID = strings.TrimSpace(uuidOut)
-				log("Generated cluster UUID: %s", clusterUUID)
-			} else {
-				log("Using shared cluster UUID: %s", clusterUUID)
 			}
 
-			_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
+			log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
+			_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
 			if err != nil {
 				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
 			}
+			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+				return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
+			}
 			log("KRaft storage formatted successfully")
+		} else if err != nil {
+			return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
 		} else {
-			log("Existing KRaft metadata found — skipping format (safe re-deploy)")
+			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+				return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
+			}
+			log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
 		}
 	}
 
@@ -682,9 +697,23 @@ func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, instal
 		nodeId = "1"
 	}
 	hostname := getLocalIP()
+	quorumMode := strings.ToLower(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]))
+	if quorumMode == "" {
+		quorumMode = "static"
+	}
+	if quorumMode != "static" && quorumMode != "dynamic" {
+		return fmt.Errorf("unsupported KRaft quorum mode %q", quorumMode)
+	}
 	quorumVoters := t.Parameters["quorum_voters"]
-	if quorumVoters == "" {
+	quorumBootstrap := strings.TrimSpace(t.Parameters["quorum_bootstrap_servers"])
+	if quorumMode == "static" && quorumVoters == "" {
 		quorumVoters = fmt.Sprintf("%s@%s:9093", nodeId, hostname)
+	}
+	if quorumBootstrap == "" {
+		quorumBootstrap = quorumBootstrapServers(quorumVoters)
+	}
+	if quorumMode == "dynamic" && quorumBootstrap == "" {
+		return fmt.Errorf("quorum_bootstrap_servers is required for dynamic KRaft quorum")
 	}
 
 	rawRole := t.Parameters["service_role"]
@@ -726,35 +755,39 @@ func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, instal
 	}
 
 	props := struct {
-		NodeId              string
-		QuorumVoters        string
-		Hostname            string
-		LogDirs             string
-		MetadataLogDir      string
-		Role                string
-		Listeners           string
-		AdvertisedListeners string
-		ListenerPort        string
-		ControllerPort      string
-		NumPartitions       string
-		RepFactor           string
-		MinInsyncReplicas   string
-		IsBroker            bool
+		NodeId                 string
+		QuorumMode             string
+		QuorumVoters           string
+		QuorumBootstrapServers string
+		Hostname               string
+		LogDirs                string
+		MetadataLogDir         string
+		Role                   string
+		Listeners              string
+		AdvertisedListeners    string
+		ListenerPort           string
+		ControllerPort         string
+		NumPartitions          string
+		RepFactor              string
+		MinInsyncReplicas      string
+		IsBroker               bool
 	}{
-		NodeId:              nodeId,
-		QuorumVoters:        quorumVoters,
-		Hostname:            hostname,
-		LogDirs:             paths.LogDirs,
-		MetadataLogDir:      paths.MetadataLogDir,
-		Role:                role,
-		Listeners:           listeners,
-		AdvertisedListeners: advertisedListeners,
-		ListenerPort:        listenerPort,
-		ControllerPort:      controllerPort,
-		NumPartitions:       numPartitions,
-		RepFactor:           repFactor,
-		MinInsyncReplicas:   minInsyncReplicas,
-		IsBroker:            isBroker,
+		NodeId:                 nodeId,
+		QuorumMode:             quorumMode,
+		QuorumVoters:           quorumVoters,
+		QuorumBootstrapServers: quorumBootstrap,
+		Hostname:               hostname,
+		LogDirs:                paths.LogDirs,
+		MetadataLogDir:         paths.MetadataLogDir,
+		Role:                   role,
+		Listeners:              listeners,
+		AdvertisedListeners:    advertisedListeners,
+		ListenerPort:           listenerPort,
+		ControllerPort:         controllerPort,
+		NumPartitions:          numPartitions,
+		RepFactor:              repFactor,
+		MinInsyncReplicas:      minInsyncReplicas,
+		IsBroker:               isBroker,
 	}
 
 	if customTemplate := customPropertiesTemplateForTask(t); strings.TrimSpace(customTemplate) != "" {
@@ -767,8 +800,8 @@ func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, instal
 			"advertised.listeners":                     advertisedListeners,
 			"listener.security.protocol.map":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
 			"inter.broker.listener.name":               ternaryString(isBroker, "PLAINTEXT", ""),
-			"controller.quorum.voters":                 quorumVoters,
-			"controller.quorum.bootstrap.servers":      quorumBootstrapServers(quorumVoters),
+			"controller.quorum.voters":                 ternaryString(quorumMode == "static", quorumVoters, ""),
+			"controller.quorum.bootstrap.servers":      ternaryString(quorumMode == "dynamic", quorumBootstrap, ""),
 			"log.dirs":                                 ternaryString(isBroker, paths.LogDirs, ""),
 			"metadata.log.dir":                         paths.MetadataLogDir,
 			"num.partitions":                           numPartitions,
@@ -929,7 +962,23 @@ func customPropertiesTemplateForTask(t *api.Task) string {
 
 func mergeCustomKafkaProperties(base string, overrides map[string]string) string {
 	var out strings.Builder
-	out.WriteString(strings.TrimRight(strings.ReplaceAll(base, "\r\n", "\n"), "\n"))
+	normalized := strings.ReplaceAll(base, "\r\n", "\n")
+	for _, line := range strings.Split(normalized, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "!") {
+			if separator := strings.Index(trimmed, "="); separator >= 0 {
+				key := strings.TrimSpace(trimmed[:separator])
+				if _, managed := overrides[key]; managed {
+					continue
+				}
+			}
+		}
+		out.WriteString(line)
+		out.WriteString("\n")
+	}
+	trimmedBase := strings.TrimRight(out.String(), "\n")
+	out.Reset()
+	out.WriteString(trimmedBase)
 	out.WriteString("\n\n# ---- Tantor generated deployment overrides ----\n")
 	for _, key := range orderedKafkaOverrideKeys() {
 		value, ok := overrides[key]
@@ -942,6 +991,34 @@ func mergeCustomKafkaProperties(base string, overrides map[string]string) string
 		out.WriteString("\n")
 	}
 	return out.String()
+}
+
+func validateMetaProperties(path, expectedClusterID, expectedNodeID string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("cannot read %s: %w", path, err)
+	}
+
+	values := make(map[string]string)
+	for _, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
+			continue
+		}
+		separator := strings.Index(line, "=")
+		if separator < 0 {
+			continue
+		}
+		values[strings.TrimSpace(line[:separator])] = strings.TrimSpace(line[separator+1:])
+	}
+
+	if values["cluster.id"] != expectedClusterID {
+		return fmt.Errorf("cluster.id mismatch in %s: found %q, expected %q", path, values["cluster.id"], expectedClusterID)
+	}
+	if values["node.id"] != expectedNodeID {
+		return fmt.Errorf("node.id mismatch in %s: found %q, expected %q", path, values["node.id"], expectedNodeID)
+	}
+	return nil
 }
 
 func orderedKafkaOverrideKeys() []string {
@@ -994,12 +1071,21 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 	var logs strings.Builder
 	installPaths := resolveKafkaInstallPaths(t)
 	installDir := installPaths.ActiveDir
+	configPath := configPathForTask(installDir, t)
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
 		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
 
+	backupPath, err := d.backupConfig(ctx, t, configPath)
+	if err != nil {
+		return logs.String(), err
+	}
+	if backupPath != "" {
+		logs.WriteString(fmt.Sprintf("Existing config backed up to %s\n", backupPath))
+	}
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
+		d.restoreConfigBackup(ctx, backupPath, configPath, &logs)
 		return logs.String(), err
 	}
 	logs.WriteString("Configs updated successfully\n")
@@ -1008,12 +1094,47 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 	if t.Parameters["restart"] == "true" {
 		_, _, err := d.exec.RunSudo(ctx, "systemctl", "restart", serviceNameForTask(t))
 		if err != nil {
+			d.restoreConfigBackup(ctx, backupPath, configPath, &logs)
+			_, _, _ = d.exec.RunSudo(ctx, "systemctl", "restart", serviceNameForTask(t))
 			return logs.String(), fmt.Errorf("failed to restart kafka: %w", err)
 		}
 		logs.WriteString(fmt.Sprintf("Kafka service %s restarted\n", serviceNameForTask(t)))
 	}
 
 	return logs.String(), nil
+}
+
+func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath string) (string, error) {
+	if _, _, err := d.exec.RunSudo(ctx, "test", "-f", configPath); err != nil {
+		return "", nil
+	}
+	version := strings.TrimSpace(t.Parameters["config_version"])
+	if version == "" {
+		version = "unversioned"
+	}
+	version = strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_").Replace(version)
+	backupDir := filepath.Join(filepath.Dir(configPath), ".tantor-backups", filepath.Base(configPath))
+	backupName := fmt.Sprintf("v%s-%s.bak", version, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	backupPath := filepath.Join(backupDir, backupName)
+	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", backupDir); err != nil {
+		return "", fmt.Errorf("failed to create config backup directory: %w (%s %s)", err, out, errOut)
+	}
+	if out, errOut, err := d.exec.RunSudo(ctx, "cp", "-p", configPath, backupPath); err != nil {
+		return "", fmt.Errorf("failed to back up existing config: %w (%s %s)", err, out, errOut)
+	}
+	return backupPath, nil
+}
+
+func (d *Deployer) restoreConfigBackup(ctx context.Context, backupPath, configPath string, logs *strings.Builder) {
+	if backupPath == "" {
+		logs.WriteString("No previous config file was available for automatic restore\n")
+		return
+	}
+	if out, errOut, err := d.exec.RunSudo(ctx, "cp", "-p", backupPath, configPath); err != nil {
+		logs.WriteString(fmt.Sprintf("Automatic config restore failed: %v (%s %s)\n", err, out, errOut))
+		return
+	}
+	logs.WriteString(fmt.Sprintf("Previous config restored automatically from %s\n", backupPath))
 }
 
 func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {

@@ -927,6 +927,125 @@
   background: var(--bg-raised);
 }
 
+.cd-validation-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.cd-validation-state.valid {
+  color: var(--color-success);
+  border-color: rgba(32, 126, 76, 0.28);
+  background: var(--color-success-light);
+}
+
+.cd-validation-state.invalid {
+  color: var(--color-danger);
+  border-color: rgba(176, 55, 55, 0.28);
+  background: var(--color-danger-light);
+}
+
+.cd-kraft-facts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cd-kraft-facts > div {
+  min-width: 0;
+  padding: 0.7rem;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.cd-kraft-facts > div:last-child {
+  border-right: 0;
+}
+
+.cd-kraft-facts span,
+.cd-quorum-value > span {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+.cd-kraft-facts strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+}
+
+.cd-quorum-value {
+  padding: 0.75rem 0;
+}
+
+.cd-quorum-value code {
+  display: block;
+  color: var(--text-primary);
+  font: 0.76rem/1.45 Consolas, 'SF Mono', monospace;
+  overflow-wrap: anywhere;
+}
+
+.cd-kraft-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+
+.cd-kraft-table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.cd-kraft-table th,
+.cd-kraft-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.cd-kraft-table th {
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.cd-kraft-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cd-risk-ack {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.8rem;
+  padding: 0.7rem;
+  border: 1px solid #e4c56d;
+  border-radius: 6px;
+  background: #fff9e8;
+  color: #624700;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.cd-risk-ack input {
+  width: 16px;
+  height: 16px;
+  margin-top: 0.08rem;
+  accent-color: var(--accent-primary);
+}
+
 @keyframes cd-progress {
   from { transform: translateX(-40%); }
   to { transform: translateX(190%); }
@@ -965,5 +1084,13 @@
 
   .cd-status {
     justify-self: start;
+  }
+
+  .cd-kraft-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cd-kraft-facts > div {
+    border-bottom: 1px solid var(--border-subtle);
   }
 }

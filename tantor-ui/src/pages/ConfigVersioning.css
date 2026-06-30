@@ -1,0 +1,34 @@
+.versioned-config-page { padding-bottom: 24px; }
+.config-flow-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 12px; border: 1px solid #b8d7ee; border-radius: 8px; background: #f0f7fc; color: #185fa5; font-size: 11px; white-space: nowrap; }
+.config-flow-strip span { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; }
+.config-flow-strip b { color: #7eaac9; }
+.config-options { display: flex; align-items: center; gap: 14px; }
+.config-review { border-color: #9cc7e6; }
+.config-messages { padding: 9px 11px; border-radius: 6px; font-size: 11px; }
+.config-messages p { margin: 2px 0; }
+.config-messages.error { border: 1px solid #e4a0a0; background: #fff0f0; color: #8f1d1d; }
+.config-messages.warning { border: 1px solid #e4ca87; background: #fff8df; color: #765b0b; }
+.config-diff-list { display: grid; gap: 6px; }
+.config-diff-row { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(180px, 1fr) auto minmax(180px, 1fr); align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--border-subtle); border-left: 3px solid #d29a38; border-radius: 6px; background: #fcfbf8; }
+.config-diff-row.added { border-left-color: #2f8b57; }
+.config-diff-row.removed { border-left-color: #b84d4d; }
+.config-diff-row > div { min-width: 0; display: grid; gap: 3px; }
+.config-diff-row span { width: max-content; padding: 2px 5px; border-radius: 4px; background: #eceae5; font-size: 8px; font-weight: 800; }
+.config-diff-row code { overflow-wrap: anywhere; font-size: 10px; }
+.config-diff-row pre { min-width: 0; overflow: auto; margin: 0; padding: 7px; border-radius: 4px; background: #f3f2ef; font: 10px Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.config-review-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 10px; }
+.config-review-footer button, .version-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 5px 9px; border: 1px solid var(--border-default); border-radius: 5px; background: #fff; color: var(--text-primary); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.config-review-footer button, .version-actions button.primary { border-color: #185fa5; background: #185fa5; color: #fff; }
+.version-list { display: grid; gap: 7px; }
+.version-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: #fbfaf8; }
+.version-list article.active-version { border-color: #78b690; background: #f0faf4; }
+.version-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.version-main strong { font-size: 13px; }
+.version-main small { width: 100%; color: var(--text-secondary); font-size: 9px; }
+.version-status, .rollback-tag { padding: 2px 6px; border-radius: 99px; background: #ebe9e4; color: #555; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.version-status.applied { background: #dff3e6; color: #276c42; }
+.version-status.pending_approval { background: #fff0c7; color: #765b0b; }
+.version-status.failed { background: #fde2e2; color: #8f1d1d; }
+.rollback-tag { background: #eee7fa; color: #69439a; }
+.version-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+@media (max-width: 800px) { .config-diff-row { grid-template-columns: 1fr; } .config-diff-row > b { display: none; } .version-list article, .config-review-footer { align-items: stretch; flex-direction: column; } .version-actions { justify-content: flex-start; } .config-options { align-items: flex-start; flex-direction: column; gap: 6px; } }

@@ -11,9 +11,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 TANTOR_USER="tantor"
-TANTOR_HOME="/opt/tantor"
-AGENT_BIN_URL=${AGENT_BIN_URL:-"https://tantor-server:8443/downloads/tantor-agent"}
-SERVER_URL=${SERVER_URL:-"https://tantor-server:8443"}
+TANTOR_HOME="/srv/tantor"
+AGENT_BIN_URL=${AGENT_BIN_URL:-"http://192.168.3.68:8443/downloads/tantor-agent"}
+SERVER_URL=${SERVER_URL:-"http://192.168.3.68:8443"}
 CERT_PATH="/etc/tantor/certs"
 AGENT_DATA_DIR="/var/lib/tantor/agent/data"
 AGENT_ARTIFACTS_DIR="/var/lib/tantor/agent/artifacts"
@@ -27,6 +27,8 @@ if id "$TANTOR_USER" &>/dev/null; then
 else
     useradd -r -m -d $TANTOR_HOME -s /bin/bash $TANTOR_USER
     echo "Created user: $TANTOR_USER"
+
+
 fi
 
 # Passwordless sudo for tantor (required by architecture)
@@ -34,9 +36,15 @@ echo "$TANTOR_USER ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/99-tantor-agent
 chmod 0440 /etc/sudoers.d/99-tantor-agent
 
 # 2. Install agent binary
-echo "Downloading agent..."
+echo "Installing agent binary..."
 mkdir -p $TANTOR_HOME/bin
-curl -k -s -o $TANTOR_HOME/bin/tantor-agent $AGENT_BIN_URL
+if [ -f "/srv/tantor-agent" ]; then
+    echo "Using local binary found at /srv/tantor-agent"
+    cp /srv/tantor-agent $TANTOR_HOME/bin/tantor-agent
+else
+    echo "Downloading agent from $AGENT_BIN_URL..."
+    curl -k -s -o $TANTOR_HOME/bin/tantor-agent $AGENT_BIN_URL
+fi
 chmod +x $TANTOR_HOME/bin/tantor-agent
 chown -R $TANTOR_USER:$TANTOR_USER $TANTOR_HOME
 
@@ -54,7 +62,7 @@ echo "[MOCK] Generating self-signed certs for mTLS..."
 openssl req -x509 -newkey rsa:4096 -keyout $CERT_PATH/agent.key -out $CERT_PATH/agent.crt -days 365 -nodes -subj "/CN=$(hostname)" 2>/dev/null
 cp $CERT_PATH/agent.crt $CERT_PATH/ca.crt # Mock CA
 
-HOST_ID="agent-$(hostname)"
+HOST_ID="$(hostname)"
 
 cat <<EOF > /etc/tantor/config/agent.yaml
 agent:

@@ -83,6 +83,9 @@ public class ArtifactController {
                 currentUser());
 
         Artifact saved = artifactService.upload(cmd, file.getInputStream());
+        if (saved.getStatus() == ArtifactStatus.FAILED) {
+            return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
+        }
         return ResponseEntity.status(201).body(ArtifactResponse.from(saved));
     }
 
@@ -115,6 +118,9 @@ public class ArtifactController {
                 currentUser());
 
         Artifact saved = artifactService.upload(cmd, request.getInputStream());
+        if (saved.getStatus() == ArtifactStatus.FAILED) {
+            return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
+        }
         return ResponseEntity.status(201).body(ArtifactResponse.from(saved));
     }
 

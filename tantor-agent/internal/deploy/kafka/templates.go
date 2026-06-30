@@ -62,7 +62,9 @@ const ServerPropertiesTemplate = `
 # KRaft Node Config
 process.roles={{.Role}}
 node.id={{.NodeId}}
-controller.quorum.voters={{.QuorumVoters}}
+{{if eq .QuorumMode "dynamic"}}controller.quorum.bootstrap.servers={{.QuorumBootstrapServers}}
+{{else}}controller.quorum.voters={{.QuorumVoters}}
+{{end}}
 
 # Listeners
 listeners={{.Listeners}}

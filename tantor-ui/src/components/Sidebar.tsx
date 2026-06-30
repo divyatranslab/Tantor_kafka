@@ -10,6 +10,7 @@ import {
   LineChart,
   Settings,
   Rocket,
+  Activity,
 } from 'lucide-react';
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
@@ -35,6 +36,7 @@ const navSections = [
     label: 'Management',
     items: [
       { icon: ShieldAlert, label: 'Audits', path: '/audit' },
+      { icon: Activity, label: 'Jobs', path: '/jobs' },
       { icon: PlayCircle, label: 'Commands', path: '/commands' },
       { icon: Package, label: 'Artifacts', path: '/artifacts' },
       { icon: Settings, label: 'Administration', path: '/admin' },

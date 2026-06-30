@@ -129,3 +129,9 @@
 .sidebar-nav::-webkit-scrollbar       { width: 4px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
 .sidebar-nav::-webkit-scrollbar-thumb { background: #e8e6e1; border-radius: 2px; }
+
+@media (max-width: 700px) {
+  .sidebar {
+    display: none;
+  }
+}

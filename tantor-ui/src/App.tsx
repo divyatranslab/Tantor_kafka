@@ -18,6 +18,8 @@ import { Brokers } from './pages/Brokers';
 import { ExternalClusters } from './pages/ExternalClusters';
 import { ClusterDeployment } from './pages/ClusterDeployment';
 import { ClusterNodes } from './pages/ClusterNodes';
+import { JobsList } from './pages/JobsList';
+import { JobStatusPage } from './pages/JobStatusPage';
 import './App.css';
 
 function App() {
@@ -43,6 +45,8 @@ function App() {
               <Route path="logs" element={<DeploymentLogs />} />
             </Route>
             <Route path="/artifacts" element={<Artifacts />} />
+            <Route path="/jobs" element={<JobsList />} />
+            <Route path="/jobs/:id" element={<JobStatusPage />} />
             <Route path="/monitoring" element={<Monitoring />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/audit" element={<AuditLogs />} />
