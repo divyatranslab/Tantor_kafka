@@ -31,9 +31,11 @@ public class AgentService {
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
     private final ParcelService parcelService;
+    private final ActivityAlertService activityAlertService;
 
     @Transactional
     public void registerHost(HostRegistrationDto dto) {
+        boolean existing = hostRepository.existsById(dto.getHostId());
         Host host = hostRepository.findById(dto.getHostId()).orElse(new Host());
         host.setId(dto.getHostId());
         host.setHostname(dto.getHostname());
@@ -53,6 +55,9 @@ public class AgentService {
         
         hostRepository.save(host);
         log.info("Registered host: {}", dto.getHostId());
+        activityAlertService.logAudit("INFO", "AGENT", existing ? "RECONNECT" : "REGISTER",
+                existing ? "Agent reconnected" : "Agent registered", "HOST", dto.getHostId(), host.getClusterId(),
+                null, host.getStatus(), "SUCCESS", existing ? null : "PENDING", "agentVersion=" + dto.getAgentVersion());
     }
 
     @Transactional
@@ -145,6 +150,10 @@ public class AgentService {
                     
                     taskRepository.save(task);
                     log.info("Task {} completed with status: {}", taskId, dto.getStatus());
+                    activityAlertService.logAudit("FAILED".equalsIgnoreCase(dto.getStatus()) ? "ERROR" : "INFO",
+                            "TASK", task.getCommand(), "Task completed with status " + dto.getStatus(), "TASK", taskId.toString(),
+                            task.getClusterId(), "IN_PROGRESS", dto.getStatus(), dto.getStatus(), null,
+                            dto.getErrorMsg());
                     parcelService.processTaskResult(task);
                     cancelPendingClusterDeploymentTasks(task);
 

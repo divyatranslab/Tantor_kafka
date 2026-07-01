@@ -25,4 +25,33 @@ public class ActivityLog {
 
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
+    @Column(name = "event_type")
+    private String eventType;
+
+    private String action;
+    private String actor;
+
+    @Column(name = "resource_type")
+    private String resourceType;
+
+    @Column(name = "resource_id")
+    private String resourceId;
+
+    @Column(name = "old_value", columnDefinition = "TEXT")
+    private String oldValue;
+
+    @Column(name = "new_value", columnDefinition = "TEXT")
+    private String newValue;
+
+    @Column(name = "ip_address")
+    private String ipAddress;
+
+    @Column(name = "event_status")
+    private String eventStatus;
+
+    @Column(name = "approval_status")
+    private String approvalStatus;
+
+    @Column(columnDefinition = "TEXT")
+    private String metadata;
 }

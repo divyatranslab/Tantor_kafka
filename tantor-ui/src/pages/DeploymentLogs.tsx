@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, AlertTriangle, PlayCircle, Trash2, Download } from 'lucide-react';
+import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
 import './DeploymentLogs.css';
 

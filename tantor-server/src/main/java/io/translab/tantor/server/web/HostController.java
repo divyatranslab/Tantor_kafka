@@ -43,6 +43,7 @@ public class HostController {
     private final HostRepository hostRepository;
     private final ClusterRepository clusterRepository;
     private final TaskRepository taskRepository;
+    private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
     private final JobService jobService;
@@ -108,6 +109,8 @@ public class HostController {
         return hostRepository.findById(id).map(host -> {
             host.setStatus("UNAVAILABLE");
             hostRepository.save(host);
+            activityAlertService.logAudit("WARN", "HOST", "MARK_UNAVAILABLE", "Host marked unavailable", "HOST", id,
+                    host.getClusterId(), "ONLINE", "UNAVAILABLE", "SUCCESS", null, null);
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -117,6 +120,8 @@ public class HostController {
         return hostRepository.findById(id).map(host -> {
             host.setStatus("ONLINE");
             hostRepository.save(host);
+            activityAlertService.logAudit("INFO", "HOST", "MARK_AVAILABLE", "Host marked available", "HOST", id,
+                    host.getClusterId(), "UNAVAILABLE", "ONLINE", "SUCCESS", null, null);
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -145,6 +150,8 @@ public class HostController {
             return ResponseEntity.badRequest().body(Map.of("message", "Unable to create onboarding job."));
         }
         Job saved = jobService.createJob(job, List.of(step));
+        activityAlertService.logAudit("INFO", "APPROVAL", "APPROVE", "Host onboarding approved", "HOST", id,
+                host.getClusterId(), "PENDING", "ONBOARDING_QUEUED", "SUCCESS", "APPROVED", "jobId=" + saved.getId());
         return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
@@ -164,9 +171,13 @@ public class HostController {
                 }
             }
 
+            UUID previousClusterId = host.getClusterId();
+            String previousStatus = host.getStatus();
             host.setClusterId(null);
             host.setStatus("PENDING");
             hostRepository.save(host);
+            activityAlertService.logAudit("INFO", "HOST", "DISCONNECT", "Host disconnected from management", "HOST", id,
+                    previousClusterId, previousStatus, "PENDING", "SUCCESS", null, null);
             return ResponseEntity.ok(Map.of(
                 "message",
                 "Host disconnected. It is now waiting in discovered nodes and can be connected again."

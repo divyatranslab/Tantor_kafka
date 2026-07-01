@@ -3,11 +3,15 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.domain.Alert;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.domain.HostParcel;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.dto.ConsumerGroupSummaryDto;
 import io.translab.tantor.server.repository.AlertRepository;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
+import io.translab.tantor.server.service.ConsumerLagCacheService;
 import io.translab.tantor.server.service.HostStatusService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -37,6 +41,8 @@ public class AlertController {
     private final HostRepository hostRepository;
     private final TaskRepository taskRepository;
     private final HostStatusService hostStatusService;
+    private final HostParcelRepository hostParcelRepository;
+    private final ConsumerLagCacheService consumerLagCacheService;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getActiveAlerts() {
@@ -74,7 +80,7 @@ public class AlertController {
             }
 
             long diskPct = diskUsedPercent(host);
-            if (diskPct >= 95) {
+            if (diskPct >= 90) {
                 alerts.add(runtimeAlert(
                         "host-disk-full-" + host.getId(),
                         "CRITICAL",
@@ -88,7 +94,7 @@ public class AlertController {
                         null,
                         "storage"
                 ));
-            } else if (diskPct >= 85) {
+            } else if (diskPct >= 80) {
                 alerts.add(runtimeAlert(
                         "host-disk-warning-" + host.getId(),
                         "WARNING",
@@ -101,6 +107,23 @@ public class AlertController {
                         host.getLastHeartbeat(),
                         null,
                         "storage"
+                ));
+            }
+
+            long memoryPct = memoryUsedPercent(host);
+            if (memoryPct >= 90) {
+                alerts.add(runtimeAlert(
+                        "host-memory-high-" + host.getId(),
+                        memoryPct >= 95 ? "CRITICAL" : "WARNING",
+                        "Host memory pressure",
+                        hostLabel(host) + " is using " + memoryPct + "% of memory. Inspect Kafka heap and other processes.",
+                        host.getClusterId(),
+                        null,
+                        host.getId(),
+                        hostIp(host),
+                        host.getLastHeartbeat(),
+                        null,
+                        "memory"
                 ));
             }
         });
@@ -209,6 +232,32 @@ public class AlertController {
             }
         });
 
+        hostParcelRepository.findAll().stream()
+                .filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus()))
+                .limit(12)
+                .forEach(parcel -> alerts.add(runtimeAlert(
+                        "parcel-failed-" + parcel.getId(), "CRITICAL",
+                        "Package validation or distribution failed", parcelReason(parcel),
+                        null, null, parcel.getHostId(), hostIp(hostById.get(parcel.getHostId())),
+                        parcel.getUpdatedAt(), parcel.getErrorMsg(), "package"
+                )));
+
+        clusters.forEach(cluster -> consumerLagCacheService.getSummaries(cluster.getId()).stream()
+                .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
+                .limit(10)
+                .forEach(group -> alerts.add(runtimeAlert(
+                        "consumer-lag-" + cluster.getId() + "-" + group.getGroupId(),
+                        group.getTotalLag() >= 10000 ? "CRITICAL" : "WARNING",
+                        "Consumer group needs attention",
+                        consumerReason(group),
+                        cluster.getId(),
+                        cluster.getName(),
+                        null,
+                        null,
+                        OffsetDateTime.now(),
+                        null,
+                        "consumer"
+                ))));
         tasks.stream()
                 .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
                 .sorted(Comparator.comparing(Task::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
@@ -348,7 +397,22 @@ public class AlertController {
         return Math.min(100, Math.round((used * 100.0) / host.getDiskTotalGb()));
     }
 
+    private long memoryUsedPercent(Host host) {
+        if (host == null || host.getMemTotalMb() == null || host.getMemTotalMb() <= 0) return 0;
+        long used = host.getMemUsedMb() == null ? 0L : host.getMemUsedMb();
+        return Math.min(100, Math.round((used * 100.0) / host.getMemTotalMb()));
+    }
+
+    private String parcelReason(HostParcel parcel) {
+        return parcel.getServiceType() + " " + parcel.getVersion() + " failed on host " + parcel.getHostId() + ". " + shortText(parcel.getErrorMsg(), 220);
+    }
+
+    private String consumerReason(ConsumerGroupSummaryDto group) {
+        return group.getGroupId() + " has total lag " + group.getTotalLag() + " and health " + group.getHealth() + ".";
+    }
+
     private boolean clusterBrokerPortListening(Cluster cluster, List<Host> assignedHosts) {
+
         int port = brokerPort(cluster);
         for (Host host : assignedHosts) {
             String ip = hostIp(host);

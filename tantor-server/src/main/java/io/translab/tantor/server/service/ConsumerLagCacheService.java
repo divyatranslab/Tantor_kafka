@@ -227,4 +227,8 @@ public class ConsumerLagCacheService {
         Map<String, ConsumerGroupDetailDto> map = detailCache.getOrDefault(clusterId, Collections.emptyMap());
         return map.get(groupId);
     }
+
+    public List<ConsumerGroupSummaryDto> getSummaries(UUID clusterId) {
+        return List.copyOf(summaryCache.getOrDefault(clusterId, Collections.emptyList()));
+    }
 }

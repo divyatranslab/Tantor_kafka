@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronRight,
   Users,
-  Rocket,
   Activity,
 } from 'lucide-react';
 import './Sidebar.css';

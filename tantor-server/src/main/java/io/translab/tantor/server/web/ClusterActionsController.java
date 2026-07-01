@@ -134,10 +134,6 @@ public class ClusterActionsController {
     }
 
     @GetMapping("/tasks/{taskId}")
-    public ResponseEntity<Map<String, String>> getTaskStatus(@PathVariable UUID clusterId,
-            @PathVariable String taskId) {
-        String status = rollingRestartService.getTaskStatus(taskId);
-        return ResponseEntity.ok(Map.of("taskId", taskId, "status", status));
     public ResponseEntity<Map<String, String>> getTaskStatus(@PathVariable UUID clusterId, @PathVariable String taskId) {
         try {
             Job job = jobService.getJob(UUID.fromString(taskId));
