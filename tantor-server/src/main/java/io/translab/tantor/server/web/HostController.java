@@ -13,6 +13,7 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
+import io.translab.tantor.server.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,7 @@ public class HostController {
     private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
     private final JobService jobService;
+    private final AuditService auditService;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
@@ -106,8 +108,11 @@ public class HostController {
     @PostMapping("/{id}/mark-unavailable")
     public ResponseEntity<?> markUnavailable(@PathVariable String id) {
         return hostRepository.findById(id).map(host -> {
+            String previous = host.getStatus();
             host.setStatus("UNAVAILABLE");
             hostRepository.save(host);
+            auditService.record("HOST", "HOST_MARKED_UNAVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
+                    Map.of("status", String.valueOf(previous)), Map.of("status", "UNAVAILABLE"), null, null);
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -115,8 +120,11 @@ public class HostController {
     @PostMapping("/{id}/mark-available")
     public ResponseEntity<?> markAvailable(@PathVariable String id) {
         return hostRepository.findById(id).map(host -> {
+            String previous = host.getStatus();
             host.setStatus("ONLINE");
             hostRepository.save(host);
+            auditService.record("HOST", "HOST_MARKED_AVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
+                    Map.of("status", String.valueOf(previous)), Map.of("status", "ONLINE"), null, null);
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -145,6 +153,9 @@ public class HostController {
             return ResponseEntity.badRequest().body(Map.of("message", "Unable to create onboarding job."));
         }
         Job saved = jobService.createJob(job, List.of(step));
+        auditService.record("APPROVAL", "HOST_ONBOARDING_APPROVED", "HOST", id, host.getClusterId(), "SUCCESS",
+                Map.of("status", host.getStatus()), Map.of("jobId", saved.getId(), "status", "ONBOARDING_REQUESTED"),
+                Map.of("approved", true), Map.of("hostname", String.valueOf(host.getHostname())));
         return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
@@ -152,6 +163,8 @@ public class HostController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteHost(@PathVariable String id) {
         return hostRepository.findById(id).map(host -> {
+            Map<String, Object> oldValue = Map.of("status", String.valueOf(host.getStatus()),
+                    "clusterId", String.valueOf(host.getClusterId()), "hostname", String.valueOf(host.getHostname()));
             if (host.getClusterId() != null) {
                 boolean assignedToActiveCluster = clusterRepository.findById(host.getClusterId())
                     .filter(cluster -> !"DELETED".equalsIgnoreCase(cluster.getStatus()))
@@ -167,6 +180,9 @@ public class HostController {
             host.setClusterId(null);
             host.setStatus("PENDING");
             hostRepository.save(host);
+            auditService.record("HOST", "HOST_REMOVED", "HOST", id, null, "SUCCESS", oldValue,
+                    Map.of("status", "PENDING", "clusterId", ""), null,
+                    Map.of("operation", "disconnect", "recordRetained", true));
             return ResponseEntity.ok(Map.of(
                 "message",
                 "Host disconnected. It is now waiting in discovered nodes and can be connected again."

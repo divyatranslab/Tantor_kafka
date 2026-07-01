@@ -3,6 +3,7 @@ package io.translab.tantor.server.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.*;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.persistence.ConfigVersionRepository;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
@@ -36,6 +37,7 @@ public class ConfigVersionService {
     private final JobService jobService;
     private final ActivityAlertService activityAlertService;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     public Map<String, Object> preview(Map<String, Object> oldConfig, Map<String, Object> newConfig, boolean restart) {
         List<Map<String, Object>> diff = diff(oldConfig, newConfig);
@@ -116,6 +118,11 @@ public class ConfigVersionService {
         version.setApprovalRequired(approvalRequired);
         version.setStatus(approvalRequired ? ConfigVersionStatus.PENDING_APPROVAL : ConfigVersionStatus.VALIDATED);
         ConfigVersion saved = configVersionRepository.saveAndFlush(version);
+        auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_CREATED", "CONFIG_VERSION", saved.getId().toString(),
+                cluster.getId(), "SUCCESS", oldConfig, newConfig,
+                Map.of("required", approvalRequired),
+                Map.of("hostId", service.getHostId(), "component", service.getRole(),
+                        "file", configFileName, "version", saved.getConfigVersion()));
         activityAlertService.logActivity("INFO", "Saved config version v" + saved.getConfigVersion()
                 + " for " + service.getHostId() + "; active config unchanged", cluster.getId());
         return saved;
@@ -136,6 +143,11 @@ public class ConfigVersionService {
         version.setApprovedBy(currentUser());
         version.setApprovedAt(Instant.now());
         version.setStatus(ConfigVersionStatus.APPROVED);
+        auditService.record("APPROVAL", "CONFIG_VERSION_APPROVED", "CONFIG_VERSION", version.getId().toString(),
+                clusterId, "SUCCESS", Map.of("status", ConfigVersionStatus.PENDING_APPROVAL.name()),
+                Map.of("status", ConfigVersionStatus.APPROVED.name()),
+                Map.of("required", true, "approvedBy", currentUser(), "approvedAt", version.getApprovedAt()),
+                Map.of("version", version.getConfigVersion(), "hostId", version.getHostId()));
         activityAlertService.logActivity("INFO", "Approved config version v" + version.getConfigVersion(), clusterId);
         return configVersionRepository.save(version);
     }
@@ -143,6 +155,7 @@ public class ConfigVersionService {
     @Transactional
     public Job apply(UUID clusterId, UUID versionId, boolean restart) {
         ConfigVersion version = ownedVersion(clusterId, versionId);
+        ConfigVersionStatus previousStatus = version.getStatus();
         if (version.getStatus() != ConfigVersionStatus.VALIDATED
                 && version.getStatus() != ConfigVersionStatus.APPROVED
                 && version.getStatus() != ConfigVersionStatus.FAILED) {
@@ -205,6 +218,11 @@ public class ConfigVersionService {
         version.setJobId(saved.getId());
         version.setStatus(ConfigVersionStatus.APPLYING);
         configVersionRepository.save(version);
+        auditService.record("CONFIG_CHANGE", "CONFIG_APPLY_REQUESTED", "CONFIG_VERSION", version.getId().toString(),
+                clusterId, "REQUESTED", Map.of("status", previousStatus.name()),
+                Map.of("status", ConfigVersionStatus.APPLYING.name(), "jobId", saved.getId()),
+                version.getApprovedBy() == null ? null : Map.of("approvedBy", version.getApprovedBy()),
+                Map.of("version", version.getConfigVersion(), "restart", restart));
         activityAlertService.logActivity("INFO", "Queued config version v" + version.getConfigVersion()
                 + " for backup and apply", clusterId);
         return saved;
@@ -240,7 +258,12 @@ public class ConfigVersionService {
         rollback.setApprovalRequired(approvalRequired);
         rollback.setStatus(approvalRequired ? ConfigVersionStatus.PENDING_APPROVAL : ConfigVersionStatus.VALIDATED);
         rollback.setValidationResult(writeJson(preview(readMap(active.getNewConfig()), readMap(target.getNewConfig()), true)));
-        return configVersionRepository.save(rollback);
+        ConfigVersion saved = configVersionRepository.save(rollback);
+        auditService.record("CONFIG_CHANGE", "CONFIG_ROLLBACK_VERSION_CREATED", "CONFIG_VERSION", saved.getId().toString(),
+                clusterId, "SUCCESS", readMap(active.getNewConfig()), readMap(target.getNewConfig()),
+                Map.of("required", approvalRequired),
+                Map.of("rollbackVersion", target.getConfigVersion(), "newVersion", saved.getConfigVersion()));
+        return saved;
     }
 
     @Transactional
@@ -260,6 +283,10 @@ public class ConfigVersionService {
         version.setStatus(ConfigVersionStatus.APPLIED);
         version.setAppliedAt(Instant.now());
         configVersionRepository.save(version);
+        auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_APPLIED", "CONFIG_VERSION", version.getId().toString(),
+                version.getClusterId(), "SUCCESS", readMap(version.getOldConfig()), readMap(version.getNewConfig()),
+                version.getApprovedBy() == null ? null : Map.of("approvedBy", version.getApprovedBy()),
+                Map.of("version", version.getConfigVersion(), "hostId", version.getHostId(), "appliedAt", version.getAppliedAt()));
         activityAlertService.logActivity("INFO", "Applied config version v" + version.getConfigVersion()
                 + " after agent backup", version.getClusterId());
     }
@@ -269,6 +296,9 @@ public class ConfigVersionService {
         configVersionRepository.findById(versionId).ifPresent(version -> {
             version.setStatus(ConfigVersionStatus.FAILED);
             configVersionRepository.save(version);
+            auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_APPLY_FAILED", "CONFIG_VERSION", version.getId().toString(),
+                    version.getClusterId(), "FAILED", null, Map.of("status", ConfigVersionStatus.FAILED.name()),
+                    null, Map.of("version", version.getConfigVersion(), "hostId", version.getHostId()));
         });
     }
 

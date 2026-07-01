@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.Task;
 import io.translab.tantor.server.dto.HostHeartbeatDto;
 import io.translab.tantor.server.dto.HostRegistrationDto;
@@ -31,10 +32,16 @@ public class AgentService {
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
     private final ParcelService parcelService;
+    private final AuditService auditService;
 
     @Transactional
     public void registerHost(HostRegistrationDto dto) {
-        Host host = hostRepository.findById(dto.getHostId()).orElse(new Host());
+        Host existing = hostRepository.findById(dto.getHostId()).orElse(null);
+        Map<String, Object> oldValue = existing == null ? Map.of() : Map.of(
+                "hostname", String.valueOf(existing.getHostname()),
+                "status", String.valueOf(existing.getStatus()),
+                "agentVersion", String.valueOf(existing.getAgentVersion()));
+        Host host = existing == null ? new Host() : existing;
         host.setId(dto.getHostId());
         host.setHostname(dto.getHostname());
         try {
@@ -52,6 +59,12 @@ public class AgentService {
         host.setLastHeartbeat(OffsetDateTime.now());
         
         hostRepository.save(host);
+        auditService.recordAs("agent:" + dto.getHostId(), "AGENT", null,
+                "AGENT", existing == null ? "AGENT_REGISTERED" : "AGENT_RE_REGISTERED",
+                "HOST", dto.getHostId(), host.getClusterId(), "SUCCESS", oldValue,
+                Map.of("hostname", String.valueOf(host.getHostname()), "status", String.valueOf(host.getStatus()),
+                        "agentVersion", String.valueOf(host.getAgentVersion()), "ipAddresses", dto.getIpAddresses()),
+                null, Map.of("osDetails", String.valueOf(dto.getOsDetails())));
         log.info("Registered host: {}", dto.getHostId());
     }
 

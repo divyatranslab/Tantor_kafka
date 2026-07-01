@@ -1,6 +1,7 @@
 package io.translab.tantor.server.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.JobRepository;
 import io.translab.tantor.server.repository.JobStepRepository;
@@ -23,6 +24,7 @@ public class JobService {
     private final JobRepository jobRepository;
     private final JobStepRepository jobStepRepository;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
@@ -35,6 +37,11 @@ public class JobService {
         }
         jobStepRepository.saveAll(steps);
         refreshProgress(saved.getId());
+        auditService.record(jobCategory(saved), saved.getType().name() + "_REQUESTED", "JOB",
+                saved.getId().toString(), clusterId(saved), "REQUESTED", null,
+                Map.of("type", saved.getType().name(), "resourceKey", String.valueOf(saved.getResourceKey()),
+                        "requestedBy", String.valueOf(saved.getRequestedBy()), "stepCount", steps.size()),
+                null, Map.of("jobStatus", saved.getStatus().name()));
         return saved;
     }
 
@@ -173,6 +180,9 @@ public class JobService {
         job.setRetryCount(job.getRetryCount() + 1);
         job.setEndTime(null);
         appendLog(id, retryRollback ? "Rollback retry requested." : "Retry requested; completed steps will be preserved.");
+        auditService.record(jobCategory(job), retryRollback ? "ROLLBACK_RETRY_REQUESTED" : "JOB_RETRY_REQUESTED",
+                "JOB", job.getId().toString(), clusterId(job), "REQUESTED", null,
+                Map.of("retryCount", job.getRetryCount(), "type", job.getType().name()), null, null);
         refreshProgress(id);
         return jobRepository.save(job);
     }
@@ -191,6 +201,9 @@ public class JobService {
         job.setStatus(JobStatus.ROLLBACK_PENDING);
         job.setEndTime(null);
         appendLog(id, "Rollback requested.");
+        auditService.record(jobCategory(job), "ROLLBACK_REQUESTED", "JOB", job.getId().toString(),
+                clusterId(job), "REQUESTED", Map.of("status", String.valueOf(job.getStatus())),
+                Map.of("status", JobStatus.ROLLBACK_PENDING.name()), null, null);
         return jobRepository.save(job);
     }
 
@@ -275,6 +288,22 @@ public class JobService {
                 || status == JobStatus.PARTIAL_SUCCESS
                 || status == JobStatus.ROLLED_BACK
                 || status == JobStatus.ROLLBACK_FAILED;
+    }
+
+    private String jobCategory(Job job) {
+        return switch (job.getType()) {
+            case DEPLOYMENT, ADD_HOST -> "DEPLOYMENT";
+            case CONFIG_CHANGE -> "CONFIG_CHANGE";
+            case ROLLING_RESTART -> "RESTART";
+            case MONITORING_ENABLEMENT -> "MONITORING";
+            case ONBOARDING -> "ONBOARDING";
+        };
+    }
+
+    private UUID clusterId(Job job) {
+        if (job.getResourceKey() == null || !job.getResourceKey().startsWith("cluster:")) return null;
+        try { return UUID.fromString(job.getResourceKey().substring("cluster:".length())); }
+        catch (Exception ignored) { return null; }
     }
 
     public record ClaimedJob(UUID jobId, boolean rollback) {}
