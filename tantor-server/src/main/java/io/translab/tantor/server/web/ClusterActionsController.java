@@ -33,28 +33,53 @@ public class ClusterActionsController {
                     int count = 0;
                     if (cluster.getServices() != null) {
                         for (var service : cluster.getServices()) {
-                            deploymentService.restartService(clusterId, service.getHostId(), systemdServiceName(service.getRole()));
+                            deploymentService.restartService(clusterId, service.getHostId(),
+                                    systemdServiceName(service.getRole()));
                             count++;
                         }
                     }
                     return ResponseEntity.ok(Map.of(
                             "status", "scheduled",
-                            "tasks", String.valueOf(count)
-                    ));
+                            "tasks", String.valueOf(count)));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/tasks/{taskId}")
-    public ResponseEntity<Map<String, String>> getTaskStatus(@PathVariable UUID clusterId, @PathVariable String taskId) {
+    public ResponseEntity<Map<String, String>> getTaskStatus(@PathVariable UUID clusterId,
+            @PathVariable String taskId) {
         String status = rollingRestartService.getTaskStatus(taskId);
         return ResponseEntity.ok(Map.of("taskId", taskId, "status", status));
     }
 
+    @PostMapping("/tasks/{taskId}/retry")
+    public ResponseEntity<Void> retryTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+        return deploymentService.retryTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/tasks/{taskId}/resume")
+    public ResponseEntity<Void> resumeTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+        return deploymentService.resumeTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/tasks/{taskId}/rollback")
+    public ResponseEntity<Void> rollbackTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+        return deploymentService.rollbackTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    }
+
+    @PostMapping("/tasks/{taskId}/cleanup")
+    public ResponseEntity<Void> cleanupTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+        return deploymentService.cleanupTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
+    }
+
     private String systemdServiceName(String role) {
-        if ("controller".equals(role)) return "controller";
-        if ("zookeeper".equals(role)) return "zookeeper";
-        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
+
+        if ("controller".equals(role))
+            return "controller";
+        if ("zookeeper".equals(role))
+            return "zookeeper";
+        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role))
+            return "kafka";
         return "broker";
     }
 }

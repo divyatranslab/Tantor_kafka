@@ -36,3 +36,4 @@ server.err
 # Artifacts and Heavy Files
 repository/
 test.tgz
+go.zip

@@ -14,7 +14,6 @@ import org.apache.kafka.clients.admin.LogDirDescription;
 import org.apache.kafka.clients.admin.ReplicaInfo;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +21,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;

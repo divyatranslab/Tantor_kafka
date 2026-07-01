@@ -61,6 +61,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.updateKafkaConfig(ctx, t)
 	case "DELETE_CLUSTER":
 		return e.deleteCluster(ctx, t)
+	case "ROLLBACK_DEPLOYMENT":
+		return e.rollbackDeployment(ctx, t)
 	case "DISTRIBUTE_PARCEL":
 		return e.distributeParcel(ctx, t)
 	case "ACTIVATE_PARCEL":
@@ -140,12 +142,39 @@ func (e *Engine) deleteCluster(ctx context.Context, t *api.Task) (*api.TaskResul
 	}, nil
 }
 
+func (e *Engine) rollbackDeployment(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.Rollback(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Rollback failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{
+		TaskID:    t.TaskID,
+		HostID:    e.cfg.Agent.HostID,
+		Status:    "SUCCESS",
+		LogOutput: logOutput,
+	}, nil
+}
+
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
-	logOutput, err := deployer.Deploy(ctx, t)
+	
+	reporter := func(step string, logs string) {
+		e.client.ReportTaskResult(&api.TaskResult{
+			TaskID:      t.TaskID,
+			HostID:      e.cfg.Agent.HostID,
+			Status:      "IN_PROGRESS",
+			CurrentStep: step,
+			LogOutput:   logs,
+		})
+	}
+
+	logOutput, err := deployer.Deploy(ctx, t, reporter)
 
 	if err != nil {
-		return e.fail(t, fmt.Sprintf("Kafka deployment failed: %v\nLogs: %s", err, logOutput)), nil
+		failResult := e.fail(t, fmt.Sprintf("Kafka deployment failed: %v\nLogs: %s", err, logOutput))
+		failResult.FailedReason = err.Error()
+		return failResult, nil
 	}
 
 	return &api.TaskResult{

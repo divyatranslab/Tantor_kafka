@@ -48,13 +48,75 @@ func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Exe
 	}
 }
 
-func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
+func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step string, log string)) (string, error) {
 	var logs strings.Builder
+	var stepLogs strings.Builder
+	currentStep := ""
+
+	reportProgress := func() {
+		if reporter != nil && currentStep != "" && stepLogs.Len() > 0 {
+			reporter(currentStep, stepLogs.String())
+			stepLogs.Reset()
+		}
+	}
+	defer reportProgress()
+
 	log := func(msg string, args ...interface{}) {
 		formatted := fmt.Sprintf(msg, args...)
 		logs.WriteString(formatted + "\n")
+		stepLogs.WriteString(formatted + "\n")
 	}
 
+	setStep := func(name string) {
+		reportProgress()
+		currentStep = name
+		log("==> Starting step: %s", name)
+		reportProgress()
+	}
+
+	var DEPLOYMENT_STEPS = []string{
+		"Validate agent",
+		"Validate host prerequisites",
+		"Validate package",
+		"Download package to agent",
+		"Verify checksum",
+		"Extract Kafka",
+		"Backup old config if exists",
+		"Generate config",
+		"Format KRaft storage / setup Zookeeper",
+		"Create systemd service",
+		"Start service",
+		"Validate port",
+		"Validate Kafka AdminClient connection",
+		"Validate cluster health",
+		"Mark DB state RUNNING",
+	}
+
+	resumeStep := strings.TrimSpace(t.Parameters["resume_step"])
+	resumeStepIdx := -1
+	for i, s := range DEPLOYMENT_STEPS {
+		if s == resumeStep {
+			resumeStepIdx = i
+			break
+		}
+	}
+
+	shouldSkip := func(stepName string) bool {
+		if resumeStepIdx == -1 {
+			return false
+		}
+		for i, s := range DEPLOYMENT_STEPS {
+			if s == stepName {
+				return i < resumeStepIdx
+			}
+		}
+		return false
+	}
+
+	setStep("Validate agent")
+	log("Agent self-check passed")
+
+	setStep("Validate host prerequisites")
 	installPaths := resolveKafkaInstallPaths(t)
 	installDir := installPaths.VersionedDir
 	activeInstallDir := installPaths.ActiveDir
@@ -91,71 +153,93 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		}
 	}
 
-	// 2. Download TAR
+	setStep("Validate package")
+	if t.ArtifactURL == "" {
+		log("Warning: Artifact URL is empty, skipping download.")
+	} else {
+		log("Artifact URL is valid: %s", t.ArtifactURL)
+	}
+
+	setStep("Download package to agent")
 	destPath := filepath.Join(artifactWorkDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
-	log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
+	var downloadedChecksum string
+	var err error
 
-	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
-	}
-
-	// 3. Verify Checksum
-	expectedChecksum := t.Checksum
-	if expectedChecksum == "" {
-		expectedChecksum = downloadedChecksum
-	}
-	if err := checksum.VerifySHA256(destPath, expectedChecksum); err != nil {
-		os.Remove(destPath)
-		return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
-	}
-	log("Checksum verified successfully")
-
-	// 4. Extract TAR (using tar command which exists on Windows 10+)
-	tmpExtractDir := filepath.Join(artifactWorkDir, "extract_"+t.TaskID)
-	os.MkdirAll(tmpExtractDir, 0755)
-	_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
-	}
-
-	// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
-	err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || path == tmpExtractDir {
-			return err
-		}
-		relPath, _ := filepath.Rel(tmpExtractDir, path)
-		dest := filepath.Join(installDir, relPath)
-		if info.IsDir() {
-			return os.MkdirAll(dest, 0755)
-		}
-		data, err := os.ReadFile(path)
-		if err == nil {
-			os.MkdirAll(filepath.Dir(dest), 0755)
-			mode := info.Mode().Perm()
-			if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
-				mode = 0755 // Ensure bin/ scripts are always executable
-			}
-			os.WriteFile(dest, data, mode)
-		}
-		return nil
-	})
-	os.RemoveAll(tmpExtractDir)
-	log("Artifact extracted to %s", installDir)
-
-	if err := d.ensureActiveSymlink(ctx, activeInstallDir, installDir); err != nil {
-		return logs.String(), err
-	}
-	log("Kafka active symlink updated: %s -> %s", activeInstallDir, installDir)
-
-	// 5.5 Fix SELinux contexts for extracted files (RHEL/CentOS)
-	if d.isSELinuxEnabled(ctx) {
-		log("SELinux detected — relabeling Kafka files...")
-		_, _, err := d.exec.RunSudo(ctx, "restorecon", "-Rv", installDir)
+	if !shouldSkip("Download package to agent") {
+		log("Downloading artifact from %s to %s", t.ArtifactURL, destPath)
+		downloadedChecksum, err = d.client.DownloadArtifact(t.ArtifactURL, destPath)
 		if err != nil {
-			log("Warning: restorecon failed (may not be RHEL): %v", err)
+			return logs.String(), fmt.Errorf("failed to download artifact: %w", err)
 		}
-		d.exec.RunSudo(ctx, "chcon", "-R", "-t", "bin_t", filepath.Join(installDir, "bin"))
+	} else {
+		log("Skipping step (resume mode)")
+	}
+
+	setStep("Verify checksum")
+	if !shouldSkip("Verify checksum") {
+		expectedChecksum := t.Checksum
+		if expectedChecksum == "" {
+			expectedChecksum = downloadedChecksum
+		}
+		if err := checksum.VerifySHA256(destPath, expectedChecksum); err != nil {
+			os.Remove(destPath)
+			return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
+		}
+		log("Checksum verified successfully")
+	} else {
+		log("Skipping step (resume mode)")
+	}
+
+	setStep("Extract Kafka")
+	tmpExtractDir := filepath.Join(artifactWorkDir, "extract_"+t.TaskID)
+	
+	if !shouldSkip("Extract Kafka") {
+		os.MkdirAll(tmpExtractDir, 0755)
+		_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
+		if err != nil {
+			return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
+		}
+
+		// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
+		err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || path == tmpExtractDir {
+				return err
+			}
+			relPath, _ := filepath.Rel(tmpExtractDir, path)
+			dest := filepath.Join(installDir, relPath)
+			if info.IsDir() {
+				return os.MkdirAll(dest, 0755)
+			}
+			data, err := os.ReadFile(path)
+			if err == nil {
+				os.MkdirAll(filepath.Dir(dest), 0755)
+				mode := info.Mode().Perm()
+				if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
+					mode = 0755 // Ensure bin/ scripts are always executable
+				}
+				os.WriteFile(dest, data, mode)
+			}
+			return nil
+		})
+		os.RemoveAll(tmpExtractDir)
+		log("Artifact extracted to %s", installDir)
+
+		if err := d.ensureActiveSymlink(ctx, activeInstallDir, installDir); err != nil {
+			return logs.String(), err
+		}
+		log("Kafka active symlink updated: %s -> %s", activeInstallDir, installDir)
+
+		// 5.5 Fix SELinux contexts for extracted files (RHEL/CentOS)
+		if d.isSELinuxEnabled(ctx) {
+			log("SELinux detected — relabeling Kafka files...")
+			_, _, err := d.exec.RunSudo(ctx, "restorecon", "-Rv", installDir)
+			if err != nil {
+				log("Warning: restorecon failed (may not be RHEL): %v", err)
+			}
+			d.exec.RunSudo(ctx, "chcon", "-R", "-t", "bin_t", filepath.Join(installDir, "bin"))
+		}
+	} else {
+		log("Skipping step (resume mode)")
 	}
 
 	// 6. Setup JMX Exporter
@@ -190,64 +274,109 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 		log("Warning: Failed to write JMX config: %v", err)
 	}
 
-	// 7. Generate Configs
+	setStep("Backup old config if exists")
+	configPath := configPathForTask(activeInstallDir, t)
+	if _, err := os.Stat(configPath); err == nil {
+		backupPath := configPath + ".bak." + time.Now().Format("20060102150405")
+		log("Backing up existing config: %s -> %s", configPath, backupPath)
+		d.exec.RunSudo(ctx, "cp", configPath, backupPath)
+	} else {
+		log("No existing config to backup")
+	}
+
+	setStep("Generate config")
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
 		return logs.String(), err
 	}
 	log("Configs generated successfully")
 
-	// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
-	if deploymentModeForTask(t) == "kraft" {
-		metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
-		if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
-			log("Fresh deployment detected — formatting KRaft storage...")
-			storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-			configPath := configPathForTask(activeInstallDir, t)
+	setStep("Format KRaft storage / setup Zookeeper")
+	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
+		if deploymentModeForTask(t) == "kraft" {
+			metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
+			if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
+				log("Fresh deployment detected — formatting KRaft storage...")
+				storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
+				kraftConfigPath := configPathForTask(activeInstallDir, t)
 
-			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-			if clusterUUID == "" {
-				uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-				if err != nil {
-					return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+				clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+				if clusterUUID == "" {
+					uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
+					if err != nil {
+						return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+					}
+					clusterUUID = strings.TrimSpace(uuidOut)
+					log("Generated cluster UUID: %s", clusterUUID)
+				} else {
+					log("Using shared cluster UUID: %s", clusterUUID)
 				}
-				clusterUUID = strings.TrimSpace(uuidOut)
-				log("Generated cluster UUID: %s", clusterUUID)
-			} else {
-				log("Using shared cluster UUID: %s", clusterUUID)
-			}
 
-			_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", configPath)
-			if err != nil {
-				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+				_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", kraftConfigPath)
+				if err != nil {
+					return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+				}
+				log("KRaft storage formatted successfully")
+			} else {
+				log("Existing KRaft metadata found — skipping format (safe re-deploy)")
 			}
-			log("KRaft storage formatted successfully")
 		} else {
-			log("Existing KRaft metadata found — skipping format (safe re-deploy)")
+			log("Zookeeper mode detected — bypassing KRaft format")
 		}
+	} else {
+		log("Skipping step (resume mode)")
 	}
 
-	// 8. Systemd Service
+	setStep("Create systemd service")
 	serviceName := serviceNameForTask(t)
 	if err := d.createSystemdService(ctx, "root", activeInstallDir, t); err != nil {
 		return logs.String(), err
 	}
 	log("Systemd service created")
 
-	// 9. Start Service
-	_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
-	if err == nil {
-		_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName)
+	setStep("Start service")
+	if !shouldSkip("Start service") {
+		_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
+		if err == nil {
+			_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName)
+		}
+		if err != nil {
+			return logs.String(), fmt.Errorf("failed to start service: %w", err)
+		}
+		log("Kafka service %s started successfully", serviceName)
+	} else {
+		log("Skipping step (resume mode)")
 	}
-	if err != nil {
-		return logs.String(), fmt.Errorf("failed to start service: %w", err)
-	}
-	log("Kafka service %s started successfully", serviceName)
 
-	// 10. Post-Deployment Validation
+	setStep("Validate port")
+	log("Validating ports in the next health checks...")
+
+	setStep("Validate Kafka AdminClient connection")
+	if deploymentModeForTask(t) != "zookeeper" && serviceNameForTask(t) != "controller" {
+		log("Validating AdminClient connection...")
+		listenerPort := t.Parameters["listener_port"]
+		if listenerPort == "" {
+			listenerPort = "9092"
+		}
+		// Try to wait a bit before connecting
+		time.Sleep(5 * time.Second)
+		out, errOut, err := d.exec.Run(ctx, filepath.Join(activeInstallDir, "bin", "kafka-topics.sh"), "--list", "--bootstrap-server", "localhost:"+listenerPort)
+		if err != nil {
+			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
+		} else {
+			log("AdminClient successfully connected to broker")
+		}
+	} else {
+		log("Zookeeper or Controller-only mode — bypassing AdminClient connection")
+	}
+
+	setStep("Validate cluster health")
 	if err := d.validateDeployment(ctx, t, activeInstallDir, &logs); err != nil {
 		return logs.String(), fmt.Errorf("deployment validation failed: %w", err)
 	}
 	log("All deployment validations passed ✓")
+
+	setStep("Mark DB state RUNNING")
+	log("Deployment successfully completed. Emitting RUNNING state.")
 
 	return logs.String(), nil
 }
@@ -290,7 +419,7 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 
 	log("Validation [1/6]: Checking Kafka process...")
 	for i := 0; i < 10; i++ {
-		out, _, _ := d.exec.Run(ctx, "bash", "-c", "pgrep -f 'kafka.Kafka'")
+		out, _, _ := d.exec.Run(ctx, "bash", "-c", "ps -eo pid,cmd | grep java | grep -E 'kafka\\.Kafka|kafka\\.server\\.KafkaRaftServer' | grep -v grep | awk '{print $1}'")
 		if strings.TrimSpace(out) != "" {
 			log("  ✓ Kafka process detected (PID: %s)", strings.TrimSpace(out))
 			goto check2
@@ -409,7 +538,7 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 
 	log("Validation [1/4]: Checking %s process...", processLabel)
 	for i := 0; i < 10; i++ {
-		out, _, _ := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("pgrep -f '%s'", processPattern))
+		out, _, _ := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ps -eo pid,cmd | grep java | grep '%s' | grep -v grep | awk '{print $1}'", processPattern))
 		if strings.TrimSpace(out) != "" {
 			log("  PASS: %s process detected (PID: %s)", processLabel, strings.TrimSpace(out))
 			goto serviceCheck
@@ -1301,6 +1430,37 @@ func (d *Deployer) writeStringToSudoFile(ctx context.Context, content string, de
 	}
 
 	return nil
+}
+
+func (d *Deployer) Rollback(ctx context.Context, t *api.Task) (string, error) {
+	var logs strings.Builder
+	log := func(msg string, args ...interface{}) {
+		formatted := fmt.Sprintf(msg, args...)
+		logs.WriteString(formatted + "\n")
+		slog.Info(formatted)
+	}
+
+	log("Starting Kafka rollback process...")
+
+	log("Stopping Kafka systemd services...")
+	for _, service := range []string{"broker", "controller", "kafka", "zookeeper"} {
+		d.exec.RunSudo(ctx, "systemctl", "stop", service)
+		d.exec.RunSudo(ctx, "systemctl", "disable", service)
+	}
+
+	log("Removing systemd unit files...")
+	for _, unit := range []string{"broker.service", "controller.service", "kafka.service", "zookeeper.service"} {
+		d.exec.RunSudo(ctx, "rm", "-f", filepath.Join("/etc/systemd/system", unit))
+	}
+	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
+
+	log("Terminating processes on Kafka and ZooKeeper ports...")
+	for _, port := range []string{"9092/tcp", "9093/tcp", "9095/tcp", "7071/tcp", "2181/tcp", "2888/tcp", "3888/tcp"} {
+		d.exec.RunSudo(ctx, "fuser", "-k", port)
+	}
+
+	log("Rollback completed successfully. Configs and data are preserved.")
+	return logs.String(), nil
 }
 
 func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {

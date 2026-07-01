@@ -12,4 +12,6 @@ public class TaskResultDto {
     private String status; // SUCCESS, FAILED
     private String logOutput;
     private String errorMsg;
+    private String currentStep;
+    private String failedReason;
 }

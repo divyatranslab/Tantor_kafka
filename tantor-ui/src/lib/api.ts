@@ -17,7 +17,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
     const errorData = await res.json().catch(() => ({}));
     throw { response: { data: errorData } };
   }
-  return res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 export async function getUsers(): Promise<UserResponse[]> {
@@ -41,5 +42,29 @@ export async function updateAuthUser(id: string, data: any): Promise<UserRespons
 export async function deleteAuthUser(id: string): Promise<any> {
   return fetchWithAuth(`/api/v1/auth/users/${id}`, {
     method: 'DELETE',
+  });
+}
+
+export async function retryTask(clusterId: string, taskId: string): Promise<any> {
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/actions/tasks/${taskId}/retry`, {
+    method: 'POST',
+  });
+}
+
+export async function resumeTask(clusterId: string, taskId: string): Promise<any> {
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/actions/tasks/${taskId}/resume`, {
+    method: 'POST',
+  });
+}
+
+export async function rollbackTask(clusterId: string, taskId: string): Promise<any> {
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/actions/tasks/${taskId}/rollback`, {
+    method: 'POST',
+  });
+}
+
+export async function cleanupTask(clusterId: string, taskId: string): Promise<any> {
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/actions/tasks/${taskId}/cleanup`, {
+    method: 'POST',
   });
 }
