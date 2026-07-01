@@ -8,7 +8,5 @@ import java.util.UUID;
 
 @Repository
 
-import java.util.UUID;
-
 public interface LdapConfigRepository extends JpaRepository<LdapConfig, UUID> {
 }
