@@ -33,11 +33,6 @@ public class AgentService {
     private final ObjectMapper objectMapper;
     private final ParcelService parcelService;
     private final ActivityAlertService activityAlertService;
-
-    @Transactional
-    public void registerHost(HostRegistrationDto dto) {
-        boolean existing = hostRepository.existsById(dto.getHostId());
-        Host host = hostRepository.findById(dto.getHostId()).orElse(new Host());
     private final AuditService auditService;
 
     @Transactional
