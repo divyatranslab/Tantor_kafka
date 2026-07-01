@@ -44,6 +44,7 @@ public class HostController {
     private final HostRepository hostRepository;
     private final ClusterRepository clusterRepository;
     private final TaskRepository taskRepository;
+    private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
     private final JobService jobService;
@@ -111,6 +112,8 @@ public class HostController {
             String previous = host.getStatus();
             host.setStatus("UNAVAILABLE");
             hostRepository.save(host);
+            activityAlertService.logAudit("WARN", "HOST", "MARK_UNAVAILABLE", "Host marked unavailable", "HOST", id,
+                    host.getClusterId(), "ONLINE", "UNAVAILABLE", "SUCCESS", null, null);
             auditService.record("HOST", "HOST_MARKED_UNAVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
                     Map.of("status", String.valueOf(previous)), Map.of("status", "UNAVAILABLE"), null, null);
             return ResponseEntity.ok(hostSummary(host));
@@ -123,6 +126,8 @@ public class HostController {
             String previous = host.getStatus();
             host.setStatus("ONLINE");
             hostRepository.save(host);
+            activityAlertService.logAudit("INFO", "HOST", "MARK_AVAILABLE", "Host marked available", "HOST", id,
+                    host.getClusterId(), "UNAVAILABLE", "ONLINE", "SUCCESS", null, null);
             auditService.record("HOST", "HOST_MARKED_AVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
                     Map.of("status", String.valueOf(previous)), Map.of("status", "ONLINE"), null, null);
             return ResponseEntity.ok(hostSummary(host));
@@ -153,6 +158,8 @@ public class HostController {
             return ResponseEntity.badRequest().body(Map.of("message", "Unable to create onboarding job."));
         }
         Job saved = jobService.createJob(job, List.of(step));
+        activityAlertService.logAudit("INFO", "APPROVAL", "APPROVE", "Host onboarding approved", "HOST", id,
+                host.getClusterId(), "PENDING", "ONBOARDING_QUEUED", "SUCCESS", "APPROVED", "jobId=" + saved.getId());
         auditService.record("APPROVAL", "HOST_ONBOARDING_APPROVED", "HOST", id, host.getClusterId(), "SUCCESS",
                 Map.of("status", host.getStatus()), Map.of("jobId", saved.getId(), "status", "ONBOARDING_REQUESTED"),
                 Map.of("approved", true), Map.of("hostname", String.valueOf(host.getHostname())));
@@ -177,9 +184,13 @@ public class HostController {
                 }
             }
 
+            UUID previousClusterId = host.getClusterId();
+            String previousStatus = host.getStatus();
             host.setClusterId(null);
             host.setStatus("PENDING");
             hostRepository.save(host);
+            activityAlertService.logAudit("INFO", "HOST", "DISCONNECT", "Host disconnected from management", "HOST", id,
+                    previousClusterId, previousStatus, "PENDING", "SUCCESS", null, null);
             auditService.record("HOST", "HOST_REMOVED", "HOST", id, null, "SUCCESS", oldValue,
                     Map.of("status", "PENDING", "clusterId", ""), null,
                     Map.of("operation", "disconnect", "recordRetained", true));

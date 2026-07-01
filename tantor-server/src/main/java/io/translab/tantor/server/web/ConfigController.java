@@ -667,12 +667,12 @@ public class ConfigController {
                 + " on " + service.getHostId());
         step.setPayload(objectMapper.writeValueAsString(stepPayload));
         Job savedJob = jobService.createJob(job, List.of(step));
-        activityAlertService.logActivity(
-                "INFO",
+        activityAlertService.logAudit("INFO", "CONFIGURATION", "UPDATE",
                 "Updated " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
                         + " on " + service.getHostId() + (request.isRestart() ? " and queued service restart" : ""),
-                clusterId
-        );
+                "SERVICE", serviceId.toString(), clusterId,
+                auditProperties(previousPropertiesTemplate), auditProperties(propertiesTemplate), "QUEUED", null,
+                "jobId=" + savedJob.getId());
         return ResponseEntity.ok(Map.of("jobId", savedJob.getId().toString(), "status", "scheduled"));
     }
 
@@ -763,8 +763,32 @@ public class ConfigController {
         job.setResourceKey("cluster:" + clusterId);
         job.setPayload(objectMapper.writeValueAsString(Map.of("clusterId", clusterId.toString())));
         Job saved = jobService.createJob(job, steps);
-        activityAlertService.logActivity("INFO", "Created configuration change job for " + request.getConfigKey(), clusterId);
+        activityAlertService.logAudit("INFO", "CONFIGURATION", "UPDATE",
+                "Created configuration change job for " + request.getConfigKey(), "CLUSTER", clusterId.toString(), clusterId,
+                auditConfigValue(request.getConfigKey(), previousByBroker.toString()),
+                auditConfigValue(request.getConfigKey(), request.getConfigValue()), "QUEUED", null,
+                "jobId=" + saved.getId() + ";restart=" + request.isRestart());
         return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
+    }
+
+    private String auditProperties(String properties) {
+        if (properties == null || properties.isBlank()) return properties;
+        return properties.lines().map(line -> {
+            int separator = line.indexOf('=');
+            if (separator < 0) return line;
+            String key = line.substring(0, separator);
+            return key + "=" + auditConfigValue(key, line.substring(separator + 1));
+        }).collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private String auditConfigValue(String key, String value) {
+        String normalized = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("password") || normalized.contains("secret")
+                || normalized.contains("token") || normalized.contains("credential")
+                || normalized.contains("jaas")) {
+            return "<redacted>";
+        }
+        return value;
     }
 
     @Data

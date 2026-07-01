@@ -47,6 +47,7 @@ function App() {
               <Route path="/schema-registry" element={<SchemaRegistry />} />
               <Route path="/kafka-connect" element={<KafkaConnect />} />
               <Route path="/clusters/:id" element={<ClusterDetails />}>
+                <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="overview" element={<ClusterOverview />} />
                 <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="brokers" element={<Brokers />} />

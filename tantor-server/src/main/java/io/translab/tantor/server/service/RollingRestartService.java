@@ -6,6 +6,7 @@ import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,14 @@ public class RollingRestartService {
     private final KafkaAdminService kafkaAdminService;
     private final ExternalClusterService externalClusterService;
     private final TaskRepository taskRepository;
+    private final RollingRestartHealthService healthService;
+
+    @Value("${tantor.rolling-restart.health-timeout-seconds:300}")
+    private long healthTimeoutSeconds;
+    @Value("${tantor.rolling-restart.health-poll-seconds:10}")
+    private long healthPollSeconds;
+    @Value("${tantor.rolling-restart.stable-samples:2}")
+    private int stableSamples;
 
     private final Map<String, String> restartTasks = new ConcurrentHashMap<>();
     private final Set<UUID> activeClusters = ConcurrentHashMap.newKeySet();
@@ -50,7 +59,7 @@ public class RollingRestartService {
                 restartTasks.put(taskId, "Dispatching restart command to external discovery agent");
                 Map<String, Object> externalTask = externalClusterService.queueRestart(clusterId);
                 waitForExternalTask(String.valueOf(externalTask.get("taskId")));
-                waitForBrokerHealth(clusterId, 1);
+                waitForStableHealth(clusterId, 1, Set.of(), taskId, "External cluster: ");
                 restartTasks.put(taskId, "COMPLETED successfully.");
                 return;
             }
@@ -74,7 +83,16 @@ public class RollingRestartService {
                 return;
             }
 
-            waitForBrokerHealth(clusterId, brokers.size());
+            Set<String> requiredHostIds = services.stream()
+                    .map(ClusterServiceAssignment::getHostId)
+                    .collect(java.util.stream.Collectors.toSet());
+            RollingRestartHealthService.HealthSnapshot precheck =
+                    healthService.inspect(clusterId, brokers.size(), requiredHostIds);
+            if (!precheck.healthy()) {
+                restartTasks.put(taskId, "PAUSED: Pre-restart health gate failed: " + precheck.failureReason());
+                return;
+            }
+            restartTasks.put(taskId, healthSummary("Pre-restart health gate passed", precheck));
             Integer activeControllerId = "kraft".equalsIgnoreCase(cluster.getMode())
                     ? kafkaAdminService.getControllerId(clusterId)
                     : null;
@@ -94,38 +112,47 @@ public class RollingRestartService {
                         systemdServiceName(service.getRole())
                 );
                 waitForAgentTask(agentTaskId, prefix);
-                restartTasks.put(taskId, prefix + "waiting for cluster health");
-                waitForBrokerHealth(clusterId, brokers.size());
+                waitForStableHealth(clusterId, brokers.size(), requiredHostIds, taskId, prefix);
                 restartTasks.put(taskId, prefix + "healthy; continuing");
             }
             restartTasks.put(taskId, "COMPLETED successfully.");
         } catch (Exception e) {
             log.error("Rolling restart failed", e);
-            restartTasks.put(taskId, "FAILED: " + e.getMessage());
+            restartTasks.put(taskId, "PAUSED: " + safeMessage(e));
         } finally {
             activeClusters.remove(clusterId);
         }
     }
 
-    private void waitForBrokerHealth(UUID clusterId, int expectedBrokerCount) throws InterruptedException {
-        for (int i = 0; i < 30; i++) {
-            try {
-                List<Map<String, Object>> topics = kafkaAdminService.listTopics(clusterId);
-                long underReplicatedTotal = topics.stream()
-                        .mapToLong(topic -> ((Number) topic.getOrDefault("underReplicated", 0)).longValue())
-                        .sum();
-                int visibleBrokers = kafkaAdminService.describeClusterNodes(clusterId).size();
-                if (underReplicatedTotal == 0 && visibleBrokers >= expectedBrokerCount) {
-                    log.info("Cluster {} is healthy with {} brokers and no under-replicated partitions", clusterId, visibleBrokers);
-                    return;
-                }
-            } catch (Exception e) {
-                log.warn("Cluster {} is not healthy yet: {}", clusterId, e.getMessage());
-                kafkaAdminService.refreshAdminClient(clusterId);
+    private void waitForStableHealth(UUID clusterId, int expectedBrokerCount, Set<String> requiredHostIds,
+            String taskId, String prefix) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + healthTimeoutSeconds * 1000;
+        int consecutiveHealthySamples = 0;
+        int requiredStableSamples = Math.max(1, stableSamples);
+        RollingRestartHealthService.HealthSnapshot last = null;
+        while (System.currentTimeMillis() < deadline) {
+            last = healthService.inspect(clusterId, expectedBrokerCount, requiredHostIds);
+            if (last.healthy()) {
+                consecutiveHealthySamples++;
+                restartTasks.put(taskId, prefix + "health stable " + consecutiveHealthySamples + "/" + requiredStableSamples);
+                if (consecutiveHealthySamples >= requiredStableSamples) return;
+            } else {
+                consecutiveHealthySamples = 0;
+                restartTasks.put(taskId, prefix + "waiting for health: " + last.failureReason());
             }
-            Thread.sleep(10000);
+            Thread.sleep(Math.max(1, healthPollSeconds) * 1000);
         }
-        throw new RuntimeException("Timeout waiting for all brokers and replicas to become healthy");
+        throw new IllegalStateException(prefix + "health gate timed out: "
+                + (last == null ? "no health sample available" : last.failureReason()));
+    }
+
+    private String healthSummary(String label, RollingRestartHealthService.HealthSnapshot health) {
+        return label + ": brokers=" + health.visibleBrokers() + ", controller=" + health.controllerId()
+                + ", offline=0, URP=0, minISR=0, consumerLag=" + health.consumerLag();
+    }
+
+    private String safeMessage(Exception exception) {
+        return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
     }
 
     private void waitForAgentTask(UUID agentTaskId, String prefix) throws InterruptedException {
