@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, Terminal } from 'lucide-react';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -30,20 +31,33 @@ export function ClusterDetails() {
   // Handle redirects
   useEffect(() => {
     if (!cluster) return;
-    
+
+    const currentPath = location.pathname;
+
     // Redirect to logs if actively deploying/deleting
-    if (cluster.mode !== 'EXTERNAL' && cluster.status !== 'SUCCESS' && cluster.status !== 'FAILED' && cluster.status !== 'DELETED') {
-        if (window.location.pathname === `/clusters/${id}` || window.location.pathname === `/clusters/${id}/nodes` || window.location.pathname === `/clusters/${id}/topics` || window.location.pathname === `/clusters/${id}/brokers`) {
-             navigate(`/clusters/${id}/logs`, { replace: true });
-             return;
-        }
+    if (
+      cluster.mode !== 'EXTERNAL' &&
+      cluster.status !== 'SUCCESS' &&
+      cluster.status !== 'FAILED' &&
+      cluster.status !== 'DELETED'
+    ) {
+      if (
+        currentPath === `/clusters/${id}` ||
+        currentPath === `/clusters/${id}/nodes` ||
+        currentPath === `/clusters/${id}/topics` ||
+        currentPath === `/clusters/${id}/brokers`
+      ) {
+        navigate(`/clusters/${id}/logs`, { replace: true });
+        return;
+      }
     }
-    
-    // Default to the complete service/node inventory.
-    if (window.location.pathname === `/clusters/${id}`) {
-        navigate(`/clusters/${id}/nodes`, { replace: true });
+
+    // Default redirect
+    if (currentPath === `/clusters/${id}`) {
+      navigate(`/clusters/${id}/overview`, { replace: true });
     }
-  }, [cluster, id, navigate]);
+  }, [cluster, id, navigate, location.pathname]);
+
 
   if (!cluster) {
     return <div className="state-center"><RefreshCw className="spin" /> Loading cluster...</div>;
@@ -82,6 +96,7 @@ export function ClusterDetails() {
   }
 
   const tabs = [
+    { to: `/clusters/${id}/overview`, icon: LineChart, label: 'Overview', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/nodes`, icon: Network, label: 'Nodes', disabled: false },
     { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
@@ -101,11 +116,11 @@ export function ClusterDetails() {
     <div className="cluster-details-page animate-fade-in">
       <header className="page-header">
         <div className="breadcrumb">
-          <span onClick={() => navigate('/clusters')} style={{cursor: 'pointer', color: 'var(--text-secondary)'}}>Clusters</span>
-          <span style={{margin: '0 8px'}}>/</span>
-          <span style={{fontWeight: 600}}>{cluster.name}</span>
+          <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Clusters</span>
+          <span style={{ margin: '0 8px' }}>/</span>
+          <span style={{ fontWeight: 600 }}>{cluster.name}</span>
         </div>
-        
+
         <div className="cluster-header-main">
           <div className="cluster-header-left">
             <div className="icon-wrap">
@@ -117,7 +132,7 @@ export function ClusterDetails() {
             </div>
           </div>
           <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
-             <div className="status-dot"></div> {cluster.mode === 'EXTERNAL' ? 'External' : cluster.status}
+            <div className="status-dot"></div> {cluster.mode === 'EXTERNAL' ? 'External' : cluster.status}
           </div>
         </div>
       </header>

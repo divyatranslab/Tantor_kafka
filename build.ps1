@@ -6,9 +6,19 @@ $MavenZip = "$PSScriptRoot\apache-maven.zip"
 $MavenDir = "$PSScriptRoot\apache-maven-$MavenVersion"
 $MvnCmd = "$MavenDir\bin\mvn.cmd"
 
-# Set JAVA_HOME to the installed JDK 21
-$env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
-$env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+# Set JAVA_HOME to the installed JDK 21 if not already set or if invalid
+$candidateJavaHome1 = "C:\Program Files\Java\jdk-21"
+$candidateJavaHome2 = "C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot"
+if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
+    if (Test-Path $candidateJavaHome1) {
+        $env:JAVA_HOME = $candidateJavaHome1
+    } elseif (Test-Path $candidateJavaHome2) {
+        $env:JAVA_HOME = $candidateJavaHome2
+    }
+}
+if (![string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+    $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
+}
 
 # 1. Download Maven if not exists
 if (-Not (Test-Path $MvnCmd)) {

@@ -23,9 +23,8 @@ public class User {
 
     private String email;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "role_id")
-    private Role role;
+    @Column(length = 20)
+    private String role;
 
     @Column(name = "is_active")
     private boolean isActive = true;
@@ -35,4 +34,10 @@ public class User {
 
     @Column(name = "updated_at", insertable = false, updatable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "auth_source", length = 20)
+    private String authSource = "local";
+
+    @Column(name = "ldap_dn", length = 500)
+    private String ldapDn;
 }

@@ -34,7 +34,9 @@ type Task struct {
 type TaskResult struct {
 	TaskID    string `json:"task_id"`
 	HostID    string `json:"host_id"`
-	Status    string `json:"status"` // SUCCESS, FAILED
-	LogOutput string `json:"log_output"`
-	ErrorMsg  string `json:"error_msg,omitempty"`
+	Status       string `json:"status"` // SUCCESS, FAILED
+	LogOutput    string `json:"log_output"`
+	ErrorMsg     string `json:"error_msg,omitempty"`
+	CurrentStep  string `json:"current_step,omitempty"`
+	FailedReason string `json:"failed_reason,omitempty"`
 }
