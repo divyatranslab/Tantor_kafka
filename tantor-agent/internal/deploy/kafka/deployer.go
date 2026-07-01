@@ -271,77 +271,51 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	setStep("Format KRaft storage / setup Zookeeper")
 	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
+		// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 		if deploymentModeForTask(t) == "kraft" {
 			metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
+			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+			nodeID := strings.TrimSpace(t.Parameters["node_id"])
+			if clusterUUID == "" || nodeID == "" {
+				return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
+			}
 			if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 				log("Fresh deployment detected — formatting KRaft storage...")
 				storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-				kraftConfigPath := configPathForTask(activeInstallDir, t)
-
-				clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-				if clusterUUID == "" {
-					uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-					if err != nil {
-						return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+				configPath := configPathForTask(activeInstallDir, t)
+				formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
+				if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
+					_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
+					if isController {
+						initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
+						if initialControllers == "" {
+							return logs.String(), fmt.Errorf("initial_controllers is required to format a dynamic KRaft controller")
+						}
+						formatArgs = append(formatArgs, "--initial-controllers", initialControllers)
+					} else {
+						formatArgs = append(formatArgs, "--no-initial-controllers")
 					}
-					clusterUUID = strings.TrimSpace(uuidOut)
-					log("Generated cluster UUID: %s", clusterUUID)
-				} else {
-					log("Using shared cluster UUID: %s", clusterUUID)
 				}
 
-				_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", kraftConfigPath)
+				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
+				_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
 				if err != nil {
 					return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
 				}
+				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+					return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
+				}
 				log("KRaft storage formatted successfully")
+			} else if err != nil {
+				return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
 			} else {
-				log("Existing KRaft metadata found — skipping format (safe re-deploy)")
+				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
+				}
+				log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
 			}
 		} else {
 			log("Zookeeper mode detected — bypassing KRaft format")
-	// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
-	if deploymentModeForTask(t) == "kraft" {
-		metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
-		clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-		nodeID := strings.TrimSpace(t.Parameters["node_id"])
-		if clusterUUID == "" || nodeID == "" {
-			return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
-		}
-		if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
-			log("Fresh deployment detected — formatting KRaft storage...")
-			storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-			configPath := configPathForTask(activeInstallDir, t)
-			formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
-			if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
-				_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
-				if isController {
-					initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
-					if initialControllers == "" {
-						return logs.String(), fmt.Errorf("initial_controllers is required to format a dynamic KRaft controller")
-					}
-					formatArgs = append(formatArgs, "--initial-controllers", initialControllers)
-				} else {
-					formatArgs = append(formatArgs, "--no-initial-controllers")
-				}
-			}
-
-			log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-			_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
-			if err != nil {
-				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
-			}
-			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
-				return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
-			}
-			log("KRaft storage formatted successfully")
-		} else if err != nil {
-			return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
-		} else {
-			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
-				return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
-			}
-			log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
 		}
 	} else {
 		log("Skipping step (resume mode)")
