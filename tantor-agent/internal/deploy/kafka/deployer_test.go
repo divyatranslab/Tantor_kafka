@@ -90,3 +90,38 @@ func TestDeploymentModeDefaultsToKRaft(t *testing.T) {
 		t.Fatalf("expected kraft, got %q", got)
 	}
 }
+
+func TestMergeCustomKafkaPropertiesRemovesConflictingQuorumKeys(t *testing.T) {
+	base := "process.roles=controller\ncontroller.quorum.voters=1@old:9093\nnum.io.threads=8\n"
+	merged := mergeCustomKafkaProperties(base, map[string]string{
+		"process.roles":                       "controller",
+		"controller.quorum.voters":            "",
+		"controller.quorum.bootstrap.servers": "10.0.0.1:9093,10.0.0.2:9093",
+	})
+
+	if strings.Contains(merged, "controller.quorum.voters=") {
+		t.Fatalf("dynamic config retained static voter property:\n%s", merged)
+	}
+	if !strings.Contains(merged, "controller.quorum.bootstrap.servers=10.0.0.1:9093,10.0.0.2:9093") {
+		t.Fatalf("dynamic bootstrap servers missing:\n%s", merged)
+	}
+	if !strings.Contains(merged, "num.io.threads=8") {
+		t.Fatalf("unmanaged custom property was removed:\n%s", merged)
+	}
+}
+
+func TestValidateMetaPropertiesRequiresMatchingIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "meta.properties")
+	if err := os.WriteFile(path, []byte("cluster.id=cluster-identity-12345\nnode.id=101\n"), 0600); err != nil {
+		t.Fatalf("write meta.properties: %v", err)
+	}
+	if err := validateMetaProperties(path, "cluster-identity-12345", "101"); err != nil {
+		t.Fatalf("matching identity rejected: %v", err)
+	}
+	if err := validateMetaProperties(path, "different-cluster", "101"); err == nil {
+		t.Fatal("cluster identity mismatch was accepted")
+	}
+	if err := validateMetaProperties(path, "cluster-identity-12345", "102"); err == nil {
+		t.Fatal("node identity mismatch was accepted")
+	}
+}

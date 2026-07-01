@@ -13,6 +13,8 @@ import {
   ChevronDown,
   ChevronRight,
   Users,
+  Rocket,
+  Activity,
 } from 'lucide-react';
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
@@ -59,6 +61,7 @@ const navSections: NavSection[] = [
     items: [
       { icon: Users, label: 'User Management', path: '/user-management' },
       { icon: ShieldAlert, label: 'Audits', path: '/audit' },
+      { icon: Activity, label: 'Jobs', path: '/jobs' },
       { icon: PlayCircle, label: 'Commands', path: '/commands' },
       { icon: Package, label: 'Artifacts', path: '/artifacts' },
       { icon: Settings, label: 'LDAP Settings', path: '/ldap-settings' },

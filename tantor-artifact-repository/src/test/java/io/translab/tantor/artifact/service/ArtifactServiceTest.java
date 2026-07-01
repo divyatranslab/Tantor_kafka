@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,6 +41,8 @@ class ArtifactServiceTest {
     @Mock StorageService storageService;
     @Mock ManifestService manifestService;
 
+    @Mock PackageValidator packageValidator;
+
     StorageProperties properties;
     ArtifactService service;
 
@@ -48,7 +51,7 @@ class ArtifactServiceTest {
         properties = new StorageProperties();
         properties.setEnforceChecksum(true);
         service = new ArtifactService(repository, downloadLogRepository,
-                storageService, manifestService, properties);
+                storageService, manifestService, properties, packageValidator);
 
         lenient().when(storageService.relativeDir(any(), anyString(), any()))
                 .thenReturn("kafka/3.7.0");
@@ -63,9 +66,8 @@ class ArtifactServiceTest {
     void uploadStoresAndMarksAvailable() {
         when(repository.existsByServiceTypeAndVersionAndClassifier(ServiceType.KAFKA, "3.7.0", null))
                 .thenReturn(false);
-        when(storageService.store(eq(ServiceType.KAFKA), eq("3.7.0"), eq(null),
-                eq("kafka_2.13-3.7.0.tgz"), any(InputStream.class)))
-                .thenReturn(new ChecksumResult("abc123", "md5val", 100L));
+        when(storageService.storeTemporarily(eq("kafka_2.13-3.7.0.tgz"), any(InputStream.class)))
+                .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("abc123", "md5val", 100L)));
 
         Artifact result = service.upload(cmd(null, false), data());
 
@@ -82,20 +84,20 @@ class ArtifactServiceTest {
 
         assertThatThrownBy(() -> service.upload(cmd(null, false), data()))
                 .isInstanceOf(ArtifactAlreadyExistsException.class);
-        verify(storageService, never()).store(any(), any(), any(), any(), any());
+        verify(storageService, never()).storeTemporarily(any(), any());
     }
 
     @Test
     void uploadFailsAndCleansUpOnChecksumMismatch() {
         when(repository.existsByServiceTypeAndVersionAndClassifier(ServiceType.KAFKA, "3.7.0", null))
                 .thenReturn(false);
-        when(storageService.store(any(), any(), any(), any(), any()))
-                .thenReturn(new ChecksumResult("computed-real", "md5", 100L));
+        when(storageService.storeTemporarily(any(), any()))
+                .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("computed-real", "md5", 100L)));
 
         assertThatThrownBy(() -> service.upload(cmd("declared-wrong", false), data()))
                 .isInstanceOf(ChecksumMismatchException.class);
 
-        verify(storageService, times(1)).deleteBinary(eq("kafka/3.7.0"), eq("kafka_2.13-3.7.0.tgz"));
+        verify(storageService, times(1)).deleteTemp(any());
         verify(repository, never()).save(any());
     }
 

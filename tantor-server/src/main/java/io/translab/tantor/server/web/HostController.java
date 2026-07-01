@@ -4,10 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.domain.Job;
+import io.translab.tantor.server.domain.JobStatus;
+import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
+import io.translab.tantor.server.service.JobService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -40,6 +45,7 @@ public class HostController {
     private final TaskRepository taskRepository;
     private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
+    private final JobService jobService;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
@@ -115,12 +121,31 @@ public class HostController {
         }).orElse(ResponseEntity.notFound().build());
     }
     @PostMapping("/{id}/approve")
-    public ResponseEntity<Host> approveHost(@PathVariable String id) {
-        return hostRepository.findById(id).map(host -> {
-            host.setStatus("ONLINE");
-            hostRepository.save(host);
-            return ResponseEntity.ok(host);
-        }).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<?> approveHost(@PathVariable String id) {
+        Host host = hostRepository.findById(id).orElse(null);
+        if (host == null) return ResponseEntity.notFound().build();
+        if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is already connected or unavailable."));
+        }
+
+        Job job = new Job();
+        job.setType(JobType.ONBOARDING);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("host:" + id);
+        JobStep step = new JobStep();
+        step.setStepOrder(1);
+        step.setName("Connect host " + host.getHostname());
+        step.setTargetId(id);
+        try {
+            String payload = objectMapper.writeValueAsString(Map.of("hostId", id));
+            job.setPayload(payload);
+            step.setPayload(payload);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Unable to create onboarding job."));
+        }
+        Job saved = jobService.createJob(job, List.of(step));
+        return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
     @Transactional
