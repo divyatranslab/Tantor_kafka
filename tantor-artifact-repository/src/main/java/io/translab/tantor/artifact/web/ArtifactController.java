@@ -11,6 +11,7 @@ import io.translab.tantor.artifact.dto.PageResponse;
 import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
+import io.translab.tantor.artifact.audit.ArtifactAuditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -45,13 +46,16 @@ public class ArtifactController {
     private final ArtifactService artifactService;
     private final ManifestService manifestService;
     private final ObjectMapper objectMapper;
+    private final ArtifactAuditService auditService;
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              ArtifactAuditService auditService) {
         this.artifactService = artifactService;
         this.manifestService = manifestService;
         this.objectMapper = objectMapper;
+        this.auditService = auditService;
     }
 
     @Operation(summary = "Upload an artifact (multipart)")
@@ -66,7 +70,8 @@ public class ArtifactController {
             @RequestParam(required = false) String sha256,
             @RequestParam(required = false) String attributesJson,
             @RequestParam(defaultValue = "false") boolean overwrite,
-            @RequestParam MultipartFile file) throws IOException {
+            @RequestParam MultipartFile file,
+            HttpServletRequest request) throws IOException {
 
         String fileName = file.getOriginalFilename();
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
@@ -82,7 +87,15 @@ public class ArtifactController {
                 overwrite,
                 currentUser());
 
-        Artifact saved = artifactService.upload(cmd, file.getInputStream());
+        Artifact saved;
+        try {
+            saved = artifactService.upload(cmd, file.getInputStream());
+        } catch (RuntimeException | IOException e) {
+            auditService.record(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+                    Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
+            throw e;
+        }
+        auditUpload(saved, request.getRemoteAddr());
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -117,7 +130,15 @@ public class ArtifactController {
                 overwrite,
                 currentUser());
 
-        Artifact saved = artifactService.upload(cmd, request.getInputStream());
+        Artifact saved;
+        try {
+            saved = artifactService.upload(cmd, request.getInputStream());
+        } catch (RuntimeException | IOException e) {
+            auditService.record(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+                    Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
+            throw e;
+        }
+        auditUpload(saved, request.getRemoteAddr());
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -184,8 +205,21 @@ public class ArtifactController {
     @Operation(summary = "Soft-delete an artifact (removes binary, retains audit row)")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        Artifact artifact = artifactService.get(id);
         artifactService.delete(id);
+        auditService.record(currentUser(), "PACKAGE_REMOVED", id.toString(), "SUCCESS",
+                Map.of("status", artifact.getStatus().name(), "fileName", artifact.getFileName()),
+                Map.of("status", "DELETED"), null, null);
         return ResponseEntity.noContent().build();
+    }
+
+    private void auditUpload(Artifact saved, String ipAddress) {
+        auditService.record(currentUser(), "PACKAGE_UPLOADED", saved.getId().toString(),
+                saved.getStatus() == ArtifactStatus.FAILED ? "FAILED" : "SUCCESS", null,
+                Map.of("serviceType", saved.getServiceType().name(), "version", saved.getVersion(),
+                        "fileName", saved.getFileName(), "status", saved.getStatus().name(),
+                        "sha256", saved.getChecksumSha256(), "size", saved.getFileSizeBytes()),
+                Map.of("validationStatus", saved.getStatus().name()), ipAddress);
     }
 
     private Map<String, String> parseAttributes(String attributesJson) {

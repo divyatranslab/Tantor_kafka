@@ -3,6 +3,7 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.JobService;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class ClusterActionsController {
     private final ClusterRepository clusterRepository;
     private final JobService jobService;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     @PostMapping("/rolling-restart")
     public ResponseEntity<Map<String, String>> startRollingRestart(@PathVariable UUID clusterId) {
@@ -85,6 +87,9 @@ public class ClusterActionsController {
                             count++;
                         }
                     }
+                    auditService.record("RESTART", "NORMAL_RESTART_REQUESTED", "CLUSTER", clusterId.toString(),
+                            clusterId, "REQUESTED", null, Map.of("taskCount", count), null,
+                            Map.of("mode", String.valueOf(cluster.getMode())));
                     return ResponseEntity.ok(Map.of(
                             "status", "scheduled",
                             "tasks", String.valueOf(count)));

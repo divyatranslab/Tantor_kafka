@@ -49,6 +49,7 @@ function App() {
               <Route path="/clusters/:id" element={<ClusterDetails />}>
                 <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="overview" element={<ClusterOverview />} />
+                <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="brokers" element={<Brokers />} />
                 <Route path="partitions" element={<Partitions />} />
                 <Route path="topics" element={<Topics />} />

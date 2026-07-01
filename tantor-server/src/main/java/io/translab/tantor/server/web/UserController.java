@@ -3,6 +3,7 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.domain.User;
 import io.translab.tantor.server.dto.UserDto;
 import io.translab.tantor.server.repository.UserRepository;
+import io.translab.tantor.server.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -11,6 +12,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,6 +23,7 @@ public class UserController {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditService auditService;
 
     // Check if current user is admin
     private boolean isAdmin() {
@@ -75,6 +78,10 @@ public class UserController {
         user.setActive(true);
         
         user = userRepository.save(user);
+        auditService.record("PERMISSION", "USER_CREATED", "USER", user.getId().toString(), null, "SUCCESS",
+                null, Map.of("username", user.getUsername(), "role", String.valueOf(user.getRole()),
+                        "active", user.isActive(), "authSource", String.valueOf(user.getAuthSource())),
+                null, Map.of("passwordCaptured", false));
         return ResponseEntity.status(201).body(mapToDto(user));
     }
 
@@ -90,6 +97,9 @@ public class UserController {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         String currentUsername = auth.getName();
         boolean isSelf = currentUsername.equals(user.getUsername());
+        Map<String, Object> oldValue = Map.of("role", String.valueOf(user.getRole()),
+                "active", user.isActive(), "authSource", String.valueOf(user.getAuthSource()));
+        boolean roleRequested = request.getRole() != null;
 
         if (request.getRole() != null) {
             if (!"admin".equals(request.getRole()) && !"monitor".equals(request.getRole())) {
@@ -116,6 +126,11 @@ public class UserController {
         }
 
         user = userRepository.save(user);
+        auditService.record("PERMISSION", roleRequested ? "USER_ROLE_CHANGED" : "USER_ACCESS_UPDATED",
+                "USER", user.getId().toString(), null, "SUCCESS", oldValue,
+                Map.of("role", String.valueOf(user.getRole()), "active", user.isActive(),
+                        "authSource", String.valueOf(user.getAuthSource())), null,
+                Map.of("username", user.getUsername(), "passwordChanged", request.getPassword() != null));
         return ResponseEntity.ok(mapToDto(user));
     }
 
@@ -133,7 +148,11 @@ public class UserController {
             return ResponseEntity.status(400).body("{\"detail\":\"Cannot delete yourself\"}");
         }
 
+        Map<String, Object> oldValue = Map.of("username", user.getUsername(), "role", String.valueOf(user.getRole()),
+                "active", user.isActive(), "authSource", String.valueOf(user.getAuthSource()));
         userRepository.delete(user);
+        auditService.record("PERMISSION", "USER_REMOVED", "USER", user.getId().toString(), null, "SUCCESS",
+                oldValue, Map.of("deleted", true), null, null);
         return ResponseEntity.ok("{\"deleted\": true, \"username\": \"" + user.getUsername() + "\"}");
     }
 }

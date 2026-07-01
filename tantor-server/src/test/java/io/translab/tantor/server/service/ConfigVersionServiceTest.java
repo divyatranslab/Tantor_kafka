@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ConfigVersionServiceTest {
 
     private final ConfigVersionService service = new ConfigVersionService(
-            null, null, null, null, null, new ObjectMapper());
+            null, null, null, null, null, new ObjectMapper(), null);
 
     @Test
     void previewProducesAddedRemovedAndModifiedDiff() {

@@ -142,14 +142,12 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	// 1. Create directories
-	os.MkdirAll(installPaths.BaseDir, 0755)
-	os.MkdirAll(installDir, 0755)
-	os.MkdirAll(dataDir, 0755)
+	d.exec.RunSudo(ctx, "mkdir", "-p", installPaths.BaseDir, installDir, dataDir)
 	artifactWorkDir := kafkaArtifactWorkDir(t, d.cfg.Paths.ArtifactsDir)
 	os.MkdirAll(artifactWorkDir, 0755)
 	for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
 		if dir != "" {
-			os.MkdirAll(dir, 0755)
+			d.exec.RunSudo(ctx, "mkdir", "-p", strings.TrimSpace(dir))
 		}
 	}
 
@@ -191,37 +189,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	setStep("Extract Kafka")
-	tmpExtractDir := filepath.Join(artifactWorkDir, "extract_"+t.TaskID)
-	
 	if !shouldSkip("Extract Kafka") {
-		os.MkdirAll(tmpExtractDir, 0755)
-		_, _, err = d.exec.Run(ctx, "tar", "-xzf", destPath, "-C", tmpExtractDir, "--strip-components=1")
+		_, _, err = d.exec.RunSudo(ctx, "tar", "-xzf", destPath, "-C", installDir, "--strip-components=1")
 		if err != nil {
 			return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
 		}
-
-		// 5. Move contents to installDir using Go standard library to avoid OS-specific commands
-		err = filepath.Walk(tmpExtractDir, func(path string, info os.FileInfo, err error) error {
-			if err != nil || path == tmpExtractDir {
-				return err
-			}
-			relPath, _ := filepath.Rel(tmpExtractDir, path)
-			dest := filepath.Join(installDir, relPath)
-			if info.IsDir() {
-				return os.MkdirAll(dest, 0755)
-			}
-			data, err := os.ReadFile(path)
-			if err == nil {
-				os.MkdirAll(filepath.Dir(dest), 0755)
-				mode := info.Mode().Perm()
-				if mode&0111 == 0 && strings.Contains(relPath, "bin/") {
-					mode = 0755 // Ensure bin/ scripts are always executable
-				}
-				os.WriteFile(dest, data, mode)
-			}
-			return nil
-		})
-		os.RemoveAll(tmpExtractDir)
 		log("Artifact extracted to %s", installDir)
 
 		if err := d.ensureActiveSymlink(ctx, activeInstallDir, installDir); err != nil {
@@ -244,7 +216,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	// 6. Setup JMX Exporter
 	jmxDir := filepath.Join(installDir, "jmx")
-	os.MkdirAll(jmxDir, 0755)
+	d.exec.RunSudo(ctx, "mkdir", "-p", jmxDir)
 	jmxJarPath := filepath.Join(jmxDir, "jmx_prometheus_javaagent.jar")
 
 	log("Downloading JMX Exporter to %s", jmxJarPath)
@@ -252,19 +224,26 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	jmxUrl := t.Parameters["jmx_artifact_url"]
 	if jmxUrl != "" {
 		log("Using JMX Artifact URL from Tantor Server: %s", jmxUrl)
-		_, err = d.client.DownloadArtifact(jmxUrl, jmxJarPath)
+		tmpJmx := filepath.Join(artifactWorkDir, "jmx_tmp.jar")
+		_, err = d.client.DownloadArtifact(jmxUrl, tmpJmx)
 		if err != nil {
 			log("Warning: Failed to download JMX agent from artifact repo: %v", err)
-			os.Remove(jmxJarPath)
+			os.Remove(tmpJmx)
+		} else {
+			d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
+			d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
 		}
 	} else {
 		log("Warning: No jmx_artifact_url provided. Falling back to Maven repo1...")
 		resp, err := http.Get("https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/0.20.0/jmx_prometheus_javaagent-0.20.0.jar")
 		if err == nil {
 			defer resp.Body.Close()
-			out, _ := os.Create(jmxJarPath)
+			tmpJmx := filepath.Join(artifactWorkDir, "jmx_tmp.jar")
+			out, _ := os.Create(tmpJmx)
 			io.Copy(out, resp.Body)
 			out.Close()
+			d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
+			d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
 		} else {
 			log("Warning: Failed to download JMX agent from maven: %v", err)
 		}
@@ -292,77 +271,51 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	setStep("Format KRaft storage / setup Zookeeper")
 	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
+		// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 		if deploymentModeForTask(t) == "kraft" {
 			metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
+			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+			nodeID := strings.TrimSpace(t.Parameters["node_id"])
+			if clusterUUID == "" || nodeID == "" {
+				return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
+			}
 			if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
 				log("Fresh deployment detected — formatting KRaft storage...")
 				storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-				kraftConfigPath := configPathForTask(activeInstallDir, t)
-
-				clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-				if clusterUUID == "" {
-					uuidOut, _, err := d.exec.Run(ctx, storageScript, "random-uuid")
-					if err != nil {
-						return logs.String(), fmt.Errorf("failed to generate cluster UUID: %w", err)
+				configPath := configPathForTask(activeInstallDir, t)
+				formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
+				if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
+					_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
+					if isController {
+						initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
+						if initialControllers == "" {
+							return logs.String(), fmt.Errorf("initial_controllers is required to format a dynamic KRaft controller")
+						}
+						formatArgs = append(formatArgs, "--initial-controllers", initialControllers)
+					} else {
+						formatArgs = append(formatArgs, "--no-initial-controllers")
 					}
-					clusterUUID = strings.TrimSpace(uuidOut)
-					log("Generated cluster UUID: %s", clusterUUID)
-				} else {
-					log("Using shared cluster UUID: %s", clusterUUID)
 				}
 
-				_, _, err = d.exec.Run(ctx, storageScript, "format", "-t", clusterUUID, "-c", kraftConfigPath)
+				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
+				_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
 				if err != nil {
 					return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
 				}
+				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+					return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
+				}
 				log("KRaft storage formatted successfully")
+			} else if err != nil {
+				return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
 			} else {
-				log("Existing KRaft metadata found — skipping format (safe re-deploy)")
+				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
+				}
+				log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
 			}
 		} else {
 			log("Zookeeper mode detected — bypassing KRaft format")
-	// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
-	if deploymentModeForTask(t) == "kraft" {
-		metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
-		clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
-		nodeID := strings.TrimSpace(t.Parameters["node_id"])
-		if clusterUUID == "" || nodeID == "" {
-			return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
-		}
-		if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
-			log("Fresh deployment detected — formatting KRaft storage...")
-			storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
-			configPath := configPathForTask(activeInstallDir, t)
-			formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
-			if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
-				_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
-				if isController {
-					initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
-					if initialControllers == "" {
-						return logs.String(), fmt.Errorf("initial_controllers is required to format a dynamic KRaft controller")
-					}
-					formatArgs = append(formatArgs, "--initial-controllers", initialControllers)
-				} else {
-					formatArgs = append(formatArgs, "--no-initial-controllers")
-				}
-			}
-
-			log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-			_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
-			if err != nil {
-				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
-			}
-			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
-				return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
-			}
-			log("KRaft storage formatted successfully")
-		} else if err != nil {
-			return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
-		} else {
-			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
-				return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
-			}
-			log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
 		}
 	} else {
 		log("Skipping step (resume mode)")
@@ -377,6 +330,25 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	setStep("Start service")
 	if !shouldSkip("Start service") {
+		// 8.5 Chown all system directories to the tantor user so the service can write to them
+		chownDirs := []string{installPaths.BaseDir, installDir, dataDir}
+		for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
+			if dir != "" {
+				chownDirs = append(chownDirs, strings.TrimSpace(dir))
+			}
+		}
+		role := strings.TrimSpace(t.Parameters["service_role"])
+		if role == "" {
+			role = strings.TrimSpace(t.Parameters["role"])
+		}
+		if role == "zookeeper" || role == "broker_zookeeper" {
+			chownDirs = append(chownDirs, zookeeperDataDir(t))
+		}
+		chownArgs := append([]string{"-R", "tantor:tantor"}, chownDirs...)
+		if _, errOut, err := d.exec.RunSudo(ctx, "chown", chownArgs...); err != nil {
+			log("Warning: Failed to chown system directories: %v (%s)", err, errOut)
+		}
+
 		_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 		if err == nil {
 			_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName)
@@ -468,7 +440,10 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("Kafka process not found after 30s")
+	{
+		journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceNameForTask(t), "-n", "50", "--no-pager")
+		return fmt.Errorf("Kafka process not found after 30s. Logs:\n%s", journalOut)
+	}
 
 check2:
 	log("Validation [2/6]: Checking systemd service status...")
@@ -587,7 +562,10 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 		}
 		time.Sleep(3 * time.Second)
 	}
-	return fmt.Errorf("%s process not found after 30s", processLabel)
+	{
+		journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceName, "-n", "50", "--no-pager")
+		return fmt.Errorf("%s process not found after 30s. Logs:\n%s", processLabel, journalOut)
+	}
 
 serviceCheck:
 	log("Validation [2/4]: Checking %s.service...", serviceName)
@@ -979,10 +957,10 @@ func (d *Deployer) generateZooKeeperConfigs(ctx context.Context, t *api.Task, in
 		role = strings.TrimSpace(t.Parameters["role"])
 	}
 
-	if role == "zookeeper" {
+	if role == "zookeeper" || role == "broker_zookeeper" {
 		zkDataDir := zookeeperDataDir(t)
-		if err := os.MkdirAll(zkDataDir, 0755); err != nil {
-			return fmt.Errorf("failed to create ZooKeeper data directory: %w", err)
+		if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", zkDataDir); err != nil {
+			return fmt.Errorf("failed to create ZooKeeper data directory: %w (%s)", err, errOut)
 		}
 		clientPort := strings.TrimSpace(t.Parameters["zookeeper_port"])
 		if clientPort == "" {
@@ -1549,23 +1527,12 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 		return err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
-	}
-
-	// Strip CRLF for Linux compatibility
-	content := bytes.ReplaceAll(buf.Bytes(), []byte("\r\n"), []byte("\n"))
-
-	if err := os.WriteFile(dest, content, 0644); err != nil {
-		return fmt.Errorf("failed to write template to %s: %w", dest, err)
-	}
-
-	return nil
+	return d.writeStringToSudoFile(ctx, buf.String(), dest)
 }
 
 func (d *Deployer) writeStringToSudoFile(ctx context.Context, content string, dest string) error {
-	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-		return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
+	if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", filepath.Dir(dest)); err != nil {
+		return fmt.Errorf("failed to create dir %s: %w (%s)", filepath.Dir(dest), err, errOut)
 	}
 
 	content = strings.ReplaceAll(content, "\r\n", "\n")
@@ -1573,9 +1540,16 @@ func (d *Deployer) writeStringToSudoFile(ctx context.Context, content string, de
 		content += "\n"
 	}
 
-	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
-		return fmt.Errorf("failed to write config to %s: %w", dest, err)
+	tmpFile := filepath.Join(os.TempDir(), "tantor_cfg_"+time.Now().Format("150405.0000"))
+	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
+		return fmt.Errorf("failed to write tmp config: %w", err)
 	}
+	defer os.Remove(tmpFile)
+
+	if _, errOut, err := d.exec.RunSudo(ctx, "mv", tmpFile, dest); err != nil {
+		return fmt.Errorf("failed to move config to %s: %w (%s)", dest, err, errOut)
+	}
+	d.exec.RunSudo(ctx, "chmod", "644", dest)
 
 	return nil
 }

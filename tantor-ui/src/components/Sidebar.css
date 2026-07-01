@@ -154,6 +154,7 @@
 .nav-item.active-parent {
   color: #1a1a18;
   font-weight: 500;
+}
 
 }
 @media (max-width: 700px) {
