@@ -1,6 +1,7 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.KafkaAdminService;
+import io.translab.tantor.server.service.TopicOperationsService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,7 @@ import java.util.UUID;
 public class TopicsController {
 
     private final KafkaAdminService kafkaAdminService;
+    private final TopicOperationsService topicOperationsService;
     private final io.translab.tantor.server.service.PartitionCacheService partitionCacheService;
 
     @GetMapping("/topics")
@@ -24,12 +26,13 @@ public class TopicsController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "name") String sortBy) {
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(defaultValue = "false") boolean includeInternal) {
         
         // Prevent huge page requests
         if (size > 500) size = 500;
         
-        return ResponseEntity.ok(kafkaAdminService.listTopicsPaginated(clusterId, page, size, search, sortBy));
+        return ResponseEntity.ok(kafkaAdminService.listTopicsPaginated(clusterId, page, size, search, sortBy, includeInternal));
     }
 
     @PostMapping("/topics")
@@ -50,6 +53,83 @@ public class TopicsController {
         return ResponseEntity.ok().build();
     }
 
+    @GetMapping("/topics/{topicName}")
+    public ResponseEntity<Map<String, Object>> getTopic(
+            @PathVariable UUID clusterId, @PathVariable String topicName) {
+        return ResponseEntity.ok(topicOperationsService.getTopicDetails(clusterId, topicName));
+    }
+
+    @GetMapping("/topics/{topicName}/messages")
+    public ResponseEntity<Map<String, Object>> getMessages(
+            @PathVariable UUID clusterId, @PathVariable String topicName,
+            @RequestParam(required = false) List<Integer> partitions,
+            @RequestParam(defaultValue = "newest") String order,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestParam(required = false) String search) {
+        return ResponseEntity.ok(topicOperationsService.getMessages(
+                clusterId, topicName, partitions, order, limit, search));
+    }
+
+    @PostMapping("/topics/{topicName}/messages")
+    public ResponseEntity<Map<String, Object>> produceMessage(
+            @PathVariable UUID clusterId, @PathVariable String topicName,
+            @RequestBody ProduceMessageRequest request) {
+        return ResponseEntity.ok(topicOperationsService.produceMessage(
+                clusterId, topicName, request.getPartition(), request.getKey(),
+                request.getValue(), request.getHeaders()));
+    }
+
+    @DeleteMapping("/topics/{topicName}/messages")
+    public ResponseEntity<Void> clearMessages(@PathVariable UUID clusterId, @PathVariable String topicName) {
+        topicOperationsService.clearTopic(clusterId, topicName);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/topics/{topicName}/recreate")
+    public ResponseEntity<Void> recreateTopic(@PathVariable UUID clusterId, @PathVariable String topicName) {
+        topicOperationsService.recreateTopic(clusterId, topicName);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/topics/{topicName}/consumers")
+    public ResponseEntity<List<Map<String, Object>>> getConsumers(
+            @PathVariable UUID clusterId, @PathVariable String topicName) {
+        return ResponseEntity.ok(topicOperationsService.getTopicConsumers(clusterId, topicName));
+    }
+
+    @GetMapping("/topics/{topicName}/configs")
+    public ResponseEntity<List<Map<String, Object>>> getConfigs(
+            @PathVariable UUID clusterId, @PathVariable String topicName) {
+        return ResponseEntity.ok(topicOperationsService.getTopicConfigs(clusterId, topicName));
+    }
+
+    @PutMapping("/topics/{topicName}/configs/{key}")
+    public ResponseEntity<Void> alterConfig(
+            @PathVariable UUID clusterId, @PathVariable String topicName,
+            @PathVariable String key, @RequestBody ConfigValueRequest request) {
+        topicOperationsService.alterTopicConfig(clusterId, topicName, key, request.getValue());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/topics/{topicName}/configs/{key}")
+    public ResponseEntity<Void> resetConfig(
+            @PathVariable UUID clusterId, @PathVariable String topicName, @PathVariable String key) {
+        topicOperationsService.resetTopicConfig(clusterId, topicName, key);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/topics/{topicName}/statistics")
+    public ResponseEntity<Map<String, Object>> getStatistics(
+            @PathVariable UUID clusterId, @PathVariable String topicName,
+            @RequestParam(defaultValue = "10000") int limit) {
+        return ResponseEntity.ok(topicOperationsService.analyzeTopic(clusterId, topicName, limit));
+    }
+
+    @GetMapping("/topics/{topicName}/acls")
+    public ResponseEntity<List<Map<String, Object>>> getAcls(
+            @PathVariable UUID clusterId, @PathVariable String topicName) {
+        return ResponseEntity.ok(topicOperationsService.getTopicAcls(clusterId, topicName));
+    }
 
     @GetMapping("/partitions")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.PartitionSummaryDto>> listPartitions(
@@ -69,5 +149,18 @@ public class TopicsController {
         private int partitions = 1;
         private short replicationFactor = 1;
         private Map<String, String> configs;
+    }
+
+    @Data
+    public static class ProduceMessageRequest {
+        private Integer partition;
+        private String key;
+        private String value;
+        private Map<String, String> headers;
+    }
+
+    @Data
+    public static class ConfigValueRequest {
+        private String value;
     }
 }

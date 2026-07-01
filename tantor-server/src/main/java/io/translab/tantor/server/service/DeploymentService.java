@@ -3,6 +3,7 @@ package io.translab.tantor.server.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ public class DeploymentService {
 
     private final TaskRepository taskRepository;
     private final HostParcelRepository hostParcelRepository;
+    private final ClusterRepository clusterRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -309,6 +311,107 @@ public class DeploymentService {
         taskRepository.save(task);
         return task.getId();
     }
+
+    @Transactional
+    public boolean retryTask(UUID taskId) {
+        return taskRepository.findById(taskId).map(task -> {
+            if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
+                task.setStatus("PENDING");
+                task.setErrorMsg(null);
+                task.setFailedReason(null);
+                task.setLogOutput(null);
+                task.setStepLogs(null);
+                task.setCurrentStep(null);
+                taskRepository.save(task);
+                
+                if (task.getClusterId() != null) {
+                    clusterRepository.findById(task.getClusterId()).ifPresent(c -> {
+                        c.setStatus("RUNNING");
+                        clusterRepository.save(c);
+                    });
+                }
+                
+                return true;
+            }
+            return false;
+        }).orElse(false);
+    }
+
+    @Transactional
+    public boolean resumeTask(UUID taskId) {
+        return taskRepository.findById(taskId).map(task -> {
+            if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
+                task.setStatus("PENDING");
+                task.setErrorMsg(null);
+                task.setFailedReason(null);
+                try {
+                    Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
+                    if (task.getCurrentStep() != null) {
+                        params.put("resume_step", task.getCurrentStep());
+                    }
+                    task.setParameters(objectMapper.writeValueAsString(params));
+                } catch (Exception e) {
+                    log.error("Failed to inject resume_step into parameters", e);
+                }
+                taskRepository.save(task);
+                
+                if (task.getClusterId() != null) {
+                    clusterRepository.findById(task.getClusterId()).ifPresent(c -> {
+                        c.setStatus("RUNNING");
+                        clusterRepository.save(c);
+                    });
+                }
+                return true;
+            }
+            return false;
+        }).orElse(false);
+    }
+
+    @Transactional
+    public boolean rollbackTask(UUID clusterId, UUID taskId) {
+        return taskRepository.findById(taskId).map(task -> {
+            if ("FAILED".equals(task.getStatus())) {
+                task.setStatus("ROLLBACK_PENDING");
+                taskRepository.save(task);
+                
+                Task rollbackTask = createTask(clusterId, task.getHostId(), "ROLLBACK_DEPLOYMENT");
+                try {
+                    Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
+                    params.put("original_task_id", task.getId().toString());
+                    rollbackTask.setParameters(objectMapper.writeValueAsString(params));
+                } catch (Exception e) {
+                    log.error("Failed to serialize parameters for rollback", e);
+                    rollbackTask.setParameters("{\"original_task_id\":\"" + task.getId().toString() + "\"}");
+                }
+                taskRepository.save(rollbackTask);
+                return true;
+            }
+            return false;
+        }).orElse(false);
+    }
+
+    @Transactional
+    public boolean cleanupTask(UUID clusterId, UUID taskId) {
+        return taskRepository.findById(taskId).map(task -> {
+            if ("FAILED".equals(task.getStatus()) || "ROLLBACK_DONE".equals(task.getStatus())) {
+                task.setStatus("CLEANUP_PENDING");
+                taskRepository.save(task);
+                
+                Task cleanupTask = createTask(clusterId, task.getHostId(), "DELETE_CLUSTER");
+                try {
+                    Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
+                    params.put("original_task_id", task.getId().toString());
+                    cleanupTask.setParameters(objectMapper.writeValueAsString(params));
+                } catch (Exception e) {
+                    cleanupTask.setParameters("{\"original_task_id\":\"" + task.getId().toString() + "\"}");
+                }
+                taskRepository.save(cleanupTask);
+                return true;
+            }
+            return false;
+        }).orElse(false);
+    }
+
 
 
     private String systemdServiceName(String role) {

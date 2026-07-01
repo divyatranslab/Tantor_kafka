@@ -44,6 +44,17 @@ public class Task {
     @Column(name = "error_msg")
     private String errorMsg;
 
+    @Column(name = "current_step")
+    private String currentStep;
+
+    @Column(name = "failed_reason")
+    private String failedReason;
+
+    @Column(name = "step_logs", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String stepLogs; // JSON string representing Map<String, String>
+
+
     @Column(name = "created_at", insertable = false, updatable = false)
     private OffsetDateTime createdAt;
 

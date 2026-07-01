@@ -14,4 +14,6 @@ public class TopicSummaryDto {
     private int partitionCount;
     private int replicationFactor;
     private long underReplicated;
+    private long messageCount;
+    private boolean internal;
 }
