@@ -25,7 +25,7 @@ public class DeploymentService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public void deployKafkaToHost(UUID clusterId, String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
+    public UUID deployKafkaToHost(UUID clusterId, String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
         log.info("Scheduling Kafka {} deployment on host {}", version, hostId);
 
         Task task = createTask(clusterId, hostId, "INSTALL_KAFKA");
@@ -66,6 +66,7 @@ public class DeploymentService {
 
         taskRepository.save(task);
         log.info("Task {} created successfully", task.getId());
+        return task.getId();
     }
 
     @Transactional
@@ -139,7 +140,7 @@ public class DeploymentService {
 
     @Transactional
     public void updateKafkaConfig(UUID clusterId, String hostId, String configJsonStr, boolean restart) {
-        updateKafkaConfig(clusterId, hostId, "broker", "1", configJsonStr, "", restart);
+        updateKafkaConfig(clusterId, hostId, "broker", "1", configJsonStr, "", restart, "unversioned");
     }
 
     @Transactional
@@ -150,7 +151,8 @@ public class DeploymentService {
             String nodeId,
             String configJsonStr,
             String propertiesTemplate,
-            boolean restart
+            boolean restart,
+            String configVersion
     ) {
         Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
@@ -163,6 +165,7 @@ public class DeploymentService {
             params.put("node_id", nodeId == null || nodeId.isBlank() ? "1" : nodeId);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("config_version", configVersion == null || configVersion.isBlank() ? "unversioned" : configVersion);
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -191,7 +194,7 @@ public class DeploymentService {
     }
 
     @Transactional
-    public void deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
+    public UUID deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
         Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
         try {
             Map<String, Object> params = new java.util.HashMap<>();
@@ -210,6 +213,103 @@ public class DeploymentService {
         }
         taskRepository.save(task);
         log.info("Dispatched DELETE_CLUSTER task for host {} in cluster {}", hostId, clusterId);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID installMonitoring(
+            UUID clusterId,
+            String hostId,
+            String installDir,
+            String prometheusUrl,
+            String grafanaUrl
+    ) {
+        Task task = createTask(clusterId, hostId, "INSTALL_MONITORING");
+        try {
+            task.setParameters(objectMapper.writeValueAsString(Map.of(
+                    "install_dir", installDir == null || installDir.isBlank() ? "/opt/tantor/monitoring" : installDir,
+                    "prometheus_url", prometheusUrl == null ? "" : prometheusUrl,
+                    "grafana_url", grafanaUrl == null ? "" : grafanaUrl
+            )));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid monitoring deployment parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID removeMonitoring(UUID clusterId, String hostId, String installDir) {
+        Task task = createTask(clusterId, hostId, "DELETE_MONITORING");
+        try {
+            task.setParameters(objectMapper.writeValueAsString(Map.of(
+                    "install_dir", installDir == null || installDir.isBlank() ? "/opt/tantor/monitoring" : installDir
+            )));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid monitoring rollback parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID checkKRaftConnectivity(UUID clusterId, String hostId, String controllerEndpoints) {
+        Task task = createTask(clusterId, hostId, "CHECK_KRAFT_CONNECTIVITY");
+        try {
+            task.setParameters(objectMapper.writeValueAsString(Map.of(
+                    "controller_endpoints", controllerEndpoints == null ? "" : controllerEndpoints
+            )));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid KRaft connectivity parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID verifyKRaftQuorum(
+            UUID clusterId,
+            String hostId,
+            String controllerEndpoints,
+            String clusterUuid,
+            String expectedControllerCount,
+            String configJsonStr
+    ) {
+        Task task = createTask(clusterId, hostId, "VERIFY_KRAFT_QUORUM");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("controller_endpoints", controllerEndpoints == null ? "" : controllerEndpoints);
+            params.put("cluster_uuid", clusterUuid == null ? "" : clusterUuid);
+            params.put("expected_controller_count", expectedControllerCount == null ? "" : expectedControllerCount);
+            mergeConfigParams(params, configJsonStr);
+            applyDefaultKafkaPaths(params);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid KRaft quorum verification parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID verifyZooKeeperQuorum(
+            UUID clusterId,
+            String hostId,
+            String zookeeperConnect,
+            String configJsonStr
+    ) {
+        Task task = createTask(clusterId, hostId, "VERIFY_ZK_QUORUM");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("zookeeper_connect", zookeeperConnect == null ? "" : zookeeperConnect);
+            mergeConfigParams(params, configJsonStr);
+            applyDefaultKafkaPaths(params);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid ZooKeeper quorum verification parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
     }
 
     @Transactional

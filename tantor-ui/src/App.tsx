@@ -25,6 +25,9 @@ import { KafkaConnect } from './pages/KafkaConnect';
 import UserManagement from './pages/UserManagement';
 import { ClusterProvider } from './contexts/ClusterContext';
 import { TopNavbar } from './components/TopNavbar';
+import { ClusterNodes } from './pages/ClusterNodes';
+import { JobsList } from './pages/JobsList';
+import { JobStatusPage } from './pages/JobStatusPage';
 import './App.css';
 
 function App() {
@@ -74,6 +77,45 @@ function App() {
         </div>
       </Router>
     </ClusterProvider>
+    <Router>
+      <div className="app-container">
+        <Sidebar />
+        <main className="main-content">
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/hosts" element={<Hosts />} />
+            <Route path="/clusters" element={<Clusters />} />
+            <Route path="/cluster-deployment" element={<ClusterDeployment />} />
+            <Route path="/external-clusters" element={<ExternalClusters />} />
+            <Route path="/clusters/:id" element={<ClusterDetails />}>
+              <Route path="nodes" element={<ClusterNodes />} />
+              <Route path="brokers" element={<Brokers />} />
+              <Route path="partitions" element={<Partitions />} />
+              <Route path="topics" element={<Topics />} />
+              <Route path="consumers" element={<Consumers />} />
+              <Route path="config" element={<ConfigEditor />} />
+              <Route path="actions" element={<ClusterActions />} />
+              <Route path="logs" element={<DeploymentLogs />} />
+            </Route>
+            <Route path="/artifacts" element={<Artifacts />} />
+            <Route path="/jobs" element={<JobsList />} />
+            <Route path="/jobs/:id" element={<JobStatusPage />} />
+            <Route path="/monitoring" element={<Monitoring />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/audit" element={<AuditLogs />} />
+            {/* Fallback routes for pages not fully fleshed out yet */}
+            <Route path="*" element={
+              <div className="animate-fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>
+                <h2>Page Under Construction</h2>
+                <p style={{ color: 'var(--text-secondary)', marginTop: '1rem' }}>
+                  This view is being built in the background.
+                </p>
+              </div>
+            } />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 }
 

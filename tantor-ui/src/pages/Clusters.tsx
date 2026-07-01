@@ -84,7 +84,7 @@ export function Clusters() {
       const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        navigate(`/clusters/${cluster.id}/actions?restartTask=${encodeURIComponent(data.taskId || '')}`);
+        navigate(data.jobId ? `/jobs/${data.jobId}` : `/clusters/${cluster.id}/actions`);
       } else {
         alert(data.error || 'Failed to schedule rolling restart.');
       }

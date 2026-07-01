@@ -96,6 +96,28 @@ type PrereqResult = {
   errorMsg: string;
 };
 
+type KraftValidationNode = {
+  hostId: string;
+  address: string;
+  nodeId: number;
+  role: string;
+};
+
+type KraftValidationReport = {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  acknowledgementRequired: boolean;
+  clusterId: string;
+  quorumMode: 'static' | 'dynamic';
+  controllerCount: number;
+  brokerCount: number;
+  failureTolerance: number;
+  controllerQuorum: string;
+  nodes: KraftValidationNode[];
+  generatedConfig: Record<string, string>;
+};
+
 const UI_ONLY_PROPERTY_KEYS = new Set(['node.host', 'advertised.host', 'controller.host', 'zookeeper.host']);
 
 const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
@@ -342,6 +364,10 @@ export function ClusterDeployment() {
   const [prereqResults, setPrereqResults] = useState<Record<string, PrereqResult>>({});
   const [checkingPrereqs, setCheckingPrereqs] = useState(false);
   const [deploying, setDeploying] = useState(false);
+  const [validatingKraft, setValidatingKraft] = useState(false);
+  const [kraftValidation, setKraftValidation] = useState<KraftValidationReport | null>(null);
+  const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
+  const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
 
   useEffect(() => {
     loadHosts();
@@ -433,6 +459,7 @@ export function ClusterDeployment() {
   };
 
   const availableVersions = versions.filter(version => version.available);
+  const zookeeperSupported = kafkaMajorVersion(kafkaVersion) > 0 && kafkaMajorVersion(kafkaVersion) < 4;
   const commonConfigKinds = commonConfigKindsForMode(deploymentMode);
   const selectedHosts = selectedNodeIds
     .map(id => hosts.find(host => host.id === id))
@@ -507,8 +534,6 @@ export function ClusterDeployment() {
   const warnings = useMemo(() => {
     const items: string[] = [];
     if (effectiveBrokerCount === 1) items.push('Only one broker will be present. Kafka will run without data replication.');
-    if (deploymentMode === 'kraft' && controllerCount === 1) items.push('Only one controller selected. Controller failover will not be available.');
-    if (deploymentMode === 'kraft' && controllerCount > 1 && controllerCount % 2 === 0) items.push('Even controller count selected. Odd controller count is recommended for quorum voting.');
     if (deploymentMode === 'zookeeper' && zookeeperCount === 1) items.push('Only one ZooKeeper selected. ZooKeeper failover will not be available.');
     if (deploymentMode === 'zookeeper' && zookeeperCount > 1 && zookeeperCount % 2 === 0) items.push('Even ZooKeeper count selected. Odd ZooKeeper count is recommended for quorum voting.');
     if (isAddNodeMode && selectedHosts.some(host => {
@@ -518,7 +543,7 @@ export function ClusterDeployment() {
       items.push('Adding quorum nodes changes cluster membership. Existing nodes may need updated configs and restart sequencing.');
     }
     return items;
-  }, [controllerCount, defaultRoleForMode, deploymentMode, effectiveBrokerCount, isAddNodeMode, rolesByHost, selectedHosts, zookeeperCount]);
+  }, [defaultRoleForMode, deploymentMode, effectiveBrokerCount, isAddNodeMode, rolesByHost, selectedHosts, zookeeperCount]);
 
   const pathErrors = [
     validatePath(installDir, 'Install directory'),
@@ -533,6 +558,11 @@ export function ClusterDeployment() {
 
   const prerequisiteComplete = selectedHosts.length > 0
     && selectedHosts.every(host => prereqResults[host.id]?.status === 'SUCCESS');
+  const kraftDeploymentBlocked = deploymentMode === 'kraft'
+    && !isAddNodeMode
+    && (!kraftValidation
+      || kraftValidation.errors.length > 0
+      || (kraftValidation.acknowledgementRequired && !kraftRiskAcknowledged));
 
   const configKey = (hostId: string, kind: ConfigKind) => `${hostId}:${kind}`;
 
@@ -717,6 +747,72 @@ export function ClusterDeployment() {
     return services;
   };
 
+  const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
+    const selectedArtifact = versions.find(version => version.version === kafkaVersion);
+    const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
+    return {
+      name: clusterName.trim(),
+      kafka_version: kafkaVersion,
+      mode: deploymentMode,
+      services: buildServices(),
+      environment: environment.trim(),
+      acknowledge_kraft_risk: kraftRiskAcknowledged,
+      artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
+      config: {
+        configuration_mode: clusterConfigMode,
+        kafka_install_dir: installDir.trim(),
+        kafka_install_base_dir: installDir.trim(),
+        kafka_data_dir: dataDir.trim(),
+        kafka_app_log_dir: logDir.trim(),
+        artifact_load_dir: artifactLoadDir.trim(),
+        scala_version: selectedArtifact?.scala_version || '2.13',
+        listener_port: listenerPort,
+        controller_port: controllerPort,
+        zookeeper_port: deploymentMode === 'zookeeper' ? controllerPort : undefined,
+        zookeeper_peer_port: zookeeperPeerPort,
+        zookeeper_election_port: zookeeperElectionPort,
+        num_partitions: Number(commonConfigValue('num.partitions') || numPartitions),
+        replication_factor: configuredReplicationFactor,
+        min_insync_replicas: configuredMinIsr,
+        ...(includeGeneratedKraftConfig && deploymentMode === 'kraft' ? kraftGeneratedConfig : {}),
+      },
+    };
+  };
+
+  const openPreview = async () => {
+    setPrereqResults({});
+    setKraftRiskAcknowledged(false);
+    if (deploymentMode !== 'kraft' || isAddNodeMode) {
+      setKraftValidation(null);
+      setKraftGeneratedConfig({});
+      setStage('preview');
+      return;
+    }
+
+    setValidatingKraft(true);
+    try {
+      const res = await fetch('/api/v1/ui/clusters/validate-kraft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildDeploymentPayload(false)),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(body.error || body.message || 'KRaft topology validation failed.');
+        return;
+      }
+      const report = body as KraftValidationReport;
+      setKraftValidation(report);
+      setKraftGeneratedConfig(report.generatedConfig || {});
+      setStage('preview');
+    } catch (error) {
+      console.error(error);
+      alert('Network error while validating the KRaft topology.');
+    } finally {
+      setValidatingKraft(false);
+    }
+  };
+
   const confirmNodeSelection = () => {
     setSelectedNodeIds(draftNodeIds);
     setRolesByHost(prev => {
@@ -761,6 +857,13 @@ export function ClusterDeployment() {
       setControllerPort(9093);
     } else {
       setControllerPort(2181);
+    }
+  };
+
+  const changeKafkaVersion = (version: string) => {
+    setKafkaVersion(version);
+    if (kafkaMajorVersion(version) >= 4 && deploymentMode === 'zookeeper') {
+      changeDeploymentMode('kraft');
     }
   };
 
@@ -873,33 +976,7 @@ export function ClusterDeployment() {
   const deployCluster = async () => {
     setDeploying(true);
     try {
-      const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-      const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
-      const payload = {
-        name: clusterName.trim(),
-        kafka_version: kafkaVersion,
-        mode: deploymentMode,
-        services: buildServices(),
-        environment: environment.trim(),
-        artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
-        config: {
-          configuration_mode: clusterConfigMode,
-          kafka_install_dir: installDir.trim(),
-          kafka_install_base_dir: installDir.trim(),
-          kafka_data_dir: dataDir.trim(),
-          kafka_app_log_dir: logDir.trim(),
-          artifact_load_dir: artifactLoadDir.trim(),
-          scala_version: selectedArtifact?.scala_version || '2.13',
-          listener_port: listenerPort,
-          controller_port: controllerPort,
-          zookeeper_port: deploymentMode === 'zookeeper' ? controllerPort : undefined,
-          zookeeper_peer_port: zookeeperPeerPort,
-          zookeeper_election_port: zookeeperElectionPort,
-          num_partitions: Number(commonConfigValue('num.partitions') || numPartitions),
-          replication_factor: configuredReplicationFactor,
-          min_insync_replicas: configuredMinIsr,
-        },
-      };
+      const payload = buildDeploymentPayload();
 
       const url = isAddNodeMode && addClusterId
         ? `/api/v1/ui/clusters/${addClusterId}/nodes`
@@ -914,7 +991,11 @@ export function ClusterDeployment() {
         alert(body.error || body.message || 'Deployment failed to start.');
         return;
       }
-      navigate(`/clusters/${body.id}/logs`);
+      if (body.jobId) {
+        navigate(`/jobs/${body.jobId}`);
+      } else {
+        navigate(`/clusters/${body.id}/logs`);
+      }
     } catch (e) {
       console.error(e);
       alert('Network error while starting deployment.');
@@ -991,13 +1072,6 @@ export function ClusterDeployment() {
                   <button className={clusterConfigMode === 'custom' ? 'active' : ''} onClick={() => selectClusterConfigMode('custom')} disabled={isAddNodeMode}>Custom</button>
                 </div>
               </div>
-              <div className="cd-control-group">
-                <span>Metadata mode</span>
-                <div className="cd-choice-toggle">
-                  <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
-                  <button className={deploymentMode === 'zookeeper' ? 'active' : ''} onClick={() => changeDeploymentMode('zookeeper')} disabled={isAddNodeMode}>ZooKeeper</button>
-                </div>
-              </div>
             </div>
             <div className="cd-grid-2">
               <label className="cd-field">
@@ -1012,7 +1086,7 @@ export function ClusterDeployment() {
               )}
               <label className="cd-field">
                 <span>Kafka version</span>
-                <select value={kafkaVersion} onChange={e => setKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
+                <select value={kafkaVersion} onChange={e => changeKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
                   {availableVersions.map(version => (
                     <option key={version.version} value={version.version}>
                       {version.version} ({version.size_mb} MB)
@@ -1034,6 +1108,15 @@ export function ClusterDeployment() {
                       {env === 'DEV' ? 'Dev' : env}
                     </button>
                   ))}
+                </div>
+              </div>
+              <div className="cd-field">
+                <span>Metadata mode</span>
+                <div className="cd-choice-toggle cd-mode-toggle">
+                  <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
+                  {zookeeperSupported && (
+                    <button className={deploymentMode === 'zookeeper' ? 'active' : ''} onClick={() => changeDeploymentMode('zookeeper')} disabled={isAddNodeMode}>ZooKeeper</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1161,13 +1244,76 @@ export function ClusterDeployment() {
 
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('landing')}>Back</button>
-            <button className="cd-primary-btn" disabled={!canPreview} onClick={() => setStage('preview')}>
-              {isAddNodeMode ? 'Preview add node' : 'Preview'}
+            <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
+              {validatingKraft && <Loader2 size={15} className="spin" />}
+              {isAddNodeMode ? 'Preview add node' : validatingKraft ? 'Validating topology' : 'Preview'}
             </button>
           </div>
         </div>
       ) : (
         <div className="cd-layout">
+          {deploymentMode === 'kraft' && !isAddNodeMode && kraftValidation && (
+            <section className="cd-panel cd-kraft-validation">
+              <div className="cd-panel-title">
+                <Network size={18} />
+                <h2>KRaft Topology Validation</h2>
+                <span className={`cd-validation-state ${kraftValidation.valid ? 'valid' : 'invalid'}`}>
+                  {kraftValidation.valid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                  {kraftValidation.valid ? 'Topology valid' : 'Changes required'}
+                </span>
+              </div>
+
+              <div className="cd-kraft-facts">
+                <div><span>Kafka cluster ID</span><strong>{kraftValidation.clusterId}</strong></div>
+                <div><span>Quorum mode</span><strong>{kraftValidation.quorumMode}</strong></div>
+                <div><span>Controllers</span><strong>{kraftValidation.controllerCount}</strong></div>
+                <div><span>Brokers</span><strong>{kraftValidation.brokerCount}</strong></div>
+                <div><span>Failure tolerance</span><strong>{kraftValidation.failureTolerance} controller{kraftValidation.failureTolerance === 1 ? '' : 's'}</strong></div>
+              </div>
+
+              <div className="cd-quorum-value">
+                <span>{kraftValidation.quorumMode === 'static' ? 'controller.quorum.voters' : 'controller.quorum.bootstrap.servers'}</span>
+                <code>{kraftValidation.controllerQuorum}</code>
+              </div>
+
+              <div className="cd-kraft-table-wrap">
+                <table className="cd-kraft-table">
+                  <thead><tr><th>Host</th><th>Address</th><th>Node ID</th><th>Role</th></tr></thead>
+                  <tbody>
+                    {kraftValidation.nodes.map(node => (
+                      <tr key={`${node.hostId}-${node.nodeId}`}>
+                        <td>{hosts.find(host => host.id === node.hostId)?.hostname || node.hostId}</td>
+                        <td>{node.address}</td>
+                        <td>{node.nodeId}</td>
+                        <td>{node.role.replace('_', ' + ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {kraftValidation.errors.length > 0 && (
+                <div className="cd-inline-errors">
+                  {kraftValidation.errors.map(error => <span key={error}><XCircle size={13} /> {error}</span>)}
+                </div>
+              )}
+              {kraftValidation.warnings.length > 0 && (
+                <div className="cd-warning-list">
+                  {kraftValidation.warnings.map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
+                </div>
+              )}
+              {kraftValidation.acknowledgementRequired && (
+                <label className="cd-risk-ack">
+                  <input
+                    type="checkbox"
+                    checked={kraftRiskAcknowledged}
+                    onChange={event => setKraftRiskAcknowledged(event.target.checked)}
+                  />
+                  <span>I understand this controller topology has reduced availability and want to continue.</span>
+                </label>
+              )}
+            </section>
+          )}
           <section className="cd-panel">
             <div className="cd-panel-title">
               <Network size={18} />
@@ -1211,7 +1357,7 @@ export function ClusterDeployment() {
             <div className="cd-panel-title">
               <CheckCircle2 size={18} />
               <h2>Prerequisites</h2>
-              <button className="cd-primary-btn small" disabled={checkingPrereqs || selectedHosts.length === 0 || pathErrors.length > 0 || configBlockingIssues.length > 0} onClick={checkPrerequisites}>
+              <button className="cd-primary-btn small" disabled={checkingPrereqs || selectedHosts.length === 0 || pathErrors.length > 0 || configBlockingIssues.length > 0 || (kraftValidation?.errors.length || 0) > 0} onClick={checkPrerequisites}>
                 {checkingPrereqs ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                 Check prerequisites on all nodes
               </button>
@@ -1235,7 +1381,7 @@ export function ClusterDeployment() {
 
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Back to details</button>
-            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0} onClick={deployCluster}>
+            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
               {deploying ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
               {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>

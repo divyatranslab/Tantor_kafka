@@ -20,5 +20,9 @@ public enum ArtifactStatus {
     /** Manually withheld from deployment (e.g. CVE found). */
     QUARANTINED,
     /** Soft-deleted; file removed from disk, row retained for audit. */
-    DELETED
+    DELETED,
+    /** Package validation failed (e.g., checksum mismatch, corruption). */
+    FAILED,
+    /** Version is obsolete and no longer recommended. */
+    DEPRECATED
 }

@@ -67,30 +67,51 @@ public class StorageService {
         return sb.toString();
     }
 
+    public record TempStoreResult(Path tempPath, ChecksumResult checksumResult) {}
+
     /**
-     * Stream an upload into the repository, computing checksums in the same pass.
+     * Stream an upload into a temporary file in the repository, computing checksums in the same pass.
      *
-     * @return the computed checksums and byte count
+     * @return the path to the temporary file and computed checksums
      */
-    public ChecksumResult store(ServiceType type, String version, String classifier,
-                                String fileName, InputStream data) {
+    public TempStoreResult storeTemporarily(String fileNameHint, InputStream data) {
+        try {
+            Path tmp = Files.createTempFile(artifactsRoot, ".upload-", "-" + fileNameHint);
+            ChecksumResult result;
+            try (OutputStream out = Files.newOutputStream(tmp)) {
+                result = checksumService.copyAndDigest(data, out);
+            }
+            return new TempStoreResult(tmp, result);
+        } catch (IOException e) {
+            throw new StorageException("Failed to store temporary upload for " + fileNameHint, e);
+        }
+    }
+
+    /**
+     * Move a temporarily stored file to its final destination in the repository.
+     */
+    public void moveToFinal(Path tempPath, ServiceType type, String version, String classifier, String fileName) {
         String relDir = relativeDir(type, version, classifier);
         Path targetDir = resolveSafe(relDir);
         try {
             Files.createDirectories(targetDir);
             Path target = targetDir.resolve(fileName);
-            Path tmp = Files.createTempFile(targetDir, ".upload-", ".part");
-            ChecksumResult result;
-            try (OutputStream out = Files.newOutputStream(tmp)) {
-                result = checksumService.copyAndDigest(data, out);
-            }
-            Files.move(tmp, target,
-                    StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            log.info("Stored {} ({} bytes, sha256={})", relDir + "/" + fileName,
-                    result.sizeBytes(), result.sha256());
-            return result;
+            Files.move(tempPath, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            log.info("Stored {}", relDir + "/" + fileName);
         } catch (IOException e) {
-            throw new StorageException("Failed to store " + relDir + "/" + fileName, e);
+            throw new StorageException("Failed to move to final path: " + relDir + "/" + fileName, e);
+        }
+    }
+
+    /**
+     * Safely delete a temporary file.
+     */
+    public void deleteTemp(Path tempPath) {
+        if (tempPath == null) return;
+        try {
+            Files.deleteIfExists(tempPath);
+        } catch (IOException e) {
+            log.warn("Failed to delete temp file {}", tempPath);
         }
     }
 

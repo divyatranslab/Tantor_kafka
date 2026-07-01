@@ -39,17 +39,20 @@ public class ArtifactService {
     private final StorageService storageService;
     private final ManifestService manifestService;
     private final StorageProperties properties;
+    private final PackageValidator packageValidator;
 
     public ArtifactService(ArtifactJpaRepository repository,
                            ArtifactDownloadLogRepository downloadLogRepository,
                            StorageService storageService,
                            ManifestService manifestService,
-                           StorageProperties properties) {
+                           StorageProperties properties,
+                           PackageValidator packageValidator) {
         this.repository = repository;
         this.downloadLogRepository = downloadLogRepository;
         this.storageService = storageService;
         this.manifestService = manifestService;
         this.properties = properties;
+        this.packageValidator = packageValidator;
     }
 
     /** Parameters for an upload. */
@@ -79,21 +82,21 @@ public class ArtifactService {
                                     classifier == null ? "" : " [" + classifier + "]"));
         }
 
-        // 1. Stream bytes to disk and compute checksums in one pass.
-        ChecksumResult cs = storageService.store(
-                cmd.serviceType(), cmd.version(), classifier, cmd.fileName(), data);
+        // 1. Stream bytes to temporary disk location and compute checksums.
+        StorageService.TempStoreResult tempStore = storageService.storeTemporarily(cmd.fileName(), data);
+        ChecksumResult cs = tempStore.checksumResult();
+        Path tempFile = tempStore.tempPath();
 
-        // 2. Enforce a declared checksum if the uploader supplied one.
+        // 2. Enforce declared checksum (reject before heavy validation)
         if (properties.isEnforceChecksum() && cmd.declaredSha256() != null
                 && !cmd.declaredSha256().equalsIgnoreCase(cs.sha256())) {
-            String relDir = storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier);
-            storageService.deleteBinary(relDir, cmd.fileName());
+            storageService.deleteTemp(tempFile);
             throw new ChecksumMismatchException(
                     "Declared SHA-256 %s does not match computed %s"
                             .formatted(cmd.declaredSha256(), cs.sha256()));
         }
 
-        // 3. Upsert the index row.
+        // 3. Prepare index row
         Artifact artifact = exists
                 ? repository.findByServiceTypeAndVersionAndClassifier(
                         cmd.serviceType(), cmd.version(), classifier).orElseThrow()
@@ -110,21 +113,34 @@ public class ArtifactService {
         artifact.setContentType(cmd.contentType() != null ? cmd.contentType() : "application/gzip");
         artifact.setChecksumSha256(cs.sha256());
         artifact.setChecksumMd5(cs.md5());
-        artifact.setDescription(cmd.description());
         artifact.setCreatedBy(cmd.createdBy() != null ? cmd.createdBy() : "system");
-        artifact.setStatus(ArtifactStatus.AVAILABLE);
 
-        // 4. Build manifest, persist on the row and beside the binary.
-        ManifestDto manifest = manifestService.build(artifact, cmd.attributes());
-        String manifestJson = manifestService.toJson(manifest);
-        artifact.setManifest(manifestJson);
+        try {
+            // 4. Validate package contents (extraction test, Kafka version check, malware scan)
+            packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName());
+
+            // 5. Move to final and set status AVAILABLE
+            storageService.moveToFinal(tempFile, cmd.serviceType(), cmd.version(), classifier, cmd.fileName());
+            artifact.setStatus(ArtifactStatus.AVAILABLE);
+            artifact.setDescription(cmd.description()); // original description
+
+            ManifestDto manifest = manifestService.build(artifact, cmd.attributes());
+            String manifestJson = manifestService.toJson(manifest);
+            artifact.setManifest(manifestJson);
+            storageService.writeManifest(
+                    storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier), manifestJson);
+
+        } catch (Exception e) {
+            // Package Validation failed
+            storageService.deleteTemp(tempFile);
+            artifact.setStatus(ArtifactStatus.FAILED);
+            artifact.setDescription("Package Validation failed: " + e.getMessage());
+        }
 
         Artifact saved = repository.save(artifact);
-        storageService.writeManifest(
-                storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier), manifestJson);
 
-        log.info("Artifact {} registered: {} {} ({} bytes)",
-                saved.getId(), saved.getServiceType(), saved.getVersion(), saved.getFileSizeBytes());
+        log.info("Artifact {} registered: {} {} ({} bytes, status: {})",
+                saved.getId(), saved.getServiceType(), saved.getVersion(), saved.getFileSizeBytes(), saved.getStatus());
         return saved;
     }
 

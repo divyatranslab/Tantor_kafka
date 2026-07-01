@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
-import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
 
 interface ClusterInfo {
   id: string;
@@ -8,6 +8,7 @@ interface ClusterInfo {
   status: string;
   mode: string;
   managementLevel?: string;
+  hosts?: Array<{ hostId: string; hostname: string; ipAddress: string }>;
 }
 
 interface HostParcel {
@@ -19,10 +20,11 @@ interface HostParcel {
 }
 
 export function ClusterActions() {
+  const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const restartTaskFromUrl = searchParams.get('restartTask');
-  const [taskId, setTaskId] = useState<string | null>(restartTaskFromUrl);
+  const [taskId] = useState<string | null>(restartTaskFromUrl);
   const [status, setStatus] = useState<string>(restartTaskFromUrl ? 'Loading restart progress...' : '');
   const [loading, setLoading] = useState(false);
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
@@ -30,6 +32,10 @@ export function ClusterActions() {
   const [targetVersion, setTargetVersion] = useState('');
   const [upgradeMsg, setUpgradeMsg] = useState('');
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [monitoringHostId, setMonitoringHostId] = useState('');
+  const [prometheusUrl, setPrometheusUrl] = useState('');
+  const [grafanaUrl, setGrafanaUrl] = useState('');
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
 
   const fetchUpgradeContext = async () => {
     try {
@@ -37,7 +43,11 @@ export function ClusterActions() {
         fetch(`/api/v1/ui/clusters/${id}`),
         fetch('/api/v1/ui/parcels'),
       ]);
-      if (clusterRes.ok) setCluster(await clusterRes.json());
+      if (clusterRes.ok) {
+        const loaded = await clusterRes.json();
+        setCluster(loaded);
+        setMonitoringHostId(current => current || loaded.hosts?.[0]?.hostId || '');
+      }
       if (parcelsRes.ok) setParcels(await parcelsRes.json());
     } catch (e) {
       console.error(e);
@@ -52,8 +62,7 @@ export function ClusterActions() {
       const res = await fetch(`/api/v1/clusters/${id}/actions/rolling-restart`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setTaskId(data.taskId);
-        setStatus("Initialization started...");
+        if (data.jobId) navigate(`/jobs/${data.jobId}`);
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || "Failed to trigger rolling restart.");
@@ -72,6 +81,28 @@ export function ClusterActions() {
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
   const isExternal = cluster?.mode === 'EXTERNAL';
   const externalCanRestart = !isExternal || cluster?.managementLevel === 'AGENT_MANAGED';
+
+  const enableMonitoring = async () => {
+    if (!monitoringHostId || !prometheusUrl.trim() || !grafanaUrl.trim()) {
+      alert('Select a host and provide both Prometheus and Grafana artifact URLs.');
+      return;
+    }
+    setMonitoringLoading(true);
+    try {
+      const res = await fetch(`/api/v1/clusters/${id}/actions/enable-monitoring`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostId: monitoringHostId, prometheusUrl, grafanaUrl }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.jobId) navigate(`/jobs/${body.jobId}`);
+      else alert(body.error || 'Failed to create monitoring enablement job.');
+    } catch {
+      alert('Network error while creating monitoring job.');
+    } finally {
+      setMonitoringLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchUpgradeContext();
@@ -191,6 +222,27 @@ export function ClusterActions() {
         </div>
         )}
         
+        {!isExternal && (
+          <div className="table-card">
+            <div style={{ padding: '1.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                <BarChart3 size={22} />
+                <div><h3 style={{ margin: 0 }}>Monitoring Enablement</h3><p style={{ margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p></div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <select value={monitoringHostId} onChange={event => setMonitoringHostId(event.target.value)}>
+                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname} · {host.ipAddress}</option>)}
+                </select>
+                <input value={prometheusUrl} onChange={event => setPrometheusUrl(event.target.value)} placeholder="Prometheus artifact URL" />
+                <input value={grafanaUrl} onChange={event => setGrafanaUrl(event.target.value)} placeholder="Grafana artifact URL" />
+                <button className="btn btn-primary-action" onClick={enableMonitoring} disabled={monitoringLoading}>
+                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : <Play size={16} />} Enable Monitoring
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Rolling Restart Card */}
         <div className="table-card">
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>

@@ -4,11 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.Job;
+import io.translab.tantor.server.domain.JobStatus;
+import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.ActivityAlertService;
+import io.translab.tantor.server.service.JobService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +38,7 @@ public class ConfigController {
     private final ObjectMapper objectMapper;
     private final ActivityAlertService activityAlertService;
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
+    private final JobService jobService;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
@@ -583,7 +589,8 @@ public class ConfigController {
         return value.trim();
     }
 
-    @PutMapping("/services/{serviceId}")
+    @Deprecated
+    @PutMapping("/unsafe-legacy/services/{serviceId}")
     public ResponseEntity<?> updateServiceConfig(
             @PathVariable UUID clusterId,
             @PathVariable UUID serviceId,
@@ -616,28 +623,57 @@ public class ConfigController {
         deploymentConfig.put("mode", cluster.getMode());
         deploymentConfig.put("version", cluster.getKafkaVersion());
 
+        String previousServiceConfigJson = service.getConfigJson() == null ? "{}" : service.getConfigJson();
+        String previousPropertiesTemplate = "";
+        try {
+            Map<String, Object> previousStored = objectMapper.readValue(previousServiceConfigJson, Map.class);
+            Object previousProperties = previousStored.get("properties");
+            if (previousProperties instanceof Map<?, ?> propertyMap) {
+                Map<String, Object> normalized = new LinkedHashMap<>();
+                propertyMap.forEach((key, value) -> normalized.put(String.valueOf(key), value));
+                previousPropertiesTemplate = serializeProperties(normalized);
+            }
+        } catch (Exception ignored) {
+            // An empty rollback template is safer than rejecting a valid forward change.
+        }
+
         Map<String, Object> stored = new HashMap<>(deploymentConfig);
         stored.put("properties", new LinkedHashMap<>(request.getProperties()));
         service.setConfigJson(objectMapper.writeValueAsString(stored));
         clusterRepository.save(cluster);
 
         String propertiesTemplate = serializeProperties(request.getProperties());
-        UUID taskId = deploymentService.updateKafkaConfig(
-                clusterId,
-                service.getHostId(),
-                service.getRole(),
-                service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()),
-                objectMapper.writeValueAsString(deploymentConfig),
-                propertiesTemplate,
-                request.isRestart()
-        );
+        Map<String, Object> stepPayload = new LinkedHashMap<>();
+        stepPayload.put("operation", "service");
+        stepPayload.put("hostId", service.getHostId());
+        stepPayload.put("role", service.getRole());
+        stepPayload.put("nodeId", service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()));
+        stepPayload.put("configJson", objectMapper.writeValueAsString(deploymentConfig));
+        stepPayload.put("propertiesTemplate", propertiesTemplate);
+        stepPayload.put("previousConfigJson", previousServiceConfigJson);
+        stepPayload.put("previousPropertiesTemplate", previousPropertiesTemplate);
+        stepPayload.put("restart", request.isRestart());
+
+        Job job = new Job();
+        job.setType(JobType.CONFIG_CHANGE);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("cluster:" + clusterId);
+        job.setPayload(objectMapper.writeValueAsString(Map.of("clusterId", clusterId.toString())));
+        JobStep step = new JobStep();
+        step.setStepOrder(1);
+        step.setTargetId(service.getHostId());
+        step.setName("Update " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
+                + " on " + service.getHostId());
+        step.setPayload(objectMapper.writeValueAsString(stepPayload));
+        Job savedJob = jobService.createJob(job, List.of(step));
         activityAlertService.logActivity(
                 "INFO",
                 "Updated " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
                         + " on " + service.getHostId() + (request.isRestart() ? " and queued service restart" : ""),
                 clusterId
         );
-        return ResponseEntity.ok(Map.of("taskId", taskId.toString(), "status", "scheduled"));
+        return ResponseEntity.ok(Map.of("jobId", savedJob.getId().toString(), "status", "scheduled"));
     }
 
     private String serializeProperties(Map<String, Object> properties) {
@@ -653,68 +689,82 @@ public class ConfigController {
     public ResponseEntity<?> updateConfigBulk(@PathVariable UUID clusterId, @RequestBody BulkConfigRequest request) throws JsonProcessingException {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
+        if (request.getConfigKey() == null || !request.getConfigKey().matches("[A-Za-z0-9._-]+")) {
+            return ResponseEntity.badRequest().body(Map.of("message", "A valid configuration key is required."));
+        }
 
-        // 1. Update live dynamically via AdminClient
+        List<JobStep> steps = new ArrayList<>();
         Map<Integer, Map<String, Object>> currentConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
-        boolean dynamicSuccess = true;
-        String dynamicError = null;
-        for (Integer brokerId : currentConfigs.keySet()) {
-            try {
-                kafkaAdminService.alterBrokerConfig(clusterId, brokerId, request.getConfigKey(), request.getConfigValue());
-            } catch (Exception e) {
-                dynamicSuccess = false;
-                dynamicError = e.getMessage();
-                // If not applying to agents, we must fail immediately
-                if (!request.isApplyToAgents()) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Failed to alter broker config dynamically: " + e.getMessage()));
-                }
+        Map<String, Object> previousByBroker = new LinkedHashMap<>();
+        currentConfigs.forEach((brokerId, config) -> previousByBroker.put(
+                String.valueOf(brokerId), String.valueOf(config.getOrDefault(request.getConfigKey(), ""))));
+
+        JobStep dynamicStep = new JobStep();
+        dynamicStep.setStepOrder(1);
+        dynamicStep.setName("Apply dynamic broker configuration " + request.getConfigKey());
+        dynamicStep.setTargetId(clusterId.toString());
+        dynamicStep.setPayload(objectMapper.writeValueAsString(Map.of(
+                "operation", "dynamic",
+                "configKey", request.getConfigKey(),
+                "configValue", request.getConfigValue() == null ? "" : request.getConfigValue(),
+                "previousByBroker", previousByBroker
+        )));
+        steps.add(dynamicStep);
+
+        if (request.isApplyToAgents() && "EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            JobStep externalStep = new JobStep();
+            externalStep.setStepOrder(2);
+            externalStep.setName("Persist configuration through discovery agents");
+            externalStep.setTargetId(clusterId.toString());
+            externalStep.setPayload(objectMapper.writeValueAsString(Map.of(
+                    "operation", "external",
+                    "configKey", request.getConfigKey(),
+                    "configValue", request.getConfigValue() == null ? "" : request.getConfigValue(),
+                    "previousValue", previousByBroker.values().stream().findFirst().orElse(""),
+                    "restart", request.isRestart()
+            )));
+            steps.add(externalStep);
+        }
+
+        if (request.isApplyToAgents() && !"EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            Map<String, Object> oldConfig = cluster.getConfigJson() == null || cluster.getConfigJson().isBlank()
+                    ? new HashMap<>() : objectMapper.readValue(cluster.getConfigJson(), Map.class);
+            Map<String, Object> newConfig = new HashMap<>(oldConfig);
+            newConfig.put(request.getConfigKey(), request.getConfigValue());
+            String oldConfigJson = objectMapper.writeValueAsString(oldConfig);
+            String newConfigJson = objectMapper.writeValueAsString(newConfig);
+            int order = 2;
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                if (!List.of("broker", "broker_controller", "broker_zookeeper").contains(service.getRole())) continue;
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("operation", "service");
+                payload.put("hostId", service.getHostId());
+                payload.put("role", service.getRole());
+                payload.put("nodeId", service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()));
+                payload.put("configJson", newConfigJson);
+                payload.put("clusterConfigJson", newConfigJson);
+                payload.put("propertiesTemplate", request.getConfigKey() + "=" + request.getConfigValue() + "\n");
+                payload.put("previousConfigJson", oldConfigJson);
+                payload.put("previousPropertiesTemplate", request.getConfigKey() + "=" + previousByBroker.getOrDefault(String.valueOf(service.getNodeId()), "") + "\n");
+                payload.put("restart", request.isRestart());
+                JobStep step = new JobStep();
+                step.setStepOrder(order++);
+                step.setName("Persist configuration on " + service.getHostId());
+                step.setTargetId(service.getHostId());
+                step.setPayload(objectMapper.writeValueAsString(payload));
+                steps.add(step);
             }
         }
 
-        // 2. Optionally push to static file and restart via Agent
-        if (request.isApplyToAgents()) {
-            if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
-                externalClusterService.queueConfigUpdate(clusterId, request.getConfigKey(), request.getConfigValue(), request.isRestart());
-                activityAlertService.logActivity(
-                    "INFO",
-                    "Queued external agent config persistence: " + request.getConfigKey() + " = " + request.getConfigValue() + (request.isRestart() ? " (restart requested)" : ""),
-                    clusterId
-                );
-                return ResponseEntity.ok().build();
-            }
-
-            // Need to update the DB blob so the agents get the new properties
-            Map<String, Object> dbConfig = new java.util.HashMap<>();
-            if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
-                Map<String, Object> existing = objectMapper.readValue(cluster.getConfigJson(), Map.class);
-                if (existing != null) {
-                    dbConfig.putAll(existing);
-                }
-            }
-            dbConfig.put(request.getConfigKey(), request.getConfigValue());
-            String newConfigStr = objectMapper.writeValueAsString(dbConfig);
-            cluster.setConfigJson(newConfigStr);
-            clusterRepository.save(cluster);
-
-            for (ClusterServiceAssignment svc : cluster.getServices()) {
-                if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole())) {
-                    deploymentService.updateKafkaConfig(clusterId, svc.getHostId(), newConfigStr, request.isRestart());
-                }
-            }
-            activityAlertService.logActivity(
-                "INFO",
-                "Updated server.properties config: " + request.getConfigKey() + " = " + request.getConfigValue() + (request.isRestart() ? " (Restarting brokers)" : ""),
-                clusterId
-            );
-        } else if (dynamicSuccess) {
-            activityAlertService.logActivity(
-                "INFO",
-                "Dynamically updated broker config: " + request.getConfigKey() + " = " + request.getConfigValue(),
-                clusterId
-            );
-        }
-
-        return ResponseEntity.ok().build();
+        Job job = new Job();
+        job.setType(JobType.CONFIG_CHANGE);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("cluster:" + clusterId);
+        job.setPayload(objectMapper.writeValueAsString(Map.of("clusterId", clusterId.toString())));
+        Job saved = jobService.createJob(job, steps);
+        activityAlertService.logActivity("INFO", "Created configuration change job for " + request.getConfigKey(), clusterId);
+        return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
     @Data

@@ -4,8 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
@@ -51,6 +55,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.installKsql(ctx, t)
 	case "INSTALL_MONITORING":
 		return e.installMonitoring(ctx, t)
+	case "DELETE_MONITORING":
+		return e.deleteMonitoring(ctx, t)
 	case "START_SERVICE":
 		return e.startService(ctx, t)
 	case "STOP_SERVICE":
@@ -73,6 +79,12 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.removeParcel(ctx, t)
 	case "CHECK_PREREQUISITES":
 		return e.checkPrerequisites(ctx, t)
+	case "CHECK_KRAFT_CONNECTIVITY":
+		return e.checkKRaftConnectivity(ctx, t)
+	case "VERIFY_KRAFT_QUORUM":
+		return e.verifyKRaftQuorum(ctx, t)
+	case "VERIFY_ZK_QUORUM":
+		return e.verifyZooKeeperQuorum(ctx, t)
 	default:
 		return &api.TaskResult{
 			TaskID:   t.TaskID,
@@ -321,6 +333,134 @@ func prerequisitePorts(raw string) []string {
 	}
 	return ports
 }
+
+func (e *Engine) checkKRaftConnectivity(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	endpoints := splitEndpoints(t.Parameters["controller_endpoints"])
+	if len(endpoints) == 0 {
+		return e.fail(t, "controller_endpoints is required for KRaft connectivity validation"), nil
+	}
+
+	var logs strings.Builder
+	for _, endpoint := range endpoints {
+		connection, err := net.DialTimeout("tcp", endpoint, 5*time.Second)
+		if err != nil {
+			return e.fail(t, fmt.Sprintf("Controller endpoint %s is not reachable: %v\n%s", endpoint, err, logs.String())), nil
+		}
+		_ = connection.Close()
+		logs.WriteString(fmt.Sprintf("[PASS] Controller endpoint %s is reachable\n", endpoint))
+	}
+
+	return &api.TaskResult{
+		TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String(),
+	}, nil
+}
+
+func (e *Engine) verifyKRaftQuorum(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	endpoints := splitEndpoints(t.Parameters["controller_endpoints"])
+	if len(endpoints) == 0 {
+		return e.fail(t, "controller_endpoints is required for KRaft quorum verification"), nil
+	}
+
+	installBase := strings.TrimSpace(t.Parameters["kafka_install_dir"])
+	if installBase == "" {
+		installBase = "/opt"
+	}
+	activeDir := installBase
+	if filepath.Base(filepath.Clean(activeDir)) != "kafka" {
+		activeDir = filepath.Join(activeDir, "kafka")
+	}
+	quorumScript := filepath.Join(activeDir, "bin", "kafka-metadata-quorum.sh")
+	out, errOut, err := e.exec.Run(ctx, quorumScript, "--bootstrap-controller", endpoints[0], "describe", "--status")
+	output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("KRaft quorum status command failed: %v\n%s", err, output)), nil
+	}
+
+	expectedClusterID := strings.TrimSpace(t.Parameters["cluster_uuid"])
+	if expectedClusterID == "" || !strings.Contains(output, expectedClusterID) {
+		return e.fail(t, fmt.Sprintf("Quorum status did not report expected cluster ID %q\n%s", expectedClusterID, output)), nil
+	}
+	if !strings.Contains(output, "LeaderId:") {
+		return e.fail(t, "Quorum status did not report a controller leader\n"+output), nil
+	}
+	if strings.Contains(output, "LeaderId: -1") {
+		return e.fail(t, "KRaft quorum has no elected controller leader\n"+output), nil
+	}
+	expectedControllerCount, _ := strconv.Atoi(strings.TrimSpace(t.Parameters["expected_controller_count"]))
+	if expectedControllerCount > 0 {
+		currentVoterCount := 0
+		for _, line := range strings.Split(output, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "CurrentVoters:") {
+				currentVoterCount = strings.Count(line, "\"id\"")
+				break
+			}
+		}
+		if currentVoterCount != expectedControllerCount {
+			return e.fail(t, fmt.Sprintf(
+				"KRaft quorum reports %d current voters; expected %d\n%s",
+				currentVoterCount, expectedControllerCount, output,
+			)), nil
+		}
+	}
+
+	return &api.TaskResult{
+		TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS",
+		LogOutput: "[PASS] Runtime KRaft quorum is healthy\n" + output,
+	}, nil
+}
+
+func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	endpoints := splitEndpoints(t.Parameters["zookeeper_connect"])
+	if len(endpoints) == 0 {
+		return e.fail(t, "zookeeper_connect is required for ZooKeeper quorum verification"), nil
+	}
+
+	installBase := strings.TrimSpace(t.Parameters["kafka_install_dir"])
+	if installBase == "" {
+		installBase = "/opt"
+	}
+	activeDir := installBase
+	if filepath.Base(filepath.Clean(activeDir)) != "kafka" {
+		activeDir = filepath.Join(activeDir, "kafka")
+	}
+	zkShellScript := filepath.Join(activeDir, "bin", "zookeeper-shell.sh")
+	
+	var logs strings.Builder
+	for _, endpoint := range endpoints {
+		out, errOut, err := e.exec.Run(ctx, zkShellScript, endpoint, "ls", "/")
+		output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
+		if err != nil {
+			return e.fail(t, fmt.Sprintf("ZooKeeper quorum status command failed for endpoint %s: %v\n%s", endpoint, err, output)), nil
+		}
+		if !strings.Contains(output, "[") {
+			return e.fail(t, fmt.Sprintf("ZooKeeper quorum status did not report a valid response for endpoint %s\n%s", endpoint, output)), nil
+		}
+		logs.WriteString(fmt.Sprintf("[PASS] ZooKeeper quorum is healthy via endpoint %s\n", endpoint))
+	}
+
+	return &api.TaskResult{
+		TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS",
+		LogOutput: logs.String(),
+	}, nil
+}
+
+func splitEndpoints(raw string) []string {
+	seen := make(map[string]bool)
+	endpoints := make([]string, 0)
+	for _, value := range strings.Split(raw, ",") {
+		endpoint := strings.TrimSpace(value)
+		if at := strings.LastIndex(endpoint, "@"); at >= 0 {
+			endpoint = strings.TrimSpace(endpoint[at+1:])
+		}
+		if endpoint == "" || seen[endpoint] {
+			continue
+		}
+		seen[endpoint] = true
+		endpoints = append(endpoints, endpoint)
+	}
+	return endpoints
+}
+
 func (e *Engine) fail(t *api.Task, msg string) *api.TaskResult {
 	slog.Error("Task failed", "taskId", t.TaskID, "error", msg)
 	return &api.TaskResult{
@@ -386,5 +526,26 @@ func (e *Engine) installMonitoring(ctx context.Context, t *api.Task) (*api.TaskR
 		HostID:    e.cfg.Agent.HostID,
 		Status:    "SUCCESS",
 		LogOutput: logOutput,
+	}, nil
+}
+
+func (e *Engine) deleteMonitoring(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	installDir := t.Parameters["install_dir"]
+	if installDir == "" {
+		installDir = "/opt/tantor/monitoring"
+	}
+	if _, errOut, err := e.exec.RunSudo(ctx, "systemctl", "disable", "--now", "prometheus", "grafana"); err != nil {
+		return e.fail(t, fmt.Sprintf("Failed to stop monitoring services: %v: %s", err, errOut)), nil
+	}
+	e.exec.RunSudo(ctx, "rm", "-f", "/etc/systemd/system/prometheus.service", "/etc/systemd/system/grafana.service")
+	if _, errOut, err := e.exec.RunSudo(ctx, "rm", "-rf", installDir); err != nil {
+		return e.fail(t, fmt.Sprintf("Failed to remove monitoring directory: %v: %s", err, errOut)), nil
+	}
+	e.exec.RunSudo(ctx, "systemctl", "daemon-reload")
+	return &api.TaskResult{
+		TaskID:    t.TaskID,
+		HostID:    e.cfg.Agent.HostID,
+		Status:    "SUCCESS",
+		LogOutput: "Monitoring services stopped and files removed.",
 	}, nil
 }

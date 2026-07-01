@@ -6,6 +6,11 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.HostStatusService;
+import io.translab.tantor.server.service.JobService;
+import io.translab.tantor.server.domain.Job;
+import io.translab.tantor.server.domain.JobType;
+import io.translab.tantor.server.domain.JobStatus;
+import io.translab.tantor.server.domain.JobStep;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,6 +48,7 @@ public class ClusterController {
     private final HostStatusService hostStatusService;
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
+    private final JobService jobService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -151,6 +157,7 @@ public class ClusterController {
         return ResponseEntity.ok(clusterOverviewService.getOverview(id));
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/deploy")
     public ResponseEntity<Map<String, String>> deployCluster(@RequestBody DeployClusterRequest request) {
         ResponseEntity<Map<String, String>> validationError = validateDeployRequest(request);
@@ -198,36 +205,71 @@ public class ClusterController {
             });
         }
 
-        // 2. Dispatch tasks
-        String configJsonStr = "{}";
-        try {
-            configJsonStr = objectMapper.writeValueAsString(deploymentConfig);
-        } catch (Exception e) {}
-
+        // 2. Dispatch tasks via Job Engine
         String finalArtifactUrl = resolveAgentArtifactUrl(request.getArtifactUrl());
         List<ServiceAssignmentReq> deployOrder = request.getServices().stream()
                 .sorted((left, right) -> Boolean.compare(!isMetadataService(left.getRole()), !isMetadataService(right.getRole())))
                 .toList();
+
+        List<Map<String, Object>> deployOrderPayload = new ArrayList<>();
         for (ServiceAssignmentReq svc : deployOrder) {
-            String serviceConfigJson = buildServiceConfigJson(deploymentConfig, svc);
-            deploymentService.deployKafkaToHost(
-                cluster.getId(),
-                svc.getHost_id(),
-                request.getKafka_version(),
-                finalArtifactUrl,
-                "", // checksum
-                String.valueOf(svc.getNode_id()),
-                quorumVoters,
-                svc.getRole(),
-                serviceConfigJson
-            );
+            Map<String, Object> svcPayload = new HashMap<>();
+            svcPayload.put("host_id", svc.getHost_id());
+            svcPayload.put("role", svc.getRole());
+            svcPayload.put("node_id", svc.getNode_id());
+            svcPayload.put("operation", "deploy");
+            svcPayload.put("serviceConfigJson", buildServiceConfigJson(deploymentConfig, svc));
+            deployOrderPayload.add(svcPayload);
         }
+
+        Map<String, Object> jobPayload = new HashMap<>();
+        jobPayload.put("clusterId", cluster.getId().toString());
+        jobPayload.put("deployOrder", deployOrderPayload);
+        jobPayload.put("finalArtifactUrl", finalArtifactUrl);
+        jobPayload.put("quorumVoters", quorumVoters);
+        jobPayload.put("kafkaVersion", request.getKafka_version());
+
+        Job job = new Job();
+        job.setType(JobType.DEPLOYMENT);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("cluster:" + cluster.getId());
+        try {
+            job.setPayload(objectMapper.writeValueAsString(jobPayload));
+        } catch (Exception e) {
+            job.setPayload("{}");
+        }
+        Job savedJob = jobService.createJob(job, deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode));
         
-        activityAlertService.logActivity("INFO", "Initialized deployment for cluster: " + request.getName(), cluster.getId());
+        activityAlertService.logActivity("INFO", "Created deployment job for cluster: " + request.getName(), cluster.getId());
         
-        return ResponseEntity.ok(Map.of("id", cluster.getId().toString()));
+        return ResponseEntity.ok(Map.of(
+            "id", cluster.getId().toString(),
+            "jobId", savedJob.getId().toString()
+        ));
     }
 
+    @PostMapping("/validate-kraft")
+    public ResponseEntity<Map<String, Object>> validateKraftTopology(@RequestBody DeployClusterRequest request) {
+        if (!"kraft".equals(normalizeDeploymentMode(request.getMode()))) {
+            return ResponseEntity.badRequest().body(Map.of("errors", List.of("KRaft validation requires KRaft mode.")));
+        }
+        if (request.getServices() == null || request.getServices().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("errors", List.of("Select at least one service.")));
+        }
+        Map<String, Object> config = buildDeploymentConfig(request, "kraft");
+        Map<String, Object> report = kraftValidationReport(request, config);
+        report.put("generatedConfig", Map.of(
+                "cluster_uuid", String.valueOf(config.get("cluster_uuid")),
+                "kraft_quorum_mode", String.valueOf(config.get("kraft_quorum_mode")),
+                "quorum_voters", String.valueOf(config.getOrDefault("quorum_voters", "")),
+                "quorum_bootstrap_servers", String.valueOf(config.getOrDefault("quorum_bootstrap_servers", "")),
+                "initial_controllers", String.valueOf(config.getOrDefault("initial_controllers", ""))
+        ));
+        return ResponseEntity.ok(report);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/nodes")
     public ResponseEntity<Map<String, String>> addNodesToCluster(@PathVariable UUID id, @RequestBody DeployClusterRequest request) {
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
@@ -316,22 +358,42 @@ public class ClusterController {
         List<ServiceAssignmentReq> deployOrder = request.getServices().stream()
                 .sorted((left, right) -> Boolean.compare(!isMetadataService(left.getRole()), !isMetadataService(right.getRole())))
                 .toList();
+        List<Map<String, Object>> deployOrderPayload = new ArrayList<>();
         for (ServiceAssignmentReq svc : deployOrder) {
-            deploymentService.deployKafkaToHost(
-                    cluster.getId(),
-                    svc.getHost_id(),
-                    cluster.getKafkaVersion(),
-                    finalArtifactUrl,
-                    "",
-                    String.valueOf(svc.getNode_id()),
-                    quorumVoters,
-                    svc.getRole(),
-                    buildServiceConfigJson(deploymentConfig, svc)
-            );
+            Map<String, Object> svcPayload = new HashMap<>();
+            svcPayload.put("host_id", svc.getHost_id());
+            svcPayload.put("role", svc.getRole());
+            svcPayload.put("node_id", svc.getNode_id());
+            svcPayload.put("operation", "deploy");
+            svcPayload.put("serviceConfigJson", buildServiceConfigJson(deploymentConfig, svc));
+            deployOrderPayload.add(svcPayload);
         }
 
-        activityAlertService.logActivity("INFO", "Scheduled node addition for cluster: " + cluster.getName(), cluster.getId());
-        return ResponseEntity.ok(Map.of("id", cluster.getId().toString(), "status", "scheduled"));
+        Map<String, Object> jobPayload = new HashMap<>();
+        jobPayload.put("clusterId", cluster.getId().toString());
+        jobPayload.put("finalArtifactUrl", finalArtifactUrl);
+        jobPayload.put("quorumVoters", quorumVoters);
+        jobPayload.put("kafkaVersion", cluster.getKafkaVersion());
+        jobPayload.put("addNode", true);
+
+        Job job = new Job();
+        job.setType(JobType.ADD_HOST);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("cluster:" + cluster.getId());
+        try {
+            job.setPayload(objectMapper.writeValueAsString(jobPayload));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to create add-node job payload", e);
+        }
+        Job savedJob = jobService.createJob(job, deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode));
+
+        activityAlertService.logActivity("INFO", "Created add-node job for cluster: " + cluster.getName(), cluster.getId());
+        return ResponseEntity.ok(Map.of(
+                "id", cluster.getId().toString(),
+                "jobId", savedJob.getId().toString(),
+                "status", "scheduled"
+        ));
     }
 
     @PostMapping("/external")
@@ -460,6 +522,152 @@ public class ClusterController {
         return ResponseEntity.ok(Map.of("status", "scheduled", "targetVersion", targetVersion));
     }
 
+    private List<JobStep> deploymentJobSteps(
+            List<Map<String, Object>> deploymentOrder,
+            Map<String, Object> deploymentConfig,
+            String deploymentMode
+    ) {
+        List<JobStep> steps = new ArrayList<>();
+        if (!"kraft".equals(deploymentMode)) {
+            for (Map<String, Object> service : deploymentOrder) {
+                if (isZooKeeperRole(String.valueOf(service.get("role")))) {
+                    steps.add(deploymentStep(steps.size() + 1, service));
+                }
+            }
+
+            String zookeeperConnect = String.valueOf(deploymentConfig.getOrDefault("zookeeper_connect", ""));
+            String firstZkHost = firstZooKeeperHost(deploymentConfig);
+            if (!firstZkHost.isBlank()) {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("operation", "verify_zk_quorum");
+                payload.put("host_id", firstZkHost);
+                payload.put("zookeeper_connect", zookeeperConnect);
+                payload.put("serviceConfigJson", writeJson(deploymentConfig));
+                steps.add(jobStep(
+                        steps.size() + 1,
+                        firstZkHost,
+                        "Verify ZooKeeper quorum",
+                        payload
+                ));
+            }
+
+            for (Map<String, Object> service : deploymentOrder) {
+                if (isBrokerRole(String.valueOf(service.get("role")))) {
+                    steps.add(deploymentStep(steps.size() + 1, service));
+                }
+            }
+            return steps;
+        }
+
+        for (Map<String, Object> service : deploymentOrder) {
+            if (isControllerRole(String.valueOf(service.get("role")))) {
+                steps.add(deploymentStep(steps.size() + 1, service));
+            }
+        }
+
+        String controllerEndpoints = String.valueOf(deploymentConfig.getOrDefault("controller_endpoints", ""));
+        Set<String> connectivityHosts = new HashSet<>();
+        for (Map<String, Object> service : deploymentOrder) {
+            String hostId = String.valueOf(service.get("host_id"));
+            if (!connectivityHosts.add(hostId)) continue;
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("operation", "connectivity");
+            payload.put("host_id", hostId);
+            payload.put("controller_endpoints", controllerEndpoints);
+            steps.add(jobStep(
+                    steps.size() + 1,
+                    hostId,
+                    "Check controller connectivity from " + hostId,
+                    payload
+            ));
+        }
+
+        for (Map<String, Object> service : deploymentOrder) {
+            if (!isControllerRole(String.valueOf(service.get("role")))) {
+                steps.add(deploymentStep(steps.size() + 1, service));
+            }
+        }
+
+        String controllerHost = firstControllerHost(deploymentConfig);
+        if (!controllerHost.isBlank()) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("operation", "verify_quorum");
+            payload.put("host_id", controllerHost);
+            payload.put("controller_endpoints", controllerEndpoints);
+            payload.put("cluster_uuid", String.valueOf(deploymentConfig.getOrDefault("cluster_uuid", "")));
+            payload.put("expected_controller_count", String.valueOf(controllerCount(deploymentConfig)));
+            payload.put("serviceConfigJson", writeJson(deploymentConfig));
+            steps.add(jobStep(
+                    steps.size() + 1,
+                    controllerHost,
+                    "Verify KRaft leader and cluster identity",
+                    payload
+            ));
+        }
+        return steps;
+    }
+
+    private JobStep deploymentStep(int order, Map<String, Object> service) {
+        return jobStep(
+                order,
+                String.valueOf(service.get("host_id")),
+                "Deploy " + service.get("role") + " node " + service.get("node_id")
+                        + " on " + service.get("host_id"),
+                service
+        );
+    }
+
+    private JobStep jobStep(int order, String targetId, String name, Map<String, Object> payload) {
+        JobStep step = new JobStep();
+        step.setStepOrder(order);
+        step.setTargetId(targetId);
+        step.setName(name);
+        step.setPayload(writeJson(payload));
+        return step;
+    }
+
+    private String firstControllerHost(Map<String, Object> deploymentConfig) {
+        Object topologyValue = deploymentConfig.get("service_topology");
+        if (!(topologyValue instanceof List<?> topology)) return "";
+        for (Object itemValue : topology) {
+            if (!(itemValue instanceof Map<?, ?> item)) continue;
+            if (isControllerRole(String.valueOf(item.get("role")))) {
+                return String.valueOf(item.get("hostId"));
+            }
+        }
+        return "";
+    }
+
+    private String firstZooKeeperHost(Map<String, Object> deploymentConfig) {
+        Object topologyValue = deploymentConfig.get("service_topology");
+        if (!(topologyValue instanceof List<?> topology)) return "";
+        for (Object itemValue : topology) {
+            if (!(itemValue instanceof Map<?, ?> item)) continue;
+            if (isZooKeeperRole(String.valueOf(item.get("role")))) {
+                return String.valueOf(item.get("hostId"));
+            }
+        }
+        return "";
+    }
+
+    private long controllerCount(Map<String, Object> deploymentConfig) {
+        Object topologyValue = deploymentConfig.get("service_topology");
+        if (!(topologyValue instanceof List<?> topology)) return 0;
+        return topology.stream()
+                .filter(itemValue -> itemValue instanceof Map<?, ?>)
+                .map(itemValue -> (Map<?, ?>) itemValue)
+                .filter(item -> isControllerRole(String.valueOf(item.get("role"))))
+                .count();
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to serialize deployment job step", e);
+        }
+    }
+
     @Data
     static class DeployClusterRequest {
         private String name;
@@ -469,6 +677,7 @@ public class ClusterController {
         private Map<String, Object> config;
         private String environment;
         private String artifactUrl;
+        private boolean acknowledge_kraft_risk;
     }
 
     @Data
@@ -629,6 +838,23 @@ public class ClusterController {
         if (!zookeeperMode && !hasController) {
             return ResponseEntity.badRequest().body(Map.of("error", "KRaft deployments require at least one controller or broker-controller node."));
         }
+        if (!zookeeperMode) {
+            Map<String, Object> config = buildDeploymentConfig(request, deploymentMode);
+            Map<String, Object> report = kraftValidationReport(request, config);
+            @SuppressWarnings("unchecked")
+            List<String> errors = (List<String>) report.get("errors");
+            @SuppressWarnings("unchecked")
+            List<String> warnings = (List<String>) report.get("warnings");
+            if (!errors.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", errors.get(0)));
+            }
+            if (!warnings.isEmpty() && !request.isAcknowledge_kraft_risk()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error",
+                        "Acknowledge the KRaft availability warning before deployment: " + warnings.get(0)
+                ));
+            }
+        }
         return null;
     }
 
@@ -722,7 +948,19 @@ public class ClusterController {
         } else {
             int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
             config.put("controller_port", controllerPort);
-            config.put("quorum_voters", buildQuorumVoters(request.getServices(), controllerPort));
+            String quorumMode = normalizedKraftQuorumMode(request.getKafka_version(), config.get("kraft_quorum_mode"));
+            String quorumVoters = buildQuorumVoters(request.getServices(), controllerPort);
+            String quorumBootstrapServers = buildControllerBootstrapServers(request.getServices(), controllerPort);
+            config.put("kraft_quorum_mode", quorumMode);
+            config.put("quorum_bootstrap_servers", quorumBootstrapServers);
+            config.put("controller_endpoints", quorumBootstrapServers);
+            if ("dynamic".equals(quorumMode)) {
+                config.remove("quorum_voters");
+                config.putIfAbsent("initial_controllers", buildInitialControllers(request.getServices(), controllerPort));
+            } else {
+                config.put("quorum_voters", quorumVoters);
+                config.remove("initial_controllers");
+            }
             config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
             config.putIfAbsent("cluster_uuid", generateKafkaClusterUuid());
         }
@@ -786,6 +1024,123 @@ public class ClusterController {
                     .append(controllerPort);
         }
         return quorumVoters.toString();
+    }
+
+    private String buildControllerBootstrapServers(List<ServiceAssignmentReq> services, int controllerPort) {
+        return services.stream()
+                .filter(service -> isControllerRole(service.getRole()))
+                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + controllerPort)
+                .collect(Collectors.joining(","));
+    }
+
+    private String buildInitialControllers(List<ServiceAssignmentReq> services, int controllerPort) {
+        return services.stream()
+                .filter(service -> isControllerRole(service.getRole()))
+                .map(service -> service.getNode_id() + "@" + resolveHostAddress(service.getHost_id()) + ":"
+                        + controllerPort + ":" + generateKafkaClusterUuid())
+                .collect(Collectors.joining(","));
+    }
+
+    private String normalizedKraftQuorumMode(String kafkaVersion, Object configured) {
+        String requested = configured == null ? "" : String.valueOf(configured).trim().toLowerCase();
+        if ("static".equals(requested) || "dynamic".equals(requested)) return requested;
+        int[] version = parseKafkaVersion(kafkaVersion);
+        return version[0] >= 4 || (version[0] == 3 && version[1] >= 9) ? "dynamic" : "static";
+    }
+
+    private Map<String, Object> kraftValidationReport(DeployClusterRequest request, Map<String, Object> config) {
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        Set<Integer> ids = new HashSet<>();
+        Set<String> controllerEndpoints = new HashSet<>();
+        int controllerCount = 0;
+        int brokerCount = 0;
+        int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+
+        for (ServiceAssignmentReq service : request.getServices()) {
+            String role = service.getRole() == null ? "" : service.getRole();
+            String address = resolveHostAddress(service.getHost_id());
+            Integer nodeId = service.getNode_id();
+            if (nodeId == null || nodeId < 1 || !ids.add(nodeId)) {
+                errors.add("Every KRaft process must have a unique positive node.id. Duplicate or invalid id: " + nodeId + ".");
+            }
+            if (!isRoleAllowedForMode(role, "kraft")) {
+                errors.add("Invalid KRaft role " + role + " on " + service.getHost_id() + ".");
+            }
+            if (isControllerRole(role)) {
+                controllerCount++;
+                String endpoint = address + ":" + controllerPort;
+                if (!controllerEndpoints.add(endpoint)) {
+                    errors.add("Controller endpoint " + endpoint + " is assigned more than once.");
+                }
+            }
+            if (isBrokerRole(role)) brokerCount++;
+            nodes.add(Map.of(
+                    "hostId", String.valueOf(service.getHost_id()),
+                    "address", address,
+                    "nodeId", nodeId == null ? 0 : nodeId,
+                    "role", role
+            ));
+        }
+
+        if (controllerCount == 0) errors.add("At least one KRaft controller is required.");
+        if (brokerCount == 0) errors.add("At least one KRaft broker is required.");
+        if (controllerPort < 1 || controllerPort > 65535) errors.add("Controller port must be between 1 and 65535.");
+
+        String clusterId = String.valueOf(config.getOrDefault("cluster_uuid", ""));
+        if (!clusterId.matches("[A-Za-z0-9_-]{20,24}")) {
+            errors.add("Kafka storage cluster ID is missing or invalid.");
+        }
+
+        String quorumMode = String.valueOf(config.getOrDefault("kraft_quorum_mode", "static"));
+        String expectedVoters = buildQuorumVoters(request.getServices(), controllerPort);
+        String expectedBootstrap = buildControllerBootstrapServers(request.getServices(), controllerPort);
+        Object suppliedVoters = request.getConfig() == null ? null : request.getConfig().get("quorum_voters");
+        if ("static".equals(quorumMode)) {
+            if (!expectedVoters.equals(String.valueOf(config.getOrDefault("quorum_voters", "")))) {
+                errors.add("controller.quorum.voters does not exactly match the selected controller IDs and endpoints.");
+            }
+            if (suppliedVoters != null && !String.valueOf(suppliedVoters).isBlank()
+                    && !expectedVoters.equals(String.valueOf(suppliedVoters))) {
+                errors.add("The supplied controller.quorum.voters conflicts with the selected topology.");
+            }
+        } else {
+            if (suppliedVoters != null && !String.valueOf(suppliedVoters).isBlank()) {
+                errors.add("Dynamic KRaft quorum must not configure controller.quorum.voters.");
+            }
+            if (!expectedBootstrap.equals(String.valueOf(config.getOrDefault("quorum_bootstrap_servers", "")))) {
+                errors.add("controller.quorum.bootstrap.servers does not match the selected controllers.");
+            }
+            String initialControllers = String.valueOf(config.getOrDefault("initial_controllers", ""));
+            if (initialControllers.split(",").length != controllerCount) {
+                errors.add("Dynamic quorum initial controller membership is incomplete.");
+            }
+        }
+
+        String environment = request.getEnvironment() == null ? "" : request.getEnvironment().trim().toUpperCase();
+        boolean weakQuorum = controllerCount < 3;
+        boolean evenQuorum = controllerCount > 1 && controllerCount % 2 == 0;
+        if (weakQuorum) warnings.add(controllerCount + " controller quorum tolerates no controller failure; 3 controllers are recommended.");
+        if (evenQuorum) warnings.add("Even controller count " + controllerCount + " provides no additional failure tolerance over " + (controllerCount - 1) + ".");
+        if (controllerCount > 5) warnings.add("Controller count " + controllerCount + " is unusual; 3 or 5 controllers are recommended.");
+        if ("UAT".equals(environment) && (weakQuorum || evenQuorum)) {
+            errors.add("UAT requires an odd KRaft controller quorum with at least 3 controllers.");
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("valid", errors.isEmpty());
+        report.put("errors", errors.stream().distinct().toList());
+        report.put("warnings", warnings.stream().distinct().toList());
+        report.put("acknowledgementRequired", !warnings.isEmpty() && !"UAT".equals(environment));
+        report.put("clusterId", clusterId);
+        report.put("quorumMode", quorumMode);
+        report.put("controllerCount", controllerCount);
+        report.put("brokerCount", brokerCount);
+        report.put("failureTolerance", controllerCount == 0 ? 0 : (controllerCount - 1) / 2);
+        report.put("controllerQuorum", "static".equals(quorumMode) ? expectedVoters : expectedBootstrap);
+        report.put("nodes", nodes);
+        return report;
     }
 
     private String buildZooKeeperConnect(List<ServiceAssignmentReq> services, int zookeeperPort) {

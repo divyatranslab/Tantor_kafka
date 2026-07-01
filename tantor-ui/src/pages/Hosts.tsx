@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
 import './Hosts.css';
 
@@ -12,6 +13,7 @@ type PrereqModalState = {
 };
 
 export function Hosts() {
+  const navigate = useNavigate();
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -32,7 +34,11 @@ export function Hosts() {
   const approveHost = async (id: string) => {
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' });
-      if (res.ok) fetchHosts();
+      if (res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.jobId) navigate(`/jobs/${body.jobId}`);
+        else fetchHosts();
+      }
     } catch (e) { console.error(e); }
   };
 
@@ -159,7 +165,30 @@ export function Hosts() {
   };
 
   const activeHosts = hosts.filter(h => h.status !== 'PENDING');
-  const pendingHosts = hosts.filter(h => h.status === 'PENDING');
+  const activeHostIps = new Set(activeHosts.map(host => displayIp(host.ipAddresses)));
+  const pendingHosts = Array.from(
+    hosts
+      .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h.ipAddresses)))
+      .reduce<Map<string, any>>((byIp, host) => {
+        const ip = displayIp(host.ipAddresses);
+        const existing = byIp.get(ip);
+        const heartbeat = Date.parse(host.lastHeartbeat || '') || 0;
+        const existingHeartbeat = Date.parse(existing?.lastHeartbeat || '') || 0;
+        const expectedSuffix = `-${ip.split('.').pop()}`;
+        const isCanonicalId = String(host.id || '').endsWith(expectedSuffix);
+        const existingIsCanonicalId = String(existing?.id || '').endsWith(expectedSuffix);
+
+        if (
+          !existing
+          || (isCanonicalId && !existingIsCanonicalId)
+          || (isCanonicalId === existingIsCanonicalId && heartbeat > existingHeartbeat)
+        ) {
+          byIp.set(ip, host);
+        }
+        return byIp;
+      }, new Map<string, any>())
+      .values(),
+  );
 
   return (
     <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
