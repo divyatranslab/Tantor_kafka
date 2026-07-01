@@ -117,7 +117,7 @@ export function ClusterActions() {
         if (res.ok) {
           const data = await res.json();
           setStatus(data.status);
-          if (data.status.startsWith('COMPLETED') || data.status.startsWith('FAILED')) {
+          if (data.status.startsWith('COMPLETED') || data.status.startsWith('FAILED') || data.status.startsWith('PAUSED')) {
             clearInterval(interval);
           }
         }
@@ -214,7 +214,7 @@ export function ClusterActions() {
               className="btn btn-primary-action"
               style={{ width: '100%', justifyContent: 'center' }}
               onClick={triggerRollingRestart}
-              disabled={!externalCanRestart || loading || (taskId != null && !status.startsWith('COMPLETED') && !status.startsWith('FAILED'))}
+              disabled={!externalCanRestart || loading || (taskId != null && !status.startsWith('COMPLETED') && !status.startsWith('FAILED') && !status.startsWith('PAUSED'))}
               title={!externalCanRestart ? 'Attach the discovery agent to enable restart control' : 'Start rolling restart'}
             >
               <Play size={16} /> Start Rolling Restart
@@ -228,7 +228,7 @@ export function ClusterActions() {
                 <Activity size={16} color="#3b82f6" /> Live Task Status
               </h4>
               <div style={{ backgroundColor: '#111827', borderRadius: '0.5rem', padding: '1rem', fontFamily: 'monospace', fontSize: '0.875rem', boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)', position: 'relative', overflow: 'hidden' }}>
-                {!status.startsWith('COMPLETED') && !status.startsWith('FAILED') && (
+                {!status.startsWith('COMPLETED') && !status.startsWith('FAILED') && !status.startsWith('PAUSED') && (
                   <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px' }}>
                     <div style={{ height: '100%', backgroundColor: '#3b82f6', width: '33%', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}></div>
                   </div>
@@ -236,12 +236,12 @@ export function ClusterActions() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
                   {status.startsWith('COMPLETED') ? (
                     <CheckCircle2 size={18} color="#34d399" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  ) : status.startsWith('FAILED') ? (
+                  ) : status.startsWith('FAILED') || status.startsWith('PAUSED') ? (
                     <XCircle size={18} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
                   ) : (
                     <RefreshCw size={18} color="#60a5fa" className="spin" style={{ flexShrink: 0, marginTop: '2px' }} />
                   )}
-                  <span style={{ wordBreak: 'break-all', color: status.startsWith('FAILED') ? '#fca5a5' : '#d1d5db' }}>
+                  <span style={{ wordBreak: 'break-all', color: status.startsWith('FAILED') || status.startsWith('PAUSED') ? '#fca5a5' : '#d1d5db' }}>
                     {status}
                   </span>
                 </div>
