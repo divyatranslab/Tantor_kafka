@@ -4,8 +4,8 @@ import (
 	"context"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/pkg/api"
-	"os"
 	"net"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -32,7 +32,7 @@ func NewCollector(hostID string) *Collector {
 func (c *Collector) GetHeartbeat() *api.HostHeartbeat {
 	// Get real memory stats
 	v, _ := mem.VirtualMemory()
-	
+
 	// Get real CPU usage (averaged over 1 second)
 	cpuPercents, _ := cpu.Percent(time.Second, false)
 	cpuUsage := 0.0
@@ -63,14 +63,24 @@ func (c *Collector) GetHeartbeat() *api.HostHeartbeat {
 // GetRegistration collects static details for initial registration
 func (c *Collector) GetRegistration() *api.HostRegistration {
 	hostname, _ := os.Hostname()
-	
+
 	return &api.HostRegistration{
 		HostID:      c.hostID,
 		Hostname:    hostname,
 		IPAddresses: c.getLocalIPs(),
 		OSDetails:   runtime.GOOS + "_" + runtime.GOARCH,
 		AgentVer:    "1.0.0",
+		AgentName:   "tantor-agent@" + hostname,
+		AgentPath:   executablePath(),
 	}
+}
+
+func executablePath() string {
+	path, err := os.Executable()
+	if err != nil {
+		return "unknown"
+	}
+	return path
 }
 
 // getLocalIPs dynamically fetches non-loopback IP addresses of the host

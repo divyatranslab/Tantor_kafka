@@ -13,4 +13,6 @@ public class HostRegistrationDto {
     private List<String> ipAddresses;
     private String osDetails;
     private String agentVersion;
+    private String agentName;
+    private String agentPath;
 }

@@ -3,22 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
 import './Hosts.css';
 
-type PrereqModalState = {
-  host: any;
-  taskId?: string;
-  status: string;
-  logOutput: string;
-  errorMsg: string;
-  loading: boolean;
-};
-
 export function Hosts() {
   const navigate = useNavigate();
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
-  const [prereqModal, setPrereqModal] = useState<PrereqModalState | null>(null);
 
   const fetchHosts = async () => {
     setLoading(true);
@@ -75,74 +65,11 @@ export function Hosts() {
       alert('Network error while updating host availability.');
     }
   };
-  const startPrerequisiteCheck = async (host: any) => {
-    setOpenMenuHostId(null);
-    setPrereqModal({
-      host,
-      status: 'QUEUING',
-      logOutput: 'Queuing prerequisite check on the agent...',
-      errorMsg: '',
-      loading: true,
-    });
-
-    try {
-      const res = await fetch(`/api/v1/ui/hosts/${host.id}/check-prerequisites`, { method: 'POST' });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setPrereqModal({
-          host,
-          status: 'FAILED',
-          logOutput: '',
-          errorMsg: body.message || 'Failed to queue prerequisite check.',
-          loading: false,
-        });
-        return;
-      }
-      setPrereqModal({
-        host,
-        taskId: body.taskId,
-        status: 'PENDING',
-        logOutput: 'Task queued. Waiting for agent to pick it up...',
-        errorMsg: '',
-        loading: true,
-      });
-    } catch (e) {
-      setPrereqModal({
-        host,
-        status: 'FAILED',
-        logOutput: '',
-        errorMsg: 'Network error while queuing prerequisite check.',
-        loading: false,
-      });
-    }
-  };
-
   useEffect(() => {
     fetchHosts();
     const t = setInterval(fetchHosts, 5000);
     return () => clearInterval(t);
   }, []);
-
-  useEffect(() => {
-    if (!prereqModal?.taskId || !prereqModal.loading) return;
-    const poll = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/v1/ui/hosts/${prereqModal.host.id}/check-prerequisites/${prereqModal.taskId}`);
-        if (!res.ok) return;
-        const body = await res.json();
-        setPrereqModal(prev => prev ? {
-          ...prev,
-          status: body.status || prev.status,
-          logOutput: body.logOutput || prev.logOutput,
-          errorMsg: body.errorMsg || '',
-          loading: ['PENDING', 'IN_PROGRESS', 'RUNNING'].includes(String(body.status || '').toUpperCase()),
-        } : prev);
-      } catch (e) {
-        console.error(e);
-      }
-    }, 1500);
-    return () => clearInterval(poll);
-  }, [prereqModal?.taskId, prereqModal?.host?.id, prereqModal?.loading]);
 
   const parseIpList = (raw: any): string[] => {
     if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
@@ -214,9 +141,10 @@ export function Hosts() {
             <tr>
               <th>Status</th>
               <th>Availability</th>
+              <th>Host ID</th>
               <th>Hostname</th>
               <th>IP address</th>
-              <th>Agent version</th>
+              <th>Agent</th>
               <th>CPU</th>
               <th>Memory</th>
               <th>Actions</th>
@@ -225,7 +153,7 @@ export function Hosts() {
           <tbody>
             {activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <div className="empty-state">
                     {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
@@ -260,12 +188,13 @@ export function Hosts() {
                       )}
                     </div>
                   </td>
+                  <td className="text-secondary">{host.hostId ?? '-'}</td>
                   <td className="font-medium">{host.hostname}</td>
                   <td className="text-secondary">{ip}</td>
                   <td className="text-secondary">
                     <div className="agent-kind-cell">
-                      <span>{host.agentVersion || 'N/A'}</span>
-                      <small>{discoveryAgent ? 'Kafka discovery' : 'Host management'}</small>
+                      <span>{host.agentName || 'N/A'} · {host.agentVersion || 'N/A'}</span>
+                      <small>{host.agentId} · {host.agentPath || 'Path unavailable'} · {host.agentStatus || 'OFFLINE'}</small>
                     </div>
                   </td>
                   <td>
@@ -298,7 +227,6 @@ export function Hosts() {
                       </button>
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
-                          <button onClick={() => startPrerequisiteCheck(host)}>Check prerequisite</button>
                           {host.status === 'UNAVAILABLE' ? (
                             <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
                           ) : (
@@ -318,31 +246,6 @@ export function Hosts() {
           </tbody>
         </table>
       </div>
-
-      {prereqModal && (
-        <div className="modal-overlay" onClick={() => setPrereqModal(null)}>
-          <div className="modal prerequisite-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <div>
-                <h2>Prerequisite check</h2>
-                <p className="modal-subtitle">{prereqModal.host.hostname} - {displayIp(prereqModal.host.ipAddresses)}</p>
-              </div>
-              <button className="modal-close" onClick={() => setPrereqModal(null)}>
-                <X size={14} />
-              </button>
-            </div>
-            <div className={`prereq-status ${(prereqModal.status || '').toLowerCase()}`}>
-              {prereqModal.loading ? 'Running' : prereqModal.status}
-            </div>
-            <pre className="terminal-output">
-{prereqModal.errorMsg ? `${prereqModal.errorMsg}\n\n` : ''}{prereqModal.logOutput || 'Waiting for output...'}
-            </pre>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setPrereqModal(null)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>

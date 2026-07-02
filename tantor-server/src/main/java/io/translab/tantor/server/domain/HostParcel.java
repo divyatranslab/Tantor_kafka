@@ -19,6 +19,9 @@ public class HostParcel {
     @Column(name = "host_id", nullable = false)
     private String hostId;
 
+    @Column(name = "host_ip")
+    private String hostIp;
+
     @Column(name = "artifact_id", nullable = false)
     private UUID artifactId;
 

@@ -46,12 +46,15 @@ public class AgentService {
         host.setId(dto.getHostId());
         host.setHostname(dto.getHostname());
         try {
-            host.setIpAddresses(objectMapper.writeValueAsString(dto.getIpAddresses()));
+            host.setIpAddresses(objectMapper.writeValueAsString(selectHostIp(dto.getIpAddresses())));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize IPs for host {}", dto.getHostId(), e);
         }
         host.setOsDetails(dto.getOsDetails());
         host.setAgentVersion(dto.getAgentVersion());
+        host.setAgentName(dto.getAgentName());
+        host.setAgentPath(dto.getAgentPath());
+        host.setAgentStatus("ONLINE");
         if (host.getStatus() == null) {
             host.setStatus("PENDING");
         } else if (!"PENDING".equals(host.getStatus()) && !"UNAVAILABLE".equalsIgnoreCase(host.getStatus())) {
@@ -82,6 +85,7 @@ public class AgentService {
             host.setDiskUsedGb(dto.getDiskUsedGb());
             host.setJavaVersion(dto.getJavaVersion());
             host.setLastHeartbeat(OffsetDateTime.now());
+            host.setAgentStatus("ONLINE");
             if (!"PENDING".equals(host.getStatus()) && !"UNAVAILABLE".equalsIgnoreCase(host.getStatus())) {
                 host.setStatus("ONLINE");
             }
@@ -89,6 +93,25 @@ public class AgentService {
             log.debug("Processed heartbeat for host: {}", dto.getHostId());
             return true;
         }).orElse(false);
+    }
+
+    private List<String> selectHostIp(List<String> addresses) {
+        if (addresses == null) return List.of();
+        String selected = addresses.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(ip -> ip.matches("^(?:\\d{1,3}\\.){3}\\d{1,3}$"))
+                .filter(ip -> !ip.startsWith("127.") && !ip.startsWith("169.254."))
+                .sorted(java.util.Comparator.comparingInt(this::ipPriority))
+                .findFirst().orElse(null);
+        return selected == null ? List.of() : List.of(selected);
+    }
+
+    private int ipPriority(String ip) {
+        if (ip.startsWith("192.168.")) return 0;
+        if (ip.startsWith("10.")) return 1;
+        if (ip.matches("^172\\.(1[6-9]|2\\d|3[01])\\..*")) return 2;
+        return 3;
     }
 
     @Transactional

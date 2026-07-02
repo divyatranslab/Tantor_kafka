@@ -6,7 +6,6 @@ import io.translab.tantor.artifact.domain.ArtifactStatus;
 import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.dto.ManifestDto;
-import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
 import io.translab.tantor.artifact.repository.ArtifactDownloadLogRepository;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
@@ -64,8 +63,6 @@ class ArtifactServiceTest {
 
     @Test
     void uploadStoresAndMarksAvailable() {
-        when(repository.existsByServiceTypeAndVersionAndClassifier(ServiceType.KAFKA, "3.7.0", null))
-                .thenReturn(false);
         when(storageService.storeTemporarily(eq("kafka_2.13-3.7.0.tgz"), any(InputStream.class)))
                 .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("abc123", "md5val", 100L)));
 
@@ -73,24 +70,25 @@ class ArtifactServiceTest {
 
         assertThat(result.getStatus()).isEqualTo(ArtifactStatus.AVAILABLE);
         assertThat(result.getChecksumSha256()).isEqualTo("abc123");
-        assertThat(result.getRelativePath()).isEqualTo("kafka/3.7.0/kafka_2.13-3.7.0.tgz");
-        verify(storageService).writeManifest(eq("kafka/3.7.0"), anyString());
+        assertThat(result.getRelativePath()).startsWith("kafka/3.7.0/")
+                .endsWith("/kafka_2.13-3.7.0.tgz");
+        verify(storageService).writeManifest(eq("kafka/3.7.0/" + result.getId()), anyString());
     }
 
     @Test
-    void uploadRejectsDuplicateWithoutOverwrite() {
-        when(repository.existsByServiceTypeAndVersionAndClassifier(ServiceType.KAFKA, "3.7.0", null))
-                .thenReturn(true);
+    void repeatedUploadCreatesNewHistoryEntry() {
+        when(storageService.storeTemporarily(eq("kafka_2.13-3.7.0.tgz"), any(InputStream.class)))
+                .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("abc123", "md5val", 100L)));
 
-        assertThatThrownBy(() -> service.upload(cmd(null, false), data()))
-                .isInstanceOf(ArtifactAlreadyExistsException.class);
-        verify(storageService, never()).storeTemporarily(any(), any());
+        Artifact first = service.upload(cmd(null, false), data());
+        Artifact second = service.upload(cmd(null, false), data());
+
+        assertThat(first.getId()).isNotEqualTo(second.getId());
+        verify(repository, times(2)).save(any(Artifact.class));
     }
 
     @Test
     void uploadFailsAndCleansUpOnChecksumMismatch() {
-        when(repository.existsByServiceTypeAndVersionAndClassifier(ServiceType.KAFKA, "3.7.0", null))
-                .thenReturn(false);
         when(storageService.storeTemporarily(any(), any()))
                 .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("computed-real", "md5", 100L)));
 

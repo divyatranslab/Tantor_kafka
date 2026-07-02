@@ -17,19 +17,18 @@ public class HostStatusService {
             return "OFFLINE";
         }
 
-        OffsetDateTime lastHeartbeat = host.getLastHeartbeat();
-        long timeoutSeconds = Math.max(heartbeatTimeoutSeconds, 1);
-        
-        if (lastHeartbeat != null && lastHeartbeat.isAfter(OffsetDateTime.now().minusSeconds(timeoutSeconds))) {
-            return "ONLINE";
-        }
-
         String status = host.getStatus();
         if ("PENDING".equalsIgnoreCase(status)) {
             return "PENDING";
         }
         if ("UNAVAILABLE".equalsIgnoreCase(status)) {
             return "UNAVAILABLE";
+        }
+
+        OffsetDateTime lastHeartbeat = host.getLastHeartbeat();
+        long timeoutSeconds = Math.max(heartbeatTimeoutSeconds, 1);
+        if (lastHeartbeat != null && lastHeartbeat.isAfter(OffsetDateTime.now().minusSeconds(timeoutSeconds))) {
+            return "ONLINE";
         }
 
         if (lastHeartbeat == null) {

@@ -13,6 +13,9 @@ interface ClusterInfo {
   nodeCount: number;
   status: string;
   managementLevel?: string;
+  kafkaClusterId?: string;
+  originType?: string;
+  installDirectory?: string;
 }
 
 export function ClusterDetails() {
@@ -128,7 +131,8 @@ export function ClusterDetails() {
             </div>
             <div>
               <h1>{cluster.name}</h1>
-              <p>Kafka {cluster.kafkaVersion} • {cluster.nodeCount} nodes • {cluster.mode}</p>
+              <p>Kafka {cluster.kafkaVersion} · {cluster.nodeCount} nodes · {cluster.originType || (cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL')}</p>
+              <p className="cluster-identity-line">Kafka Cluster ID: <code>{cluster.kafkaClusterId || 'Pending discovery'}</code> · Install directory: <code>{cluster.installDirectory || '-'}</code></p>
             </div>
           </div>
           <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>

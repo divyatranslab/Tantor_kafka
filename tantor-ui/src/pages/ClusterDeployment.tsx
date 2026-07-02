@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Database,
   FileText,
+  Upload,
   Loader2,
   Network,
   Play,
@@ -340,6 +341,7 @@ export function ClusterDeployment() {
   const [kafkaVersion, setKafkaVersion] = useState('');
   const [environment, setEnvironment] = useState('DEV');
   const [clusterConfigMode, setClusterConfigMode] = useState<ConfigMode>('default');
+  const [customImportSummary, setCustomImportSummary] = useState('');
   const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('kraft');
   const [installDir, setInstallDir] = useState('/opt');
   const [dataDir, setDataDir] = useState('/data/kafka');
@@ -658,6 +660,88 @@ export function ClusterDeployment() {
       setCommonConfigs(createCommonConfigs(deploymentMode));
       setCommonConfigKind('server');
     }
+  };
+
+  const parseCsvLine = (line: string) => {
+    const values: string[] = [];
+    let value = '';
+    let quoted = false;
+    for (let index = 0; index < line.length; index++) {
+      const character = line[index];
+      if (character === '"' && line[index + 1] === '"' && quoted) { value += '"'; index++; }
+      else if (character === '"') quoted = !quoted;
+      else if (character === ',' && !quoted) { values.push(value.trim()); value = ''; }
+      else value += character;
+    }
+    values.push(value.trim());
+    return values;
+  };
+
+  const importCustomCsv = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setCustomImportSummary('Only the documented CSV template is supported.');
+      return;
+    }
+    const rows = (await file.text()).split(/\r?\n/).filter(line => line.trim()).map(parseCsvLine);
+    const header = rows.shift()?.map(value => value.toLowerCase()) || [];
+    const scopeIndex = header.indexOf('scope');
+    const keyIndex = header.indexOf('key');
+    const valueIndex = header.indexOf('value');
+    if (scopeIndex < 0 || keyIndex < 0 || valueIndex < 0) {
+      setCustomImportSummary('CSV must contain scope,key,value columns.');
+      return;
+    }
+    const imported: Partial<Record<ConfigKind, PropertyRow[]>> = {};
+    let propertyCount = 0;
+    rows.forEach(row => {
+      const scope = String(row[scopeIndex] || '').toLowerCase();
+      const key = String(row[keyIndex] || '').trim();
+      const value = String(row[valueIndex] || '').trim();
+      if (scope === 'cluster') {
+        if (key === 'cluster_name') setClusterName(value);
+        else if (key === 'environment') setEnvironment(value.toUpperCase());
+        else if (key === 'install_directory') setInstallDir(value);
+        else if (key === 'data_directory') setDataDir(value);
+        else if (key === 'log_directory') setLogDir(value);
+        else if (key === 'artifact_directory') setArtifactLoadDir(value);
+        return;
+      }
+      if (!['server', 'broker', 'controller'].includes(scope) || !key) return;
+      const kind = scope as ConfigKind;
+      imported[kind] = [...(imported[kind] || []), { key, value }];
+      propertyCount++;
+    });
+    setCommonConfigs(current => {
+      const next = { ...current };
+      (['server', 'broker', 'controller'] as ConfigKind[]).forEach(kind => {
+        const additions = imported[kind] || [];
+        if (!additions.length) return;
+        const keys = new Set(additions.map(row => row.key));
+        next[kind] = [...current[kind].filter(row => !keys.has(row.key)), ...additions];
+      });
+      return next;
+    });
+    setClusterConfigMode('custom');
+    setCustomImportSummary(`Imported ${propertyCount} properties and cluster-level deployment details from ${file.name}.`);
+  };
+
+  const downloadCustomTemplate = () => {
+    const csv = [
+      'scope,key,value',
+      'cluster,cluster_name,production-kafka',
+      'cluster,environment,DEV',
+      'cluster,install_directory,/opt',
+      'cluster,data_directory,/data/kafka',
+      'cluster,log_directory,/var/log/kafka',
+      'server,num.partitions,3',
+      'broker,default.replication.factor,3',
+      'controller,controller.listener.names,CONTROLLER',
+    ].join('\n');
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    link.download = 'tantor-cluster-config-template.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   const configuredReplicationFactor = Number.parseInt(commonConfigValue('default.replication.factor') || String(replication.factor), 10);
@@ -1073,6 +1157,24 @@ export function ClusterDeployment() {
                 </div>
               </div>
             </div>
+            {clusterConfigMode === 'custom' && !isAddNodeMode && (
+              <div className="cd-custom-import">
+                <div>
+                  <strong>Import custom cluster configuration</strong>
+                  <p>Use the CSV template for cluster paths and server.properties, broker.properties, and controller.properties. Host details are not imported.</p>
+                </div>
+                <label className="cd-secondary-btn compact">
+                  <Upload size={14} /> Upload CSV
+                  <input type="file" accept=".csv,text/csv" hidden onChange={event => {
+                    const selected = event.target.files?.[0];
+                    if (selected) void importCustomCsv(selected);
+                    event.target.value = '';
+                  }} />
+                </label>
+                <button type="button" className="cd-secondary-btn compact" onClick={downloadCustomTemplate}>Download example</button>
+                {customImportSummary && <span className="cd-import-summary">{customImportSummary}</span>}
+              </div>
+            )}
             <div className="cd-grid-2">
               <label className="cd-field">
                 <span>Cluster name</span>

@@ -60,6 +60,9 @@ public class ClusterController {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
+            m.put("clusterName", c.getName());
+            m.put("originType", c.getOriginType());
+            m.put("installDirectory", c.getInstallDirectory());
             m.put("kafkaVersion", c.getKafkaVersion());
             m.put("mode", c.getMode());
             m.put("environment", c.getEnvironment());
@@ -86,6 +89,8 @@ public class ClusterController {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
+            m.put("clusterName", c.getName());
+            m.put("originType", c.getOriginType());
             m.put("kafkaVersion", c.getKafkaVersion());
             m.put("mode", c.getMode());
             m.put("environment", c.getEnvironment());
@@ -94,6 +99,10 @@ public class ClusterController {
             m.put("bootstrapServers", c.getBootstrapServers());
             m.put("clusterId", c.getId().toString());
             m.put("kafkaClusterId", kafkaClusterId(c));
+            m.put("installDirectory", c.getInstallDirectory());
+            m.put("configDirectory", c.getConfigDirectory());
+            m.put("dataDirectory", c.getDataDirectory());
+            m.put("logDirectory", c.getLogDirectory());
             m.put("config", parseConfigJson(c.getConfigJson()));
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
@@ -177,6 +186,12 @@ public class ClusterController {
         cluster.setMode(deploymentMode);
         cluster.setEnvironment(request.getEnvironment());
         cluster.setBootstrapServers(bootstrapServers);
+        cluster.setOriginType("INTERNAL");
+        cluster.setKafkaClusterId(blankString(deploymentConfig.get("cluster_uuid")));
+        cluster.setInstallDirectory(blankString(deploymentConfig.get("kafka_install_dir")));
+        cluster.setConfigDirectory(activeKafkaInstallDir(deploymentConfig) + "/config");
+        cluster.setDataDirectory(blankString(deploymentConfig.get("kafka_data_dir")));
+        cluster.setLogDirectory(blankString(deploymentConfig.get("kafka_app_log_dir")));
         
         try {
             cluster.setConfigJson(objectMapper.writeValueAsString(deploymentConfig));
@@ -998,7 +1013,8 @@ public class ClusterController {
             item.put("role", role);
             item.put("nodeId", service.getNode_id());
             item.put("serviceName", systemdServiceName(role));
-            item.put("configFile", configFileForRole(role, deploymentMode, installDir));
+            item.put("configFile", configFileForRole(role, deploymentMode,
+                    String.valueOf(config.getOrDefault("version", config.getOrDefault("kafka_version", "0"))), installDir));
             item.put("listenerPort", isBrokerRole(role) ? listenerPort : "");
             item.put("controllerPort", isControllerRole(role) || isZooKeeperRole(role) ? controllerPort : "");
             item.put("logDirs", isBrokerRole(role) ? brokerLogDirs(config, dataDir) : "");
@@ -1196,14 +1212,15 @@ public class ClusterController {
         return "broker";
     }
 
-    private String configFileForRole(String role, String deploymentMode, String installDir) {
+    private String configFileForRole(String role, String deploymentMode, String kafkaVersion, String installDir) {
         if ("zookeeper".equalsIgnoreCase(deploymentMode)) {
             if ("zookeeper".equals(role)) return installDir + "/config/zookeeper.properties";
             return installDir + "/config/server.properties";
         }
-        if ("controller".equals(role)) return installDir + "/config/kraft/controller.properties";
-        if ("broker".equals(role)) return installDir + "/config/kraft/broker.properties";
-        return installDir + "/config/kraft/server.properties";
+        String configRoot = parseKafkaVersion(kafkaVersion)[0] >= 4 ? installDir + "/config" : installDir + "/config/kraft";
+        if ("controller".equals(role)) return configRoot + "/controller.properties";
+        if ("broker".equals(role)) return configRoot + "/broker.properties";
+        return configRoot + "/server.properties";
     }
 
     private String activeKafkaInstallDir(Map<String, Object> config) {
@@ -1297,6 +1314,9 @@ public class ClusterController {
     }
 
     private String kafkaClusterId(Cluster cluster) {
+        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
+            return cluster.getKafkaClusterId();
+        }
         String externalId = externalMetadataValue(cluster, "kafkaClusterId");
         if (externalId != null && !externalId.isBlank()) {
             return externalId;
@@ -1306,6 +1326,10 @@ public class ClusterController {
             return "";
         }
         return kafkaAdminService.getKafkaClusterId(cluster.getId());
+    }
+
+    private String blankString(Object value) {
+        return value == null ? null : (String.valueOf(value).isBlank() ? null : String.valueOf(value));
     }
 
     private Map<String, Object> parseConfigJson(String configJson) {

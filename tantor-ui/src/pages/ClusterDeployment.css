@@ -1094,3 +1094,16 @@
     border-bottom: 1px solid var(--border-subtle);
   }
 }
+.cd-custom-import {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.cd-custom-import > div { flex: 1; }
+.cd-custom-import p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.cd-import-summary { color: var(--success-color, #2e7d32); font-size: 12px; }

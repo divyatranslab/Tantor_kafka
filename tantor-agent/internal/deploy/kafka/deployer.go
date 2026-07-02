@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -788,12 +789,16 @@ func serviceNameForTask(t *api.Task) string {
 }
 
 func configPathForTask(installDir string, t *api.Task) string {
+	configRoot := filepath.Join(installDir, "config", "kraft")
+	if usesFlatKafkaConfigLayout(t.Parameters["version"]) {
+		configRoot = filepath.Join(installDir, "config")
+	}
 	configured := strings.TrimSpace(t.Parameters["config_path"])
 	if configured != "" {
 		if filepath.IsAbs(configured) {
 			return configured
 		}
-		return filepath.Join(installDir, "config", "kraft", configured)
+		return filepath.Join(configRoot, configured)
 	}
 
 	configured = strings.TrimSpace(t.Parameters["config_file"])
@@ -804,19 +809,26 @@ func configPathForTask(installDir string, t *api.Task) string {
 		if configured == "zookeeper.properties" || configured == "server.properties" {
 			return filepath.Join(installDir, "config", configured)
 		}
-		return filepath.Join(installDir, "config", "kraft", configured)
+		return filepath.Join(configRoot, configured)
 	}
 
 	switch serviceNameForTask(t) {
 	case "controller":
-		return filepath.Join(installDir, "config", "kraft", "controller.properties")
+		return filepath.Join(configRoot, "controller.properties")
 	case "broker":
-		return filepath.Join(installDir, "config", "kraft", "broker.properties")
+		return filepath.Join(configRoot, "broker.properties")
 	case "zookeeper":
 		return filepath.Join(installDir, "config", "zookeeper.properties")
 	default:
-		return filepath.Join(installDir, "config", "kraft", "server.properties")
+		return filepath.Join(configRoot, "server.properties")
 	}
+}
+
+func usesFlatKafkaConfigLayout(version string) bool {
+	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
+	majorText := strings.SplitN(version, ".", 2)[0]
+	major, err := strconv.Atoi(majorText)
+	return err == nil && major >= 4
 }
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir, dataDir string) error {
 	if deploymentModeForTask(t) == "zookeeper" {

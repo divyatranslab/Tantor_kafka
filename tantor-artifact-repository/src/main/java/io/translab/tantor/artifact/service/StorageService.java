@@ -92,6 +92,10 @@ public class StorageService {
      */
     public void moveToFinal(Path tempPath, ServiceType type, String version, String classifier, String fileName) {
         String relDir = relativeDir(type, version, classifier);
+        moveToFinal(tempPath, relDir, fileName);
+    }
+
+    public void moveToFinal(Path tempPath, String relDir, String fileName) {
         Path targetDir = resolveSafe(relDir);
         try {
             Files.createDirectories(targetDir);

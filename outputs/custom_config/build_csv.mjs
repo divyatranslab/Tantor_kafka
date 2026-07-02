@@ -1,0 +1,65 @@
+import fs from "node:fs/promises";
+import { Workbook } from "@oai/artifact-tool";
+
+const rows = [
+  ["scope", "key", "value"],
+  ["cluster", "cluster_name", "csv-test-kraft"],
+  ["cluster", "environment", "DEV"],
+  ["cluster", "install_directory", "/opt"],
+  ["cluster", "data_directory", "/data/kafka"],
+  ["cluster", "log_directory", "/var/log/kafka"],
+  ["cluster", "artifact_directory", "/srv/yawar/kafka-artifacts"],
+  ["server", "num.partitions", "3"],
+  ["server", "default.replication.factor", "3"],
+  ["server", "min.insync.replicas", "2"],
+  ["server", "offsets.topic.replication.factor", "3"],
+  ["server", "transaction.state.log.replication.factor", "3"],
+  ["server", "transaction.state.log.min.isr", "2"],
+  ["server", "log.retention.hours", "168"],
+  ["server", "log.segment.bytes", "1073741824"],
+  ["server", "num.network.threads", "3"],
+  ["server", "num.io.threads", "8"],
+  ["server", "socket.send.buffer.bytes", "102400"],
+  ["server", "socket.receive.buffer.bytes", "102400"],
+  ["server", "socket.request.max.bytes", "104857600"],
+  ["broker", "num.partitions", "3"],
+  ["broker", "default.replication.factor", "3"],
+  ["broker", "min.insync.replicas", "2"],
+  ["broker", "offsets.topic.replication.factor", "3"],
+  ["broker", "transaction.state.log.replication.factor", "3"],
+  ["broker", "transaction.state.log.min.isr", "2"],
+  ["broker", "log.retention.hours", "168"],
+  ["broker", "log.segment.bytes", "1073741824"],
+  ["broker", "num.network.threads", "3"],
+  ["broker", "num.io.threads", "8"],
+  ["broker", "socket.send.buffer.bytes", "102400"],
+  ["broker", "socket.receive.buffer.bytes", "102400"],
+  ["broker", "socket.request.max.bytes", "104857600"],
+  ["controller", "controller.listener.names", "CONTROLLER"],
+  ["controller", "listener.security.protocol.map", "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"],
+  ["controller", "num.network.threads", "3"],
+  ["controller", "num.io.threads", "8"],
+  ["controller", "socket.send.buffer.bytes", "102400"],
+  ["controller", "socket.receive.buffer.bytes", "102400"],
+  ["controller", "socket.request.max.bytes", "104857600"],
+];
+
+const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
+const csv = rows.map(row => row.map(quote).join(",")).join("\r\n") + "\r\n";
+const output = new URL("./tantor-kraft-custom-config.csv", import.meta.url);
+await fs.writeFile(output, csv, "utf8");
+
+const workbook = await Workbook.fromCSV(csv, { sheetName: "CustomConfig" });
+const inspection = await workbook.inspect({
+  kind: "table",
+  range: "CustomConfig!A1:C40",
+  include: "values",
+  tableMaxRows: 45,
+  tableMaxCols: 3,
+});
+if (!inspection.ndjson.includes("cluster_name") || !inspection.ndjson.includes("controller.listener.names")) {
+  throw new Error("CSV verification failed");
+}
+
+const preview = await workbook.render({ sheetName: "CustomConfig", range: "A1:C40", scale: 1 });
+await fs.writeFile(new URL("./preview.png", import.meta.url), new Uint8Array(await preview.arrayBuffer()));

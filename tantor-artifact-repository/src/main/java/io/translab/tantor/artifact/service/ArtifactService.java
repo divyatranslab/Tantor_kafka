@@ -7,7 +7,6 @@ import io.translab.tantor.artifact.domain.ArtifactStatus;
 import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.dto.ManifestDto;
-import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.exception.ArtifactNotFoundException;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
 import io.translab.tantor.artifact.repository.ArtifactDownloadLogRepository;
@@ -73,15 +72,6 @@ public class ArtifactService {
     @Transactional
     public Artifact upload(UploadCommand cmd, InputStream data) {
         String classifier = blankToNull(cmd.classifier());
-        boolean exists = repository.existsByServiceTypeAndVersionAndClassifier(
-                cmd.serviceType(), cmd.version(), classifier);
-        if (exists && !cmd.overwrite()) {
-            throw new ArtifactAlreadyExistsException(
-                    "Artifact already exists for %s %s%s (set overwrite=true to replace)"
-                            .formatted(cmd.serviceType(), cmd.version(),
-                                    classifier == null ? "" : " [" + classifier + "]"));
-        }
-
         // 1. Stream bytes to temporary disk location and compute checksums.
         StorageService.TempStoreResult tempStore = storageService.storeTemporarily(cmd.fileName(), data);
         ChecksumResult cs = tempStore.checksumResult();
@@ -97,18 +87,17 @@ public class ArtifactService {
         }
 
         // 3. Prepare index row
-        Artifact artifact = exists
-                ? repository.findByServiceTypeAndVersionAndClassifier(
-                        cmd.serviceType(), cmd.version(), classifier).orElseThrow()
-                : new Artifact();
+        Artifact artifact = new Artifact();
+        artifact.setId(UUID.randomUUID());
+        String artifactDir = storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier)
+                + "/" + artifact.getId();
 
         artifact.setServiceType(cmd.serviceType());
         artifact.setName(cmd.name());
         artifact.setVersion(cmd.version());
         artifact.setClassifier(classifier);
         artifact.setFileName(cmd.fileName());
-        artifact.setRelativePath(storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier)
-                + "/" + cmd.fileName());
+        artifact.setRelativePath(artifactDir + "/" + cmd.fileName());
         artifact.setFileSizeBytes(cs.sizeBytes());
         artifact.setContentType(cmd.contentType() != null ? cmd.contentType() : "application/gzip");
         artifact.setChecksumSha256(cs.sha256());
@@ -120,7 +109,7 @@ public class ArtifactService {
             packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName());
 
             // 5. Move to final and set status AVAILABLE
-            storageService.moveToFinal(tempFile, cmd.serviceType(), cmd.version(), classifier, cmd.fileName());
+            storageService.moveToFinal(tempFile, artifactDir, cmd.fileName());
             artifact.setStatus(ArtifactStatus.AVAILABLE);
             artifact.setDescription(cmd.description()); // original description
 
@@ -128,7 +117,7 @@ public class ArtifactService {
             String manifestJson = manifestService.toJson(manifest);
             artifact.setManifest(manifestJson);
             storageService.writeManifest(
-                    storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier), manifestJson);
+                    artifactDir, manifestJson);
 
         } catch (Exception e) {
             // Package Validation failed

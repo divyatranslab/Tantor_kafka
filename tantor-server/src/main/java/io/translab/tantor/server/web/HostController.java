@@ -247,10 +247,15 @@ public class HostController {
         host.setStatus(effectiveStatus);
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("id", host.getId());
+        summary.put("hostId", host.getHostNumber());
+        summary.put("agentId", host.getId());
         summary.put("hostname", host.getHostname());
         summary.put("ipAddresses", host.getIpAddresses());
         summary.put("osDetails", host.getOsDetails());
         summary.put("agentVersion", host.getAgentVersion());
+        summary.put("agentName", host.getAgentName());
+        summary.put("agentPath", host.getAgentPath());
+        summary.put("agentStatus", effectiveStatus);
         boolean discoveryAgent = hostStatusService.isDiscoveryAgent(host);
         summary.put("agentType", discoveryAgent ? "KAFKA_DISCOVERY" : "HOST");
         summary.put("deployable", !discoveryAgent);

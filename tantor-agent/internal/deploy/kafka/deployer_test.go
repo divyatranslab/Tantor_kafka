@@ -110,6 +110,15 @@ func TestMergeCustomKafkaPropertiesRemovesConflictingQuorumKeys(t *testing.T) {
 	}
 }
 
+func TestUsesFlatKafkaConfigLayout(t *testing.T) {
+	if usesFlatKafkaConfigLayout("3.9.2") {
+		t.Fatal("Kafka 3.9 must retain the config/kraft layout")
+	}
+	if !usesFlatKafkaConfigLayout("4.0.0") {
+		t.Fatal("Kafka 4 must use the flat config layout")
+	}
+}
+
 func TestValidateMetaPropertiesRequiresMatchingIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "meta.properties")
 	if err := os.WriteFile(path, []byte("cluster.id=cluster-identity-12345\nnode.id=101\n"), 0600); err != nil {

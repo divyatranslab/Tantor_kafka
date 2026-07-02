@@ -16,8 +16,26 @@ public class Cluster {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(name = "cluster_name", nullable = false)
     private String name;
+
+    @Column(name = "origin_type", nullable = false)
+    private String originType = "INTERNAL";
+
+    @Column(name = "kafka_cluster_id")
+    private String kafkaClusterId;
+
+    @Column(name = "install_directory")
+    private String installDirectory;
+
+    @Column(name = "config_directory")
+    private String configDirectory;
+
+    @Column(name = "data_directory")
+    private String dataDirectory;
+
+    @Column(name = "log_directory")
+    private String logDirectory;
 
     @Column(name = "kafka_version", nullable = false)
     private String kafkaVersion;

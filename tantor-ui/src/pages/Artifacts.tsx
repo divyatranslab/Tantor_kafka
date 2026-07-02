@@ -29,6 +29,8 @@ interface Host {
 interface HostParcel {
   id: string;
   hostId: string;
+  hostIp?: string;
+  parcelDir?: string;
   artifactId: string;
   serviceType: string;
   version: string;
@@ -54,6 +56,7 @@ export function Artifacts() {
   const [file, setFile] = useState<File | null>(null);
   const [serviceType, setServiceType] = useState('KAFKA');
   const [versionInput, setVersionInput] = useState('');
+  const [distributionDirs, setDistributionDirs] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
   const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
 
@@ -113,7 +116,7 @@ export function Artifacts() {
     form.append('file', file);
     form.append('serviceType', serviceType);
     form.append('version', versionInput);
-    form.append('overwrite', 'true');
+    form.append('overwrite', 'false');
 
     try {
       const res = await fetch('/api/v1/artifacts', { method: 'POST', body: form });
@@ -159,6 +162,7 @@ export function Artifacts() {
           serviceType: ver.service_type,
           version: ver.version,
           fileName: ver.filename,
+          parcelDir: distributionDirs[ver.id] || '/srv/apps/tantor/parcels',
         }),
       });
       if (!res.ok) {
@@ -169,6 +173,44 @@ export function Artifacts() {
       setUploadMsg({ text: `${actionLabel(action)} scheduled on ${host.hostname || host.id}`, ok: true });
     } catch (e: any) {
       setUploadMsg({ text: e.message || `${actionLabel(action)} failed`, ok: false });
+    } finally {
+      setActingKey(null);
+    }
+  };
+
+  const distributeAll = async (ver: ArtifactVersion) => {
+    const eligible = hosts.filter(host =>
+      host.status.toUpperCase() === 'ONLINE'
+      && !getHostParcel(ver.id, host.id)
+    );
+    if (eligible.length === 0) {
+      setUploadMsg({ text: 'No online hosts are waiting for this parcel.', ok: false });
+      return;
+    }
+    const key = `distribute-all-${ver.id}`;
+    setActingKey(key);
+    try {
+      const res = await fetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hostIds: eligible.map(host => host.id),
+          artifactUrl: artifactUrlForAgent(ver),
+          checksum: ver.sha256,
+          serviceType: ver.service_type,
+          version: ver.version,
+          fileName: ver.filename,
+          parcelDir: distributionDirs[ver.id] || '/srv/apps/tantor/parcels',
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || body.error || 'Distribute all failed.');
+      }
+      setUploadMsg({ text: `Distribution scheduled on ${eligible.length} hosts.`, ok: true });
+      await fetchParcelState();
+    } catch (e: any) {
+      setUploadMsg({ text: e.message || 'Distribute all failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -351,6 +393,21 @@ export function Artifacts() {
 
                 {isOpen && (
                   <div className="version-card-body">
+                    <div className="parcel-distribution-controls">
+                      <label>
+                        Destination directory
+                        <input
+                          className="form-control"
+                          value={distributionDirs[ver.id] || '/srv/apps/tantor/parcels'}
+                          onChange={event => setDistributionDirs(current => ({ ...current, [ver.id]: event.target.value }))}
+                          placeholder="/srv/apps/tantor/parcels"
+                        />
+                      </label>
+                      <button className="btn btn-primary-action" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
+                        {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
+                        Distribute all
+                      </button>
+                    </div>
                     {hosts.length === 0 ? (
                       <div className="parcel-empty-hosts">
                         <Server size={18} />
@@ -361,7 +418,7 @@ export function Artifacts() {
                         <div className="parcel-host-row header">
                           <span>Host</span>
                           <span>State</span>
-                          <span>Last update</span>
+                          <span>Destination / IP</span>
                           <span>Actions</span>
                         </div>
                         {hosts.map(host => {
@@ -383,9 +440,7 @@ export function Artifacts() {
                                 </span>
                                 {state?.errorMsg && <p className="parcel-error">{state.errorMsg}</p>}
                               </div>
-                              <span className="parcel-updated">
-                                {state?.updatedAt ? new Date(state.updatedAt).toLocaleTimeString() : '-'}
-                              </span>
+                              <span className="parcel-updated">{state ? `${state.parcelDir || '-'} · ${state.hostIp || '-'}` : '-'}</span>
                               <div className="parcel-actions">
                                 {renderActions(ver, host, state)}
                               </div>

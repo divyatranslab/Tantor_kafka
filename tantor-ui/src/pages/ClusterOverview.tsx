@@ -36,6 +36,11 @@ interface BrokerRow {
 interface ClusterOverviewResponse {
   name: string;
   kafkaClusterId: string;
+  originType: string;
+  installDirectory: string;
+  configDirectory: string;
+  dataDirectory: string;
+  logDirectory: string;
   generatedAt: string;
   warnings: string[];
   uptime: OverviewSummary;
@@ -130,6 +135,18 @@ export function ClusterOverview() {
 
       {error && <Notice kind="error" text={error} />}
       {overview.warnings?.map(warning => <Notice key={warning} kind="warning" text={warning} />)}
+
+      <section className="overview-band">
+        <h2>Cluster identity and paths</h2>
+        <div className="overview-grid uptime">
+          <OverviewTile label="Kafka Cluster ID" value={overview.kafkaClusterId || '-'} />
+          <OverviewTile label="Cluster type" value={overview.originType || '-'} />
+          <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
+          <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
+          <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
+          <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
+        </div>
+      </section>
 
       <section className="overview-band">
         <h2>Uptime</h2>

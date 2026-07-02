@@ -131,6 +131,7 @@ public class ParcelService {
             }
 
             parcel.setHostId(hostId);
+            parcel.setHostIp(primaryIp(host));
             parcel.setArtifactId(artifactId);
             parcel.setServiceType(defaultString(request.getServiceType(), "KAFKA"));
             parcel.setVersion(required(request.getVersion(), "version"));
@@ -175,6 +176,17 @@ public class ParcelService {
             task.setParameters("{}");
         }
         return task;
+    }
+
+    private String primaryIp(Host host) {
+        if (host.getIpAddresses() == null || host.getIpAddresses().isBlank()) return null;
+        try {
+            List<String> values = objectMapper.readValue(host.getIpAddresses(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+            return values.isEmpty() ? null : values.get(0);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private void validateRequest(String command, ParcelActionRequest request) {

@@ -125,6 +125,7 @@ public class ConfigController {
 
         if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode()) && cluster.getServices() != null && !cluster.getServices().isEmpty()) {
             for (ClusterServiceAssignment service : cluster.getServices()) {
+                if ("zookeeper".equalsIgnoreCase(service.getRole())) continue;
                 Map<String, Object> serviceConfig = serviceConfig(config, service);
                 String serviceInstallDir = activeKafkaInstallDir(serviceConfig);
                 Map<String, Object> properties = storedProperties(service);
@@ -137,7 +138,7 @@ public class ConfigController {
                         serviceConfigId(service),
                         serviceConfigLabel(service),
                         serviceConfigDescription(service),
-                        serviceConfigPath(service.getRole(), cluster.getMode(), serviceInstallDir),
+                    serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), serviceInstallDir),
                         service.getRole(),
                         true,
                         properties,
@@ -158,18 +159,6 @@ public class ConfigController {
                 null
         ));
 
-        if ("zookeeper".equalsIgnoreCase(cluster.getMode())) {
-            files.add(configFile(
-                    "zookeeper",
-                    "ZooKeeper Config",
-                    "zookeeper.properties used by ZooKeeper service",
-                    installDir + "/config/zookeeper.properties",
-                    "zookeeper",
-                    false,
-                    buildZooKeeperProperties(config, installDir),
-                    null
-            ));
-        }
         return files;
     }
     private Map<String, Object> configFile(
@@ -213,7 +202,7 @@ public class ConfigController {
             item.put("nodeId", service.getNodeId());
             item.put("serviceName", serviceNameForRole(service.getRole()));
             item.put("systemdUnit", serviceNameForRole(service.getRole()) + ".service");
-            item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), serviceInstallDir));
+            item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), serviceInstallDir));
             item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(serviceConfig, "listener_port", "9092") : "");
             item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(serviceConfig, "controller_port", "9093") : "");
             item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(serviceConfig, defaultKafkaDataDir(serviceConfig)) : "");
@@ -236,14 +225,21 @@ public class ConfigController {
         return serviceNameForRole(service.getRole()) + ".service config for host " + service.getHostId();
     }
 
-    private String serviceConfigPath(String role, String mode, String installDir) {
+    private String serviceConfigPath(String role, String mode, String kafkaVersion, String installDir) {
         if ("zookeeper".equalsIgnoreCase(mode)) {
             if ("zookeeper".equals(role)) return installDir + "/config/zookeeper.properties";
             return installDir + "/config/server.properties";
         }
-        if ("controller".equals(role)) return installDir + "/config/kraft/controller.properties";
-        if ("broker".equals(role)) return installDir + "/config/kraft/broker.properties";
-        return installDir + "/config/kraft/server.properties";
+        String configRoot = kafkaMajorVersion(kafkaVersion) >= 4 ? installDir + "/config" : installDir + "/config/kraft";
+        if ("controller".equals(role)) return configRoot + "/controller.properties";
+        if ("broker".equals(role)) return configRoot + "/broker.properties";
+        return configRoot + "/server.properties";
+    }
+
+    private int kafkaMajorVersion(String version) {
+        if (version == null) return 0;
+        try { return Integer.parseInt(version.trim().replaceFirst("^[vV]", "").split("\\.")[0]); }
+        catch (Exception ignored) { return 0; }
     }
 
     private Map<String, Object> buildKraftServiceProperties(Cluster cluster, Map<String, Object> config, String installDir, ClusterServiceAssignment service) {
@@ -663,12 +659,12 @@ public class ConfigController {
         JobStep step = new JobStep();
         step.setStepOrder(1);
         step.setTargetId(service.getHostId());
-        step.setName("Update " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
+        step.setName("Update " + serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), activeKafkaInstallDir(deploymentConfig))
                 + " on " + service.getHostId());
         step.setPayload(objectMapper.writeValueAsString(stepPayload));
         Job savedJob = jobService.createJob(job, List.of(step));
         activityAlertService.logAudit("INFO", "CONFIGURATION", "UPDATE",
-                "Updated " + serviceConfigPath(service.getRole(), cluster.getMode(), activeKafkaInstallDir(deploymentConfig))
+                "Updated " + serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), activeKafkaInstallDir(deploymentConfig))
                         + " on " + service.getHostId() + (request.isRestart() ? " and queued service restart" : ""),
                 "SERVICE", serviceId.toString(), clusterId,
                 auditProperties(previousPropertiesTemplate), auditProperties(propertiesTemplate), "QUEUED", null,

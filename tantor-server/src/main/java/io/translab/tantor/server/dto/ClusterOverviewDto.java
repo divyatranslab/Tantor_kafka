@@ -19,6 +19,11 @@ public class ClusterOverviewDto {
     private String name;
     private String kafkaVersion;
     private String controllerType;
+    private String originType;
+    private String installDirectory;
+    private String configDirectory;
+    private String dataDirectory;
+    private String logDirectory;
     private OffsetDateTime generatedAt;
     private List<String> warnings;
     private UptimeSummary uptime;

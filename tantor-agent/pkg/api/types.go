@@ -7,6 +7,8 @@ type HostRegistration struct {
 	IPAddresses []string `json:"ip_addresses"`
 	OSDetails   string   `json:"os_details"`
 	AgentVer    string   `json:"agent_version"`
+	AgentName   string   `json:"agent_name"`
+	AgentPath   string   `json:"agent_path"`
 }
 
 // HostHeartbeat Metrics sent periodically
@@ -32,8 +34,8 @@ type Task struct {
 
 // TaskResult reports the result of a task execution
 type TaskResult struct {
-	TaskID    string `json:"task_id"`
-	HostID    string `json:"host_id"`
+	TaskID       string `json:"task_id"`
+	HostID       string `json:"host_id"`
 	Status       string `json:"status"` // SUCCESS, FAILED
 	LogOutput    string `json:"log_output"`
 	ErrorMsg     string `json:"error_msg,omitempty"`

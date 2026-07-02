@@ -80,6 +80,8 @@ public class ExternalClusterService {
 
         cluster.setName(resolveClusterName(request.getName(), inspection));
         cluster.setMode(EXTERNAL_MODE);
+        cluster.setOriginType("EXTERNAL");
+        cluster.setKafkaClusterId(blankToDefault(String.valueOf(inspection.getOrDefault("clusterId", "")), null));
         cluster.setKafkaVersion(blankToDefault(request.getKafkaVersion(), "Unknown"));
         cluster.setEnvironment(request.getEnvironment());
         cluster.setBootstrapServers(mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap));
@@ -215,6 +217,11 @@ public class ExternalClusterService {
     private Cluster saveDiscoveryCluster(ExternalDiscoveryReport report, String bootstrap, Cluster cluster) {
         cluster.setName(cluster.getId() == null ? report.getName().trim() : cluster.getName());
         cluster.setMode(EXTERNAL_MODE);
+        cluster.setOriginType("EXTERNAL");
+        cluster.setKafkaClusterId(blankToDefault(report.getKafkaClusterId(), null));
+        cluster.setInstallDirectory(blankToDefault(report.getInstallPath(), null));
+        cluster.setConfigDirectory(cluster.getInstallDirectory() == null ? null : cluster.getInstallDirectory() + "/config");
+        cluster.setLogDirectory(blankToDefault(report.getLogDirs(), null));
         cluster.setKafkaVersion(blankToDefault(report.getKafkaVersion(), "Unknown"));
         cluster.setEnvironment(blankToDefault(report.getEnvironment(), "unknown"));
         cluster.setBootstrapServers(mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap));
