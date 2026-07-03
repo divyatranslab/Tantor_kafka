@@ -1,0 +1,19 @@
+{
+  "name": "cluster-06",
+  "kafka_version": "4.0",
+  "mode": "kraft",
+  "environment": "production",
+  "artifactUrl": "http://192.168.3.107:8081/api/v1/artifacts/48f1f26b-ed5e-4ecd-9cff-c2492d3d50b7/download",
+  "acknowledge_kraft_risk": true,
+  "services": [
+    {
+      "host_id": "194_machine",
+      "role": "broker_controller",
+      "node_id": 2,
+      "heap_size": "1G"
+    }
+  ],
+  "config": {
+    "log.retention.hours": "168"
+  }
+}

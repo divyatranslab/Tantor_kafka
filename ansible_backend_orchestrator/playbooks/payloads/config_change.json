@@ -1,0 +1,8 @@
+{
+  "cluster_name": "cluster-05",
+  "host_id": "194_machine",
+  "configs": {
+    "log.retention.hours": "72",
+    "message.max.bytes": "10485760"
+  }
+}

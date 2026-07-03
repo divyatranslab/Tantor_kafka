@@ -1,0 +1,186 @@
+---
+- name: Ensure OS is Linux
+  ansible.builtin.assert:
+    that:
+      - ansible_system == 'Linux'
+    fail_msg: "This preflight role requires a Linux system."
+
+- name: Set up limits for kafka open files and nproc
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/kafka.conf
+    content: |
+      * soft nofile 1024000
+      * hard nofile 1024000
+      * soft nproc 1024000
+      * hard nproc 1024000
+    mode: '0644'
+
+- name: Apply limit to systemd DefaultLimitNOFILE (system.conf)
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system.conf
+    regexp: '^#?DefaultLimitNOFILE='
+    line: 'DefaultLimitNOFILE=1024000'
+    state: present
+
+- name: Apply limit to systemd DefaultLimitNOFILE (user.conf)
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/user.conf
+    regexp: '^#?DefaultLimitNOFILE='
+    line: 'DefaultLimitNOFILE=1024000'
+    state: present
+
+- name: Set vm.swappiness to 0 in sysctl.conf
+  ansible.builtin.lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^vm\.swappiness\s*='
+    line: 'vm.swappiness = 0'
+    state: present
+
+- name: Apply sysctl immediately
+  ansible.builtin.command: sysctl -w vm.swappiness=0
+  changed_when: false
+
+- name: Disable Transparent Huge Pages (enabled)
+  ansible.builtin.shell: echo never > /sys/kernel/mm/transparent_hugepage/enabled
+  changed_when: false
+  ignore_errors: true
+
+- name: Disable Transparent Huge Pages (defrag)
+  ansible.builtin.shell: echo never > /sys/kernel/mm/transparent_hugepage/defrag
+  changed_when: false
+  ignore_errors: true
+
+- name: Create disable-thp systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/disable-thp.service
+    content: |
+      [Unit]
+      Description=Disable Transparent Huge Pages
+      After=network.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled"
+      ExecStart=/bin/sh -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+
+- name: Enable and start disable-thp.service
+  ansible.builtin.systemd:
+    name: disable-thp
+    daemon_reload: yes
+    enabled: yes
+    state: started
+
+- name: Disable SELinux
+  ansible.builtin.lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+    state: present
+  ignore_errors: true
+  when: ansible_os_family == 'RedHat'
+
+- name: Apply SELinux immediately
+  ansible.builtin.command: setenforce 0
+  changed_when: false
+  ignore_errors: true
+  when: ansible_os_family == 'RedHat'
+
+- name: Ensure Chrony is installed (RHEL)
+  ansible.builtin.package:
+    name: chrony
+    state: present
+  when: ansible_os_family == 'RedHat'
+  ignore_errors: true
+
+- name: Ensure Chronyd is started and enabled
+  ansible.builtin.service:
+    name: chronyd
+    state: started
+    enabled: yes
+  ignore_errors: true
+
+- name: Download JDK 21 to Ansible Control Node (Internet Required Here)
+  ansible.builtin.get_url:
+    url: "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.11%2B10/OpenJDK21U-jdk_x64_linux_hotspot_21.0.11_10.tar.gz"
+    dest: "/tmp/OpenJDK21U-jdk_x64_linux_hotspot_21.0.11_10.tar.gz"
+  delegate_to: localhost
+  run_once: true
+
+- name: Push and extract JDK 21 to air-gapped target nodes
+  ansible.builtin.unarchive:
+    src: "/tmp/OpenJDK21U-jdk_x64_linux_hotspot_21.0.11_10.tar.gz"
+    dest: /opt
+    remote_src: no
+    creates: "/opt/jdk-21.0.11+10/bin/java"
+
+- name: Create symlink for java
+  ansible.builtin.file:
+    src: "/opt/jdk-21.0.11+10/bin/java"
+    dest: /usr/bin/java
+    state: link
+    force: yes
+
+- name: Create symlink for javac
+  ansible.builtin.file:
+    src: "/opt/jdk-21.0.11+10/bin/javac"
+    dest: /usr/bin/javac
+    state: link
+    force: yes
+
+# ==========================================
+# VERIFICATION SECTION (from presanity.sh)
+# ==========================================
+
+- name: VERIFICATION - Check active Java version
+  ansible.builtin.command: java -version
+  register: java_check
+  changed_when: false
+  failed_when: "'version' not in java_check.stderr and 'openjdk' not in java_check.stderr"
+
+- name: VERIFICATION - Assert Java version is >= 17
+  ansible.builtin.assert:
+    that:
+      - "('17.' in java_check.stderr) or ('21.' in java_check.stderr)"
+    fail_msg: "Java version must be 17 or higher"
+    success_msg: "Java version check passed!"
+
+- name: VERIFICATION - Check THP status
+  ansible.builtin.command: cat /sys/kernel/mm/transparent_hugepage/enabled
+  register: thp_check
+  changed_when: false
+
+- name: VERIFICATION - Assert THP is disabled
+  ansible.builtin.assert:
+    that:
+      - "'[never]' in thp_check.stdout"
+    fail_msg: "Transparent Huge Pages is not set to never"
+    success_msg: "THP check passed!"
+
+- name: VERIFICATION - Check Swappiness
+  ansible.builtin.command: cat /proc/sys/vm/swappiness
+  register: swappiness_check
+  changed_when: false
+
+- name: VERIFICATION - Assert Swappiness is 0
+  ansible.builtin.assert:
+    that:
+      - "swappiness_check.stdout | int == 0"
+    fail_msg: "Swappiness is not 0"
+    success_msg: "Swappiness check passed!"
+
+- name: VERIFICATION - Check SELinux status
+  ansible.builtin.command: getenforce
+  register: selinux_check
+  changed_when: false
+  ignore_errors: true
+
+- name: VERIFICATION - Assert SELinux is Disabled/Permissive
+  ansible.builtin.assert:
+    that:
+      - "'Disabled' in selinux_check.stdout or 'Permissive' in selinux_check.stdout or selinux_check.failed"
+    fail_msg: "SELinux is active!"
+    success_msg: "SELinux check passed!"

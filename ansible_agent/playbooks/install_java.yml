@@ -1,0 +1,26 @@
+---
+- name: Install JDK 21 on Tantor Nodes
+  hosts: tantor_nodes
+  become: yes
+  tasks:
+    - name: Ensure JDK 21 is installed (RHEL/CentOS)
+      ansible.builtin.dnf:
+        name: java-21-openjdk-devel
+        state: present
+      when: ansible_os_family == 'RedHat'
+
+    - name: Ensure JDK 21 is installed (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name: openjdk-21-jdk
+        state: present
+        update_cache: yes
+      when: ansible_os_family == 'Debian'
+
+    - name: Verify Java Installation
+      ansible.builtin.command: java -version
+      register: java_version
+      changed_when: false
+
+    - name: Display Java version
+      ansible.builtin.debug:
+        var: java_version.stderr_lines

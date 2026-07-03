@@ -1,0 +1,44 @@
+---
+- name: 3. Rolling Restart via Backend API (Payload Driven)
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # payload_file must be provided via --extra-vars
+    # Example: ansible-playbook 3_rolling_restart.yml -e payload_file="payloads/rolling_restart.json"
+  tasks:
+    - name: Load payload file
+      ansible.builtin.set_fact:
+        payload: "{{ lookup('file', payload_file) | from_json }}"
+
+    - name: Query all clusters to resolve cluster_id (if required by backend)
+      # Some backends use name as ID, some use a numeric ID. 
+      # We first fetch clusters to resolve the real ID.
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/clusters"
+        method: GET
+        status_code: 200
+      register: clusters_response
+      ignore_errors: true # In case /clusters doesn't exist and we should just use the name
+
+    - name: Extract target cluster_id
+      ansible.builtin.set_fact:
+        target_cluster_id: >-
+          {%- if not clusters_response.failed -%}
+          {{ (clusters_response.json | selectattr('name', 'equalto', payload.cluster_name) | list | first).id | default(payload.cluster_name) }}
+          {%- else -%}
+          {{ payload.cluster_name }}
+          {%- endif -%}
+
+    - name: Send Restart Command
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/clusters/actions/rolling-restart"
+        method: POST
+        body_format: json
+        body:
+          clusterId: "{{ target_cluster_id }}"
+        status_code: 200, 202
+      register: restart_response
+
+    - name: Display backend response
+      ansible.builtin.debug:
+        var: restart_response.json

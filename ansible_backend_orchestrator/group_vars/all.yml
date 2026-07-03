@@ -1,0 +1,6 @@
+---
+# Backend URL of the Tantor Java Spring Boot Server
+backend_url: "http://192.168.3.107:8443"
+
+# Optional: Add authentication token if your backend requires it
+# auth_token: "Bearer <your_token>"

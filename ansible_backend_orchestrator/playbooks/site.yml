@@ -1,0 +1,16 @@
+---
+# Step 1: Preflight Node Preparation
+- name: Prepare OS and install prerequisites on Tantor Nodes
+  hosts: tantor_nodes
+  become: yes
+  roles:
+    - role: preflight
+
+# Step 2: Trigger cluster deployment via Backend API
+- name: Deploy Kafka Cluster via Backend API
+  hosts: localhost
+  gather_facts: false
+  vars:
+    action: deploy
+  roles:
+    - role: cluster_manager

@@ -1,0 +1,51 @@
+{
+  "name": "cluster-3node",
+  "kafka_version": "3.6.1",
+  "mode": "kraft",
+  "environment": "DEV",
+  "properties": {
+    "num.network.threads": "3",
+    "num.io.threads": "8",
+    "socket.send.buffer.bytes": "102400",
+    "socket.receive.buffer.bytes": "102400",
+    "socket.request.max.bytes": "104857600",
+    "log.dirs": "/opt/kafka/data",
+    "num.partitions": "1",
+    "num.recovery.threads.per.data.dir": "1",
+    "offsets.topic.replication.factor": "3",
+    "transaction.state.log.replication.factor": "3",
+    "transaction.state.log.min.isr": "2",
+    "log.retention.hours": "168",
+    "log.segment.bytes": "1073741824",
+    "log.retention.check.interval.ms": "300000"
+  },
+  "services": [
+    {
+      "host_id": "194_machine_id",
+      "node_id": 1,
+      "role": "broker,controller",
+      "properties": {
+        "listeners": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+        "advertised.listeners": "PLAINTEXT://192.168.3.194:9092"
+      }
+    },
+    {
+      "host_id": "195_machine_id",
+      "node_id": 2,
+      "role": "broker,controller",
+      "properties": {
+        "listeners": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+        "advertised.listeners": "PLAINTEXT://192.168.3.195:9092"
+      }
+    },
+    {
+      "host_id": "196_machine_id",
+      "node_id": 3,
+      "role": "broker,controller",
+      "properties": {
+        "listeners": "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093",
+        "advertised.listeners": "PLAINTEXT://192.168.3.196:9092"
+      }
+    }
+  ]
+}

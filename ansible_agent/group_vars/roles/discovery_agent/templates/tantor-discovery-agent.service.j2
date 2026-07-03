@@ -1,0 +1,14 @@
+[Unit]
+Description=Tantor Discovery Agent Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{ tantor_install_dir }}/tantor-discovery-agent -config /etc/tantor/configs/discovery.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+WorkingDirectory={{ tantor_install_dir }}
+
+[Install]
+WantedBy=multi-user.target

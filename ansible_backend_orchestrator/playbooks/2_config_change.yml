@@ -1,0 +1,36 @@
+---
+- name: 2. Config Change via Backend API (Payload Driven)
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # payload_file must be provided via --extra-vars
+    # Example: ansible-playbook 2_config_change.yml -e payload_file="payloads/config_change.json"
+  tasks:
+    - name: Load payload file
+      ansible.builtin.set_fact:
+        payload: "{{ lookup('file', payload_file) | from_json }}"
+
+    - name: Query all services to resolve service_id
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/services"
+        method: GET
+        status_code: 200
+      register: services_response
+
+    - name: Extract target service_id
+      ansible.builtin.set_fact:
+        target_service_id: "{{ (services_response.json | selectattr('host_id', 'equalto', payload.host_id) | list | first).id }}"
+
+    - name: Apply new configuration version
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/services/{{ target_service_id }}/versions/apply"
+        method: POST
+        body_format: json
+        body:
+          configs: "{{ payload.configs }}"
+        status_code: 200, 202
+      register: config_response
+
+    - name: Display backend response
+      ansible.builtin.debug:
+        var: config_response.json

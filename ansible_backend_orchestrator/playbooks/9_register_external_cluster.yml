@@ -1,0 +1,91 @@
+---
+- name: 9. Register External Cluster via Discovery Agent
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # cluster_name must be provided via -e cluster_name="..."
+  tasks:
+    - name: Fetch pending discoveries from Backend
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/external-clusters/discoveries"
+        method: GET
+        status_code: 200
+      register: discoveries_response
+
+    - name: Filter discoveries for target cluster
+      ansible.builtin.set_fact:
+        target_discoveries: >-
+          {{
+            discoveries_response.json
+            | selectattr('name', 'equalto', cluster_name)
+            | list
+          }}
+      when: cluster_name is defined
+
+    - name: Ensure discoveries were found
+      ansible.builtin.fail:
+        msg: "No pending discoveries found for cluster '{{ cluster_name }}'. Ensure the discovery agent is running on the target node."
+      when: cluster_name is defined and (target_discoveries is not defined or target_discoveries | length == 0)
+
+    - name: Use all discoveries if cluster_name not provided
+      ansible.builtin.set_fact:
+        target_discoveries: "{{ discoveries_response.json }}"
+      when: cluster_name is not defined
+
+    - name: 1. Inspect and Test Bootstrap Server Connectivity
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/external-clusters/discoveries/{{ item.discoveryKey }}/inspect"
+        method: GET
+        status_code: 200
+      loop: "{{ target_discoveries }}"
+      register: inspect_results
+
+    - name: Display Bootstrap Connection Info
+      ansible.builtin.debug:
+        msg: |
+          Cluster: {{ item.json.name }}
+          Hostname: {{ item.json.hostname }}
+          Bootstrap Servers: {{ item.json.bootstrapServers }}
+          Connected: {{ item.json.connected }}
+          Precheck Status: {{ item.json.status | default('SUCCESS') }}
+          Message: {{ item.json.message | default('Bootstrap connection tested successfully') }}
+      loop: "{{ inspect_results.results }}"
+
+    - name: Ensure Bootstrap Connection Passed
+      ansible.builtin.fail:
+        msg: "Cannot connect to Bootstrap server for {{ item.item.name }}: {{ item.json.message | default('Unknown error') }}"
+      when: item.json.status is defined and item.json.status == 'FAILED'
+      loop: "{{ inspect_results.results }}"
+
+    - name: 2. Connect (Register) External Clusters
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/external-clusters/discoveries/{{ item.discoveryKey }}/connect"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: 200
+      loop: "{{ target_discoveries }}"
+      register: connect_results
+
+    - name: Display registration success
+      ansible.builtin.debug:
+        msg: "Successfully registered external cluster: {{ item.item.name }} (ID: {{ item.json.id }})"
+      loop: "{{ connect_results.results }}"
+
+    - name: 3. Fetch Info of all Registered External Clusters
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/external-clusters"
+        method: GET
+        status_code: 200
+      register: external_clusters_list
+
+    - name: Display Info of External Clusters
+      ansible.builtin.debug:
+        msg: |
+          Name: {{ item.name }}
+          ID: {{ item.id }}
+          Status: {{ item.status }}
+          Nodes: {{ item.brokerCount }}
+          Environment: {{ item.environment }}
+          Kafka Version: {{ item.kafkaVersion }}
+      loop: "{{ external_clusters_list.json }}"

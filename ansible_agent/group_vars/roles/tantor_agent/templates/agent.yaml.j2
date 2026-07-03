@@ -1,0 +1,13 @@
+agent:
+  host_id: "{{ inventory_hostname }}"
+  server_url: "{{ tantor_control_plane_url }}"
+  cert_file: "{{ tantor_cert_dir }}/agent.crt"
+  key_file: "{{ tantor_cert_dir }}/agent.key"
+  ca_cert: "{{ tantor_cert_dir }}/ca.crt"
+  poll_interval_seconds: 10
+  log_level: "INFO"
+
+paths:
+  data_dir: "{{ tantor_data_dir }}"
+  log_dir: "{{ tantor_log_dir }}"
+  artifacts_dir: "{{ tantor_artifacts_dir }}"

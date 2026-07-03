@@ -1,0 +1,24 @@
+---
+- name: Trigger deployment
+  ansible.builtin.uri:
+    url: "{{ backend_url }}/api/v1/ui/clusters/deploy"
+    method: POST
+    body_format: json
+    body: "{{ lookup('file', 'playbooks/payloads/deploy_cluster.json') }}"
+    status_code: 200, 202
+  register: deploy_response
+
+- name: Wait for job to complete
+  ansible.builtin.uri:
+    url: "{{ backend_url }}/api/v1/ui/jobs/{{ deploy_response.json.jobId }}"
+    method: GET
+    status_code: 200
+  register: job_status
+  until: job_status.json.status == 'SUCCESS' or job_status.json.status == 'FAILED'
+  retries: 60
+  delay: 10
+
+- name: Display final job status
+  ansible.builtin.debug:
+    msg: 
+      - "Status: {{ job_status.json.status }}"

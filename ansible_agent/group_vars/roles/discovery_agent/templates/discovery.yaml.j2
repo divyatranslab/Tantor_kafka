@@ -1,0 +1,9 @@
+discovery:
+  server_url: "{{ discovery_server_url }}"
+  scan_paths:
+    - "/srv/apps"
+    - "/data/apps"
+    - "/opt"
+  interval: "15s"
+  node_name: "{{ inventory_hostname }}"
+  restart_command: "systemctl restart kafka"

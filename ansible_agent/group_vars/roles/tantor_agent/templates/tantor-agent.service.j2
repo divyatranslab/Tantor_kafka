@@ -1,0 +1,14 @@
+[Unit]
+Description=Tantor Agent Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{ tantor_install_dir }}/tantor-agent -config /etc/tantor/configs/agent.yaml
+Restart=on-failure
+RestartSec=5
+User=root
+WorkingDirectory={{ tantor_install_dir }}
+
+[Install]
+WantedBy=multi-user.target

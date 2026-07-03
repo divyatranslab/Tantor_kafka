@@ -1,0 +1,46 @@
+---
+- name: Ensure Tantor directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - "{{ tantor_log_dir }}"
+    - "{{ tantor_data_dir }}"
+    - "{{ tantor_artifacts_dir }}"
+    - "{{ tantor_cert_dir }}"
+    - "/etc/tantor/configs"
+
+- name: Copy tantor-agent binary to target
+  ansible.builtin.copy:
+    src: "{{ agent_binary_src }}"
+    dest: "{{ tantor_install_dir }}/tantor-agent"
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Template agent.yaml configuration
+  ansible.builtin.template:
+    src: agent.yaml.j2
+    dest: "/etc/tantor/configs/agent.yaml"
+    mode: '0644'
+  notify: Restart tantor-agent
+
+- name: Template systemd service for tantor-agent
+  ansible.builtin.template:
+    src: tantor-agent.service.j2
+    dest: /etc/systemd/system/tantor-agent.service
+    mode: '0644'
+  notify: Restart tantor-agent
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable and start tantor-agent service
+  ansible.builtin.service:
+    name: tantor-agent
+    state: started
+    enabled: yes

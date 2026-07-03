@@ -1,0 +1,20 @@
+---
+- name: 5. Rollback Configuration Version
+  hosts: local
+  gather_facts: false
+  vars:
+    version_id: "previous-version-uuid"
+  tasks:
+    - name: Trigger Rollback via API
+      ansible.builtin.uri:
+        url: "{{ tantor_backend_url }}/versions/{{ version_id }}/rollback"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ tantor_auth_token }}"
+        status_code: 200, 202
+      register: rollback_response
+
+    - name: Display Rollback Response
+      ansible.builtin.debug:
+        var: rollback_response.json

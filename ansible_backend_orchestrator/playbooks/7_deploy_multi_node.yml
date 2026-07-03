@@ -1,0 +1,95 @@
+---
+- name: 7. Deploy Multi-Node Cluster via Backend API (Idempotent)
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # payload_file must be provided via --extra-vars
+    # Example: ansible-playbook 7_deploy_multi_node.yml -e payload_file="payloads/deploy_cluster_3node.json"
+  tasks:
+    - name: Load payload file
+      ansible.builtin.set_fact:
+        payload: "{{ lookup('file', payload_file) | from_json }}"
+
+    - name: Query all existing clusters
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters"
+        method: GET
+        status_code: 200
+      register: clusters_response
+
+    - name: Check if cluster already exists
+      ansible.builtin.set_fact:
+        existing_clusters: >-
+          {{
+            clusters_response.json
+            | selectattr('name', 'equalto', payload.name)
+            | selectattr('status', 'ne', 'DELETED')
+            | list
+          }}
+
+    - name: Evaluate cluster status
+      ansible.builtin.set_fact:
+        cluster_exists: "{{ existing_clusters | length > 0 }}"
+        existing_cluster: "{{ existing_clusters[0] if existing_clusters | length > 0 else {} }}"
+
+    - name: Automatically clean up failed cluster
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters/force-delete/{{ existing_cluster.clusterId }}"
+        method: POST
+        status_code: 200, 204
+      when: cluster_exists and existing_cluster.status == 'FAILED'
+
+    - name: Wait for backend to finish deleting the cluster
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters"
+        method: GET
+      register: wait_response
+      until: >-
+        wait_response.json
+        | selectattr('name', 'equalto', payload.name)
+        | selectattr('status', 'ne', 'DELETED')
+        | list | length == 0
+      retries: 10
+      delay: 2
+      when: cluster_exists and existing_cluster.status == 'FAILED'
+
+    - name: Reset existence flag if failed cluster was deleted
+      ansible.builtin.set_fact:
+        cluster_exists: false
+      when: cluster_exists and existing_cluster.status == 'FAILED'
+
+    - name: Trigger multi-node deployment
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters/deploy"
+        method: POST
+        body_format: json
+        body: "{{ payload }}"
+        status_code: 200, 202
+      register: deploy_response
+      when: not cluster_exists
+
+    - name: Wait for deployment job to complete
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/jobs/{{ deploy_response.json.jobId }}"
+        method: GET
+        status_code: 200
+      register: job_status
+      until: job_status.json.status == 'SUCCESS' or job_status.json.status == 'FAILED'
+      retries: 60
+      delay: 10
+      when: not cluster_exists and (deploy_response.json.jobId is defined)
+
+    - name: Display backend deployment response
+      ansible.builtin.debug:
+        var: job_status.json | default(deploy_response.json)
+      when: not cluster_exists
+
+    - name: Display message if cluster already exists
+      ansible.builtin.debug:
+        msg: "Cluster '{{ payload.name }}' already exists. Skipping deployment to maintain idempotency."
+      when: cluster_exists
+
+    - name: Fail if deployment job failed
+      ansible.builtin.fail:
+        msg: "Deployment failed! Check the backend logs above for details."
+      when: not cluster_exists and job_status is defined and job_status.json is defined and job_status.json.status == 'FAILED'

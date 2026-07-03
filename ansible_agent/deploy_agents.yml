@@ -1,0 +1,13 @@
+---
+- name: Deploy Tantor Agents
+  hosts: tantor_nodes
+  become: yes
+  
+  pre_tasks:
+    - name: Run pre-deployment checks
+      include_role:
+        name: prechecks
+
+  roles:
+    - tantor_agent
+    - discovery_agent

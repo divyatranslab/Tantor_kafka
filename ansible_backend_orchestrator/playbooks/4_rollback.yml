@@ -1,0 +1,45 @@
+---
+- name: 4. Rollback Configuration via Backend API (Payload Driven)
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # payload_file must be provided via --extra-vars
+    # Example: ansible-playbook 4_rollback.yml -e payload_file="payloads/rollback.json"
+  tasks:
+    - name: Load payload file
+      ansible.builtin.set_fact:
+        payload: "{{ lookup('file', payload_file) | from_json }}"
+
+    - name: Query all services to resolve service_id
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/services"
+        method: GET
+        status_code: 200
+      register: services_response
+
+    - name: Extract target service_id
+      ansible.builtin.set_fact:
+        target_service_id: "{{ (services_response.json | selectattr('host_id', 'equalto', payload.host_id) | list | first).id }}"
+
+    - name: Rollback to previous configuration version
+      ansible.builtin.uri:
+        # Note: Depending on backend, the URL might need the service_id. 
+        # Usually it's /api/v1/services/{{ service_id }}/versions/{{ payload.version_id }}/rollback
+        # Or if version_id is global: /api/v1/services/versions/{{ payload.version_id }}/rollback
+        url: "{{ backend_url }}/api/v1/services/{{ target_service_id }}/versions/{{ payload.version_id }}/rollback"
+        method: POST
+        status_code: 200, 202
+      register: rollback_response
+      ignore_errors: true
+
+    - name: Fallback Rollback (if API uses global version ID without service ID)
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/services/versions/{{ payload.version_id }}/rollback"
+        method: POST
+        status_code: 200, 202
+      register: fallback_rollback_response
+      when: rollback_response.failed is defined and rollback_response.failed
+
+    - name: Display backend response
+      ansible.builtin.debug:
+        var: rollback_response.json | default(fallback_rollback_response.json)

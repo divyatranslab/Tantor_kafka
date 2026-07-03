@@ -1,0 +1,83 @@
+---
+- name: 1. Trigger Agent Prechecks via Backend API
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # payload_file must be provided via --extra-vars
+    # Example: ansible-playbook 1_precheck.yml -e payload_file="payloads/precheck.json"
+  tasks:
+    - name: Load payload file
+      ansible.builtin.set_fact:
+        payload: "{{ lookup('file', payload_file) | from_json }}"
+
+    - name: Query all hosts to resolve internal host_ids
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/hosts"
+        method: GET
+        status_code: 200
+      register: hosts_response
+
+    - name: Extract target host_ids
+      ansible.builtin.set_fact:
+        target_hosts: >-
+          {{
+            hosts_response.json
+            | selectattr('hostname', 'in', payload.hostnames | default([payload.hostname]))
+            | selectattr('status', 'ne', 'OFFLINE')
+            | list
+          }}
+
+    - name: Ensure hosts are ONLINE (auto-approve)
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/hosts/{{ item.id }}/mark-available"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: 200, 404
+      loop: "{{ target_hosts }}"
+
+    - name: Trigger precheck task for each host
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/hosts/{{ item.id }}/check-prerequisites"
+        method: POST
+        body_format: json
+        body: {}
+        status_code: 200
+      loop: "{{ target_hosts }}"
+      register: precheck_triggers
+
+    - name: Wait for precheck tasks to complete
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/hosts/{{ item.item.id }}/check-prerequisites/{{ item.json.taskId }}"
+        method: GET
+        status_code: 200
+      loop: "{{ precheck_triggers.results }}"
+      register: precheck_statuses
+      until: precheck_statuses.json.status == 'SUCCESS' or precheck_statuses.json.status == 'FAILED'
+      retries: 60
+      delay: 5
+
+    - name: Display final precheck logs
+      ansible.builtin.debug:
+        msg: |
+          Host: {{ item.item.item.hostname }}
+          Status: {{ item.json.status }}
+          Logs:
+          {{ item.json.logOutput | default(item.json.errorMsg | default('')) }}
+      loop: "{{ precheck_statuses.results }}"
+
+    - name: Fail if any precheck did not pass
+      ansible.builtin.fail:
+        msg: >-
+          Precheck FAILED for host(s):
+          {{ failed_hosts | join(', ') }}.
+          Please fix the reported issues and re-run the precheck.
+      vars:
+        failed_hosts: >-
+          {{
+            precheck_statuses.results
+            | selectattr('json.status', 'equalto', 'FAILED')
+            | map(attribute='item.item.hostname')
+            | list
+          }}
+      when: failed_hosts | length > 0

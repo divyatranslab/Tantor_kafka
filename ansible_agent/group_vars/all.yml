@@ -1,0 +1,14 @@
+---
+tantor_control_plane_url: "http://192.168.3.68:8443"
+discovery_server_url: "http://192.168.3.68:8443"
+
+# Path to the compiled agent binaries on the control node (149 machine)
+agent_binary_src: "../tantor-agent-linux"
+discovery_binary_src: "../tantor-discovery-agent-linux"
+
+# Installation paths
+tantor_install_dir: "/usr/local/bin"
+tantor_log_dir: "/var/log/tantor"
+tantor_data_dir: "/var/lib/tantor/agent/data"
+tantor_artifacts_dir: "/var/lib/tantor/agent/artifacts"
+tantor_cert_dir: "/etc/tantor/certs"

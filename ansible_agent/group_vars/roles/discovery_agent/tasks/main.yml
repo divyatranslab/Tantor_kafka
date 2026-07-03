@@ -1,0 +1,43 @@
+---
+- name: Ensure Discovery Agent directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+  loop:
+    - "/etc/tantor/configs"
+    - "/var/log/tantor-discovery"
+
+- name: Copy tantor-discovery-agent binary to target
+  ansible.builtin.copy:
+    src: "{{ discovery_binary_src }}"
+    dest: "{{ tantor_install_dir }}/tantor-discovery-agent"
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Template discovery.yaml configuration
+  ansible.builtin.template:
+    src: discovery.yaml.j2
+    dest: "/etc/tantor/configs/discovery.yaml"
+    mode: '0644'
+  notify: Restart tantor-discovery-agent
+
+- name: Template systemd service for tantor-discovery-agent
+  ansible.builtin.template:
+    src: tantor-discovery-agent.service.j2
+    dest: /etc/systemd/system/tantor-discovery-agent.service
+    mode: '0644'
+  notify: Restart tantor-discovery-agent
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable and start tantor-discovery-agent service
+  ansible.builtin.service:
+    name: tantor-discovery-agent
+    state: started
+    enabled: yes

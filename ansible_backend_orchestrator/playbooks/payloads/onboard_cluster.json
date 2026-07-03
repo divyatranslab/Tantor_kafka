@@ -1,0 +1,15 @@
+{
+  "name": "existing-cluster-01",
+  "environment": "production",
+  "bootstrapServers": "192.168.3.194:9092",
+  "kafkaVersion": "3.5.1",
+  "kafkaClusterId": "N1XYZ...",
+  "kafkaMode": "kraft",
+  "security": "PLAINTEXT",
+  "brokerCount": 1,
+  "nodeId": 1,
+  "isRunning": true,
+  "installPath": "/opt/kafka",
+  "logDirs": "/var/lib/kafka/data",
+  "hostname": "192.168.3.194"
+}

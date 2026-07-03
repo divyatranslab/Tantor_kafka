@@ -1,0 +1,43 @@
+---
+- name: Check OS Distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'RedHat'
+    fail_msg: "This playbook is designed for RHEL/CentOS systems. Detected {{ ansible_facts['os_family'] }}."
+    success_msg: "OS validation passed."
+
+- name: Check free disk space on /var
+  ansible.builtin.assert:
+    that:
+      - item.size_available > 1073741824  # 1 GB free space required
+    fail_msg: "Not enough free space on /var. Requires at least 1GB."
+  when: item.mount == '/var' or item.mount == '/'
+  loop: "{{ ansible_facts['mounts'] }}"
+
+- name: Check Control Plane connectivity (tantor-agent)
+  ansible.builtin.wait_for:
+    host: "{{ tantor_control_plane_url | regex_replace('^https?://([^:]+):.*$', '\\1') }}"
+    port: "{{ tantor_control_plane_url | regex_replace('^.*:([0-9]+)$', '\\1') }}"
+    timeout: 10
+  register: agent_conn
+  ignore_errors: true
+
+- name: Assert Control Plane connectivity
+  ansible.builtin.assert:
+    that:
+      - agent_conn.failed is not defined or not agent_conn.failed
+    fail_msg: "Cannot connect to Tantor Control Plane {{ tantor_control_plane_url }}"
+
+- name: Check Discovery Server connectivity (tantor-discovery-agent)
+  ansible.builtin.wait_for:
+    host: "{{ discovery_server_url | regex_replace('^https?://([^:]+):.*$', '\\1') }}"
+    port: "{{ discovery_server_url | regex_replace('^.*:([0-9]+)$', '\\1') }}"
+    timeout: 10
+  register: discovery_conn
+  ignore_errors: true
+
+- name: Assert Discovery Server connectivity
+  ansible.builtin.assert:
+    that:
+      - discovery_conn.failed is not defined or not discovery_conn.failed
+    fail_msg: "Cannot connect to Discovery Server {{ discovery_server_url }}"

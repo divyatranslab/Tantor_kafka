@@ -1,0 +1,23 @@
+---
+- name: 6. Resume Deployment
+  hosts: local
+  gather_facts: false
+  tasks:
+    - name: Resume failed/paused cluster deployment
+      ansible.builtin.uri:
+        url: "{{ tantor_backend_url }}/clusters/deploy"
+        method: POST
+        validate_certs: false
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ tantor_auth_token }}"
+        body_format: json
+        body:
+          clusterName: "prod-kafka-cluster"
+          resume: true # Example flag indicating resume
+        status_code: 200, 202
+      register: resume_response
+
+    - name: Display Resume Response
+      ansible.builtin.debug:
+        var: resume_response.json

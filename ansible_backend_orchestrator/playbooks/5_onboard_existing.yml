@@ -1,0 +1,17 @@
+---
+- name: 5. Onboard Existing Cluster via Backend API
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Trigger external cluster onboarding
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/external-clusters/bootstrap/register"
+        method: POST
+        body_format: json
+        body: "{{ lookup('file', 'payloads/onboard_cluster.json') }}"
+        status_code: 200, 201
+      register: onboard_response
+
+    - name: Display backend response
+      ansible.builtin.debug:
+        var: onboard_response.json

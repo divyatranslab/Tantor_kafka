@@ -1,0 +1,68 @@
+---
+- name: 10. Make Config Changes to External Cluster
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Requires:
+    # - cluster_name
+    # - config_key
+    # - config_value
+    # - restart (default: true)
+  tasks:
+    - name: Fetch all clusters to find target ID
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters"
+        method: GET
+        status_code: 200
+      register: clusters_response
+
+    - name: Resolve Cluster ID
+      ansible.builtin.set_fact:
+        target_cluster: >-
+          {{
+            clusters_response.json
+            | selectattr('name', 'equalto', cluster_name)
+            | first
+            | default({})
+          }}
+
+    - name: Ensure cluster was found
+      ansible.builtin.fail:
+        msg: "Cluster '{{ cluster_name }}' not found in Tantor."
+      when: target_cluster.id is not defined
+
+    - name: 1. Send Configuration Change Request to Backend
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/clusters/{{ target_cluster.id }}/config/bulk"
+        method: PUT
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          configKey: "{{ config_key }}"
+          configValue: "{{ config_value | default('') }}"
+          restart: "{{ restart | default(true) | bool }}"
+          applyToAgents: true
+        status_code: 202
+      register: config_job
+
+    - name: 2. Wait for Backend to coordinate Config Update via Discovery Agent
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/jobs/{{ config_job.json.jobId }}"
+        method: GET
+        status_code: 200
+      register: job_status
+      until: job_status.json.status in ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS']
+      retries: 60
+      delay: 5
+
+    - name: Display Configuration Update Result
+      ansible.builtin.debug:
+        msg: |
+          Configuration Job: {{ job_status.json.id }}
+          Status: {{ job_status.json.status }}
+
+    - name: Fail if the configuration update failed
+      ansible.builtin.fail:
+        msg: "The external configuration update failed."
+      when: job_status.json.status != 'SUCCESS'

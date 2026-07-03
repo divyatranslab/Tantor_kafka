@@ -1,0 +1,81 @@
+---
+- name: 8. Rolling Config Update via Backend (Idempotent)
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Required extra vars:
+    # -e cluster_name="split-role-cluster"
+    # -e config_key="num.partitions"
+    # -e config_value="6"
+    # -e config_scope="ALL" # optional: BROKER, CONTROLLER, ALL
+  tasks:
+    - name: Query all existing clusters
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/ui/clusters"
+        method: GET
+        status_code: 200
+      register: clusters_response
+
+    - name: Find target cluster ID
+      ansible.builtin.set_fact:
+        target_cluster: >-
+          {{
+            clusters_response.json
+            | selectattr('name', 'equalto', cluster_name)
+            | selectattr('status', 'equalto', 'SUCCESS')
+            | list
+            | first
+          }}
+      failed_when: target_cluster is not defined
+      
+    - name: Get current configuration
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/clusters/{{ target_cluster.clusterId }}/config"
+        method: GET
+        status_code: 200
+      register: config_response
+
+    - name: Check if configuration needs updating
+      ansible.builtin.set_fact:
+        current_value: "{{ config_response.json.staticConfigs.deploymentParameters[config_key] | default('') }}"
+        
+    - name: Print current value
+      ansible.builtin.debug:
+        msg: "Current {{ config_key }} is '{{ current_value }}'. Desired is '{{ config_value }}'."
+
+    - name: Trigger Rolling Config Update Job
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/clusters/{{ target_cluster.clusterId }}/config/bulk"
+        method: PUT
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          configKey: "{{ config_key }}"
+          configValue: "{{ config_value }}"
+          scope: "{{ config_scope | default('ALL') }}"
+          applyToAgents: true
+          restart: true
+        status_code: 200
+      register: update_response
+      when: current_value | string != config_value | string
+
+    - name: Wait for Config Change Job to Complete
+      ansible.builtin.uri:
+        url: "{{ backend_url }}/api/v1/jobs/{{ update_response.json.jobId }}"
+        method: GET
+        status_code: 200
+      register: job_status
+      until: job_status.json.status == 'COMPLETED' or job_status.json.status == 'FAILED'
+      retries: 60
+      delay: 5
+      when: current_value | string != config_value | string
+
+    - name: Fail if Job failed
+      ansible.builtin.fail:
+        msg: "The rolling config update job failed!"
+      when: current_value | string != config_value | string and job_status.json.status == 'FAILED'
+
+    - name: Success message
+      ansible.builtin.debug:
+        msg: "Configuration {{ config_key }} is successfully set to {{ config_value }} on cluster {{ cluster_name }}!"

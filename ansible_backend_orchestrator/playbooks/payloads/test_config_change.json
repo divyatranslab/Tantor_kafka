@@ -1,0 +1,7 @@
+{
+  "new_configs": {
+    "log.retention.hours": "72",
+    "message.max.bytes": "10485760",
+    "auto.create.topics.enable": "false"
+  }
+}

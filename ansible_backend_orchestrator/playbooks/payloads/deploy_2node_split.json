@@ -1,0 +1,31 @@
+{
+    "name":  "split-role-cluster",
+    "kafka_version":  "4.0",
+    "mode":  "kraft",
+    "environment":  "test",
+    "artifactUrl":  "http://192.168.3.107:8081/api/v1/artifacts/48f1f26b-ed5e-4ecd-9cff-c2492d3d50b7/download",
+    "acknowledge_kraft_risk":  true,
+    "services":  [
+                     {
+                         "host_id":  "broker3.translab.io",
+                         "role":  "broker",
+                         "node_id":  1,
+                         "heap_size":  "1G"
+                     },
+                     {
+                         "host_id":  "rahul-AHV",
+                         "role":  "controller",
+                         "node_id":  2,
+                         "heap_size":  "1G"
+                     }
+                 ],
+    "config":  {
+                   "offsets.topic.replication.factor":  "1",
+                   "transaction.state.log.replication.factor":  "1",
+                   "transaction.state.log.min.isr":  "1",
+                   "default.replication.factor":  "1",
+                   "min.insync.replicas":  "1",
+                   "broker_properties_template":  "# =============================================================\n# KRaft Broker Configuration\n# =============================================================\n\nprocess.roles=broker\nnode.id=1\nbroker.id=1\nbroker.rack=rack1\n\n# ---- Listeners ----\nlisteners=PLAINTEXT://192.168.253.143:9092\nadvertised.listeners=PLAINTEXT://192.168.253.143:9092\nlistener.security.protocol.map=PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT\ninter.broker.listener.name=PLAINTEXT\n\n# ---- KRaft Quorum ----\ncontroller.listener.names=CONTROLLER\ncontroller.quorum.voters=101@192.168.253.143:9093,102@192.168.253.136:9093\ncontroller.quorum.bootstrap.servers=192.168.253.143:9093,192.168.253.136:9093\n\n# ---- Metadata Storage ----\nmetadata.log.dir=/apache/kafka/broker-metadata\n\n# ---- Data Storage ----\nlog.dirs=/apache/kafka/data\nnum.recovery.threads.per.data.dir=2\n\n# ---- Topic Defaults ----\nnum.partitions=1\nauto.create.topics.enable=false\ndefault.replication.factor=3\nmin.insync.replicas=2\n\n# ---- Internal Topic Replication ----\noffsets.topic.replication.factor=3\noffsets.topic.num.partitions=50\ntransaction.state.log.replication.factor=3\ntransaction.state.log.min.isr=2\n\n# ---- Message Size ----\nmessage.max.bytes=15728640\nreplica.fetch.max.bytes=15728640\nsocket.request.max.bytes=104857600\nfetch.message.max.bytes=15728640\n\n# ---- Log Retention ----\nlog.segment.bytes=1073741824\nlog.retention.hours=72\nlog.retention.check.interval.ms=300000\n\n# ---- Replication ----\nnum.replica.fetchers=4\nreplica.lag.time.max.ms=30000\n\n# ---- Network \u0026 IO ----\nnum.network.threads=8\nnum.io.threads=8\nsocket.send.buffer.bytes=102400\nsocket.receive.buffer.bytes=102400\n\n# ---- Consumer Group ----\ngroup.initial.rebalance.delay.ms=0",
+                   "controller_properties_template":  "# =============================================================\n# KRaft Controller Configuration\n# =============================================================\n\nprocess.roles=controller\nnode.id=101\n\n# ---- Listeners ----\ncontroller.listener.names=CONTROLLER\nlisteners=CONTROLLER://192.168.253.143:9093\nlistener.security.protocol.map=CONTROLLER:PLAINTEXT\n\n# ---- KRaft Quorum ----\ncontroller.quorum.voters=101@192.168.253.143:9093,102@192.168.253.136:9093\ncontroller.quorum.bootstrap.servers=192.168.253.143:9093,192.168.253.136:9093\n\n# ---- Metadata Storage ----\nmetadata.log.dir=/apache/kafka/controller-data/metadata\n\n# ---- KRaft Timing ----\ncontroller.quorum.election.timeout.ms=5000\ncontroller.quorum.fetch.timeout.ms=5000\ncontroller.quorum.election.backoff.max.ms=5000\ncontroller.quorum.request.timeout.ms=10000\n\n# ---- Metadata Retention ----\nmetadata.log.segment.bytes=1073741824\nmetadata.log.segment.ms=604800000\nmetadata.max.retention.bytes=-1\nmetadata.max.retention.ms=604800000\n\n# ---- Network ----\nnum.network.threads=8\nnum.io.threads=16\nsocket.send.buffer.bytes=102400\nsocket.receive.buffer.bytes=102400\nsocket.request.max.bytes=104857600"
+               }
+}
