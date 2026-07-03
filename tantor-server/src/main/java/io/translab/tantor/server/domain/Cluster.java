@@ -2,7 +2,6 @@ package io.translab.tantor.server.domain;
 
 import jakarta.persistence.*;
 import lombok.Data;
-import org.hibernate.annotations.GenericGenerator;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -39,6 +38,12 @@ public class Cluster {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @Column(name = "created_by")
+    private String createdBy = "system";
+
+    @Column(name = "updated_by")
+    private String updatedBy = "system";
 
     private String status = "PENDING"; // PENDING, RUNNING, VALIDATING, SUCCESS, FAILED, DELETING, DELETED
 

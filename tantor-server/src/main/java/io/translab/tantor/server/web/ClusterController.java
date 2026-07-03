@@ -1,6 +1,7 @@
 package io.translab.tantor.server.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
@@ -49,6 +50,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
     private final JobService jobService;
+    private final AuditService auditService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -72,6 +74,8 @@ public class ClusterController {
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
             List<Map<String, Object>> hosts = clusterHosts(c);
             m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
             m.put("hosts", hosts);
@@ -98,6 +102,8 @@ public class ClusterController {
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
             List<Map<String, Object>> hosts = clusterHosts(c);
             m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
             m.put("hosts", hosts);
@@ -242,7 +248,22 @@ public class ClusterController {
         Job savedJob = jobService.createJob(job, deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode));
         
         activityAlertService.logActivity("INFO", "Created deployment job for cluster: " + request.getName(), cluster.getId());
-        
+
+        // Audit: record cluster deployment event
+        auditService.record(
+            "CLUSTER", "CLUSTER_DEPLOY", "CLUSTER", cluster.getId().toString(),
+            cluster.getId(), "SUCCESS",
+            Map.of(
+                "clusterName", cluster.getName(),
+                "clusterId", cluster.getId().toString(),
+                "kafkaVersion", cluster.getKafkaVersion(),
+                "mode", deploymentMode,
+                "environment", cluster.getEnvironment() == null ? "" : cluster.getEnvironment(),
+                "jobId", savedJob.getId().toString(),
+                "nodeCount", request.getServices().size()
+            )
+        );
+
         return ResponseEntity.ok(Map.of(
             "id", cluster.getId().toString(),
             "jobId", savedJob.getId().toString()
@@ -1288,7 +1309,7 @@ public class ClusterController {
             return null;
         }
         try {
-            Map<String, Object> metadata = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+            Map<String, Object> metadata = objectMapper.readValue(cluster.getConfigJson(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
             Object value = metadata.get(key);
             return value == null ? null : String.valueOf(value);
         } catch (Exception e) {
@@ -1313,7 +1334,7 @@ public class ClusterController {
             return Map.of();
         }
         try {
-            return objectMapper.readValue(configJson, Map.class);
+            return objectMapper.readValue(configJson, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             return Map.of();
         }

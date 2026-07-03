@@ -18,8 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.*;
 
@@ -34,19 +32,15 @@ public class AuditService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID record(String category, String action, String resourceType, String resourceId,
-                       UUID clusterId, String status, Object oldValue, Object newValue,
-                       Object approval, Object details) {
+                       UUID clusterId, String status, Object details) {
         return recordAs(null, "MANAGEMENT_SERVER", null, category, action, resourceType, resourceId,
-                clusterId, status, oldValue, newValue, approval, details);
+                clusterId, status, details);
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public UUID recordAs(String actorOverride, String source, String ipOverride,
                          String category, String action, String resourceType, String resourceId,
-                         UUID clusterId, String status, Object oldValue, Object newValue,
-                         Object approval, Object details) {
-        repository.lockLedger();
-        AuditLog previous = repository.findFirstByOrderByCreatedAtDescIdDesc().orElse(null);
+                         UUID clusterId, String status, Object details) {
         AuditLog event = new AuditLog();
         event.setActor(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
         event.setSource(text(source, "MANAGEMENT_SERVER"));
@@ -56,15 +50,10 @@ public class AuditService {
         event.setResourceId(resourceId);
         event.setClusterId(clusterId);
         event.setStatus(text(status, "SUCCESS").toUpperCase(Locale.ROOT));
-        event.setOldValue(json(oldValue));
-        event.setNewValue(json(newValue));
-        event.setApproval(json(approval));
         event.setDetails(json(details));
         event.setIpAddress(ipOverride == null ? requestIp() : ipOverride);
         event.setRequestId(requestId());
-        event.setPreviousHash(previous == null ? null : previous.getRecordHash());
         event.setCreatedAt(Instant.now());
-        event.setRecordHash(hash(event));
         return repository.saveAndFlush(event).getId();
     }
 
@@ -96,25 +85,8 @@ public class AuditService {
         return Map.of(
                 "total", repository.count(),
                 "successful", repository.countByStatus("SUCCESS"),
-                "failed", repository.countByStatus("FAILED"),
-                "approvals", repository.countByCategory("APPROVAL"),
-                "integrity", verifyIntegrity()
+                "failed", repository.countByStatus("FAILED")
         );
-    }
-
-    public String verifyIntegrity() {
-        String previousHash = null;
-        for (AuditLog event : repository.findAllByOrderByCreatedAtAscIdAsc()) {
-            if ("LEGACY".equals(event.getSource())) {
-                previousHash = event.getRecordHash();
-                continue;
-            }
-            if (!Objects.equals(previousHash, event.getPreviousHash()) || !Objects.equals(hash(event), event.getRecordHash())) {
-                return "BROKEN";
-            }
-            previousHash = event.getRecordHash();
-        }
-        return "VERIFIED";
     }
 
     private void equalIgnoreCase(List<Predicate> predicates, jakarta.persistence.criteria.CriteriaBuilder cb,
@@ -149,21 +121,6 @@ public class AuditService {
         }
     }
 
-    private String hash(AuditLog event) {
-        String material = String.join("|",
-                nullable(event.getPreviousHash()), nullable(event.getActor()), nullable(event.getCategory()),
-                nullable(event.getAction()), nullable(event.getResourceType()), nullable(event.getResourceId()),
-                nullable(event.getStatus()), nullable(event.getOldValue()), nullable(event.getNewValue()),
-                nullable(event.getApproval()), nullable(event.getDetails()), nullable(event.getIpAddress()),
-                nullable(event.getSource()), nullable(event.getRequestId()), event.getCreatedAt().toString());
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(material.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            throw new IllegalStateException("Unable to hash audit event", e);
-        }
-    }
-
     private String currentActor() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getName() == null || "anonymousUser".equals(auth.getName())) return "system";
@@ -189,5 +146,4 @@ public class AuditService {
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
-    private String nullable(String value) { return value == null ? "" : value; }
 }

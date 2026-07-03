@@ -30,6 +30,8 @@ interface ClusterInfo {
   managementLevel?: string;
   sourceLabel?: string;
   accessLabel?: string;
+  createdBy?: string;
+  updatedBy?: string;
   hosts?: ClusterHost[];
 }
 
@@ -237,6 +239,8 @@ export function Clusters() {
                   <th>Disk</th>
                   <th>Last heartbeat</th>
                   <th>Source / Access</th>
+                  <th>Created By</th>
+                  <th>Updated By</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -311,6 +315,12 @@ export function Clusters() {
                             {statusLabel(cluster)}
                           </span>
                         </div>
+                      </td>
+                      <td>
+                        <span className="cluster-meta-value">{cluster.createdBy || 'system'}</span>
+                      </td>
+                      <td>
+                        <span className="cluster-meta-value">{cluster.updatedBy || 'system'}</span>
                       </td>
                       <td>
                         <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>

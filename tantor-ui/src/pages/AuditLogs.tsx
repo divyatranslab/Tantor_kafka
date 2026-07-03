@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2, ChevronDown, ChevronUp, Clock3, FileClock, Filter,
-  History, LockKeyhole, Network, Package, RefreshCw, Search, ShieldCheck,
+  History, LockKeyhole, Network, Package, RefreshCw, Search,
   UserRound, XCircle,
 } from 'lucide-react';
 import './AuditLogs.css';
@@ -19,8 +19,6 @@ interface AuditEvent {
   ipAddress?: string;
   source: string;
   requestId?: string;
-  previousHash?: string;
-  recordHash: string;
   createdAt: string;
 }
 
@@ -41,7 +39,6 @@ const displayJson = (value: unknown) => {
   return typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
 };
 
-const shortHash = (value?: string) => value ? `${value.slice(0, 10)}…${value.slice(-8)}` : 'ledger start';
 const title = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 
 export function AuditLogs() {
@@ -133,7 +130,6 @@ export function AuditLogs() {
           <p>Who changed what, on which resource, from where, and whether it succeeded.</p>
         </div>
         <div className="audit-header-actions">
-          <span className={`integrity-pill ${integrity.toLowerCase()}`}><ShieldCheck size={14} /> Integrity {integrity}</span>
           <button onClick={fetchLogs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
         </div>
       </header>
@@ -193,7 +189,7 @@ function FragmentRow({ event, open, onToggle }: { event: AuditEvent; open: boole
       </div>
       <div className="audit-chain">
         <span><strong>Event ID</strong> {event.id}</span><span><strong>Request ID</strong> {event.requestId || 'not supplied'}</span>
-        <span><strong>Previous hash</strong> <code>{shortHash(event.previousHash)}</code></span><span><strong>Record hash</strong> <code>{shortHash(event.recordHash)}</code></span>
+        {event.clusterId && <span><strong>Cluster ID</strong> {event.clusterId}</span>}
       </div>
     </td></tr>}
   </>;
