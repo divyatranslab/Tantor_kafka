@@ -2,12 +2,12 @@ package api
 
 // HostRegistration Request for agent to register itself
 type HostRegistration struct {
+	AgentName   string   `json:"agent_name"`
 	HostID      string   `json:"host_id"`
 	Hostname    string   `json:"hostname"`
 	IPAddresses []string `json:"ip_addresses"`
 	OSDetails   string   `json:"os_details"`
 	AgentVer    string   `json:"agent_version"`
-	AgentName   string   `json:"agent_name"`
 	AgentPath   string   `json:"agent_path"`
 }
 

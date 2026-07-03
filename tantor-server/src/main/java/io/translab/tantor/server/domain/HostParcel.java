@@ -19,6 +19,9 @@ public class HostParcel {
     @Column(name = "host_id", nullable = false)
     private String hostId;
 
+    @Column(name = "agent_id")
+    private UUID agentId;
+
     @Column(name = "host_ip")
     private String hostIp;
 
@@ -34,10 +37,10 @@ public class HostParcel {
     @Column(name = "file_name")
     private String fileName;
 
-    @Column(name = "artifact_url")
-    private String artifactUrl;
-
     private String checksum;
+
+    @Column(nullable = false)
+    private String action;
 
     @Column(name = "parcel_dir")
     private String parcelDir;
@@ -59,6 +62,12 @@ public class HostParcel {
 
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "created_by", nullable = false)
+    private String createdBy = "system";
+
+    @Column(name = "updated_by", nullable = false)
+    private String updatedBy = "system";
 
     @PrePersist
     void onCreate() {

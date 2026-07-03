@@ -23,9 +23,9 @@ public class ManifestService {
         return new ManifestDto(
                 ManifestDto.CURRENT_SCHEMA_VERSION,
                 a.getServiceType(),
-                a.getName(),
+                a.getFileName(),
                 a.getVersion(),
-                a.getClassifier(),
+                null,
                 a.getFileName(),
                 a.getFileSizeBytes(),
                 a.getChecksumSha256(),

@@ -44,14 +44,6 @@ public class AuditLog {
     private String details;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "old_value", columnDefinition = "jsonb")
-    private String oldValue;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "new_value", columnDefinition = "jsonb")
-    private String newValue;
-
-    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String approval;
 
@@ -63,12 +55,6 @@ public class AuditLog {
 
     @Column(name = "request_id", length = 100)
     private String requestId;
-
-    @Column(name = "previous_hash", length = 64)
-    private String previousHash;
-
-    @Column(name = "record_hash", nullable = false, length = 64, updatable = false)
-    private String recordHash;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

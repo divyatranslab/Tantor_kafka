@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.AuditLog;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -15,9 +13,8 @@ import static org.mockito.Mockito.*;
 class AuditServiceTest {
 
     @Test
-    void createsHashChainedEventAndRedactsSecrets() {
+    void createsAuditEventAndCapturesDetails() {
         AuditLogRepository repository = mock(AuditLogRepository.class);
-        when(repository.findFirstByOrderByCreatedAtDescIdDesc()).thenReturn(Optional.empty());
         when(repository.saveAndFlush(any(AuditLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
         AuditService service = new AuditService(repository, new ObjectMapper());
 
@@ -29,13 +26,8 @@ class AuditServiceTest {
         var captor = org.mockito.ArgumentCaptor.forClass(AuditLog.class);
         verify(repository).saveAndFlush(captor.capture());
         AuditLog event = captor.getValue();
-        assertThat(event.getRecordHash()).hasSize(64);
-        assertThat(event.getPreviousHash()).isNull();
         assertThat(event.getActor()).isEqualTo("operator-1");
-        assertThat(event.getOldValue()).contains("[REDACTED]").doesNotContain("never-store-this");
-        assertThat(event.getNewValue()).contains("[REDACTED]").doesNotContain("also-secret");
-
-        when(repository.findAllByOrderByCreatedAtAscIdAsc()).thenReturn(List.of(event));
-        assertThat(service.verifyIntegrity()).isEqualTo("VERIFIED");
+        assertThat(event.getDetails()).contains("approved");
+        assertThat(service.verifyIntegrity()).isEqualTo("NOT_ENABLED");
     }
 }

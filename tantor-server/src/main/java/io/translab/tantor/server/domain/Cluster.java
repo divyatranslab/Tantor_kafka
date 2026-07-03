@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.Data;
 import org.hibernate.annotations.GenericGenerator;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -37,6 +38,16 @@ public class Cluster {
     @Column(name = "log_directory")
     private String logDirectory;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "node_ids", columnDefinition = "jsonb", nullable = false)
+    private List<Integer> nodeIds = new ArrayList<>();
+
+    @Column(name = "created_by", nullable = false)
+    private String createdBy = "system";
+
+    @Column(name = "updated_by", nullable = false)
+    private String updatedBy = "system";
+
     @Column(name = "kafka_version", nullable = false)
     private String kafkaVersion;
 
@@ -54,6 +65,25 @@ public class Cluster {
 
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
+
+    @Column(name = "updated_at")
+    private Instant updatedAt = Instant.now();
+
+    @PrePersist
+    void onCreate() {
+        Instant now = Instant.now();
+        if (createdAt == null) createdAt = now;
+        updatedAt = now;
+        if (createdBy == null || createdBy.isBlank()) createdBy = "system";
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+        if (nodeIds == null) nodeIds = new ArrayList<>();
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+    }
 
     @Column(name = "deleted_at")
     private Instant deletedAt;

@@ -90,6 +90,11 @@ public class HostController {
             return ResponseEntity.badRequest().body(Map.of("message", "Invalid prerequisite options."));
         }
         taskRepository.save(task);
+        auditService.record("PREREQUISITE", "PREREQUISITE_CHECK_REQUESTED", "HOST", id,
+                host.getClusterId(), "REQUESTED", null, null, null,
+                Map.of("taskId", task.getId().toString(),
+                        "mode", options == null ? "" : String.valueOf(options.getOrDefault("mode", "")),
+                        "requiredPorts", options == null ? "" : String.valueOf(options.getOrDefault("required_ports", ""))));
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
@@ -110,12 +115,12 @@ public class HostController {
     public ResponseEntity<?> markUnavailable(@PathVariable String id) {
         return hostRepository.findById(id).map(host -> {
             String previous = host.getStatus();
-            host.setStatus("UNAVAILABLE");
+            host.setStatus("OCCUPIED");
             hostRepository.save(host);
-            activityAlertService.logAudit("WARN", "HOST", "MARK_UNAVAILABLE", "Host marked unavailable", "HOST", id,
-                    host.getClusterId(), "ONLINE", "UNAVAILABLE", "SUCCESS", null, null);
-            auditService.record("HOST", "HOST_MARKED_UNAVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
-                    Map.of("status", String.valueOf(previous)), Map.of("status", "UNAVAILABLE"), null, null);
+            activityAlertService.logAudit("WARN", "HOST", "MARK_OCCUPIED", "Host marked occupied", "HOST", id,
+                    host.getClusterId(), "ONLINE", "OCCUPIED", "SUCCESS", null, null);
+            auditService.record("HOST", "HOST_MARKED_OCCUPIED", "HOST", id, host.getClusterId(), "SUCCESS",
+                    Map.of("status", String.valueOf(previous)), Map.of("status", "OCCUPIED"), null, null);
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -127,7 +132,7 @@ public class HostController {
             host.setStatus("ONLINE");
             hostRepository.save(host);
             activityAlertService.logAudit("INFO", "HOST", "MARK_AVAILABLE", "Host marked available", "HOST", id,
-                    host.getClusterId(), "UNAVAILABLE", "ONLINE", "SUCCESS", null, null);
+                    host.getClusterId(), "OCCUPIED", "ONLINE", "SUCCESS", null, null);
             auditService.record("HOST", "HOST_MARKED_AVAILABLE", "HOST", id, host.getClusterId(), "SUCCESS",
                     Map.of("status", String.valueOf(previous)), Map.of("status", "ONLINE"), null, null);
             return ResponseEntity.ok(hostSummary(host));
@@ -138,7 +143,7 @@ public class HostController {
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is already connected or unavailable."));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is already connected or occupied."));
         }
 
         Job job = new Job();
@@ -247,13 +252,11 @@ public class HostController {
         host.setStatus(effectiveStatus);
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("id", host.getId());
-        summary.put("hostId", host.getHostNumber());
-        summary.put("agentId", host.getId());
+        summary.put("agentName", host.getAgentName());
         summary.put("hostname", host.getHostname());
         summary.put("ipAddresses", host.getIpAddresses());
         summary.put("osDetails", host.getOsDetails());
         summary.put("agentVersion", host.getAgentVersion());
-        summary.put("agentName", host.getAgentName());
         summary.put("agentPath", host.getAgentPath());
         summary.put("agentStatus", effectiveStatus);
         boolean discoveryAgent = hostStatusService.isDiscoveryAgent(host);
@@ -275,6 +278,7 @@ public class HostController {
         activeCluster.ifPresent(cluster -> {
             summary.put("clusterId", cluster.getId().toString());
             summary.put("clusterName", cluster.getName());
+            summary.put("kafkaClusterId", cluster.getKafkaClusterId());
         });
         return summary;
     }

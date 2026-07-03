@@ -16,11 +16,11 @@ public class Host {
     @Id
     private String id; // agent host_id
 
-    @Column(name = "host_number", insertable = false, updatable = false)
-    private Long hostNumber;
-
     @Column(nullable = false)
     private String hostname;
+
+    @Column(name = "agent_name")
+    private String agentName;
 
     @Column(name = "ip_addresses", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
@@ -32,15 +32,11 @@ public class Host {
     @Column(name = "agent_version")
     private String agentVersion;
 
-    @Column(name = "agent_name")
-    private String agentName;
-
     @Column(name = "agent_path")
     private String agentPath;
 
     @Column(name = "agent_status")
     private String agentStatus;
-
     @Column(nullable = false)
     private String status;
 

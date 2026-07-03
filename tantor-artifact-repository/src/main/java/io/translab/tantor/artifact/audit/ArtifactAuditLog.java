@@ -17,13 +17,7 @@ public class ArtifactAuditLog {
     @Column(name = "resource_type", nullable = false) private String resourceType;
     @Column(name = "resource_id") private String resourceId;
     @Column(nullable = false) private String status;
-    @JdbcTypeCode(SqlTypes.JSON) @Column(name = "old_value", columnDefinition = "jsonb") private String oldValue;
-    @JdbcTypeCode(SqlTypes.JSON) @Column(name = "new_value", columnDefinition = "jsonb") private String newValue;
     @JdbcTypeCode(SqlTypes.JSON) @Column(columnDefinition = "jsonb") private String details;
-    @Column(name = "ip_address") private String ipAddress;
-    @Column(nullable = false) private String source = "ARTIFACT_REPOSITORY";
-    @Column(name = "previous_hash") private String previousHash;
-    @Column(name = "record_hash", nullable = false, updatable = false) private String recordHash;
     @Column(name = "created_at", nullable = false, updatable = false) private OffsetDateTime createdAt = OffsetDateTime.now();
 
     public UUID getId() { return id; }
@@ -33,12 +27,6 @@ public class ArtifactAuditLog {
     public String getResourceType() { return resourceType; } public void setResourceType(String v) { resourceType = v; }
     public String getResourceId() { return resourceId; } public void setResourceId(String v) { resourceId = v; }
     public String getStatus() { return status; } public void setStatus(String v) { status = v; }
-    public String getOldValue() { return oldValue; } public void setOldValue(String v) { oldValue = v; }
-    public String getNewValue() { return newValue; } public void setNewValue(String v) { newValue = v; }
     public String getDetails() { return details; } public void setDetails(String v) { details = v; }
-    public String getIpAddress() { return ipAddress; } public void setIpAddress(String v) { ipAddress = v; }
-    public String getSource() { return source; }
-    public String getPreviousHash() { return previousHash; } public void setPreviousHash(String v) { previousHash = v; }
-    public String getRecordHash() { return recordHash; } public void setRecordHash(String v) { recordHash = v; }
     public OffsetDateTime getCreatedAt() { return createdAt; } public void setCreatedAt(OffsetDateTime v) { createdAt = v; }
 }

@@ -22,6 +22,9 @@ public class ClusterServiceAssignment {
     @Column(name = "host_id", nullable = false)
     private String hostId;
 
+    @Column(name = "agent_id")
+    private UUID agentId;
+
     @Column(nullable = false)
     private String role;
 

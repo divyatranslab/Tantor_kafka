@@ -76,7 +76,7 @@ public class AirGapBundleService {
      */
     public void export(List<UUID> ids, OutputStream out) {
         List<Artifact> artifacts = ids == null || ids.isEmpty()
-                ? repository.findByStatus(ArtifactStatus.AVAILABLE)
+                ? repository.findByStatusAndAction(ArtifactStatus.AVAILABLE, "UPLOAD")
                 : repository.findAllById(ids).stream()
                     .filter(a -> a.getStatus() == ArtifactStatus.AVAILABLE).toList();
 
@@ -95,9 +95,7 @@ public class AirGapBundleService {
                 Path binary = storageService.resolveBinary(relDir, a.getFileName());
                 addFileEntry(tar, entryPath, binary);
 
-                String manifestJson = a.getManifest() != null
-                        ? a.getManifest()
-                        : manifestService.toJson(manifestService.build(a, null));
+                String manifestJson = manifestService.toJson(manifestService.build(a, null));
                 addBytesEntry(tar, manifestPath, manifestJson.getBytes(StandardCharsets.UTF_8));
 
                 entries.add(new BundleManifest.Entry(entryPath, manifestPath, a.getChecksumSha256()));
@@ -166,6 +164,7 @@ public class AirGapBundleService {
                 manifest.name(),
                 manifest.version(),
                 manifest.classifier(),
+                null,
                 manifest.fileName(),
                 manifest.contentType(),
                 "Imported from air-gap bundle",

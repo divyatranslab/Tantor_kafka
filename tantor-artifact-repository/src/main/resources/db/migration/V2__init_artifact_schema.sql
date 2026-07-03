@@ -31,7 +31,7 @@
 -- record of every artifact pulled by an agent in an air-gapped estate.
 -- =====================================================================
 
-CREATE TABLE artifact (
+CREATE TABLE IF NOT EXISTS artifact (
     id                UUID         NOT NULL DEFAULT gen_random_uuid(),
     service_type      VARCHAR(40)  NOT NULL,
     name              VARCHAR(255) NOT NULL,
@@ -62,15 +62,15 @@ CREATE TABLE artifact (
 
 -- One artifact per (service, version, classifier). COALESCE makes a NULL
 -- classifier behave as a single distinct value rather than always-unique NULLs.
-CREATE UNIQUE INDEX ux_artifact_identity
+CREATE UNIQUE INDEX IF NOT EXISTS ux_artifact_identity
     ON artifact (service_type, version, COALESCE(classifier, ''));
 
-CREATE INDEX ix_artifact_service_type ON artifact (service_type);
-CREATE INDEX ix_artifact_status       ON artifact (status);
-CREATE INDEX ix_artifact_created_at   ON artifact (created_at DESC);
-CREATE INDEX ix_artifact_sha256       ON artifact (checksum_sha256);
+CREATE INDEX IF NOT EXISTS ix_artifact_service_type ON artifact (service_type);
+CREATE INDEX IF NOT EXISTS ix_artifact_status       ON artifact (status);
+CREATE INDEX IF NOT EXISTS ix_artifact_created_at   ON artifact (created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_artifact_sha256       ON artifact (checksum_sha256);
 
-CREATE TABLE artifact_download_log (
+CREATE TABLE IF NOT EXISTS artifact_download_log (
     id                BIGINT GENERATED ALWAYS AS IDENTITY,
     artifact_id       UUID         NOT NULL,
     downloaded_by     VARCHAR(128) NOT NULL DEFAULT 'agent',
@@ -82,5 +82,5 @@ CREATE TABLE artifact_download_log (
         REFERENCES artifact (id) ON DELETE CASCADE
 );
 
-CREATE INDEX ix_download_artifact ON artifact_download_log (artifact_id);
-CREATE INDEX ix_download_at       ON artifact_download_log (downloaded_at DESC);
+CREATE INDEX IF NOT EXISTS ix_download_artifact ON artifact_download_log (artifact_id);
+CREATE INDEX IF NOT EXISTS ix_download_at       ON artifact_download_log (downloaded_at DESC);

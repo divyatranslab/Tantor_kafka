@@ -67,6 +67,9 @@ public class ClusterController {
             m.put("mode", c.getMode());
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
+            m.put("nodeIds", c.getNodeIds());
             m.put("status", c.getStatus());
             m.put("bootstrapServers", c.getBootstrapServers());
             m.put("clusterId", c.getId().toString());
@@ -95,6 +98,9 @@ public class ClusterController {
             m.put("mode", c.getMode());
             m.put("environment", c.getEnvironment());
             m.put("createdAt", c.getCreatedAt());
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
+            m.put("nodeIds", c.getNodeIds());
             m.put("status", c.getStatus());
             m.put("bootstrapServers", c.getBootstrapServers());
             m.put("clusterId", c.getId().toString());
@@ -134,6 +140,7 @@ public class ClusterController {
         }
         cluster.setName(name);
         cluster.setEnvironment(environment);
+        cluster.setUpdatedBy("system");
         clusterRepository.save(cluster);
         activityAlertService.logActivity("INFO", "Updated cluster details for " + name, id);
         return ResponseEntity.ok(Map.of("id", id.toString(), "name", name, "environment", environment));
@@ -192,6 +199,12 @@ public class ClusterController {
         cluster.setConfigDirectory(activeKafkaInstallDir(deploymentConfig) + "/config");
         cluster.setDataDirectory(blankString(deploymentConfig.get("kafka_data_dir")));
         cluster.setLogDirectory(blankString(deploymentConfig.get("kafka_app_log_dir")));
+        cluster.setCreatedBy("system");
+        cluster.setUpdatedBy("system");
+        cluster.setNodeIds(request.getServices().stream()
+                .map(ServiceAssignmentReq::getNode_id)
+                .filter(java.util.Objects::nonNull)
+                .distinct().sorted().toList());
         
         try {
             cluster.setConfigJson(objectMapper.writeValueAsString(deploymentConfig));
@@ -355,6 +368,11 @@ public class ClusterController {
             cluster.getServices().add(assign);
         }
         cluster.setStatus("RUNNING");
+        cluster.setUpdatedBy("system");
+        cluster.setNodeIds(allServices.stream()
+                .map(ServiceAssignmentReq::getNode_id)
+                .filter(java.util.Objects::nonNull)
+                .distinct().sorted().toList());
         cluster.setBootstrapServers(String.valueOf(persistedClusterConfig.getOrDefault("bootstrap_servers", cluster.getBootstrapServers())));
         try {
             cluster.setConfigJson(objectMapper.writeValueAsString(persistedClusterConfig));
@@ -510,7 +528,7 @@ public class ClusterController {
                 return ResponseEntity.badRequest().body(Map.of("error", "Host " + hostId + " is not online. Current status: " + effectiveStatus + "."));
             }
             String finalTargetVersion = targetVersion;
-            boolean activeOnHost = hostParcelRepository.findByHostIdAndServiceTypeAndActiveTrue(hostId, "KAFKA").stream()
+            boolean activeOnHost = hostParcelRepository.findLatestActive(hostId, "KAFKA").stream()
                     .anyMatch(parcel -> finalTargetVersion.equals(parcel.getVersion()));
             if (!activeOnHost) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Kafka " + targetVersion + " must be active as a parcel on host " + hostId + " before upgrade."));

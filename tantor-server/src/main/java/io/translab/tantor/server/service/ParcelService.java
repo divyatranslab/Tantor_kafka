@@ -32,7 +32,7 @@ public class ParcelService {
     private String artifactRepoUrl;
 
     public List<HostParcel> listStates() {
-        return hostParcelRepository.findAll();
+        return hostParcelRepository.findLatestStates();
     }
 
     @Transactional
@@ -61,18 +61,22 @@ public class ParcelService {
             return;
         }
 
-        hostParcelRepository.findByLastTaskId(task.getId()).ifPresent(parcel -> {
+        hostParcelRepository.findFirstByLastTaskIdOrderByCreatedAtDescIdDesc(task.getId()).ifPresent(parcel -> {
             if ("FAILED".equalsIgnoreCase(task.getStatus())) {
-                parcel.setStatus("FAILED");
-                parcel.setErrorMsg(task.getErrorMsg());
-                hostParcelRepository.save(parcel);
+                HostParcel failed = copyEvent(parcel, actionForCommand(task.getCommand()));
+                failed.setStatus("FAILED");
+                failed.setErrorMsg(task.getErrorMsg());
+                hostParcelRepository.save(failed);
                 return;
             }
 
             if ("RUNNING".equalsIgnoreCase(task.getStatus()) || "IN_PROGRESS".equalsIgnoreCase(task.getStatus())) {
-                parcel.setStatus(inProgressStatus(task.getCommand()));
-                parcel.setErrorMsg(null);
-                hostParcelRepository.save(parcel);
+                if (!inProgressStatus(task.getCommand()).equals(parcel.getStatus())) {
+                    HostParcel running = copyEvent(parcel, actionForCommand(task.getCommand()));
+                    running.setStatus(inProgressStatus(task.getCommand()));
+                    running.setErrorMsg(null);
+                    hostParcelRepository.save(running);
+                }
                 return;
             }
 
@@ -82,28 +86,32 @@ public class ParcelService {
 
             switch (task.getCommand()) {
                 case "DISTRIBUTE_PARCEL" -> {
-                    parcel.setStatus("DISTRIBUTED");
-                    parcel.setActive(false);
+                    // handled on the append-only result event below
                 }
                 case "ACTIVATE_PARCEL" -> {
                     deactivateOtherActiveParcels(parcel);
-                    parcel.setStatus("ACTIVE");
-                    parcel.setActive(true);
                 }
                 case "DEACTIVATE_PARCEL" -> {
-                    parcel.setStatus("DEACTIVATED");
-                    parcel.setActive(false);
+                    // handled on the append-only result event below
                 }
                 case "REMOVE_PARCEL" -> {
-                    parcel.setStatus("REMOVED");
-                    parcel.setActive(false);
+                    // handled on the append-only result event below
                 }
                 default -> {
                     return;
                 }
             }
-            parcel.setErrorMsg(null);
-            hostParcelRepository.save(parcel);
+            HostParcel completed = copyEvent(parcel, actionForCommand(task.getCommand()));
+            completed.setStatus(switch (task.getCommand()) {
+                case "DISTRIBUTE_PARCEL" -> "DISTRIBUTED";
+                case "ACTIVATE_PARCEL" -> "ACTIVE";
+                case "DEACTIVATE_PARCEL" -> "DEACTIVATED";
+                case "REMOVE_PARCEL" -> "REMOVED";
+                default -> parcel.getStatus();
+            });
+            completed.setActive("ACTIVATE_PARCEL".equals(task.getCommand()));
+            completed.setErrorMsg(null);
+            hostParcelRepository.save(completed);
         });
     }
 
@@ -119,26 +127,27 @@ public class ParcelService {
                 throw new IllegalArgumentException("Host " + hostId + " is not online. Current status: " + effectiveStatus + ".");
             }
 
-            HostParcel parcel = hostParcelRepository.findByHostIdAndArtifactId(hostId, artifactId)
-                    .orElseGet(HostParcel::new);
-            boolean isNew = parcel.getId() == null;
+            HostParcel previous = hostParcelRepository.findFirstByHostIdAndArtifactIdOrderByCreatedAtDescIdDesc(hostId, artifactId)
+                    .orElse(null);
+            boolean isNew = previous == null;
 
-            if (!isNew && !canRun(command, parcel)) {
-                throw new IllegalArgumentException("Parcel " + request.getVersion() + " on host " + hostId + " is in state " + parcel.getStatus() + " and cannot run " + command + ".");
+            if (!isNew && !canRun(command, previous)) {
+                throw new IllegalArgumentException("Parcel " + request.getVersion() + " on host " + hostId + " is in state " + previous.getStatus() + " and cannot run " + command + ".");
             }
             if (isNew && !"DISTRIBUTE_PARCEL".equals(command)) {
                 throw new IllegalArgumentException("Parcel must be distributed to host " + hostId + " before it can be activated.");
             }
 
+            HostParcel parcel = previous == null ? new HostParcel() : copyEvent(previous, actionForCommand(command));
             parcel.setHostId(hostId);
             parcel.setHostIp(primaryIp(host));
             parcel.setArtifactId(artifactId);
             parcel.setServiceType(defaultString(request.getServiceType(), "KAFKA"));
             parcel.setVersion(required(request.getVersion(), "version"));
             parcel.setFileName(request.getFileName());
-            parcel.setArtifactUrl(resolveAgentArtifactUrl(request.getArtifactUrl(), artifactId));
             parcel.setChecksum(request.getChecksum());
-            parcel.setParcelDir(resolveParcelDir(command, request, parcel));
+            parcel.setParcelDir(resolveParcelDir(command, request, previous, hostId));
+            parcel.setAction(actionForCommand(command));
             parcel.setStatus(inProgressStatus(command));
             parcel.setErrorMsg(null);
             if ("REMOVE_PARCEL".equals(command) || "DEACTIVATE_PARCEL".equals(command)) {
@@ -159,7 +168,7 @@ public class ParcelService {
         task.setCommand(command);
         task.setStatus("PENDING");
         if ("DISTRIBUTE_PARCEL".equals(command)) {
-            task.setArtifactUrl(parcel.getArtifactUrl());
+            task.setArtifactUrl(resolveAgentArtifactUrl(parcel.getArtifactId()));
             task.setChecksum(parcel.getChecksum());
         }
 
@@ -193,9 +202,6 @@ public class ParcelService {
         if (request == null || request.getHostIds() == null || request.getHostIds().isEmpty()) {
             throw new IllegalArgumentException("At least one host is required.");
         }
-        if ("DISTRIBUTE_PARCEL".equals(command) && (request.getArtifactUrl() == null || request.getArtifactUrl().isBlank())) {
-            throw new IllegalArgumentException("Artifact URL is required for distribution.");
-        }
         required(request.getVersion(), "version");
     }
 
@@ -220,8 +226,11 @@ public class ParcelService {
         };
     }
 
-    private String resolveParcelDir(String command, ParcelActionRequest request, HostParcel parcel) {
+    private String resolveParcelDir(String command, ParcelActionRequest request, HostParcel parcel, String hostId) {
         String requestedDir = request == null ? null : request.getParcelDir();
+        if (request != null && request.getParcelDirs() != null) {
+            requestedDir = defaultString(request.getParcelDirs().get(hostId), requestedDir);
+        }
         if ("DISTRIBUTE_PARCEL".equals(command)) {
             return defaultString(requestedDir, DEFAULT_PARCEL_DIR);
         }
@@ -232,38 +241,49 @@ public class ParcelService {
         return command != null && command.endsWith("_PARCEL");
     }
 
+    private String actionForCommand(String command) {
+        return switch (command) {
+            case "DISTRIBUTE_PARCEL" -> "DISTRIBUTE";
+            case "ACTIVATE_PARCEL" -> "ACTIVATE";
+            case "DEACTIVATE_PARCEL" -> "DEACTIVATE";
+            case "REMOVE_PARCEL" -> "REMOVE";
+            default -> "UNKNOWN";
+        };
+    }
+
+    private HostParcel copyEvent(HostParcel source, String action) {
+        HostParcel copy = new HostParcel();
+        copy.setHostId(source.getHostId());
+        copy.setHostIp(source.getHostIp());
+        copy.setArtifactId(source.getArtifactId());
+        copy.setServiceType(source.getServiceType());
+        copy.setVersion(source.getVersion());
+        copy.setFileName(source.getFileName());
+        copy.setChecksum(source.getChecksum());
+        copy.setParcelDir(source.getParcelDir());
+        copy.setStatus(source.getStatus());
+        copy.setActive(source.isActive());
+        copy.setLastTaskId(source.getLastTaskId());
+        copy.setErrorMsg(source.getErrorMsg());
+        copy.setAction(action);
+        copy.setCreatedBy("system");
+        copy.setUpdatedBy("system");
+        return copy;
+    }
+
     private void deactivateOtherActiveParcels(HostParcel activatedParcel) {
-        for (HostParcel other : hostParcelRepository.findByHostIdAndServiceTypeAndActiveTrue(activatedParcel.getHostId(), activatedParcel.getServiceType())) {
+        for (HostParcel other : hostParcelRepository.findLatestActive(activatedParcel.getHostId(), activatedParcel.getServiceType())) {
             if (!Objects.equals(other.getId(), activatedParcel.getId())) {
-                other.setActive(false);
-                if ("ACTIVE".equals(other.getStatus())) {
-                    other.setStatus("DEACTIVATED");
-                }
-                hostParcelRepository.save(other);
+                HostParcel deactivated = copyEvent(other, "DEACTIVATE");
+                deactivated.setActive(false);
+                deactivated.setStatus("DEACTIVATED");
+                hostParcelRepository.save(deactivated);
             }
         }
     }
 
-    private String resolveAgentArtifactUrl(String artifactUrl, UUID artifactId) {
-        String candidate = artifactUrl == null || artifactUrl.isBlank()
-                ? "/api/v1/artifacts/" + artifactId + "/download"
-                : artifactUrl.trim();
-        try {
-            URI uri = URI.create(candidate);
-            if (!uri.isAbsolute()) {
-                return joinArtifactRepoBase(candidate);
-            }
-            String rawPath = uri.getRawPath();
-            if (rawPath != null && rawPath.startsWith("/api/v1/artifacts/")) {
-                return joinArtifactRepoBase(pathAndQuery(uri));
-            }
-            if (isLoopbackHost(uri.getHost())) {
-                return joinArtifactRepoBase(pathAndQuery(uri));
-            }
-        } catch (IllegalArgumentException ignored) {
-            return candidate;
-        }
-        return candidate;
+    private String resolveAgentArtifactUrl(UUID artifactId) {
+        return joinArtifactRepoBase("/api/v1/artifacts/" + artifactId + "/download");
     }
 
     private String joinArtifactRepoBase(String pathAndQuery) {
@@ -300,11 +320,11 @@ public class ParcelService {
     @Data
     public static class ParcelActionRequest {
         private List<String> hostIds;
-        private String artifactUrl;
         private String checksum;
         private String serviceType;
         private String version;
         private String fileName;
         private String parcelDir;
+        private Map<String, String> parcelDirs = new HashMap<>();
     }
 }

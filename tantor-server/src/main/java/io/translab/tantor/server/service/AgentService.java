@@ -57,7 +57,7 @@ public class AgentService {
         host.setAgentStatus("ONLINE");
         if (host.getStatus() == null) {
             host.setStatus("PENDING");
-        } else if (!"PENDING".equals(host.getStatus()) && !"UNAVAILABLE".equalsIgnoreCase(host.getStatus())) {
+        } else if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
             host.setStatus("ONLINE");
         }
         host.setLastHeartbeat(OffsetDateTime.now());
@@ -86,7 +86,7 @@ public class AgentService {
             host.setJavaVersion(dto.getJavaVersion());
             host.setLastHeartbeat(OffsetDateTime.now());
             host.setAgentStatus("ONLINE");
-            if (!"PENDING".equals(host.getStatus()) && !"UNAVAILABLE".equalsIgnoreCase(host.getStatus())) {
+            if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
                 host.setStatus("ONLINE");
             }
             hostRepository.save(host);
@@ -189,6 +189,38 @@ public class AgentService {
                             "TASK", task.getCommand(), "Task completed with status " + dto.getStatus(), "TASK", taskId.toString(),
                             task.getClusterId(), "IN_PROGRESS", dto.getStatus(), dto.getStatus(), null,
                             dto.getErrorMsg());
+                    if ("CHECK_PREREQUISITES".equals(task.getCommand())) {
+                        Map<String, Object> prerequisiteDetails = new java.util.LinkedHashMap<>();
+                        prerequisiteDetails.put("taskId", taskId.toString());
+                        prerequisiteDetails.put("hostId", task.getHostId());
+                        prerequisiteDetails.put("result", dto.getStatus());
+                        if (dto.getErrorMsg() != null && !dto.getErrorMsg().isBlank()) {
+                            prerequisiteDetails.put("error", dto.getErrorMsg());
+                        }
+                        if (dto.getFailedReason() != null && !dto.getFailedReason().isBlank()) {
+                            prerequisiteDetails.put("failedReason", dto.getFailedReason());
+                        }
+                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                                "PREREQUISITE", "PREREQUISITE_CHECK_COMPLETED", "HOST", task.getHostId(),
+                                task.getClusterId(), dto.getStatus(), null, null, null, prerequisiteDetails);
+                    }
+                    if ("INSTALL_KAFKA".equals(task.getCommand())) {
+                        Map<String, Object> deploymentDetails = new java.util.LinkedHashMap<>();
+                        deploymentDetails.put("taskId", taskId.toString());
+                        deploymentDetails.put("hostId", task.getHostId());
+                        deploymentDetails.put("result", dto.getStatus());
+                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                                "DEPLOYMENT",
+                                "SUCCESS".equalsIgnoreCase(dto.getStatus()) ? "KAFKA_NODE_DEPLOYED" : "KAFKA_NODE_DEPLOYMENT_FAILED",
+                                "CLUSTER", task.getClusterId() == null ? null : task.getClusterId().toString(),
+                                task.getClusterId(), dto.getStatus(), null, null, null, deploymentDetails);
+                        if ("SUCCESS".equalsIgnoreCase(dto.getStatus())) {
+                            hostRepository.findById(task.getHostId()).ifPresent(host -> {
+                                host.setStatus("OCCUPIED");
+                                hostRepository.save(host);
+                            });
+                        }
+                    }
                     parcelService.processTaskResult(task);
                     cancelPendingClusterDeploymentTasks(task);
 
@@ -321,6 +353,7 @@ public class AgentService {
             hostRepository.findById(svc.getHostId()).ifPresent(host -> {
                 if (cluster.getId().equals(host.getClusterId())) {
                     host.setClusterId(null);
+                    host.setStatus("ONLINE");
                     hostRepository.save(host);
                 }
             });

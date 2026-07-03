@@ -65,6 +65,7 @@ public class ArtifactController {
             @RequestParam String version,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String classifier,
+            @RequestParam(required = false) String storageDirectory,
             @RequestParam(required = false) String contentType,
             @RequestParam(required = false) String description,
             @RequestParam(required = false) String sha256,
@@ -79,6 +80,7 @@ public class ArtifactController {
                 name != null ? name : fileName,
                 version,
                 classifier,
+                storageDirectory,
                 fileName,
                 contentType != null ? contentType : file.getContentType(),
                 description,
@@ -110,6 +112,7 @@ public class ArtifactController {
             @RequestParam String fileName,
             @RequestParam(required = false) String name,
             @RequestParam(required = false) String classifier,
+            @RequestParam(required = false) String storageDirectory,
             @RequestParam(required = false) String contentType,
             @RequestParam(required = false) String description,
             @RequestParam(required = false) String sha256,
@@ -122,6 +125,7 @@ public class ArtifactController {
                 name != null ? name : fileName,
                 version,
                 classifier,
+                storageDirectory,
                 fileName,
                 contentType,
                 description,
@@ -170,9 +174,7 @@ public class ArtifactController {
     @GetMapping("/{id}/manifest")
     public ManifestDto manifest(@PathVariable UUID id) {
         Artifact a = artifactService.get(id);
-        return a.getManifest() != null
-                ? manifestService.fromJson(a.getManifest())
-                : manifestService.build(a, Map.of());
+        return manifestService.build(a, Map.of());
     }
 
     @Operation(summary = "Download the artifact binary; agents verify the X-Checksum-SHA256 header")

@@ -2,14 +2,13 @@ package io.translab.tantor.artifact.service;
 
 import io.translab.tantor.artifact.config.StorageProperties;
 import io.translab.tantor.artifact.domain.Artifact;
-import io.translab.tantor.artifact.domain.ArtifactDownloadLog;
 import io.translab.tantor.artifact.domain.ArtifactStatus;
 import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.dto.ManifestDto;
 import io.translab.tantor.artifact.exception.ArtifactNotFoundException;
+import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
-import io.translab.tantor.artifact.repository.ArtifactDownloadLogRepository;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,20 +33,17 @@ public class ArtifactService {
     private static final Logger log = LoggerFactory.getLogger(ArtifactService.class);
 
     private final ArtifactJpaRepository repository;
-    private final ArtifactDownloadLogRepository downloadLogRepository;
     private final StorageService storageService;
     private final ManifestService manifestService;
     private final StorageProperties properties;
     private final PackageValidator packageValidator;
 
     public ArtifactService(ArtifactJpaRepository repository,
-                           ArtifactDownloadLogRepository downloadLogRepository,
                            StorageService storageService,
                            ManifestService manifestService,
                            StorageProperties properties,
                            PackageValidator packageValidator) {
         this.repository = repository;
-        this.downloadLogRepository = downloadLogRepository;
         this.storageService = storageService;
         this.manifestService = manifestService;
         this.properties = properties;
@@ -60,6 +56,7 @@ public class ArtifactService {
             String name,
             String version,
             String classifier,
+            String storageDirectory,
             String fileName,
             String contentType,
             String description,
@@ -77,6 +74,20 @@ public class ArtifactService {
         ChecksumResult cs = tempStore.checksumResult();
         Path tempFile = tempStore.tempPath();
 
+        // Serialize uploads for the same identity/checksum so two concurrent
+        // requests cannot both pass the active-ledger duplicate check.
+        repository.acquireUploadLock("artifact-version:" + cmd.serviceType() + ":" + cmd.version());
+        repository.acquireUploadLock("artifact-checksum:" + cs.sha256());
+
+        if (repository.countActiveByServiceTypeAndVersion(cmd.serviceType(), cmd.version()) > 0) {
+            storageService.deleteTemp(tempFile);
+            throw new ArtifactAlreadyExistsException("Artifact already exists for " + cmd.serviceType() + " " + cmd.version());
+        }
+        if (repository.countActiveByChecksumSha256(cs.sha256()) > 0) {
+            storageService.deleteTemp(tempFile);
+            throw new ArtifactAlreadyExistsException("An artifact with the same SHA-256 checksum already exists");
+        }
+
         // 2. Enforce declared checksum (reject before heavy validation)
         if (properties.isEnforceChecksum() && cmd.declaredSha256() != null
                 && !cmd.declaredSha256().equalsIgnoreCase(cs.sha256())) {
@@ -89,13 +100,12 @@ public class ArtifactService {
         // 3. Prepare index row
         Artifact artifact = new Artifact();
         artifact.setId(UUID.randomUUID());
-        String artifactDir = storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier)
-                + "/" + artifact.getId();
+        String artifactDir = uploadDirectory(cmd, classifier, artifact.getId());
 
         artifact.setServiceType(cmd.serviceType());
-        artifact.setName(cmd.name());
         artifact.setVersion(cmd.version());
-        artifact.setClassifier(classifier);
+        artifact.setAction("UPLOAD");
+        artifact.setRootArtifactId(artifact.getId());
         artifact.setFileName(cmd.fileName());
         artifact.setRelativePath(artifactDir + "/" + cmd.fileName());
         artifact.setFileSizeBytes(cs.sizeBytes());
@@ -103,6 +113,7 @@ public class ArtifactService {
         artifact.setChecksumSha256(cs.sha256());
         artifact.setChecksumMd5(cs.md5());
         artifact.setCreatedBy(cmd.createdBy() != null ? cmd.createdBy() : "system");
+        artifact.setUpdatedBy(artifact.getCreatedBy());
 
         try {
             // 4. Validate package contents (extraction test, Kafka version check, malware scan)
@@ -110,12 +121,11 @@ public class ArtifactService {
 
             // 5. Move to final and set status AVAILABLE
             storageService.moveToFinal(tempFile, artifactDir, cmd.fileName());
+            artifact.setFullFilePath(storageService.resolveBinary(artifactDir, cmd.fileName()).toAbsolutePath().normalize().toString());
             artifact.setStatus(ArtifactStatus.AVAILABLE);
-            artifact.setDescription(cmd.description()); // original description
 
             ManifestDto manifest = manifestService.build(artifact, cmd.attributes());
             String manifestJson = manifestService.toJson(manifest);
-            artifact.setManifest(manifestJson);
             storageService.writeManifest(
                     artifactDir, manifestJson);
 
@@ -123,7 +133,6 @@ public class ArtifactService {
             // Package Validation failed
             storageService.deleteTemp(tempFile);
             artifact.setStatus(ArtifactStatus.FAILED);
-            artifact.setDescription("Package Validation failed: " + e.getMessage());
         }
 
         Artifact saved = repository.save(artifact);
@@ -159,12 +168,12 @@ public class ArtifactService {
 
     @Transactional
     public void logDownload(UUID artifactId, String remoteAddr, String by, boolean verified) {
-        ArtifactDownloadLog entry = new ArtifactDownloadLog();
-        entry.setArtifactId(artifactId);
-        entry.setRemoteAddr(remoteAddr);
-        entry.setDownloadedBy(by != null ? by : "agent");
+        Artifact source = get(artifactId);
+        Artifact entry = actionFrom(source, "DOWNLOAD", source.getStatus(), by);
+        entry.setDownloadedBy(by == null || by.isBlank() ? "agent" : by);
+        entry.setDownloadedAt(java.time.OffsetDateTime.now());
         entry.setVerifiedChecksum(verified);
-        downloadLogRepository.save(entry);
+        repository.save(entry);
     }
 
     /**
@@ -179,16 +188,16 @@ public class ArtifactService {
         try (InputStream in = storageService.openStream(relDir, a.getFileName())) {
             cs = new ChecksumService().digest(in);
         } catch (Exception e) {
-            a.setStatus(ArtifactStatus.CORRUPTED);
-            repository.save(a);
+            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, "system"));
             return false;
         }
         boolean ok = cs.sha256().equalsIgnoreCase(a.getChecksumSha256());
         if (!ok) {
             log.warn("Integrity check FAILED for {}: expected {} got {}",
                     id, a.getChecksumSha256(), cs.sha256());
-            a.setStatus(ArtifactStatus.CORRUPTED);
-            repository.save(a);
+            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, "system"));
+        } else {
+            repository.save(actionFrom(a, "VERIFY", a.getStatus(), "system"));
         }
         return ok;
     }
@@ -199,12 +208,43 @@ public class ArtifactService {
         Artifact a = get(id);
         String relDir = a.getRelativePath().substring(0, a.getRelativePath().lastIndexOf('/'));
         storageService.deleteBinary(relDir, a.getFileName());
-        a.setStatus(ArtifactStatus.DELETED);
-        repository.save(a);
+        repository.save(actionFrom(a, "DELETE", ArtifactStatus.DELETED, "system"));
         log.info("Artifact {} soft-deleted", id);
+    }
+
+    private Artifact actionFrom(Artifact source, String action, ArtifactStatus status, String actor) {
+        Artifact event = new Artifact();
+        event.setId(UUID.randomUUID());
+        event.setRootArtifactId(source.getRootArtifactId() == null ? source.getId() : source.getRootArtifactId());
+        event.setAction(action);
+        event.setServiceType(source.getServiceType());
+        event.setVersion(source.getVersion());
+        event.setFileName(source.getFileName());
+        event.setRelativePath(source.getRelativePath());
+        event.setFullFilePath(source.getFullFilePath());
+        event.setFileSizeBytes(source.getFileSizeBytes());
+        event.setContentType(source.getContentType());
+        event.setChecksumSha256(source.getChecksumSha256());
+        event.setChecksumMd5(source.getChecksumMd5());
+        event.setStatus(status);
+        event.setCreatedBy(actor == null || actor.isBlank() ? "system" : actor);
+        event.setUpdatedBy(event.getCreatedBy());
+        return event;
     }
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private String uploadDirectory(UploadCommand cmd, String classifier, UUID artifactId) {
+        String requested = blankToNull(cmd.storageDirectory());
+        if (requested == null) {
+            return storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier) + "/" + artifactId;
+        }
+        String normalized = requested.replace('\\', '/').replaceAll("^/+|/+$", "");
+        if (normalized.isBlank() || normalized.equals("..") || normalized.startsWith("../") || normalized.contains("/../")) {
+            throw new IllegalArgumentException("Storage directory must be a safe repository-relative path");
+        }
+        return normalized + "/" + cmd.serviceType().directory() + "/" + cmd.version() + "/" + artifactId;
     }
 }

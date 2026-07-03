@@ -17,14 +17,16 @@ import (
 
 // Collector handles gathering host metrics
 type Collector struct {
-	hostID string
-	exec   executor.Executor
+	hostID    string
+	agentName string
+	exec      executor.Executor
 }
 
-func NewCollector(hostID string) *Collector {
+func NewCollector(hostID string, agentName string) *Collector {
 	return &Collector{
-		hostID: hostID,
-		exec:   executor.New(),
+		hostID:    hostID,
+		agentName: agentName,
+		exec:      executor.New(),
 	}
 }
 
@@ -65,12 +67,12 @@ func (c *Collector) GetRegistration() *api.HostRegistration {
 	hostname, _ := os.Hostname()
 
 	return &api.HostRegistration{
+		AgentName:   c.agentName,
 		HostID:      c.hostID,
 		Hostname:    hostname,
 		IPAddresses: c.getLocalIPs(),
 		OSDetails:   runtime.GOOS + "_" + runtime.GOARCH,
 		AgentVer:    "1.0.0",
-		AgentName:   "tantor-agent@" + hostname,
 		AgentPath:   executablePath(),
 	}
 }

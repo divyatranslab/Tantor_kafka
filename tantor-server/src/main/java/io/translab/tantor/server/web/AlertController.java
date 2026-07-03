@@ -18,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -45,6 +46,7 @@ public class AlertController {
     private final ConsumerLagCacheService consumerLagCacheService;
 
     @GetMapping
+    @Transactional
     public ResponseEntity<List<Map<String, Object>>> getActiveAlerts() {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
         List<Host> hosts = hostRepository.findAll().stream()
@@ -279,6 +281,10 @@ public class AlertController {
                     ));
                 });
 
+        syncRuntimeAlerts(alerts.stream()
+                .filter(alert -> !"stored".equals(String.valueOf(alert.get("source"))))
+                .toList());
+
         List<Map<String, Object>> deduped = alerts.stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(
@@ -298,18 +304,58 @@ public class AlertController {
     private Map<String, Object> storedAlert(Alert alert, Map<String, Cluster> clusterById) {
         Cluster cluster = alert.getClusterId() == null ? null : clusterById.get(alert.getClusterId().toString());
         return runtimeAlert(
-                alert.getId().toString(),
+                alert.getAlertKey() == null ? alert.getId().toString() : alert.getAlertKey(),
                 alert.getSeverity(),
                 alert.getTitle(),
                 alert.getDescription(),
                 alert.getClusterId(),
                 cluster == null ? null : cluster.getName(),
-                null,
+                alert.getHostId(),
                 null,
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
-                null,
+                alert.getErrorLog(),
                 "stored"
         );
+    }
+
+    private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {
+        java.util.Set<String> observedKeys = new java.util.HashSet<>();
+        for (Map<String, Object> runtime : runtimeAlerts) {
+            String key = String.valueOf(runtime.get("id"));
+            if (key.isBlank() || "null".equals(key)) continue;
+            observedKeys.add(key);
+            Alert alert = alertRepository.findByAlertKey(key).orElseGet(Alert::new);
+            alert.setAlertKey(key);
+            alert.setSeverity(String.valueOf(runtime.getOrDefault("severity", "WARNING")));
+            alert.setTitle(String.valueOf(runtime.getOrDefault("title", "Runtime alert")));
+            alert.setDescription(String.valueOf(runtime.getOrDefault("description", "")));
+            Object clusterId = runtime.get("clusterId");
+            alert.setClusterId(clusterId instanceof UUID uuid ? uuid
+                    : clusterId == null ? null : parseUuid(String.valueOf(clusterId)));
+            alert.setHostId(runtime.get("hostId") == null ? null : String.valueOf(runtime.get("hostId")));
+            alert.setSource(String.valueOf(runtime.getOrDefault("source", "runtime")));
+            alert.setErrorLog(runtime.get("errorLog") == null ? null : String.valueOf(runtime.get("errorLog")));
+            alert.setStatus("ACTIVE");
+            alert.setResolvedAt(null);
+            alertRepository.save(alert);
+        }
+
+        alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE").stream()
+                .filter(alert -> alert.getAlertKey() != null)
+                .filter(alert -> !observedKeys.contains(alert.getAlertKey()))
+                .forEach(alert -> {
+                    alert.setStatus("RESOLVED");
+                    alert.setResolvedAt(java.time.Instant.now());
+                    alertRepository.save(alert);
+                });
+    }
+
+    private UUID parseUuid(String value) {
+        try {
+            return UUID.fromString(value);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private Map<String, Object> runtimeAlert(

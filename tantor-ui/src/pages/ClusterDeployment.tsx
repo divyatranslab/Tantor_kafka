@@ -97,6 +97,18 @@ type PrereqResult = {
   errorMsg: string;
 };
 
+function PrerequisiteLog({ result }: { result: PrereqResult }) {
+  const lines = [result.errorMsg, result.logOutput].filter(Boolean).join('\n\n').split('\n');
+  return <div className="cd-prereq-log">
+    {lines.map((line, index) => {
+      const tone = line.startsWith('[PASS]') ? 'pass'
+        : line.startsWith('[FAIL]') || line.toLowerCase().includes('gate failed') ? 'fail'
+          : line.startsWith('[WARN]') ? 'warn' : 'neutral';
+      return <span className={tone} key={`${index}-${line}`}>{line || '\u00a0'}</span>;
+    })}
+  </div>;
+}
+
 type KraftValidationNode = {
   hostId: string;
   address: string;
@@ -1474,7 +1486,9 @@ export function ClusterDeployment() {
                       <span>{host.hostname}</span>
                       <StatusBadge status={result.status} />
                     </summary>
-                    <pre>{result.errorMsg ? `${result.errorMsg}\n\n` : ''}{result.logOutput || 'Waiting for prerequisite run...'}</pre>
+                    {result.errorMsg || result.logOutput
+                      ? <PrerequisiteLog result={result} />
+                      : <div className="cd-prereq-log"><span className="neutral">Waiting for prerequisite run...</span></div>}
                   </details>
                 );
               })}

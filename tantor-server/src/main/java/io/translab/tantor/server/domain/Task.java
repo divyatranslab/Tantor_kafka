@@ -20,6 +20,9 @@ public class Task {
     @Column(name = "host_id", nullable = false)
     private String hostId;
 
+    @Column(name = "agent_id")
+    private UUID agentId;
+
     @Column(name = "cluster_id")
     private UUID clusterId;
 

@@ -461,7 +461,7 @@ public class DeploymentService {
     }
 
     private boolean applyActiveParcelParams(Map<String, Object> params, String hostId, String version) {
-        var activeParcel = hostParcelRepository.findByHostIdAndServiceTypeAndActiveTrue(hostId, "KAFKA").stream()
+        var activeParcel = hostParcelRepository.findLatestActive(hostId, "KAFKA").stream()
                 .filter(parcel -> version != null && version.equals(parcel.getVersion()))
                 .findFirst();
         activeParcel.ifPresent(parcel -> {

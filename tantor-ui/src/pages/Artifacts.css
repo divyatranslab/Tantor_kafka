@@ -625,3 +625,42 @@
   font-size: 12px;
   color: var(--text-secondary);
 }
+
+.parcel-host-destination {
+  display: grid;
+  gap: 4px;
+}
+
+.parcel-host-destination .form-control {
+  min-width: 230px;
+  padding: 7px 9px;
+}
+
+.parcel-host-destination small {
+  color: var(--text-secondary);
+}
+.universal-distribution-directory {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(320px, 2fr);
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-surface);
+}
+
+.universal-distribution-directory div {
+  display: grid;
+  gap: 3px;
+}
+
+.universal-distribution-directory span {
+  color: var(--text-secondary);
+  font-size: .76rem;
+}
+
+@media (max-width: 760px) {
+  .universal-distribution-directory { grid-template-columns: 1fr; }
+}

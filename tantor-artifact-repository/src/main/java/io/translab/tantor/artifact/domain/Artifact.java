@@ -8,9 +8,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -31,20 +28,23 @@ public class Artifact {
     @Column(name = "service_type", nullable = false, length = 40)
     private ServiceType serviceType;
 
-    @Column(name = "name", nullable = false)
-    private String name;
-
     @Column(name = "version", nullable = false, length = 80)
     private String version;
-
-    @Column(name = "classifier", length = 80)
-    private String classifier;
 
     @Column(name = "file_name", nullable = false, length = 512)
     private String fileName;
 
     @Column(name = "relative_path", nullable = false, length = 1024)
     private String relativePath;
+
+    @Column(name = "full_file_path", length = 2048)
+    private String fullFilePath;
+
+    @Column(name = "root_artifact_id", nullable = false)
+    private UUID rootArtifactId;
+
+    @Column(nullable = false, length = 40)
+    private String action = "UPLOAD";
 
     @Column(name = "file_size_bytes", nullable = false)
     private long fileSizeBytes;
@@ -62,16 +62,20 @@ public class Artifact {
     @Column(name = "status", nullable = false, length = 32)
     private ArtifactStatus status = ArtifactStatus.UPLOADING;
 
-    /** Serialized {@code ManifestDto}; stored as PostgreSQL JSONB. */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "manifest", columnDefinition = "jsonb")
-    private String manifest;
-
-    @Column(name = "description")
-    private String description;
-
     @Column(name = "created_by", nullable = false, length = 128)
     private String createdBy = "system";
+
+    @Column(name = "updated_by", nullable = false, length = 128)
+    private String updatedBy = "system";
+
+    @Column(name = "downloaded_by", length = 128)
+    private String downloadedBy;
+
+    @Column(name = "downloaded_at")
+    private OffsetDateTime downloadedAt;
+
+    @Column(name = "verified_checksum")
+    private Boolean verifiedChecksum;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -79,15 +83,12 @@ public class Artifact {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    @Version
-    @Column(name = "version_lock", nullable = false)
-    private long versionLock;
-
     @PrePersist
     void onCreate() {
         if (id == null) {
             id = UUID.randomUUID();
         }
+        if (rootArtifactId == null) rootArtifactId = id;
         OffsetDateTime now = OffsetDateTime.now();
         createdAt = now;
         updatedAt = now;
@@ -106,20 +107,20 @@ public class Artifact {
     public ServiceType getServiceType() { return serviceType; }
     public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-
     public String getVersion() { return version; }
     public void setVersion(String version) { this.version = version; }
-
-    public String getClassifier() { return classifier; }
-    public void setClassifier(String classifier) { this.classifier = classifier; }
 
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
 
     public String getRelativePath() { return relativePath; }
     public void setRelativePath(String relativePath) { this.relativePath = relativePath; }
+    public String getFullFilePath() { return fullFilePath; }
+    public void setFullFilePath(String fullFilePath) { this.fullFilePath = fullFilePath; }
+    public UUID getRootArtifactId() { return rootArtifactId; }
+    public void setRootArtifactId(UUID rootArtifactId) { this.rootArtifactId = rootArtifactId; }
+    public String getAction() { return action; }
+    public void setAction(String action) { this.action = action; }
 
     public long getFileSizeBytes() { return fileSizeBytes; }
     public void setFileSizeBytes(long fileSizeBytes) { this.fileSizeBytes = fileSizeBytes; }
@@ -136,17 +137,18 @@ public class Artifact {
     public ArtifactStatus getStatus() { return status; }
     public void setStatus(ArtifactStatus status) { this.status = status; }
 
-    public String getManifest() { return manifest; }
-    public void setManifest(String manifest) { this.manifest = manifest; }
-
-    public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
-
     public String getCreatedBy() { return createdBy; }
     public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public String getUpdatedBy() { return updatedBy; }
+    public void setUpdatedBy(String updatedBy) { this.updatedBy = updatedBy; }
+    public String getDownloadedBy() { return downloadedBy; }
+    public void setDownloadedBy(String downloadedBy) { this.downloadedBy = downloadedBy; }
+    public OffsetDateTime getDownloadedAt() { return downloadedAt; }
+    public void setDownloadedAt(OffsetDateTime downloadedAt) { this.downloadedAt = downloadedAt; }
+    public Boolean getVerifiedChecksum() { return verifiedChecksum; }
+    public void setVerifiedChecksum(Boolean verifiedChecksum) { this.verifiedChecksum = verifiedChecksum; }
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
 
-    public long getVersionLock() { return versionLock; }
 }

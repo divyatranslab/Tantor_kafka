@@ -141,7 +141,7 @@ export function Hosts() {
             <tr>
               <th>Status</th>
               <th>Availability</th>
-              <th>Host ID</th>
+              <th>Agent Name</th>
               <th>Hostname</th>
               <th>IP address</th>
               <th>Agent</th>
@@ -177,24 +177,24 @@ export function Hosts() {
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${available ? 'available' : 'unavailable'}`}>
-                        {available ? 'Available' : 'Unavailable'}
+                      <span className={`availability-badge ${available ? 'available' : 'occupied'}`}>
+                        {available ? 'Available' : 'Occupied'}
                       </span>
                       {!available && (
                         <div className="cluster-lock">
                           <span>{host.clusterName || 'Assigned cluster'}</span>
-                          <code>{host.clusterId}</code>
+                          <code>{host.kafkaClusterId || host.clusterId}</code>
                         </div>
                       )}
                     </div>
                   </td>
-                  <td className="text-secondary">{host.hostId ?? '-'}</td>
+                  <td className="text-secondary">{host.agentName ?? '-'}</td>
                   <td className="font-medium">{host.hostname}</td>
                   <td className="text-secondary">{ip}</td>
                   <td className="text-secondary">
                     <div className="agent-kind-cell">
-                      <span>{host.agentName || 'N/A'} · {host.agentVersion || 'N/A'}</span>
-                      <small>{host.agentId} · {host.agentPath || 'Path unavailable'} · {host.agentStatus || 'OFFLINE'}</small>
+                      <span>v{host.agentVersion || 'N/A'}</span>
+                      <small>{host.agentPath || 'Path unavailable'} · {host.agentStatus || 'OFFLINE'}</small>
                     </div>
                   </td>
                   <td>
@@ -227,14 +227,11 @@ export function Hosts() {
                       </button>
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
-                          {host.status === 'UNAVAILABLE' ? (
+                          {host.status === 'OCCUPIED' ? (
                             <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
                           ) : (
-                            <button onClick={() => setHostAvailability(host, false)}>Mark unavailable</button>
+                            <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
                           )}
-                          <button className="danger" onClick={() => deleteHost(host.id)}>
-                            <Trash2 size={13} /> Remove node
-                          </button>
                         </div>
                       )}
                     </div>

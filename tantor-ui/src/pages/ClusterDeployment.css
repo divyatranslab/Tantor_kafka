@@ -683,7 +683,7 @@
   font-weight: 650;
 }
 
-.cd-prereq-card pre {
+.cd-prereq-log {
   margin: 0;
   min-height: 90px;
   max-height: 300px;
@@ -693,6 +693,27 @@
   color: #dfffe3;
   font: 0.76rem/1.45 Consolas, 'SF Mono', monospace;
   white-space: pre-wrap;
+}
+
+.cd-prereq-log span {
+  display: block;
+}
+
+.cd-prereq-log .pass {
+  color: #55e88b;
+}
+
+.cd-prereq-log .fail {
+  color: #ff6b6b;
+  font-weight: 700;
+}
+
+.cd-prereq-log .warn {
+  color: #f7c85d;
+}
+
+.cd-prereq-log .neutral {
+  color: #d7deea;
 }
 
 .cd-progress {

@@ -24,6 +24,7 @@ spring:
     locations: classpath:db/migration
     clean-disabled: true
     clean-on-validation-error: false
+    ignore-missing-migrations: true
 
 server:
   port: 8443

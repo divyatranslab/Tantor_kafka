@@ -56,9 +56,14 @@ export function Artifacts() {
   const [file, setFile] = useState<File | null>(null);
   const [serviceType, setServiceType] = useState('KAFKA');
   const [versionInput, setVersionInput] = useState('');
+  const [uploadDirectory, setUploadDirectory] = useState('');
+  const [universalDistributionDir, setUniversalDistributionDir] = useState(
+    () => window.localStorage.getItem('tantor.universalDistributionDir') || '/srv/apps/tantor/parcels',
+  );
   const [distributionDirs, setDistributionDirs] = useState<Record<string, string>>({});
+  const [hostDistributionDirs, setHostDistributionDirs] = useState<Record<string, string>>({});
+  const [selectedHosts, setSelectedHosts] = useState<Record<string, string[]>>({});
   const fileRef = useRef<HTMLInputElement>(null);
-  const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
 
   const fetchVersions = async () => {
     const res = await fetch('/api/v1/artifacts?serviceType=KAFKA&status=AVAILABLE');
@@ -106,6 +111,10 @@ export function Artifacts() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    window.localStorage.setItem('tantor.universalDistributionDir', universalDistributionDir);
+  }, [universalDistributionDir]);
+
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file || !versionInput) return;
@@ -116,6 +125,7 @@ export function Artifacts() {
     form.append('file', file);
     form.append('serviceType', serviceType);
     form.append('version', versionInput);
+    if (uploadDirectory.trim()) form.append('storageDirectory', uploadDirectory.trim());
     form.append('overwrite', 'false');
 
     try {
@@ -125,6 +135,7 @@ export function Artifacts() {
         setShowUploadModal(false);
         setFile(null);
         setVersionInput('');
+        setUploadDirectory('');
         await refreshAll();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -141,12 +152,6 @@ export function Artifacts() {
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
-  const artifactUrlForAgent = (ver: ArtifactVersion) => {
-    if (ver.download_url?.startsWith('http')) return ver.download_url;
-    const path = ver.download_url || `/api/v1/artifacts/${ver.id}/download`;
-    return `${artifactRepoBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
-  };
-
   const runParcelAction = async (action: ParcelAction, ver: ArtifactVersion, host: Host) => {
     const key = `${action}-${ver.id}-${host.id}`;
     setActingKey(key);
@@ -157,12 +162,11 @@ export function Artifacts() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hostIds: [host.id],
-          artifactUrl: artifactUrlForAgent(ver),
           checksum: ver.sha256,
           serviceType: ver.service_type,
           version: ver.version,
           fileName: ver.filename,
-          parcelDir: distributionDirs[ver.id] || '/srv/apps/tantor/parcels',
+          parcelDir: hostDistributionDirs[`${ver.id}:${host.id}`] || distributionDirs[ver.id] || universalDistributionDir,
         }),
       });
       if (!res.ok) {
@@ -181,7 +185,10 @@ export function Artifacts() {
   const distributeAll = async (ver: ArtifactVersion) => {
     const eligible = hosts.filter(host =>
       host.status.toUpperCase() === 'ONLINE'
-      && !getHostParcel(ver.id, host.id)
+      && (() => {
+        const state = getHostParcel(ver.id, host.id);
+        return !state || ['FAILED', 'REMOVED'].includes(state.status);
+      })()
     );
     if (eligible.length === 0) {
       setUploadMsg({ text: 'No online hosts are waiting for this parcel.', ok: false });
@@ -195,12 +202,15 @@ export function Artifacts() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           hostIds: eligible.map(host => host.id),
-          artifactUrl: artifactUrlForAgent(ver),
           checksum: ver.sha256,
           serviceType: ver.service_type,
           version: ver.version,
           fileName: ver.filename,
-          parcelDir: distributionDirs[ver.id] || '/srv/apps/tantor/parcels',
+          parcelDir: distributionDirs[ver.id] || universalDistributionDir,
+          parcelDirs: Object.fromEntries(eligible.map(host => [
+            host.id,
+            hostDistributionDirs[`${ver.id}:${host.id}`] || distributionDirs[ver.id] || universalDistributionDir,
+          ])),
         }),
       });
       if (!res.ok) {
@@ -214,6 +224,55 @@ export function Artifacts() {
     } finally {
       setActingKey(null);
     }
+  };
+
+  const distributeSelected = async (ver: ArtifactVersion) => {
+    const ids = selectedHosts[ver.id] || [];
+    const targets = hosts.filter(host => ids.includes(host.id));
+    if (!targets.length) {
+      setUploadMsg({ text: 'Select at least one host.', ok: false });
+      return;
+    }
+    const key = `distribute-selected-${ver.id}`;
+    setActingKey(key);
+    try {
+      const res = await fetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hostIds: targets.map(host => host.id),
+          checksum: ver.sha256,
+          serviceType: ver.service_type,
+          version: ver.version,
+          fileName: ver.filename,
+          parcelDir: distributionDirs[ver.id] || universalDistributionDir,
+          parcelDirs: Object.fromEntries(targets.map(host => [
+            host.id,
+            hostDistributionDirs[`${ver.id}:${host.id}`] || distributionDirs[ver.id] || universalDistributionDir,
+          ])),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || body.error || 'Selected-host distribution failed.');
+      }
+      setUploadMsg({ text: `Distribution scheduled on ${targets.length} selected host${targets.length === 1 ? '' : 's'}.`, ok: true });
+      setSelectedHosts(current => ({ ...current, [ver.id]: [] }));
+      await fetchParcelState();
+    } catch (e: any) {
+      setUploadMsg({ text: e.message || 'Selected-host distribution failed.', ok: false });
+    } finally {
+      setActingKey(null);
+    }
+  };
+
+  const toggleHostSelection = (artifactId: string, hostId: string) => {
+    setSelectedHosts(current => {
+      const selected = current[artifactId] || [];
+      return { ...current, [artifactId]: selected.includes(hostId)
+        ? selected.filter(id => id !== hostId)
+        : [...selected, hostId] };
+    });
   };
 
   const deleteArtifactBinary = async (ver: ArtifactVersion) => {
@@ -337,6 +396,16 @@ export function Artifacts() {
         </div>
       </header>
 
+      <section className="universal-distribution-directory">
+        <div><strong>Universal distribution directory</strong><span>Default destination for every Kafka binary on every host.</span></div>
+        <input
+          className="form-control"
+          value={universalDistributionDir}
+          onChange={event => setUniversalDistributionDir(event.target.value)}
+          placeholder="/srv/apps/tantor/parcels"
+        />
+      </section>
+
       {loading ? (
         <div className="state-center">
           <Loader2 size={28} className="spin" />
@@ -395,17 +464,21 @@ export function Artifacts() {
                   <div className="version-card-body">
                     <div className="parcel-distribution-controls">
                       <label>
-                        Destination directory
+                        Artifact directory override (optional)
                         <input
                           className="form-control"
-                          value={distributionDirs[ver.id] || '/srv/apps/tantor/parcels'}
+                          value={distributionDirs[ver.id] || ''}
                           onChange={event => setDistributionDirs(current => ({ ...current, [ver.id]: event.target.value }))}
-                          placeholder="/srv/apps/tantor/parcels"
+                          placeholder={universalDistributionDir}
                         />
                       </label>
                       <button className="btn btn-primary-action" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
                         {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
                         Distribute all
+                      </button>
+                      <button className="btn" onClick={() => distributeSelected(ver)} disabled={actingKey !== null || !(selectedHosts[ver.id]?.length)}>
+                        {actingKey === `distribute-selected-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
+                        Distribute selected ({selectedHosts[ver.id]?.length || 0})
                       </button>
                     </div>
                     {hosts.length === 0 ? (
@@ -416,9 +489,18 @@ export function Artifacts() {
                     ) : (
                       <div className="parcel-host-table">
                         <div className="parcel-host-row header">
-                          <span>Host</span>
+                          <span>
+                            <input
+                              type="checkbox"
+                              checked={hosts.length > 0 && (selectedHosts[ver.id]?.length || 0) === hosts.length}
+                              onChange={event => setSelectedHosts(current => ({
+                                ...current,
+                                [ver.id]: event.target.checked ? hosts.map(host => host.id) : [],
+                              }))}
+                            /> Host
+                          </span>
                           <span>State</span>
-                          <span>Destination / IP</span>
+                          <span>Destination path / IP</span>
                           <span>Actions</span>
                         </div>
                         {hosts.map(host => {
@@ -427,6 +509,11 @@ export function Artifacts() {
                           return (
                             <div key={host.id} className="parcel-host-row">
                               <div className="parcel-host">
+                                <input
+                                  type="checkbox"
+                                  checked={(selectedHosts[ver.id] || []).includes(host.id)}
+                                  onChange={() => toggleHostSelection(ver.id, host.id)}
+                                />
                                 <Server size={14} />
                                 <div>
                                   <strong>{host.hostname || host.id}</strong>
@@ -440,7 +527,18 @@ export function Artifacts() {
                                 </span>
                                 {state?.errorMsg && <p className="parcel-error">{state.errorMsg}</p>}
                               </div>
-                              <span className="parcel-updated">{state ? `${state.parcelDir || '-'} · ${state.hostIp || '-'}` : '-'}</span>
+                              <div className="parcel-host-destination">
+                                <input
+                                  className="form-control"
+                                  value={hostDistributionDirs[`${ver.id}:${host.id}`] || ''}
+                                  onChange={event => setHostDistributionDirs(current => ({
+                                    ...current,
+                                    [`${ver.id}:${host.id}`]: event.target.value,
+                                  }))}
+                                  placeholder={distributionDirs[ver.id] || universalDistributionDir}
+                                />
+                                <small>{state?.hostIp || '-'}</small>
+                              </div>
                               <div className="parcel-actions">
                                 {renderActions(ver, host, state)}
                               </div>
@@ -485,6 +583,17 @@ export function Artifacts() {
                   onChange={e => setVersionInput(e.target.value)}
                   placeholder="e.g. 3.7.0"
                   required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Repository subdirectory (optional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  value={uploadDirectory}
+                  onChange={e => setUploadDirectory(e.target.value)}
+                  placeholder="custom/kafka (under configured repository root)"
                 />
               </div>
 

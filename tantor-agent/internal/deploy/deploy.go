@@ -170,7 +170,7 @@ func (e *Engine) rollbackDeployment(ctx context.Context, t *api.Task) (*api.Task
 
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
-	
+
 	reporter := func(step string, logs string) {
 		e.client.ReportTaskResult(&api.TaskResult{
 			TaskID:      t.TaskID,
@@ -264,7 +264,7 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 	logLine := func(status, name, detail string) {
 		logs.WriteString(fmt.Sprintf("[%s] %s - %s\n", status, name, detail))
 	}
-	run := func(name string, required bool, command string, args ...string) {
+	run := func(name string, required bool, command string, args ...string) bool {
 		out, errOut, err := e.exec.Run(ctx, command, args...)
 		detail := strings.TrimSpace(out)
 		if detail == "" {
@@ -281,23 +281,40 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 				warned++
 				logLine("WARN", name, fmt.Sprintf("%v: %s", err, detail))
 			}
-			return
+			return false
 		}
 		logLine("PASS", name, detail)
+		return true
 	}
 
 	logs.WriteString("Tantor host prerequisite check\n")
 	logs.WriteString("================================\n")
+	logs.WriteString("Critical Kafka prerequisites\n")
+	criticalPassed := true
+	criticalPassed = run("Open File Limit", true, "bash", "-c", "limit=$(ulimit -n); if [ \"$limit\" -lt 1024000 ]; then echo \"actual=$limit expected=>=1024000\"; exit 1; else echo \"actual=$limit expected=>=1024000\"; fi") && criticalPassed
+	criticalPassed = run("Swappiness", true, "bash", "-c", "value=$(/sbin/sysctl -n vm.swappiness 2>/dev/null); if [ \"$value\" != 0 ]; then echo actual=$value expected=0; exit 1; else echo actual=$value expected=0; fi") && criticalPassed
+	criticalPassed = run("Transparent Huge Pages", true, "bash", "-c", "value=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null); echo actual=\"$value\" expected=never; echo \"$value\" | grep -q '\\[never\\]'") && criticalPassed
+	criticalPassed = run("SELinux", true, "bash", "-c", "if ! command -v getenforce >/dev/null 2>&1; then echo actual=Disabled expected=Disabled; exit 0; fi; value=$(getenforce); echo actual=$value expected=Disabled; [ \"$value\" = Disabled ]") && criticalPassed
+	criticalPassed = run("Java Version", true, "bash", "-o", "pipefail", "-c", "value=$(java -version 2>&1 | head -1); echo actual=\"$value\" expected=Java-17.x; echo \"$value\" | grep -Eq 'version \\\"17\\.'") && criticalPassed
+	criticalPassed = run("Time Synchronization", true, "bash", "-c", "if systemctl is-active --quiet chronyd; then echo chronyd=Active expected=chronyd/ntpd-Active; elif systemctl is-active --quiet ntpd; then echo ntpd=Active expected=chronyd/ntpd-Active; else echo actual=Inactive expected=chronyd/ntpd-Active; exit 1; fi") && criticalPassed
+
+	if !criticalPassed {
+		logs.WriteString("================================\n")
+		msg := fmt.Sprintf("Critical prerequisite gate failed: %d mandatory checks failed; secondary checks were skipped", failed)
+		logs.WriteString(msg + "\n")
+		return e.fail(t, msg+"\n"+logs.String()), nil
+	}
+
+	logs.WriteString("--------------------------------\n")
+	logs.WriteString("Secondary Kafka prerequisites\n")
 	run("Agent user", false, "id", "-un")
 	run("OS release", false, "bash", "-c", "cat /etc/os-release | head -5")
-	run("Java runtime", true, "bash", "-c", "java -version 2>&1 | head -1")
 	run("Systemd available", true, "bash", "-c", "command -v systemctl && systemctl --version | head -1")
 	run("Bash available", true, "bash", "-c", "command -v bash")
 	run("Tar available", true, "bash", "-c", "command -v tar")
 	run("Primary routable IP", true, "bash", "-c", "dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}'); ipaddr=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"src\"){print $(i+1); exit}}'); test -n \"$ipaddr\" || { echo no primary source IP found; exit 1; }; case \"$ipaddr\" in 127.*|169.254.*|172.17.*|172.18.*) echo unusable primary IP $ipaddr on $dev; exit 1;; esac; echo primary IP $ipaddr on $dev")
 	run("Static IP method", false, "bash", "-c", "dev=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"dev\"){print $(i+1); exit}}'); if ! command -v nmcli >/dev/null 2>&1; then echo nmcli not installed; exit 1; fi; con=$(nmcli -t -f NAME,DEVICE con show --active | awk -F: -v d=\"$dev\" '$2==d{print $1; exit}'); test -n \"$con\" || { echo no active NetworkManager connection for $dev; exit 1; }; method=$(nmcli -g ipv4.method con show \"$con\" | head -1); if [ \"$method\" = manual ]; then echo $dev uses static/manual IPv4 via $con; else echo $dev uses IPv4 method $method, confirm DHCP reservation/static IP before Kafka deploy; exit 1; fi")
 	run("Kernel vm.max_map_count", false, "bash", "-c", "value=$(/sbin/sysctl -n vm.max_map_count 2>/dev/null || echo 0); if [ \"$value\" -eq 0 ]; then echo vm.max_map_count unavailable; exit 1; elif [ \"$value\" -lt 262144 ]; then echo vm.max_map_count=$value, recommended >=262144; exit 1; else echo vm.max_map_count=$value; fi")
-	run("Open file limit", false, "bash", "-c", "limit=$(ulimit -n); if [ \"$limit\" -lt 100000 ]; then echo nofile=$limit, recommended >=100000; exit 1; else echo nofile=$limit; fi")
 	run("Disk space", true, "bash", "-c", "df -h / /opt 2>/dev/null | tail -n +1")
 	run("Memory", true, "bash", "-c", "free -m")
 	run("/opt writable", true, "sudo", "bash", "-c", "test -w /opt && echo /opt is writable")
@@ -424,7 +441,7 @@ func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.T
 		activeDir = filepath.Join(activeDir, "kafka")
 	}
 	zkShellScript := filepath.Join(activeDir, "bin", "zookeeper-shell.sh")
-	
+
 	var logs strings.Builder
 	for _, endpoint := range endpoints {
 		out, errOut, err := e.exec.Run(ctx, zkShellScript, endpoint, "ls", "/")

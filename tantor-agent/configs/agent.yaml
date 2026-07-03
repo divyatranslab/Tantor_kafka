@@ -1,5 +1,6 @@
 agent:
-  host_id: "agent-node-yawar"
+  host_id: "123e4567-e89b-12d3-a456-426614174000"
+  agent_name: "agent-node-yawar"
   server_url: "http://192.168.3.68:8443"
   cert_file: "/etc/tantor/certs/agent.crt"
   key_file: "/etc/tantor/certs/agent.key"
@@ -8,6 +9,6 @@ agent:
   log_level: "INFO"
 
 paths:
-  data_dir: "/var/lib/tantor/agent/data"
-  log_dir: "/var/log/tantor"
-  artifacts_dir: "/var/lib/tantor/agent/artifacts"
+  data_dir: "/srv/yawar/data"
+  log_dir: "/srv/yawar/logs"
+  artifacts_dir: "/srv/yawar/artifacts"

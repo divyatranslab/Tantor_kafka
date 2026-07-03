@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Agent struct {
 		HostID      string `yaml:"host_id"`
+		AgentName   string `yaml:"agent_name"`
 		ServerURL   string `yaml:"server_url"`
 		CertFile    string `yaml:"cert_file"`
 		KeyFile     string `yaml:"key_file"`

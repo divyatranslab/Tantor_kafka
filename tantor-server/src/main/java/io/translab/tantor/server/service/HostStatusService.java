@@ -21,8 +21,8 @@ public class HostStatusService {
         if ("PENDING".equalsIgnoreCase(status)) {
             return "PENDING";
         }
-        if ("UNAVAILABLE".equalsIgnoreCase(status)) {
-            return "UNAVAILABLE";
+        if ("OCCUPIED".equalsIgnoreCase(status)) {
+            return "OCCUPIED";
         }
 
         OffsetDateTime lastHeartbeat = host.getLastHeartbeat();

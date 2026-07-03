@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	collector := collect.NewCollector(cfg.Agent.HostID)
+	collector := collect.NewCollector(cfg.Agent.HostID, cfg.Agent.AgentName)
 	deployEngine := deploy.NewEngine(cfg, apiClient, executor.New())
 
 	taskEngine := task.NewEngine(cfg, apiClient, collector, deployEngine)

@@ -42,6 +42,6 @@ public class AuditController {
 
     @GetMapping("/integrity")
     public ResponseEntity<Map<String, String>> integrity() {
-        return ResponseEntity.ok(Map.of("status", auditService.verifyIntegrity(), "mode", "APPEND_ONLY_SHA256_CHAIN"));
+        return ResponseEntity.ok(Map.of("status", auditService.verifyIntegrity(), "mode", "APPEND_ONLY"));
     }
 }

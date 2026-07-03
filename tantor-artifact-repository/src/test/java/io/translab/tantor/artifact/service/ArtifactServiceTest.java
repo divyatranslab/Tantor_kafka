@@ -7,7 +7,7 @@ import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.dto.ManifestDto;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
-import io.translab.tantor.artifact.repository.ArtifactDownloadLogRepository;
+import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +36,6 @@ import static org.mockito.Mockito.when;
 class ArtifactServiceTest {
 
     @Mock ArtifactJpaRepository repository;
-    @Mock ArtifactDownloadLogRepository downloadLogRepository;
     @Mock StorageService storageService;
     @Mock ManifestService manifestService;
 
@@ -49,7 +48,7 @@ class ArtifactServiceTest {
     void setUp() {
         properties = new StorageProperties();
         properties.setEnforceChecksum(true);
-        service = new ArtifactService(repository, downloadLogRepository,
+        service = new ArtifactService(repository,
                 storageService, manifestService, properties, packageValidator);
 
         lenient().when(storageService.relativeDir(any(), anyString(), any()))
@@ -59,6 +58,7 @@ class ArtifactServiceTest {
                         "kafka_2.13-3.7.0.tgz", 100L, "sha", "md5", "application/gzip", null, Map.of()));
         lenient().when(manifestService.toJson(any())).thenReturn("{}");
         lenient().when(repository.save(any(Artifact.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(storageService.resolveBinary(anyString(), anyString())).thenReturn(Path.of("repository", "artifact.tgz"));
     }
 
     @Test
@@ -76,15 +76,16 @@ class ArtifactServiceTest {
     }
 
     @Test
-    void repeatedUploadCreatesNewHistoryEntry() {
+    void repeatedUploadIsRejected() {
         when(storageService.storeTemporarily(eq("kafka_2.13-3.7.0.tgz"), any(InputStream.class)))
                 .thenReturn(new StorageService.TempStoreResult(Path.of("temp"), new ChecksumResult("abc123", "md5val", 100L)));
 
-        Artifact first = service.upload(cmd(null, false), data());
-        Artifact second = service.upload(cmd(null, false), data());
+        when(repository.countActiveByServiceTypeAndVersion(ServiceType.KAFKA, "3.7.0"))
+                .thenReturn(1L);
 
-        assertThat(first.getId()).isNotEqualTo(second.getId());
-        verify(repository, times(2)).save(any(Artifact.class));
+        assertThatThrownBy(() -> service.upload(cmd(null, false), data()))
+                .isInstanceOf(ArtifactAlreadyExistsException.class);
+        verify(repository, never()).save(any(Artifact.class));
     }
 
     @Test
@@ -101,7 +102,7 @@ class ArtifactServiceTest {
 
     private ArtifactService.UploadCommand cmd(String declaredSha, boolean overwrite) {
         return new ArtifactService.UploadCommand(
-                ServiceType.KAFKA, "kafka", "3.7.0", null, "kafka_2.13-3.7.0.tgz",
+                ServiceType.KAFKA, "kafka", "3.7.0", null, null, "kafka_2.13-3.7.0.tgz",
                 "application/gzip", "test", declaredSha, Map.of(), overwrite, "tester");
     }
 
