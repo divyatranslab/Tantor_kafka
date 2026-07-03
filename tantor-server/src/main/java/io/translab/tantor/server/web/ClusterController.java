@@ -1217,7 +1217,7 @@ public class ClusterController {
             if ("zookeeper".equals(role)) return installDir + "/config/zookeeper.properties";
             return installDir + "/config/server.properties";
         }
-        String configRoot = installDir + "/config";
+        String configRoot = parseKafkaVersion(kafkaVersion)[0] >= 4 ? installDir + "/config" : installDir + "/config/kraft";
         if ("controller".equals(role)) return configRoot + "/controller.properties";
         if ("broker".equals(role)) return configRoot + "/broker.properties";
         return configRoot + "/server.properties";
