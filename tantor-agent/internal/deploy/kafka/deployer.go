@@ -789,7 +789,10 @@ func serviceNameForTask(t *api.Task) string {
 }
 
 func configPathForTask(installDir string, t *api.Task) string {
-	configRoot := filepath.Join(installDir, "config")
+	configRoot := filepath.Join(installDir, "config", "kraft")
+	if usesFlatKafkaConfigLayout(t.Parameters["version"]) {
+		configRoot = filepath.Join(installDir, "config")
+	}
 	configured := strings.TrimSpace(t.Parameters["config_path"])
 	if configured != "" {
 		if filepath.IsAbs(configured) {
