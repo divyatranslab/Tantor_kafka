@@ -220,8 +220,8 @@ public class KafkaAdminService {
     }
 
     public String getKafkaClusterId(UUID clusterId) {
-        AdminClient client = getAdminClient(clusterId);
         try {
+            AdminClient client = getAdminClient(clusterId);
             String id = client.describeCluster().clusterId().get();
             return id == null ? "" : id;
         } catch (InterruptedException e) {
@@ -230,6 +230,9 @@ public class KafkaAdminService {
             return "";
         } catch (ExecutionException e) {
             refreshAdminClient(clusterId);
+            return "";
+        } catch (Exception e) {
+            log.warn("Failed to get cluster ID for cluster {}: {}", clusterId, e.getMessage());
             return "";
         }
     }

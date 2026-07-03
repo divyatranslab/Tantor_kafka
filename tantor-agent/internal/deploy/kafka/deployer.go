@@ -223,9 +223,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 			}
 
 			log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-			_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
+			formatOut, formatErr, err := d.exec.Run(ctx, storageScript, formatArgs...)
 			if err != nil {
-				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+				return logs.String(), fmt.Errorf("failed to format KRaft storage: %w, stdout: %s, stderr: %s", err, formatOut, formatErr)
 			}
 			if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
 				return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)

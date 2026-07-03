@@ -23,7 +23,7 @@ if (Test-Path $envFile) {
 }
 
 # ── Resolve Java ─────────────────────────────────────────────────────────────
-$candidateJavaHome = "C:\Program Files\Java\jdk-21"
+$candidateJavaHome = (Get-ChildItem -Path "$PSScriptRoot\jdk21" -Directory | Select-Object -First 1).FullName
 if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -and (Test-Path $candidateJavaHome)) {
     $env:JAVA_HOME = $candidateJavaHome
 }

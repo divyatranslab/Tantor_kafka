@@ -36,3 +36,7 @@ server.err
 # Artifacts and Heavy Files
 /repository/
 test.tgz
+
+# Ignored packages
+go.zip
+jdk21/

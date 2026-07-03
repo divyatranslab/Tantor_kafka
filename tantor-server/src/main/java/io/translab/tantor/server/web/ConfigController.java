@@ -735,7 +735,13 @@ public class ConfigController {
             String newConfigJson = objectMapper.writeValueAsString(newConfig);
             int order = 2;
             for (ClusterServiceAssignment service : cluster.getServices()) {
-                if (!List.of("broker", "broker_controller", "broker_zookeeper").contains(service.getRole())) continue;
+                boolean isBroker = List.of("broker", "broker_controller", "broker_zookeeper").contains(service.getRole());
+                boolean isController = List.of("controller", "broker_controller", "zookeeper").contains(service.getRole());
+
+                if ("BROKER".equalsIgnoreCase(request.getScope()) && !isBroker) continue;
+                if ("CONTROLLER".equalsIgnoreCase(request.getScope()) && !isController) continue;
+                if (!isBroker && !isController) continue; // Skip unrecognized roles
+
                 Map<String, Object> payload = new LinkedHashMap<>();
                 payload.put("operation", "service");
                 payload.put("hostId", service.getHostId());
@@ -771,6 +777,7 @@ public class ConfigController {
     public static class BulkConfigRequest {
         private String configKey;
         private String configValue;
+        private String scope = "ALL";
         private boolean applyToAgents = false;
         private boolean restart = false;
     }
