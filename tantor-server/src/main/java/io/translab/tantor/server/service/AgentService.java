@@ -67,9 +67,9 @@ public class AgentService {
                         "agentVersion", String.valueOf(host.getAgentVersion()), "ipAddresses", dto.getIpAddresses()),
                 null, Map.of("osDetails", String.valueOf(dto.getOsDetails())));
         log.info("Registered host: {}", dto.getHostId());
-        activityAlertService.logAudit("INFO", "AGENT", existing ? "RECONNECT" : "REGISTER",
-                existing ? "Agent reconnected" : "Agent registered", "HOST", dto.getHostId(), host.getClusterId(),
-                null, host.getStatus(), "SUCCESS", existing ? null : "PENDING", "agentVersion=" + dto.getAgentVersion());
+        activityAlertService.logAudit("INFO", "AGENT", existing != null ? "RECONNECT" : "REGISTER",
+                existing != null ? "Agent reconnected" : "Agent registered", "HOST", dto.getHostId(), host.getClusterId(),
+                null, host.getStatus(), "SUCCESS", existing != null ? null : "PENDING", "agentVersion=" + dto.getAgentVersion());
     }
 
     @Transactional

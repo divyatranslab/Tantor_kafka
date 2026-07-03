@@ -14,6 +14,7 @@ import {
   Search,
   Server,
   Settings2,
+  ShieldCheck,
   X,
   XCircle,
 } from 'lucide-react';
@@ -58,6 +59,7 @@ type KafkaVersionInfo = {
   size_mb: number;
   filename: string;
   id?: string;
+  sha256?: string;
 };
 
 type DeploymentMode = 'kraft' | 'zookeeper';
@@ -323,6 +325,32 @@ function activeStatus(status: string): boolean {
   return ['PENDING', 'IN_PROGRESS', 'RUNNING', 'QUEUED'].includes(String(status || '').toUpperCase());
 }
 
+function activeKafkaInstallPath(baseDir: string): string {
+  const normalized = baseDir.trim().replace(/\/$/, '');
+  if (!normalized) return 'Not configured';
+  return normalized.endsWith('/kafka') ? normalized : `${normalized}/kafka`;
+}
+
+function reviewConfigPath(baseDir: string, mode: DeploymentMode, role: RoleChoice): string {
+  const installPath = activeKafkaInstallPath(baseDir);
+  if (installPath === 'Not configured') return installPath;
+  if (mode === 'zookeeper') {
+    return role === 'zookeeper'
+      ? `${installPath}/config/zookeeper.properties`
+      : `${installPath}/config/server.properties`;
+  }
+  if (role === 'controller') return `${installPath}/config/kraft/controller.properties`;
+  if (role === 'broker') return `${installPath}/config/kraft/broker.properties`;
+  return `${installPath}/config/kraft/server.properties`;
+}
+
+function systemdUnitForRole(role: RoleChoice): string {
+  if (role === 'controller') return 'controller.service';
+  if (role === 'zookeeper') return 'zookeeper.service';
+  if (role === 'broker_controller' || role === 'broker_zookeeper') return 'kafka.service';
+  return 'broker.service';
+}
+
 export function ClusterDeployment() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -368,6 +396,7 @@ export function ClusterDeployment() {
   const [kraftValidation, setKraftValidation] = useState<KraftValidationReport | null>(null);
   const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
+  const [reviewApproved, setReviewApproved] = useState(false);
 
   useEffect(() => {
     loadHosts();
@@ -446,6 +475,7 @@ export function ClusterDeployment() {
         size_mb: parseFloat((a.fileSizeBytes / 1024 / 1024).toFixed(1)),
         filename: a.fileName,
         id: a.id,
+        sha256: a.sha256,
       }));
       setVersions(mapped);
       const firstAvailable = mapped.find((v: KafkaVersionInfo) => v.available) || mapped[0];
@@ -782,6 +812,7 @@ export function ClusterDeployment() {
   const openPreview = async () => {
     setPrereqResults({});
     setKraftRiskAcknowledged(false);
+    setReviewApproved(false);
     if (deploymentMode !== 'kraft' || isAddNodeMode) {
       setKraftValidation(null);
       setKraftGeneratedConfig({});
@@ -974,6 +1005,7 @@ export function ClusterDeployment() {
   };
 
   const deployCluster = async () => {
+    if (!reviewApproved) return;
     setDeploying(true);
     try {
       const payload = buildDeploymentPayload();
@@ -1003,6 +1035,18 @@ export function ClusterDeployment() {
       setDeploying(false);
     }
   };
+
+  const reviewServices = buildServices();
+  const reviewArtifact = versions.find(version => version.version === kafkaVersion);
+  const reviewClusterId = isAddNodeMode
+    ? String(existingCluster?.config?.cluster_uuid || addClusterId || 'Existing cluster')
+    : deploymentMode === 'kraft'
+      ? String(kraftValidation?.clusterId || kraftGeneratedConfig.cluster_uuid || 'Generated during validation')
+      : 'Assigned by Kafka after startup';
+  const reviewBlocked = !prerequisiteComplete
+    || pathErrors.length > 0
+    || configBlockingIssues.length > 0
+    || kraftDeploymentBlocked;
 
   if (stage === 'landing' && !isAddNodeMode) {
     return (
@@ -1034,17 +1078,17 @@ export function ClusterDeployment() {
     <div className="cluster-deploy-page animate-fade-in">
       <header className="cd-header">
         <div>
-          <h1>{stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}</h1>
+          <h1>{stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Review Node Addition' : 'Review Deployment Plan')}</h1>
           <p>{stage === 'details'
             ? isAddNodeMode
               ? 'Existing cluster details are loaded. Select new nodes and roles to add.'
               : 'Define the cluster, select nodes, and choose roles.'
-            : 'Run prerequisites across every selected node before deployment.'}</p>
+            : 'Verify the generated plan, run prerequisites, and approve it before deployment.'}</p>
         </div>
         <div className="cd-header-side">
           <div className="cd-stage-tabs" aria-label="Deployment progress">
             <span className={stage === 'details' ? 'active' : ''}>Details</span>
-            <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+            <span className={stage === 'preview' ? 'active' : ''}>Review</span>
           </div>
         </div>
       </header>
@@ -1252,6 +1296,86 @@ export function ClusterDeployment() {
         </div>
       ) : (
         <div className="cd-layout">
+          <section className="cd-panel cd-review-plan">
+            <div className="cd-panel-title">
+              <FileText size={18} />
+              <h2>Deployment Plan</h2>
+              <span className="cd-plan-state">Ready for review</span>
+            </div>
+
+            <div className="cd-review-facts">
+              <div><span>Cluster</span><strong>{clusterName}</strong></div>
+              <div><span>Cluster ID</span><strong>{reviewClusterId}</strong></div>
+              <div><span>Kafka version</span><strong>{kafkaVersion}</strong></div>
+              <div><span>Metadata mode</span><strong>{deploymentMode === 'kraft' ? 'KRaft' : 'ZooKeeper'}</strong></div>
+              <div><span>Environment</span><strong>{environment || 'Not set'}</strong></div>
+              <div><span>Security mode</span><strong>PLAINTEXT</strong></div>
+            </div>
+
+            <div className="cd-review-band">
+              <h3>Artifact</h3>
+              <dl className="cd-review-definition">
+                <div><dt>Package</dt><dd>{reviewArtifact?.filename || 'Artifact unavailable'}</dd></div>
+                <div><dt>Size</dt><dd>{reviewArtifact ? `${reviewArtifact.size_mb} MB` : 'Unknown'}</dd></div>
+                <div className="wide"><dt>SHA-256 checksum</dt><dd><code>{reviewArtifact?.sha256 || 'Checksum unavailable'}</code></dd></div>
+              </dl>
+            </div>
+
+            <div className="cd-review-band">
+              <h3>Paths and ports</h3>
+              <dl className="cd-review-definition compact">
+                <div><dt>Install base</dt><dd>{installDir}</dd></div>
+                <div><dt>Active Kafka path</dt><dd>{activeKafkaInstallPath(installDir)}</dd></div>
+                <div><dt>Data</dt><dd>{dataDir}</dd></div>
+                <div><dt>Application logs</dt><dd>{logDir}</dd></div>
+                <div><dt>Artifact staging</dt><dd>{artifactLoadDir}</dd></div>
+                <div><dt>Broker / client</dt><dd>{listenerPort}</dd></div>
+                <div><dt>{deploymentMode === 'kraft' ? 'Controller' : 'ZooKeeper client'}</dt><dd>{controllerPort}</dd></div>
+                {deploymentMode === 'zookeeper' && <div><dt>ZooKeeper peer / election</dt><dd>{zookeeperPeerPort} / {zookeeperElectionPort}</dd></div>}
+                <div><dt>JMX metrics</dt><dd>7071</dd></div>
+              </dl>
+            </div>
+
+            <div className="cd-review-band">
+              <h3>Configuration summary</h3>
+              <dl className="cd-review-definition compact">
+                <div><dt>Configuration</dt><dd>{clusterConfigMode === 'custom' ? 'Custom templates' : 'Tantor defaults'}</dd></div>
+                <div><dt>Partitions</dt><dd>{Number(commonConfigValue('num.partitions') || numPartitions)}</dd></div>
+                <div><dt>Replication factor</dt><dd>{configuredReplicationFactor}</dd></div>
+                <div><dt>Minimum ISR</dt><dd>{configuredMinIsr}</dd></div>
+                <div><dt>Services</dt><dd>{reviewServices.length}</dd></div>
+                <div><dt>Hosts</dt><dd>{selectedHosts.length}</dd></div>
+                {deploymentMode === 'kraft' && <div><dt>Quorum</dt><dd>{kraftValidation?.quorumMode || kraftGeneratedConfig.kraft_quorum_mode || 'static'}</dd></div>}
+              </dl>
+            </div>
+
+            <div className="cd-review-band">
+              <h3>Expected services</h3>
+              <div className="cd-review-table-wrap">
+                <table className="cd-review-table">
+                  <thead>
+                    <tr><th>Host</th><th>Role</th><th>Node ID</th><th>Config file</th><th>Systemd unit</th><th>Heap</th></tr>
+                  </thead>
+                  <tbody>
+                    {reviewServices.map(service => {
+                      const host = hosts.find(item => item.id === service.host_id);
+                      return (
+                        <tr key={`${service.host_id}-${service.role}-${service.node_id}`}>
+                          <td><strong>{host?.hostname || service.host_id}</strong><span>{host ? displayIp(host) : ''}</span></td>
+                          <td>{service.role.replaceAll('_', ' + ')}</td>
+                          <td>{service.node_id}</td>
+                          <td><code>{reviewConfigPath(installDir, deploymentMode, service.role)}</code></td>
+                          <td><code>{systemdUnitForRole(service.role)}</code></td>
+                          <td>{service.heap_size}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
           {deploymentMode === 'kraft' && !isAddNodeMode && kraftValidation && (
             <section className="cd-panel cd-kraft-validation">
               <div className="cd-panel-title">
@@ -1379,11 +1503,28 @@ export function ClusterDeployment() {
             </div>
           </section>
 
+          <section className={`cd-plan-approval ${reviewApproved ? 'approved' : ''}`}>
+            <ShieldCheck size={20} />
+            <label>
+              <input
+                type="checkbox"
+                checked={reviewApproved}
+                disabled={reviewBlocked || checkingPrereqs || deploying}
+                onChange={event => setReviewApproved(event.target.checked)}
+              />
+              <span>
+                <strong>Approve this deployment plan</strong>
+                <small>I reviewed the hosts, roles, artifact checksum, paths, ports, configuration, and expected services.</small>
+              </span>
+            </label>
+            <span className="cd-approval-status">{reviewApproved ? 'Approved' : reviewBlocked ? 'Complete prerequisites first' : 'Approval required'}</span>
+          </section>
+
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Back to details</button>
-            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
+            <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => { setReviewApproved(false); setStage('details'); }}>Back to details</button>
+            <button className="cd-primary-btn" disabled={reviewBlocked || !reviewApproved || deploying} onClick={deployCluster}>
               {deploying ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
-              {isAddNodeMode ? 'Add node' : 'Deploy'}
+              {isAddNodeMode ? 'Confirm and add node' : 'Confirm and deploy'}
             </button>
           </div>
         </div>

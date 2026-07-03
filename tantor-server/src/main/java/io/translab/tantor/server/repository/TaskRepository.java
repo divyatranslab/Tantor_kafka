@@ -14,4 +14,5 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     List<Task> findByHostIdInOrderByCreatedAtDesc(List<String> hostIds);
     List<Task> findByClusterIdOrderByCreatedAtDesc(UUID clusterId);
     List<Task> findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(UUID clusterId, String hostId, String command);
+    List<Task> findAllByOrderByUpdatedAtDesc();
 }

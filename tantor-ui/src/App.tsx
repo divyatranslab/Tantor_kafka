@@ -7,6 +7,7 @@ import { Artifacts } from './pages/Artifacts';
 import { Monitoring } from './pages/Monitoring';
 import { Alerts } from './pages/Alerts';
 import { AuditLogs } from './pages/AuditLogs';
+import { LogManagement } from './pages/LogManagement';
 import { ClusterDetails } from './pages/ClusterDetails';
 import { ClusterOverview } from './pages/ClusterOverview';
 import { Topics } from './pages/Topics';
@@ -64,6 +65,7 @@ function App() {
               <Route path="/jobs/:id" element={<JobStatusPage />} />
               <Route path="/monitoring" element={<Monitoring />} />
               <Route path="/alerts" element={<Alerts />} />
+              <Route path="/logs" element={<LogManagement />} />
               <Route path="/audit" element={<AuditLogs />} />
               <Route path="/ldap-settings" element={<LdapSettings />} />
               <Route path="/user-management" element={<UserManagement />} />

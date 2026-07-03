@@ -2,7 +2,7 @@ package io.translab.tantor.artifact.service;
 
 import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.exception.PackageValidationException;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.ArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.slf4j.Logger;
@@ -20,17 +20,30 @@ public class PackageValidator {
 
     public void validate(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
         validateExtension(fileName);
-        validateStructureAndVersion(archivePath, serviceType, expectedVersion);
+        validateStructureAndVersion(archivePath, serviceType, expectedVersion, fileName);
         malwareScan(archivePath);
     }
 
     private void validateExtension(String fileName) {
-        if (fileName == null || (!fileName.endsWith(".tgz") && !fileName.endsWith(".tar.gz"))) {
-            throw new PackageValidationException("Invalid package extension. Only .tgz and .tar.gz are supported.");
+        if (fileName == null || (!fileName.endsWith(".tgz") && !fileName.endsWith(".tar.gz") && !fileName.endsWith(".jar"))) {
+            throw new PackageValidationException("Invalid package extension. Only .tgz, .tar.gz, and .jar are supported.");
         }
     }
 
-    private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion) {
+    private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
+        if (fileName != null && fileName.endsWith(".jar")) {
+            // Basic validation for jar files: verify it's a valid zip format
+            try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(archivePath.toFile())) {
+                if (zipFile.entries().hasMoreElements()) {
+                    log.info("JAR package structure validation passed for {}", archivePath);
+                    return; // JAR validation passed
+                }
+            } catch (Exception e) {
+                throw new PackageValidationException("JAR package test failed. The file may be corrupted: " + e.getMessage(), e);
+            }
+            throw new PackageValidationException("JAR package is empty.");
+        }
+
         boolean isKafka = serviceType == ServiceType.KAFKA;
         boolean foundExpectedVersion = false;
         boolean extractionTestPassed = false;
@@ -40,8 +53,8 @@ public class PackageValidator {
              GzipCompressorInputStream gzi = new GzipCompressorInputStream(bi);
              TarArchiveInputStream ti = new TarArchiveInputStream(gzi)) {
 
-            TarArchiveEntry entry;
-            while ((entry = ti.getNextTarEntry()) != null) {
+            ArchiveEntry entry;
+            while ((entry = ti.getNextEntry()) != null) {
                 extractionTestPassed = true; // successfully read at least one entry without corruption
                 String name = entry.getName();
                 

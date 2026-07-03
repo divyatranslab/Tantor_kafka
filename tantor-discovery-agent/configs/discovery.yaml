@@ -1,9 +1,10 @@
 discovery:
-  server_url: "http://192.168.3.142:8443"
+  server_url: "http://127.0.0.1:18443"
   scan_paths:
     - "/srv/apps"
     - "/data/apps"
     - "/opt"
+    - "/jd"
   interval: "15s"
-  node_name: ""
+  node_name: "192.168.3.208"
   restart_command: "systemctl restart kafka"

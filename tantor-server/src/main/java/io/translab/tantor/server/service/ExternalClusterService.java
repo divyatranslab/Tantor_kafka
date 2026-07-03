@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ExternalClusterService {
 
     private static final String EXTERNAL_MODE = "EXTERNAL";
-    private static final long AGENT_STALE_SECONDS = 90;
+    private static final long AGENT_STALE_SECONDS = 600;
 
     private final ClusterRepository clusterRepository;
     private final ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
@@ -125,7 +125,6 @@ public class ExternalClusterService {
                         entry.getValue().getName(),
                         entry.getValue().getBootstrapServers()
                 ).isEmpty())
-                .filter(entry -> entry.getValue().isRunning())
                 .filter(entry -> isFreshDiscovery(entry.getValue()))
                 .sorted(Map.Entry.comparingByValue(Comparator.comparing(
                         ExternalDiscoveryReport::getLastSeen,
@@ -178,12 +177,16 @@ public class ExternalClusterService {
 
     @Transactional
     public Cluster connectDiscovery(String discoveryKey) {
-        Map<String, Object> inspection = inspectDiscovery(discoveryKey);
-        if (!Boolean.TRUE.equals(inspection.get("connected"))) {
-            throw new IllegalArgumentException(String.valueOf(inspection.getOrDefault(
-                    "message",
-                    "The discovered Kafka bootstrap server is not reachable."
-            )));
+        // Attempt a live bootstrap inspection, but do not block if unreachable.
+        // When the discovery agent is present and has a fresh report, we trust it
+        // even if the management server cannot directly reach the broker network.
+        try {
+            Map<String, Object> inspection = inspectDiscovery(discoveryKey);
+            if (!Boolean.TRUE.equals(inspection.get("connected"))) {
+                log.warn("Bootstrap not directly reachable for discovery key {}; proceeding via agent report.", discoveryKey);
+            }
+        } catch (Exception e) {
+            log.warn("Bootstrap inspection failed for discovery key {}; proceeding via agent report: {}", discoveryKey, e.getMessage());
         }
 
         ExternalDiscoveryReport report = requiredPendingDiscovery(discoveryKey);
@@ -699,8 +702,13 @@ public class ExternalClusterService {
 
     private ExternalDiscoveryReport requiredPendingDiscovery(String discoveryKey) {
         ExternalDiscoveryReport report = pendingDiscoveries.get(discoveryKey);
-        if (report == null || !report.isRunning() || !isFreshDiscovery(report)) {
+        if (report == null || !isFreshDiscovery(report)) {
             throw new IllegalArgumentException("No live discovery-agent report was found. Refresh after the agent reports again.");
+        }
+        // isRunning is informational only — Kafka may be stopped for maintenance
+        // but the cluster should still be registerable for management.
+        if (!report.isRunning()) {
+            log.warn("Discovery agent reports Kafka as stopped for cluster '{}'; registering anyway.", report.getName());
         }
         return report;
     }

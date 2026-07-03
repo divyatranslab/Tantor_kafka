@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Users,
   Activity,
+  FileText,
 } from 'lucide-react';
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
@@ -53,6 +54,7 @@ const navSections: NavSection[] = [
     items: [
       { icon: LineChart, label: 'Monitoring', path: '/monitoring' },
       { icon: Bell, label: 'Alerts', path: '/alerts' },
+      { icon: FileText, label: 'Log Management', path: '/logs' },
     ],
   },
   {

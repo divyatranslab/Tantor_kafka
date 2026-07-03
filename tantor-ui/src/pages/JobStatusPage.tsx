@@ -27,7 +27,74 @@ type JobStep = {
   retryCount: number;
   startTime?: string;
   endTime?: string;
+  agentTaskStatus?: string;
+  currentStep?: string;
+  stepLogs?: string;
+  taskLogOutput?: string;
+  taskErrorMsg?: string;
+  failedReason?: string;
 };
+
+const DEPLOYMENT_STAGES = [
+  'Validate agent',
+  'Validate host prerequisites',
+  'Validate package',
+  'Download package to agent',
+  'Verify checksum',
+  'Extract Kafka',
+  'Backup old config if exists',
+  'Generate config',
+  'Format KRaft storage / setup Zookeeper',
+  'Create systemd service',
+  'Start service',
+  'Validate port',
+  'Validate Kafka AdminClient connection',
+  'Validate cluster health',
+  'Mark DB state RUNNING',
+];
+
+const isDeployStep = (step: JobStep) => step.name.startsWith('Deploy ');
+
+const parseStepLogs = (value?: string): Record<string, string> => {
+  if (!value) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+};
+
+const deploymentStageStatus = (step: JobStep, stageIndex: number) => {
+  if (step.status === 'SUCCESS' || step.status === 'ROLLED_BACK') return step.status;
+
+  const currentIndex = DEPLOYMENT_STAGES.indexOf(step.currentStep || '');
+  if (step.status === 'FAILED' || step.status === 'ROLLBACK_FAILED') {
+    if (currentIndex < 0) return stageIndex === 0 ? step.status : 'PENDING';
+    if (stageIndex < currentIndex) return 'SUCCESS';
+    return stageIndex === currentIndex ? step.status : 'PENDING';
+  }
+  if (step.status === 'IN_PROGRESS' || step.status === 'ROLLING_BACK') {
+    if (currentIndex < 0) return stageIndex === 0 ? step.status : 'PENDING';
+    if (stageIndex < currentIndex) return 'SUCCESS';
+    return stageIndex === currentIndex ? step.status : 'PENDING';
+  }
+  return 'PENDING';
+};
+
+const detailedAgentLogs = (steps: JobStep[]) => steps
+  .filter(isDeployStep)
+  .map(step => {
+    const logs = parseStepLogs(step.stepLogs);
+    const stageOutput = DEPLOYMENT_STAGES
+      .filter(stage => logs[stage])
+      .map(stage => `--- ${stage} ---\n${logs[stage].trim()}`)
+      .join('\n\n');
+    const fallback = step.taskLogOutput || step.taskErrorMsg || step.failedReason || '';
+    const output = stageOutput || fallback;
+    return output ? `=== ${step.name} ===\n${output}` : '';
+  })
+  .filter(Boolean)
+  .join('\n\n');
 
 export function JobStatusPage() {
   const { id } = useParams();
@@ -106,6 +173,10 @@ export function JobStatusPage() {
   }
 
   const isFinished = ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job.status);
+  const deploymentSteps = steps.filter(isDeployStep);
+  const orchestrationSteps = steps.filter(step => !isDeployStep(step));
+  const agentLogs = detailedAgentLogs(steps);
+  const liveLogs = [job.logs, agentLogs].filter(Boolean).join('\n');
 
   const getStatusIcon = (status: string, size = 18) => {
     switch (status) {
@@ -192,9 +263,56 @@ export function JobStatusPage() {
 
       <div className="job-main-layout">
         <div className="job-sidebar glass-panel">
-          <h3>Deployment Steps</h3>
+          <h3>Deployment Progress</h3>
           <div className="steps-list">
-            {steps.map(step => (
+            {deploymentSteps.map(step => {
+              const completedStages = DEPLOYMENT_STAGES.filter((_, index) =>
+                ['SUCCESS', 'ROLLED_BACK'].includes(deploymentStageStatus(step, index))
+              ).length;
+              return (
+                <div className="deployment-step-group" key={step.id}>
+                  <div className="deployment-step-heading">
+                    <div>
+                      <strong>{step.targetId || 'Kafka node'}</strong>
+                      <span>{completedStages} of {DEPLOYMENT_STAGES.length} stages complete</span>
+                    </div>
+                    <span className={`step-icon ${step.status.toLowerCase()}`}>
+                      {getStatusIcon(step.status, 17)}
+                    </span>
+                  </div>
+                  <div
+                    className="deployment-progress-track"
+                    role="progressbar"
+                    aria-label={`${step.targetId || 'Kafka node'} deployment progress`}
+                    aria-valuemin={0}
+                    aria-valuemax={DEPLOYMENT_STAGES.length}
+                    aria-valuenow={completedStages}
+                  >
+                    <span style={{ width: `${(completedStages / DEPLOYMENT_STAGES.length) * 100}%` }} />
+                  </div>
+                  <div className="deployment-stage-list">
+                    {DEPLOYMENT_STAGES.map((stage, index) => {
+                      const status = deploymentStageStatus(step, index);
+                      return (
+                        <div className="step-item deployment-stage" key={stage}>
+                          <div className={`step-icon ${status.toLowerCase()}`}>
+                            {getStatusIcon(status, 15)}
+                          </div>
+                          <span className={`step-name ${status === 'PENDING' ? 'pending-text' : ''}`}>
+                            <span className="stage-number">{index + 1}</span>
+                            {stage}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {orchestrationSteps.length > 0 && deploymentSteps.length > 0 && (
+              <div className="validation-heading">Cluster validation</div>
+            )}
+            {orchestrationSteps.map(step => (
               <div className="step-item" key={step.id}>
                 <div className={`step-icon ${step.status.toLowerCase()}`}>
                   {getStatusIcon(step.status, 16)}
@@ -216,7 +334,7 @@ export function JobStatusPage() {
           </div>
           <div className="logs-content">
             <pre className="logs-text">
-              {renderLogs(job.logs)}
+              {renderLogs(liveLogs)}
             </pre>
             <div ref={logsEndRef} />
           </div>

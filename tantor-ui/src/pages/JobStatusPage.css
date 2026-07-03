@@ -95,7 +95,7 @@
 /* MAIN LAYOUT */
 .job-main-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: minmax(360px, 420px) 1fr;
   gap: 1.5rem;
   align-items: start;
 }
@@ -106,6 +106,9 @@
   background: white;
   border-radius: var(--radius-md);
   box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  max-height: calc(100vh - 220px);
+  min-height: 500px;
+  overflow-y: auto;
 }
 
 .job-sidebar h3 {
@@ -118,6 +121,91 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.deployment-step-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.deployment-step-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.deployment-step-heading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.deployment-step-heading strong {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
+.deployment-step-heading span {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.deployment-progress-track {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  background: #e5e7eb;
+  border-radius: 3px;
+}
+
+.deployment-progress-track span {
+  display: block;
+  height: 100%;
+  background: var(--success-color);
+  transition: width 180ms ease;
+}
+
+.deployment-stage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.72rem;
+}
+
+.deployment-stage {
+  align-items: flex-start;
+}
+
+.deployment-stage .step-icon {
+  margin-top: 0.08rem;
+}
+
+.deployment-stage .step-name {
+  display: grid;
+  grid-template-columns: 1.4rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.35rem;
+  line-height: 1.25;
+}
+
+.stage-number {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.08rem;
+}
+
+.validation-heading {
+  margin-top: 0.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .step-item {
@@ -214,6 +302,10 @@
   }
   .job-main-layout { 
     grid-template-columns: 1fr; 
+  }
+  .job-sidebar {
+    max-height: none;
+    min-height: 0;
   }
   .job-logs-container { 
     height: 500px; 

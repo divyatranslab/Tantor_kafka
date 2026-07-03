@@ -101,7 +101,7 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	if listenersRaw == "" {
 		return nil // not a valid Kafka config
 	}
-	bootstrap := extractBootstrapServers(listenersRaw)
+	bootstrap := extractBootstrapServers(listenersRaw, hostname)
 	if bootstrap == "" {
 		return nil
 	}
@@ -156,9 +156,9 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	}
 }
 
-func extractBootstrapServers(listenersStr string) string {
+func extractBootstrapServers(listenersStr, hostname string) string {
 	parts := strings.Split(listenersStr, ",")
-	re := regexp.MustCompile(`://([^:]+:[0-9]+)`)
+	re := regexp.MustCompile(`://([^:]+):([0-9]+)`)
 	var brokers []string
 	for _, p := range parts {
 		upper := strings.ToUpper(p)
@@ -166,11 +166,23 @@ func extractBootstrapServers(listenersStr string) string {
 			continue
 		}
 		m := re.FindStringSubmatch(p)
-		if len(m) > 1 {
-			brokers = append(brokers, m[1])
+		if len(m) > 2 {
+			host := normalizeBootstrapHost(m[1], hostname)
+			brokers = append(brokers, host+":"+m[2])
 		}
 	}
 	return strings.Join(brokers, ",")
+}
+
+func normalizeBootstrapHost(host, fallback string) string {
+	trimmed := strings.TrimSpace(host)
+	switch strings.ToLower(trimmed) {
+	case "", "localhost", "127.0.0.1", "0.0.0.0", "::", "[::]":
+		if fallback != "" {
+			return fallback
+		}
+	}
+	return trimmed
 }
 
 func detectSecurity(listenersStr, protocolMap string) string {

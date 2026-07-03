@@ -191,7 +191,7 @@ export function ExternalClusters() {
   };
 
   const registerBootstrap = async () => {
-    if (!selectedDiscoveryKey || bootstrapResult?.connected !== true) return;
+    if (!selectedDiscoveryKey) return;
     setRegistering(true);
     setError('');
     setBanner('');
@@ -441,7 +441,7 @@ export function ExternalClusters() {
             <button
               className="btn btn-primary-action"
               onClick={registerBootstrap}
-              disabled={registering || bootstrapResult?.connected !== true || !selectedDiscoveryKey}
+              disabled={registering || !selectedDiscoveryKey}
             >
               {registering ? <RefreshCw size={14} className="spin" /> : <ExternalLink size={14} />}
               Connect cluster

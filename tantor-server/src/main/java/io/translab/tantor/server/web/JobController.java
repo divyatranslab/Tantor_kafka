@@ -2,13 +2,19 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.dto.JobStepProgressDto;
+import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.JobService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/ui/jobs")
@@ -16,6 +22,7 @@ import java.util.UUID;
 public class JobController {
 
     private final JobService jobService;
+    private final TaskRepository taskRepository;
 
     @GetMapping
     public ResponseEntity<List<Job>> listJobs() {
@@ -32,10 +39,19 @@ public class JobController {
     }
 
     @GetMapping("/{id}/steps")
-    public ResponseEntity<List<JobStep>> getJobSteps(@PathVariable UUID id) {
+    public ResponseEntity<List<JobStepProgressDto>> getJobSteps(@PathVariable UUID id) {
         try {
             jobService.getJob(id);
-            return ResponseEntity.ok(jobService.getSteps(id));
+            List<JobStep> steps = jobService.getSteps(id);
+            List<UUID> taskIds = steps.stream()
+                    .map(JobStep::getAgentTaskId)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            Map<UUID, Task> tasksById = taskRepository.findAllById(taskIds).stream()
+                    .collect(Collectors.toMap(Task::getId, Function.identity()));
+            return ResponseEntity.ok(steps.stream()
+                    .map(step -> JobStepProgressDto.from(step, tasksById.get(step.getAgentTaskId())))
+                    .toList());
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }
