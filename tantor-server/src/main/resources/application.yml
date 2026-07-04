@@ -25,6 +25,7 @@ spring:
     clean-disabled: true
     clean-on-validation-error: false
     ignore-missing-migrations: true
+    validate-on-migrate: false
 
 server:
   port: 8443
