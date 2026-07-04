@@ -76,4 +76,4 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_artifact_audit_immutable ON artifact_audit_log;
 CREATE TRIGGER trg_artifact_audit_immutable
 BEFORE UPDATE OR DELETE ON artifact_audit_log
-FOR EACH ROW EXECUTE FUNCTION prevent_artifact_audit_mutation();
+FOR EACH ROW EXECUTE PROCEDURE prevent_artifact_audit_mutation();
