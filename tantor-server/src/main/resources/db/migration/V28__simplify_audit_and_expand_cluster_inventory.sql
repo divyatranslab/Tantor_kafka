@@ -43,6 +43,6 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_refresh_cluster_node_ids ON cluster_services;
 CREATE TRIGGER trg_refresh_cluster_node_ids
 AFTER INSERT OR UPDATE OR DELETE ON cluster_services
-FOR EACH ROW EXECUTE FUNCTION refresh_cluster_node_ids();
+FOR EACH ROW EXECUTE PROCEDURE refresh_cluster_node_ids();
 
 UPDATE hosts SET status = 'OCCUPIED' WHERE status = 'UNAVAILABLE';

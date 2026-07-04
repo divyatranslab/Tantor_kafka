@@ -47,4 +47,4 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_audit_logs_immutable ON audit_logs;
 CREATE TRIGGER trg_audit_logs_immutable
 BEFORE UPDATE OR DELETE ON audit_logs
-FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_mutation();
+FOR EACH ROW EXECUTE PROCEDURE prevent_audit_log_mutation();
