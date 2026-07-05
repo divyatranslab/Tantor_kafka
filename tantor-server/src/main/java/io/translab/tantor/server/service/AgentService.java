@@ -189,7 +189,8 @@ public class AgentService {
                             "TASK", task.getCommand(), "Task completed with status " + dto.getStatus(), "TASK", taskId.toString(),
                             task.getClusterId(), "IN_PROGRESS", dto.getStatus(), dto.getStatus(), null,
                             dto.getErrorMsg());
-                    if ("CHECK_PREREQUISITES".equals(task.getCommand())) {
+                    if ("CHECK_PREREQUISITES".equals(task.getCommand())
+                            || "APPLY_PREREQUISITES".equals(task.getCommand())) {
                         Map<String, Object> prerequisiteDetails = new java.util.LinkedHashMap<>();
                         prerequisiteDetails.put("taskId", taskId.toString());
                         prerequisiteDetails.put("hostId", task.getHostId());
@@ -200,9 +201,17 @@ public class AgentService {
                         if (dto.getFailedReason() != null && !dto.getFailedReason().isBlank()) {
                             prerequisiteDetails.put("failedReason", dto.getFailedReason());
                         }
+                        String action = "APPLY_PREREQUISITES".equals(task.getCommand())
+                                ? "PREREQUISITE_FIX_COMPLETED" : "PREREQUISITE_CHECK_COMPLETED";
                         auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
-                                "PREREQUISITE", "PREREQUISITE_CHECK_COMPLETED", "HOST", task.getHostId(),
+                                "PREREQUISITE", action, "HOST", task.getHostId(),
                                 task.getClusterId(), dto.getStatus(), null, null, null, prerequisiteDetails);
+                    }
+                    if ("REBOOT_HOST".equals(task.getCommand())) {
+                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                                "RESTART", "HOST_REBOOT_SCHEDULED", "HOST", task.getHostId(), task.getClusterId(),
+                                dto.getStatus(), null, null, null,
+                                Map.of("taskId", taskId.toString(), "result", dto.getStatus()));
                     }
                     if ("INSTALL_KAFKA".equals(task.getCommand())) {
                         Map<String, Object> deploymentDetails = new java.util.LinkedHashMap<>();

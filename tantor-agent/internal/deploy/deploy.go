@@ -79,6 +79,10 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.removeParcel(ctx, t)
 	case "CHECK_PREREQUISITES":
 		return e.checkPrerequisites(ctx, t)
+	case "APPLY_PREREQUISITES":
+		return e.applyPrerequisites(ctx, t)
+	case "REBOOT_HOST":
+		return e.scheduleHostReboot(ctx, t)
 	case "CHECK_KRAFT_CONNECTIVITY":
 		return e.checkKRaftConnectivity(ctx, t)
 	case "VERIFY_KRAFT_QUORUM":

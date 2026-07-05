@@ -66,7 +66,7 @@ type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate' | '
 type FlowStage = 'landing' | 'details' | 'preview';
 type ConfigMode = 'default' | 'custom';
 type ConfigKind = 'server' | 'broker' | 'controller' | 'zookeeper';
-type PrereqStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+type PrereqStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'REBOOT_REQUIRED';
 
 type ServiceAssignment = {
   host_id: string;
@@ -1050,7 +1050,13 @@ export function ClusterDeployment() {
       setPrereqResults(prev => ({
         ...prev,
         [hostId]: {
-          status: activeStatus(status) ? 'RUNNING' : status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+          status: activeStatus(status)
+            ? 'RUNNING'
+            : status === 'SUCCESS'
+              ? 'SUCCESS'
+              : status === 'REBOOT_REQUIRED'
+                ? 'REBOOT_REQUIRED'
+                : 'FAILED',
           taskId,
           logOutput: body.logOutput || prev[hostId]?.logOutput || '',
           errorMsg: body.errorMsg || '',
@@ -1067,6 +1073,61 @@ export function ClusterDeployment() {
         errorMsg: 'Timed out waiting for prerequisite result.',
       },
     }));
+  };
+
+  const fixPrerequisites = async () => {
+    const failedHosts = selectedHosts.filter(host => prereqResults[host.id]?.status === 'FAILED');
+    if (failedHosts.length === 0) return;
+    const confirmed = window.confirm(
+      `Apply privileged operating-system changes on ${failedHosts.length} host(s)? This may update limits, sysctl, THP, SELinux, time synchronization, and may require a reboot.`,
+    );
+    if (!confirmed) return;
+
+    setCheckingPrereqs(true);
+    await Promise.all(failedHosts.map(async host => {
+      try {
+        const res = await fetch(`/api/v1/ui/hosts/${host.id}/fix-prerequisites`, { method: 'POST' });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message || 'Failed to queue prerequisite remediation.');
+        setPrereqResults(prev => ({
+          ...prev,
+          [host.id]: { status: 'RUNNING', taskId: body.taskId, logOutput: 'Applying prerequisite fixes...', errorMsg: '' },
+        }));
+        await pollPrerequisite(host.id, body.taskId);
+      } catch (error) {
+        setPrereqResults(prev => ({
+          ...prev,
+          [host.id]: { status: 'FAILED', logOutput: prev[host.id]?.logOutput || '', errorMsg: error instanceof Error ? error.message : 'Failed to fix prerequisites.' },
+        }));
+      }
+    }));
+    setCheckingPrereqs(false);
+  };
+
+  const rebootHost = async (host: Host) => {
+    if (!window.confirm(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`)) return;
+    setCheckingPrereqs(true);
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Failed to schedule reboot.');
+      setPrereqResults(prev => ({
+        ...prev,
+        [host.id]: { status: 'RUNNING', taskId: body.taskId, logOutput: 'Scheduling host reboot...', errorMsg: '' },
+      }));
+      await pollPrerequisite(host.id, body.taskId);
+    } catch (error) {
+      setPrereqResults(prev => ({
+        ...prev,
+        [host.id]: { status: 'REBOOT_REQUIRED', logOutput: prev[host.id]?.logOutput || '', errorMsg: error instanceof Error ? error.message : 'Failed to schedule reboot.' },
+      }));
+    } finally {
+      setCheckingPrereqs(false);
+    }
   };
 
   const deployCluster = async () => {
@@ -1475,13 +1536,18 @@ export function ClusterDeployment() {
                 {checkingPrereqs ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                 Check prerequisites on all nodes
               </button>
+              {selectedHosts.some(host => prereqResults[host.id]?.status === 'FAILED') && (
+                <button className="cd-secondary-btn compact" disabled={checkingPrereqs} onClick={fixPrerequisites}>
+                  <Settings2 size={14} /> Fix failed prerequisites
+                </button>
+              )}
             </div>
             {checkingPrereqs && <div className="cd-progress"><span /></div>}
             <div className="cd-prereq-grid">
               {selectedHosts.map(host => {
                 const result = prereqResults[host.id] || { status: 'IDLE', logOutput: '', errorMsg: '' };
                 return (
-                  <details className="cd-prereq-card" key={host.id} open={result.status === 'FAILED'}>
+                  <details className="cd-prereq-card" key={host.id} open={result.status === 'FAILED' || result.status === 'REBOOT_REQUIRED'}>
                     <summary>
                       <span>{host.hostname}</span>
                       <StatusBadge status={result.status} />
@@ -1489,6 +1555,12 @@ export function ClusterDeployment() {
                     {result.errorMsg || result.logOutput
                       ? <PrerequisiteLog result={result} />
                       : <div className="cd-prereq-log"><span className="neutral">Waiting for prerequisite run...</span></div>}
+                    {result.status === 'REBOOT_REQUIRED' && (
+                      <div className="cd-prereq-remediation-actions">
+                        <span><AlertTriangle size={14} /> Persistent settings were applied, but this host must reboot.</span>
+                        <button className="cd-secondary-btn compact" disabled={checkingPrereqs} onClick={() => rebootHost(host)}>Reboot host</button>
+                      </div>
+                    )}
                   </details>
                 );
               })}
@@ -1657,6 +1729,8 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
     ? <CheckCircle2 size={13} />
     : normalized === 'FAILED'
       ? <XCircle size={13} />
+      : normalized === 'REBOOT_REQUIRED'
+        ? <AlertTriangle size={13} />
       : normalized === 'RUNNING' || normalized === 'QUEUED'
         ? <Loader2 size={13} className="spin" />
         : null;

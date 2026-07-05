@@ -98,6 +98,46 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PostMapping("/{id}/fix-prerequisites")
+    public ResponseEntity<?> fixPrerequisites(@PathVariable String id) {
+        Host host = hostRepository.findById(id).orElse(null);
+        if (host == null) return ResponseEntity.notFound().build();
+        if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE before prerequisites can be fixed."));
+        }
+        Task task = new Task();
+        task.setHostId(id);
+        task.setCommand("APPLY_PREREQUISITES");
+        task.setStatus("PENDING");
+        task.setParameters("{}");
+        taskRepository.save(task);
+        auditService.record("PREREQUISITE", "PREREQUISITE_FIX_REQUESTED", "HOST", id,
+                host.getClusterId(), "REQUESTED", null, null, null,
+                Map.of("taskId", task.getId().toString(), "confirmation", true));
+        return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
+    }
+
+    @PostMapping("/{id}/reboot")
+    public ResponseEntity<?> rebootHost(@PathVariable String id, @RequestBody Map<String, Object> request) {
+        Host host = hostRepository.findById(id).orElse(null);
+        if (host == null) return ResponseEntity.notFound().build();
+        if (!Boolean.parseBoolean(String.valueOf(request.getOrDefault("confirmed", false)))) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Explicit reboot confirmation is required."));
+        }
+        if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE before reboot can be scheduled."));
+        }
+        Task task = new Task();
+        task.setHostId(id);
+        task.setCommand("REBOOT_HOST");
+        task.setStatus("PENDING");
+        task.setParameters("{\"reason\":\"prerequisite-remediation\"}");
+        taskRepository.save(task);
+        auditService.record("RESTART", "HOST_REBOOT_REQUESTED", "HOST", id, host.getClusterId(),
+                "REQUESTED", null, null, null, Map.of("taskId", task.getId().toString(), "reason", "prerequisite-remediation"));
+        return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
+    }
+
     @GetMapping("/{id}/check-prerequisites/{taskId}")
     public ResponseEntity<?> prerequisiteResult(@PathVariable String id, @PathVariable UUID taskId) {
         return taskRepository.findById(taskId)
