@@ -49,6 +49,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
     private final JobService jobService;
+    private final io.translab.tantor.server.audit.AuditService auditService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -142,6 +143,9 @@ public class ClusterController {
         cluster.setEnvironment(environment);
         cluster.setUpdatedBy("system");
         clusterRepository.save(cluster);
+        auditService.record("CLUSTER_CHANGE", "CLUSTER_DETAILS_UPDATED", "CLUSTER", cluster.getId().toString(),
+                cluster.getId(), "SUCCESS", null, null, null,
+                Map.of("clusterName", cluster.getName(), "nodeIds", cluster.getNodeIds(), "createdBy", cluster.getCreatedBy()));
         activityAlertService.logActivity("INFO", "Updated cluster details for " + name, id);
         return ResponseEntity.ok(Map.of("id", id.toString(), "name", name, "environment", environment));
     }
@@ -224,6 +228,10 @@ public class ClusterController {
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
+        auditService.record("CLUSTER_CHANGE", "CLUSTER_CREATED", "CLUSTER", cluster.getId().toString(),
+                cluster.getId(), "SUCCESS", null, null, null,
+                Map.of("nodeIds", request.getServices().stream().map(ServiceAssignmentReq::getNode_id).toList(),
+                        "updatedBy", cluster.getUpdatedBy()));
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {
@@ -380,6 +388,10 @@ public class ClusterController {
             // keep existing config if serialization fails
         }
         clusterRepository.save(cluster);
+        auditService.record("CLUSTER_CHANGE", "CLUSTER_NODES_ADDED", "CLUSTER", cluster.getId().toString(),
+                cluster.getId(), "SUCCESS", null, null, null,
+                Map.of("nodeIds", request.getServices().stream().map(ServiceAssignmentReq::getNode_id).toList(),
+                        "updatedBy", cluster.getUpdatedBy()));
 
         for (ServiceAssignmentReq sa : request.getServices()) {
             hostRepository.findById(sa.getHost_id()).ifPresent(host -> {

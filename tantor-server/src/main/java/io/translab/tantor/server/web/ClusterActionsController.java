@@ -25,7 +25,9 @@ public class ClusterActionsController {
     private final AuditService auditService;
 
     @PostMapping("/rolling-restart")
-    public ResponseEntity<Map<String, String>> startRollingRestart(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<String, String>> startRollingRestart(
+            @PathVariable UUID clusterId,
+            @RequestBody(required = false) RollingRestartRequest request) {
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     Job job = new Job();
@@ -34,7 +36,16 @@ public class ClusterActionsController {
                     job.setRollbackSupported(true);
                     job.setResourceKey("cluster:" + clusterId);
                     try {
-                        job.setPayload(objectMapper.writeValueAsString(Map.of("clusterId", clusterId.toString())));
+                        long uniqueHosts = cluster.getServices() == null ? 0 : cluster.getServices().stream()
+                                .map(ClusterServiceAssignment::getHostId).distinct().count();
+                        boolean confirmedSingleNode = request != null && request.confirmSingleNode;
+                        if (uniqueHosts == 1 && !confirmedSingleNode) {
+                            return ResponseEntity.badRequest().body(Map.of("error",
+                                    "Only one node is present. Explicit confirmation is required because Kafka will be interrupted."));
+                        }
+                        job.setPayload(objectMapper.writeValueAsString(Map.of(
+                                "clusterId", clusterId.toString(),
+                                "confirmSingleNode", confirmedSingleNode)));
                     } catch (Exception e) {
                         return ResponseEntity.internalServerError().body(Map.of("error", "Unable to create rolling restart job."));
                     }
@@ -184,5 +195,9 @@ public class ClusterActionsController {
         public String installDir;
         public String prometheusUrl;
         public String grafanaUrl;
+    }
+
+    public static class RollingRestartRequest {
+        public boolean confirmSingleNode;
     }
 }

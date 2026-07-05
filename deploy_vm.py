@@ -88,7 +88,7 @@ After=network.target postgresql.service
 Type=simple
 User=root
 WorkingDirectory=/opt/Tantor_kafka/tantor-server
-Environment="JAVA_HOME=/usr/lib/jvm/java-21-openjdk"
+Environment="JAVA_HOME=/usr/lib/jvm/java-21-openjdk" "TANTOR_REPO_URL=http://192.168.3.191"
 ExecStart=/usr/lib/jvm/java-21-openjdk/bin/java -jar /opt/Tantor_kafka/tantor-server/target/tantor-server-1.0.0.jar
 Restart=always
 

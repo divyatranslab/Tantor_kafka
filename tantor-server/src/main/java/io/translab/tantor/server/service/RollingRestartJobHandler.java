@@ -32,7 +32,8 @@ public class RollingRestartJobHandler implements JobHandler {
 
     @Override
     public void execute(Job job) {
-        UUID clusterId = UUID.fromString(String.valueOf(readMap(job.getPayload()).get("clusterId")));
+        Map<String, Object> jobPayload = readMap(job.getPayload());
+        UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
         Cluster cluster = clusterRepository.findWithServicesById(clusterId)
                 .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
         if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
@@ -45,8 +46,11 @@ public class RollingRestartJobHandler implements JobHandler {
         long brokerCount = services.stream().filter(this::isBroker).count();
         long metadataCount = services.stream().filter(service -> "zookeeper".equalsIgnoreCase(cluster.getMode())
                 ? "zookeeper".equals(service.getRole()) : isController(service)).count();
-        if (brokerCount < 2) throw new RuntimeException("Rolling restart requires at least two brokers.");
-        if (metadataCount < 3) throw new RuntimeException("Rolling restart requires at least three controller or ZooKeeper quorum nodes.");
+        long uniqueHosts = services.stream().map(ClusterServiceAssignment::getHostId).distinct().count();
+        boolean confirmedSingleNode = Boolean.parseBoolean(String.valueOf(jobPayload.getOrDefault("confirmSingleNode", false)));
+        boolean singleNodeOverride = uniqueHosts == 1 && confirmedSingleNode;
+        if (!singleNodeOverride && brokerCount < 2) throw new RuntimeException("Rolling restart requires at least two brokers.");
+        if (!singleNodeOverride && metadataCount < 3) throw new RuntimeException("Rolling restart requires at least three controller or ZooKeeper quorum nodes.");
 
         Integer activeController = "kraft".equalsIgnoreCase(cluster.getMode())
                 ? kafkaAdminService.getControllerId(clusterId) : null;

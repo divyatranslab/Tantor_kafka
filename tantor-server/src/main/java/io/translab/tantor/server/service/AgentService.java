@@ -321,6 +321,7 @@ public class AgentService {
                 }
             }
         }
+        cluster.setUpdatedBy("system");
         clusterRepository.save(cluster);
     }
 

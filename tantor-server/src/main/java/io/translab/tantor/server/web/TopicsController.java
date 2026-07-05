@@ -2,6 +2,8 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.TopicOperationsService;
+import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.audit.AuditService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +21,8 @@ public class TopicsController {
     private final KafkaAdminService kafkaAdminService;
     private final TopicOperationsService topicOperationsService;
     private final io.translab.tantor.server.service.PartitionCacheService partitionCacheService;
+    private final ClusterRepository clusterRepository;
+    private final AuditService auditService;
 
     @GetMapping("/topics")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
@@ -44,12 +48,15 @@ public class TopicsController {
             request.getReplicationFactor(), 
             request.getConfigs()
         );
+        clusterChanged(clusterId, "TOPIC_CREATED", Map.of("topic", request.getName(),
+                "partitions", request.getPartitions(), "replicationFactor", request.getReplicationFactor()));
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/topics/{topicName}")
     public ResponseEntity<Void> deleteTopic(@PathVariable UUID clusterId, @PathVariable String topicName) {
         kafkaAdminService.deleteTopic(clusterId, topicName);
+        clusterChanged(clusterId, "TOPIC_DELETED", Map.of("topic", topicName));
         return ResponseEntity.ok().build();
     }
 
@@ -88,6 +95,7 @@ public class TopicsController {
     @PostMapping("/topics/{topicName}/recreate")
     public ResponseEntity<Void> recreateTopic(@PathVariable UUID clusterId, @PathVariable String topicName) {
         topicOperationsService.recreateTopic(clusterId, topicName);
+        clusterChanged(clusterId, "TOPIC_RECREATED", Map.of("topic", topicName));
         return ResponseEntity.noContent().build();
     }
 
@@ -108,6 +116,7 @@ public class TopicsController {
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @PathVariable String key, @RequestBody ConfigValueRequest request) {
         topicOperationsService.alterTopicConfig(clusterId, topicName, key, request.getValue());
+        clusterChanged(clusterId, "TOPIC_CONFIG_CHANGED", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();
     }
 
@@ -115,7 +124,17 @@ public class TopicsController {
     public ResponseEntity<Void> resetConfig(
             @PathVariable UUID clusterId, @PathVariable String topicName, @PathVariable String key) {
         topicOperationsService.resetTopicConfig(clusterId, topicName, key);
+        clusterChanged(clusterId, "TOPIC_CONFIG_RESET", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();
+    }
+
+    private void clusterChanged(UUID clusterId, String action, Map<String, Object> details) {
+        clusterRepository.findById(clusterId).ifPresent(cluster -> {
+            cluster.setUpdatedBy("system");
+            clusterRepository.save(cluster);
+        });
+        auditService.record("CLUSTER_CHANGE", action, "CLUSTER", clusterId.toString(), clusterId,
+                "SUCCESS", null, null, null, details);
     }
 
     @GetMapping("/topics/{topicName}/statistics")

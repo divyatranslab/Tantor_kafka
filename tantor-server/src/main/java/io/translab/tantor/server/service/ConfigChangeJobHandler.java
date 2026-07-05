@@ -146,7 +146,8 @@ public class ConfigChangeJobHandler implements JobHandler {
                 configJson,
                 properties,
                 Boolean.parseBoolean(String.valueOf(payload.getOrDefault("restart", true))),
-                rollback ? "rollback" : String.valueOf(payload.getOrDefault("configVersion", "unversioned"))
+                rollback ? "rollback" : String.valueOf(payload.getOrDefault("configVersion", "unversioned")),
+                String.valueOf(payload.getOrDefault("configPath", ""))
         );
         jobService.attachAgentTask(step.getId(), taskId);
         Task task = taskAwaiter.await(taskId);
@@ -155,6 +156,7 @@ public class ConfigChangeJobHandler implements JobHandler {
         if (!rollback && payload.containsKey("clusterConfigJson")) {
             clusterRepository.findById(clusterId).ifPresent(cluster -> {
                 cluster.setConfigJson(String.valueOf(payload.get("clusterConfigJson")));
+                cluster.setUpdatedBy("system");
                 clusterRepository.save(cluster);
             });
         }

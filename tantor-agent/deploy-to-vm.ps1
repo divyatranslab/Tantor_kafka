@@ -1,7 +1,7 @@
 param (
     [string]$VmIp = "192.168.3.208", # Change this to whatever VM you want to deploy to
     [string]$VmUser = "root",
-    [string]$AgentDir = "/srv/yawar"
+    [string]$AgentDir = "/srv/tantor"
 )
 
 Write-Host "==========================================" -ForegroundColor Cyan

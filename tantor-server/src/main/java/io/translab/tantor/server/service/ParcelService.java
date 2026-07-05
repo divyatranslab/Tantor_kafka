@@ -8,6 +8,7 @@ import io.translab.tantor.server.domain.Task;
 import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.TaskRepository;
+import io.translab.tantor.server.audit.AuditService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ public class ParcelService {
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
     private final HostStatusService hostStatusService;
+    private final AuditService auditService;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -66,7 +68,8 @@ public class ParcelService {
                 HostParcel failed = copyEvent(parcel, actionForCommand(task.getCommand()));
                 failed.setStatus("FAILED");
                 failed.setErrorMsg(task.getErrorMsg());
-                hostParcelRepository.save(failed);
+                HostParcel saved = hostParcelRepository.save(failed);
+                auditParcel(saved, task, "FAILED");
                 return;
             }
 
@@ -111,7 +114,8 @@ public class ParcelService {
             });
             completed.setActive("ACTIVATE_PARCEL".equals(task.getCommand()));
             completed.setErrorMsg(null);
-            hostParcelRepository.save(completed);
+            HostParcel saved = hostParcelRepository.save(completed);
+            auditParcel(saved, task, "SUCCESS");
         });
     }
 
@@ -157,7 +161,9 @@ public class ParcelService {
             Task task = createTask(command, hostId, parcel);
             taskRepository.save(task);
             parcel.setLastTaskId(task.getId());
-            scheduled.add(hostParcelRepository.save(parcel));
+            HostParcel saved = hostParcelRepository.save(parcel);
+            scheduled.add(saved);
+            auditParcel(saved, task, "REQUESTED");
         }
         return scheduled;
     }
@@ -249,6 +255,24 @@ public class ParcelService {
             case "REMOVE_PARCEL" -> "REMOVE";
             default -> "UNKNOWN";
         };
+    }
+
+    private void auditParcel(HostParcel parcel, Task task, String status) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("parcelId", parcel.getId().toString());
+        details.put("taskId", task.getId().toString());
+        details.put("artifactId", parcel.getArtifactId().toString());
+        details.put("hostId", parcel.getHostId());
+        details.put("hostIp", String.valueOf(parcel.getHostIp()));
+        details.put("destination", String.valueOf(parcel.getParcelDir()));
+        details.put("version", parcel.getVersion());
+        details.put("parcelStatus", parcel.getStatus());
+        if (parcel.getErrorMsg() != null && !parcel.getErrorMsg().isBlank()) {
+            details.put("error", parcel.getErrorMsg());
+        }
+        auditService.record("PARCEL", "PARCEL_" + parcel.getAction() + "_" + status,
+                "HOST_PARCEL", parcel.getId().toString(), task.getClusterId(), status,
+                null, null, null, details);
     }
 
     private HostParcel copyEvent(HostParcel source, String action) {

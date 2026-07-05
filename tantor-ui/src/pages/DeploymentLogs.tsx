@@ -24,6 +24,18 @@ interface ClusterInfo {
 
 const activeStatus = (status: string) => ['PENDING', 'RUNNING', 'VALIDATING', 'IN_PROGRESS'].includes(String(status).toUpperCase());
 
+const friendlyFailure = (task: Task) => {
+  if (task.failedReason && !task.failedReason.includes('Exception') && task.failedReason.length < 500) return task.failedReason;
+  const error = `${task.errorMsg || ''} ${task.failedReason || ''}`.toLowerCase();
+  if (error.includes('404') || error.includes('download')) return 'Kafka could not be downloaded. Verify the artifact repository URL and network access from this host.';
+  if (error.includes('checksum')) return 'The Kafka package failed its integrity check. Distribute the binary again and retry.';
+  if (error.includes('permission denied')) return 'The agent lacks permission to write files or manage the Kafka service.';
+  if (error.includes('no space left')) return 'The target host does not have enough disk space.';
+  if (error.includes('systemctl') || error.includes('service')) return 'Kafka files were prepared, but the Kafka service could not start.';
+  if (error.includes('port') || error.includes('listening')) return 'Kafka did not become reachable on its configured port.';
+  return `Deployment stopped during ${task.currentStep || 'an unknown step'}. Review the technical log below.`;
+};
+
 const DEPLOYMENT_STEPS = [
   'Validate agent',
   'Validate host prerequisites',
@@ -254,8 +266,13 @@ export function DeploymentLogs() {
 
       {selectedTask.errorMsg && (
         <div className="deployment-task-error">
-          <strong>Error</strong>
-          <span>{selectedTask.failedReason || selectedTask.errorMsg}</span>
+          <strong>What happened</strong>
+          <span>{friendlyFailure(selectedTask)}</span>
+          {selectedTask.currentStep && <small>Failed step: {selectedTask.currentStep}</small>}
+          <details>
+            <summary>Technical error</summary>
+            <pre>{selectedTask.errorMsg}</pre>
+          </details>
         </div>
       )}
 

@@ -126,6 +126,11 @@
   font-size: 12px;
 }
 
+.deployment-task-error small { color: #6f3a34; }
+.deployment-task-error details { margin-top: 5px; }
+.deployment-task-error summary { cursor: pointer; font-weight: 650; }
+.deployment-task-error pre { max-height: 180px; overflow: auto; margin: 7px 0 0; padding: 9px; border-radius: 5px; background: #2b1614; color: #ffd9d4; font: 11px/1.45 Consolas, monospace; white-space: pre-wrap; }
+
 .deployment-console {
   overflow: hidden;
   border: 1px solid #252a31;

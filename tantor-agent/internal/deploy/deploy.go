@@ -170,8 +170,10 @@ func (e *Engine) rollbackDeployment(ctx context.Context, t *api.Task) (*api.Task
 
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	currentStep := "Starting deployment"
 
 	reporter := func(step string, logs string) {
+		currentStep = step
 		e.client.ReportTaskResult(&api.TaskResult{
 			TaskID:      t.TaskID,
 			HostID:      e.cfg.Agent.HostID,
@@ -185,7 +187,9 @@ func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult
 
 	if err != nil {
 		failResult := e.fail(t, fmt.Sprintf("Kafka deployment failed: %v\nLogs: %s", err, logOutput))
-		failResult.FailedReason = err.Error()
+		failResult.CurrentStep = currentStep
+		failResult.FailedReason = friendlyDeploymentFailure(currentStep, err)
+		failResult.LogOutput = logOutput
 		return failResult, nil
 	}
 
@@ -195,6 +199,30 @@ func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult
 		Status:    "SUCCESS",
 		LogOutput: logOutput,
 	}, nil
+}
+
+func friendlyDeploymentFailure(step string, err error) string {
+	detail := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(detail, "404"), strings.Contains(detail, "download"):
+		return "Kafka could not be downloaded on the target host. Verify the artifact repository URL, artifact ID, and network access from the VM."
+	case strings.Contains(detail, "checksum"):
+		return "The downloaded Kafka package failed integrity verification. Upload or distribute the binary again before retrying."
+	case strings.Contains(detail, "permission denied"), strings.Contains(detail, "not permitted"):
+		return "The agent does not have permission to write files or manage the Kafka service. Verify its sudo and directory permissions."
+	case strings.Contains(detail, "no space left"), strings.Contains(detail, "disk"):
+		return "The target host does not have enough usable disk space for Kafka. Free space and retry the deployment."
+	case strings.Contains(detail, "format"), strings.Contains(detail, "storage"):
+		return "Kafka storage initialization failed. Verify the Kafka cluster ID, node ID, and data-directory permissions before retrying."
+	case strings.Contains(detail, "systemctl"), strings.Contains(detail, "service"):
+		return "Kafka was installed but its service could not start. Check the service configuration and the technical logs below."
+	case strings.Contains(detail, "port"), strings.Contains(detail, "listening"):
+		return "Kafka did not become reachable on its configured port. Check port conflicts, listeners, and firewall settings."
+	case strings.Contains(detail, "config"), strings.Contains(detail, "properties"):
+		return "Kafka configuration generation or validation failed. Review the selected properties and node topology."
+	default:
+		return fmt.Sprintf("Kafka deployment failed during '%s'. Review the recommended checks and technical logs below.", step)
+	}
 }
 
 func (e *Engine) startService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {

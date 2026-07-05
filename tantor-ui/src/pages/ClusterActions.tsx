@@ -8,6 +8,7 @@ interface ClusterInfo {
   status: string;
   mode: string;
   managementLevel?: string;
+  nodeCount?: number;
   hosts?: Array<{ hostId: string; hostname: string; ipAddress: string }>;
 }
 
@@ -55,11 +56,18 @@ export function ClusterActions() {
   };
 
   const triggerRollingRestart = async () => {
-    if (!window.confirm("WARNING: This will begin a rolling restart of the cluster. Continue?")) return;
+    const nodeCount = cluster?.nodeCount || cluster?.hosts?.length || 0;
+    const warning = nodeCount === 1
+      ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
+      : 'WARNING: This will begin a rolling restart of the cluster. Continue?';
+    if (!window.confirm(warning)) return;
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/actions/rolling-restart`, { method: 'POST' });
+      const res = await fetch(`/api/v1/clusters/${id}/actions/rolling-restart`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmSingleNode: nodeCount === 1 }),
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.jobId) navigate(`/jobs/${data.jobId}`);

@@ -140,7 +140,7 @@ public class DeploymentService {
 
     @Transactional
     public void updateKafkaConfig(UUID clusterId, String hostId, String configJsonStr, boolean restart) {
-        updateKafkaConfig(clusterId, hostId, "broker", "1", configJsonStr, "", restart, "unversioned");
+        updateKafkaConfig(clusterId, hostId, "broker", "1", configJsonStr, "", restart, "unversioned", null);
     }
 
     @Transactional
@@ -152,7 +152,8 @@ public class DeploymentService {
             String configJsonStr,
             String propertiesTemplate,
             boolean restart,
-            String configVersion
+            String configVersion,
+            String configPath
     ) {
         Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
@@ -172,6 +173,9 @@ public class DeploymentService {
 
             mergeConfigParams(params, configJsonStr);
             params.put("config_file", configFileForRole(normalizedRole, String.valueOf(params.getOrDefault("mode", "kraft"))));
+            if (configPath != null && !configPath.isBlank()) {
+                params.put("config_path", configPath.trim());
+            }
             if (propertiesTemplate != null && !propertiesTemplate.isBlank()) {
                 if ("controller".equals(normalizedRole)) {
                     params.put("controller_properties_template", propertiesTemplate);

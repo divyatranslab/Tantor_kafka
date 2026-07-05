@@ -189,6 +189,7 @@ public class ConfigVersionService {
         stepPayload.put("operation", "service");
         stepPayload.put("configVersionId", version.getId().toString());
         stepPayload.put("configVersion", version.getConfigVersion().toString());
+        stepPayload.put("configPath", version.getConfigFileName());
         stepPayload.put("hostId", service.getHostId());
         stepPayload.put("role", service.getRole());
         stepPayload.put("nodeId", service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()));
@@ -283,6 +284,10 @@ public class ConfigVersionService {
         version.setStatus(ConfigVersionStatus.APPLIED);
         version.setAppliedAt(Instant.now());
         configVersionRepository.save(version);
+        clusterRepository.findById(version.getClusterId()).ifPresent(cluster -> {
+            cluster.setUpdatedBy("system");
+            clusterRepository.save(cluster);
+        });
         auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_APPLIED", "CONFIG_VERSION", version.getId().toString(),
                 version.getClusterId(), "SUCCESS", readMap(version.getOldConfig()), readMap(version.getNewConfig()),
                 version.getApprovedBy() == null ? null : Map.of("approvedBy", version.getApprovedBy()),

@@ -1252,7 +1252,7 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 
 func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath string) (string, error) {
 	if _, _, err := d.exec.RunSudo(ctx, "test", "-f", configPath); err != nil {
-		return "", nil
+		return "", fmt.Errorf("active configuration file does not exist at %s; no changes were applied", configPath)
 	}
 	version := strings.TrimSpace(t.Parameters["config_version"])
 	if version == "" {
