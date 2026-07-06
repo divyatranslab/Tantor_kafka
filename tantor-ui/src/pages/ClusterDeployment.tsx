@@ -47,6 +47,7 @@ type ExistingCluster = {
   kafkaVersion: string;
   mode: string;
   environment?: string;
+  kafkaClusterId?: string;
   config?: Record<string, any>;
   hosts?: ClusterHost[];
 };
@@ -1255,8 +1256,8 @@ export function ClusterDeployment() {
               </label>
               {isAddNodeMode && (
                 <label className="cd-field">
-                  <span>Cluster ID</span>
-                  <input value={addClusterId || ''} disabled />
+                  <span>Kafka Cluster ID</span>
+                  <input value={existingCluster?.kafkaClusterId || addClusterId || ''} disabled />
                 </label>
               )}
               <label className="cd-field">
