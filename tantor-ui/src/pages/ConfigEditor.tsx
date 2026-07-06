@@ -204,6 +204,12 @@ export function ConfigEditor() {
   };
 
   const versionAction = async (version: ConfigVersion, action: 'approve' | 'apply' | 'rollback') => {
+    if (action === 'apply') {
+      const message = restart
+        ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
+        : `Apply configuration v${version.configVersion} without restarting Kafka? Static properties will not become active until a later restart.`;
+      if (!window.confirm(message)) return;
+    }
     setWorking(`${action}-${version.id}`);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {

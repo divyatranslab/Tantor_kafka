@@ -171,8 +171,8 @@ export function Hosts() {
               return (
                 <tr key={host.id}>
                   <td>
-                    <span className={`status-badge ${(host.status ?? 'offline').toLowerCase()}`}>
-                      {host.status ?? 'OFFLINE'}
+                    <span className={`status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
+                      {host.agentStatus ?? 'OFFLINE'}
                     </span>
                   </td>
                   <td>

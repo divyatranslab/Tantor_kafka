@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Task;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class DeploymentService {
     private final TaskRepository taskRepository;
     private final HostParcelRepository hostParcelRepository;
     private final ClusterRepository clusterRepository;
+    private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -45,6 +47,7 @@ public class DeploymentService {
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
+            addHostIdentity(params, hostId);
 
             mergeConfigParams(params, configJsonStr);
             params.put("config_file", configFileForRole(normalizedRole, String.valueOf(params.getOrDefault("mode", "kraft"))));
@@ -67,6 +70,24 @@ public class DeploymentService {
         taskRepository.save(task);
         log.info("Task {} created successfully", task.getId());
         return task.getId();
+    }
+
+    private void addHostIdentity(Map<String, Object> params, String hostId) {
+        params.put("host_id", hostId);
+        hostRepository.findById(hostId).ifPresent(host -> {
+            params.put("host_hostname", host.getHostname() == null ? "" : host.getHostname());
+            params.put("host_ip", firstHostIp(host.getIpAddresses()));
+        });
+    }
+
+    private String firstHostIp(String ipAddresses) {
+        if (ipAddresses == null || ipAddresses.isBlank() || "[]".equals(ipAddresses)) return "";
+        try {
+            java.util.List<?> values = objectMapper.readValue(ipAddresses, java.util.List.class);
+            return values.isEmpty() ? "" : String.valueOf(values.get(0));
+        } catch (Exception ignored) {
+            return ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
+        }
     }
 
     @Transactional

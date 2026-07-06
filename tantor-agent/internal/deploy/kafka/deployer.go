@@ -41,6 +41,15 @@ type kafkaInstallPaths struct {
 	ActiveDir    string
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
 func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Executor) *Deployer {
 	return &Deployer{
 		cfg:    cfg,
@@ -115,6 +124,12 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	setStep("Validate agent")
+	log("Deployment target:")
+	log("  Host ID: %s", firstNonEmpty(t.Parameters["host_id"], d.cfg.Agent.HostID))
+	log("  Hostname: %s", firstNonEmpty(t.Parameters["host_hostname"], "unknown"))
+	log("  Host IP: %s", firstNonEmpty(t.Parameters["host_ip"], "unknown"))
+	log("  Kafka node ID: %s", firstNonEmpty(t.Parameters["node_id"], "unknown"))
+	log("  Service role: %s", firstNonEmpty(t.Parameters["service_role"], t.Parameters["role"], "unknown"))
 	log("Agent self-check passed")
 
 	setStep("Validate host prerequisites")
@@ -191,11 +206,16 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	setStep("Extract Kafka")
 	if !shouldSkip("Extract Kafka") {
-		_, _, err = d.exec.RunSudo(ctx, "tar", "-xzf", destPath, "-C", installDir, "--strip-components=1")
-		if err != nil {
-			return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
+		installedLauncher := filepath.Join(installDir, "bin", "kafka-server-start.sh")
+		if _, _, installedErr := d.exec.RunSudo(ctx, "test", "-x", installedLauncher); installedErr == nil {
+			log("Kafka %s is already extracted at %s; preserving existing role configurations", t.Parameters["version"], installDir)
+		} else {
+			_, _, err = d.exec.RunSudo(ctx, "tar", "-xzf", destPath, "-C", installDir, "--strip-components=1")
+			if err != nil {
+				return logs.String(), fmt.Errorf("failed to extract tar: %w", err)
+			}
+			log("Artifact extracted to %s", installDir)
 		}
-		log("Artifact extracted to %s", installDir)
 
 		if err := d.ensureActiveSymlink(ctx, activeInstallDir, installDir); err != nil {
 			return logs.String(), err
@@ -299,9 +319,18 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				}
 
 				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-				_, _, err = d.exec.Run(ctx, storageScript, formatArgs...)
+				formatOut, formatErr, err := d.exec.Run(ctx, storageScript, formatArgs...)
 				if err != nil {
-					return logs.String(), fmt.Errorf("failed to format KRaft storage: %w", err)
+					technicalOutput := strings.TrimSpace(strings.TrimSpace(formatOut) + "\n" + strings.TrimSpace(formatErr))
+					if technicalOutput == "" {
+						technicalOutput = "Kafka storage command returned no diagnostic output"
+					}
+					log("KRaft storage format failed on host %s (%s), Kafka node %s: %s",
+						firstNonEmpty(t.Parameters["host_hostname"], d.cfg.Agent.HostID),
+						firstNonEmpty(t.Parameters["host_ip"], "IP unknown"), nodeID, technicalOutput)
+					return logs.String(), fmt.Errorf("failed to format KRaft storage on host %s (%s), Kafka node %s: %w: %s",
+						firstNonEmpty(t.Parameters["host_hostname"], d.cfg.Agent.HostID),
+						firstNonEmpty(t.Parameters["host_ip"], "IP unknown"), nodeID, err, technicalOutput)
 				}
 				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
 					return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
