@@ -76,7 +76,7 @@ public class BrokerMetricsCacheService {
         Host host = hostRepository.findById(svc.getHostId()).orElse(null);
         if (host == null) return null;
 
-        boolean heartbeatOk = host.getStatus() != null && "ONLINE".equalsIgnoreCase(host.getStatus());
+        boolean heartbeatOk = host.getAgentStatus() != null && "ONLINE".equalsIgnoreCase(host.getAgentStatus());
         
         BrokerSummaryDto.BrokerSummaryDtoBuilder builder = BrokerSummaryDto.builder()
             .brokerId(svc.getNodeId())

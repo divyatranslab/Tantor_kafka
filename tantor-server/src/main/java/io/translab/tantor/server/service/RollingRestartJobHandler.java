@@ -84,9 +84,17 @@ public class RollingRestartJobHandler implements JobHandler {
                 jobService.completeStep(step.getId(), task.getLogOutput());
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
+                clusterRepository.findById(clusterId).ifPresent(c -> {
+                    c.setStatus("FAILED");
+                    clusterRepository.save(c);
+                });
                 throw e;
             }
         }
+        clusterRepository.findById(clusterId).ifPresent(c -> {
+            c.setStatus("SUCCESS");
+            clusterRepository.save(c);
+        });
     }
 
     @Override

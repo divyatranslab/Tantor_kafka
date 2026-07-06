@@ -1,5 +1,5 @@
 param (
-    [string]$VmIp = "192.168.3.208", # Change this to whatever VM you want to deploy to
+    [string]$VmIp = "192.168.3.149", # Change this to whatever VM you want to deploy to
     [string]$VmUser = "root",
     [string]$AgentDir = "/srv/tantor-agent"
 )

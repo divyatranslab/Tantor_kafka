@@ -345,6 +345,9 @@ public class ClusterController {
         mergedRequest.setEnvironment(cluster.getEnvironment());
         mergedRequest.setArtifactUrl(request.getArtifactUrl());
         Map<String, Object> mergedConfig = new HashMap<>(parseConfigJson(cluster.getConfigJson()));
+        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
+            mergedConfig.put("cluster_uuid", cluster.getKafkaClusterId());
+        }
         if (request.getConfig() != null) {
             mergedConfig.putAll(request.getConfig());
         }
@@ -357,7 +360,11 @@ public class ClusterController {
         persistedRequest.setKafka_version(cluster.getKafkaVersion());
         persistedRequest.setMode(deploymentMode);
         persistedRequest.setEnvironment(cluster.getEnvironment());
-        persistedRequest.setConfig(new HashMap<>(parseConfigJson(cluster.getConfigJson())));
+        Map<String, Object> persistedConfig = new HashMap<>(parseConfigJson(cluster.getConfigJson()));
+        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
+            persistedConfig.put("cluster_uuid", cluster.getKafkaClusterId());
+        }
+        persistedRequest.setConfig(persistedConfig);
         persistedRequest.setServices(allServices);
         Map<String, Object> persistedClusterConfig = buildDeploymentConfig(persistedRequest, deploymentMode);
         String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));

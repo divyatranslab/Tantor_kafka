@@ -51,6 +51,10 @@ public class ConfigChangeJobHandler implements JobHandler {
             } catch (Exception e) {
                 if (versionId != null) configVersionService.markFailed(versionId);
                 jobService.failStep(step.getId(), e.getMessage());
+                clusterRepository.findById(clusterId).ifPresent(cluster -> {
+                    cluster.setStatus("FAILED");
+                    clusterRepository.save(cluster);
+                });
                 throw e;
             }
         }
@@ -58,6 +62,10 @@ public class ConfigChangeJobHandler implements JobHandler {
             configVersionService.markApplied(versionId,
                     String.valueOf(jobPayload.getOrDefault("activeServiceConfigJson", "{}")));
         }
+        clusterRepository.findById(clusterId).ifPresent(cluster -> {
+            cluster.setStatus("SUCCESS");
+            clusterRepository.save(cluster);
+        });
     }
 
     @Override
@@ -83,10 +91,18 @@ public class ConfigChangeJobHandler implements JobHandler {
                 jobService.rolledBackStep(step.getId(), "Previous configuration restored.");
             } catch (Exception e) {
                 jobService.rollbackFailedStep(step.getId(), e.getMessage());
+                clusterRepository.findById(clusterId).ifPresent(cluster -> {
+                    cluster.setStatus("FAILED");
+                    clusterRepository.save(cluster);
+                });
                 throw e;
             }
         }
         if (versionId != null) configVersionService.markJobRolledBack(versionId);
+        clusterRepository.findById(clusterId).ifPresent(cluster -> {
+            cluster.setStatus("SUCCESS");
+            clusterRepository.save(cluster);
+        });
     }
 
     @SuppressWarnings("unchecked")
