@@ -294,13 +294,22 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
 		// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 		if deploymentModeForTask(t) == "kraft" {
-			metaPropsPath := filepath.Join(paths.MetaPropertiesDir, "meta.properties")
+			metaPropsDirs := []string{
+				paths.MetadataLogDir,
+				paths.LogDirs,
+				"/data/kafka/controller-data/metadata",
+				"/data/kafka/controller-data/logs",
+				"/data/kafka/broker-metadata",
+				"/data/kafka/broker-data",
+				"/data/kafka/data",
+				"/tmp/kafka-logs",
+			}
 			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
 			nodeID := strings.TrimSpace(t.Parameters["node_id"])
 			if clusterUUID == "" || nodeID == "" {
 				return logs.String(), fmt.Errorf("cluster_uuid and node_id are required before formatting KRaft storage")
 			}
-			if _, err := os.Stat(metaPropsPath); os.IsNotExist(err) {
+			if _, err := os.Stat(filepath.Join(paths.MetaPropertiesDir, "meta.properties")); os.IsNotExist(err) {
 				log("Fresh deployment detected — formatting KRaft storage...")
 				storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
 				configPath := configPathForTask(activeInstallDir, t)
@@ -332,14 +341,14 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 						firstNonEmpty(t.Parameters["host_hostname"], d.cfg.Agent.HostID),
 						firstNonEmpty(t.Parameters["host_ip"], "IP unknown"), nodeID, err, technicalOutput)
 				}
-				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID); err != nil {
 					return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
 				}
 				log("KRaft storage formatted successfully")
 			} else if err != nil {
 				return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
 			} else {
-				if err := validateMetaProperties(metaPropsPath, clusterUUID, nodeID); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID); err != nil {
 					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
 				}
 				log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
@@ -765,6 +774,10 @@ func resolveKafkaRolePaths(t *api.Task, installDir, dataDir string) kafkaRolePat
 		if paths.MetadataLogDir == "" {
 			paths.MetadataLogDir = filepath.Join(dataDir, "controller-data", "metadata")
 		}
+		paths.LogDirs = strings.TrimSpace(t.Parameters["log_dirs"])
+		if paths.LogDirs == "" {
+			paths.LogDirs = filepath.Join(dataDir, "controller-data", "logs")
+		}
 		paths.AppLogDir = filepath.Join(appLogBaseDir, "kafka-controller")
 	}
 
@@ -977,14 +990,8 @@ func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, instal
 			"inter.broker.listener.name":               ternaryString(isBroker, "PLAINTEXT", ""),
 			"controller.quorum.voters":                 ternaryString(quorumMode == "static", quorumVoters, ""),
 			"controller.quorum.bootstrap.servers":      ternaryString(quorumMode == "dynamic", quorumBootstrap, ""),
-			"log.dirs":                                 ternaryString(isBroker, paths.LogDirs, ""),
+			"log.dirs":                                 paths.LogDirs,
 			"metadata.log.dir":                         paths.MetadataLogDir,
-			"num.partitions":                           numPartitions,
-			"default.replication.factor":               ternaryString(isBroker, repFactor, ""),
-			"offsets.topic.replication.factor":         ternaryString(isBroker, repFactor, ""),
-			"transaction.state.log.replication.factor": ternaryString(isBroker, repFactor, ""),
-			"min.insync.replicas":                      ternaryString(isBroker, minInsyncReplicas, ""),
-			"transaction.state.log.min.isr":            ternaryString(isBroker, minInsyncReplicas, ""),
 		})
 		return d.writeStringToSudoFile(ctx, content, configPathForTask(installDir, t))
 	}
@@ -1069,12 +1076,6 @@ func (d *Deployer) generateZooKeeperConfigs(ctx context.Context, t *api.Task, in
 			"inter.broker.listener.name":               "PLAINTEXT",
 			"zookeeper.connect":                        zookeeperConnect,
 			"log.dirs":                                 paths.LogDirs,
-			"num.partitions":                           numPartitions,
-			"default.replication.factor":               repFactor,
-			"offsets.topic.replication.factor":         repFactor,
-			"transaction.state.log.replication.factor": repFactor,
-			"min.insync.replicas":                      minISR,
-			"transaction.state.log.min.isr":            minISR,
 		})
 		return d.writeStringToSudoFile(ctx, content, configPathForTask(installDir, t))
 	}
@@ -1168,30 +1169,44 @@ func mergeCustomKafkaProperties(base string, overrides map[string]string) string
 	return out.String()
 }
 
-func validateMetaProperties(path, expectedClusterID, expectedNodeID string) error {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", path, err)
-	}
-
-	values := make(map[string]string)
-	for _, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
+func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, expectedClusterID, expectedNodeID string) error {
+	seen := make(map[string]bool)
+	for _, dir := range dirs {
+		if dir == "" || seen[dir] {
 			continue
 		}
-		separator := strings.Index(line, "=")
-		if separator < 0 {
-			continue
-		}
-		values[strings.TrimSpace(line[:separator])] = strings.TrimSpace(line[separator+1:])
-	}
+		seen[dir] = true
 
-	if values["cluster.id"] != expectedClusterID {
-		return fmt.Errorf("cluster.id mismatch in %s: found %q, expected %q", path, values["cluster.id"], expectedClusterID)
-	}
-	if values["node.id"] != expectedNodeID {
-		return fmt.Errorf("node.id mismatch in %s: found %q, expected %q", path, values["node.id"], expectedNodeID)
+		metaPropsPath := filepath.Join(dir, "meta.properties")
+		content, err := os.ReadFile(metaPropsPath)
+		if err != nil {
+			// Try reading with sudo if normal read fails
+			out, _, err2 := d.exec.RunSudo(ctx, "cat", metaPropsPath)
+			if err2 != nil {
+				continue // File doesn't exist or is not readable
+			}
+			content = []byte(out)
+		}
+
+		values := make(map[string]string)
+		for _, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
+				continue
+			}
+			separator := strings.Index(line, "=")
+			if separator < 0 {
+				continue
+			}
+			values[strings.TrimSpace(line[:separator])] = strings.TrimSpace(line[separator+1:])
+		}
+
+		if values["cluster.id"] != "" && values["cluster.id"] != expectedClusterID {
+			return fmt.Errorf("Invalid cluster.id in: %s. Expected new cluster ID %q, but read old cluster ID %q.", metaPropsPath, expectedClusterID, values["cluster.id"])
+		}
+		if values["node.id"] != "" && values["node.id"] != expectedNodeID {
+			return fmt.Errorf("Invalid node.id in: %s. Expected new node ID %q, but read old node ID %q.", metaPropsPath, expectedNodeID, values["node.id"])
+		}
 	}
 	return nil
 }
@@ -1211,12 +1226,6 @@ func orderedKafkaOverrideKeys() []string {
 		"controller.quorum.bootstrap.servers",
 		"log.dirs",
 		"metadata.log.dir",
-		"num.partitions",
-		"default.replication.factor",
-		"offsets.topic.replication.factor",
-		"transaction.state.log.replication.factor",
-		"min.insync.replicas",
-		"transaction.state.log.min.isr",
 	}
 }
 

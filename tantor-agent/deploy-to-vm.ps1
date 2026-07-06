@@ -1,16 +1,8 @@
 param (
-    [string]$VmIp = "192.168.3.149", # Change this to whatever VM you want to deploy to
+    [string]$VmIp = "192.168.3.208", # Change this to whatever VM you want to deploy to
     [string]$VmUser = "root",
-    [string]$AgentDir = "/srv/tantor-agent",
-    [Parameter(Mandatory = $true)]
-    [string]$HostId,
-    [string]$AgentName = "",
-    [string]$ServerUrl = "http://192.168.3.191"
+    [string]$AgentDir = "/srv/tantor-agent"
 )
-
-if ([string]::IsNullOrWhiteSpace($AgentName)) {
-    $AgentName = "agent-node-$($VmIp.Split('.')[-1])"
-}
 
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "  Tantor Agent Automated Deployment Script" -ForegroundColor Cyan
@@ -60,28 +52,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[3/4] Uploading new agent binary..." -ForegroundColor Yellow
 ssh "${VmUser}@${VmIp}" "mkdir -p ${AgentDir}"
 scp tantor-agent-linux "${VmUser}@${VmIp}:${AgentDir}/"
+scp configs\agent.yaml "${VmUser}@${VmIp}:${AgentDir}/"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Upload failed! Aborting deployment." -ForegroundColor Red
     exit 1
 }
 
 Write-Host "[4/4] Creating directories & starting agent..." -ForegroundColor Yellow
-$agentConfigContent = @"
-agent:
-  host_id: "${HostId}"
-  agent_name: "${AgentName}"
-  server_url: "${ServerUrl}"
-  cert_file: "/etc/tantor/certs/agent.crt"
-  key_file: "/etc/tantor/certs/agent.key"
-  ca_cert: "/etc/tantor/certs/ca.crt"
-  poll_interval_seconds: 10
-  log_level: "INFO"
-
-paths:
-  data_dir: "${AgentDir}/data"
-  log_dir: "${AgentDir}/logs"
-  artifacts_dir: "${AgentDir}/artifacts"
-"@
 $launcherContent = @"
 #!/bin/bash
 JAVA17_BIN=""
@@ -120,10 +97,8 @@ WantedBy=multi-user.target
 "@
 $launcherContent = $launcherContent -replace "`r`n", "`n"
 $serviceContent = $serviceContent -replace "`r`n", "`n"
-$agentConfigContent = $agentConfigContent -replace "`r`n", "`n"
 $launcherBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($launcherContent))
 $serviceBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($serviceContent))
-$agentConfigBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($agentConfigContent))
 $startCommand = @"
 set -Eeuo pipefail
 trap 'rc=`$?; echo "Agent deployment failed at remote line `$LINENO (exit `$rc)" >&2' ERR
@@ -136,11 +111,8 @@ mkdir -p ${AgentDir}/logs
 chmod +x ${AgentDir}/tantor-agent-linux
 printf '%s' '${launcherBase64}' | base64 --decode > ${AgentDir}/run-agent.sh
 chmod 0755 ${AgentDir}/run-agent.sh
-printf '%s' '${agentConfigBase64}' | base64 --decode > ${AgentDir}/agent.yaml
-chmod 0600 ${AgentDir}/agent.yaml
 printf '%s' '${serviceBase64}' | base64 --decode > /etc/systemd/system/tantor-agent.service
 test -s ${AgentDir}/run-agent.sh || exit 1
-test -s ${AgentDir}/agent.yaml || exit 1
 test -s /etc/systemd/system/tantor-agent.service || exit 1
 systemctl daemon-reload
 systemctl enable --now tantor-agent.service

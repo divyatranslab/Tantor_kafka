@@ -358,7 +358,7 @@ export function ClusterDeployment() {
   const [installDir, setInstallDir] = useState('/opt');
   const [dataDir, setDataDir] = useState('/data/kafka');
   const [logDir, setLogDir] = useState('/var/log/kafka');
-  const [artifactLoadDir, setArtifactLoadDir] = useState('/srv/yawar/kafka-artifacts');
+  const [artifactLoadDir, setArtifactLoadDir] = useState('/srv/tantor-agent/artifacts');
   const [listenerPort, setListenerPort] = useState(9092);
   const [controllerPort, setControllerPort] = useState(9093);
   const [zookeeperPeerPort, setZookeeperPeerPort] = useState(2888);
@@ -1321,7 +1321,7 @@ export function ClusterDeployment() {
               </label>
               <label className="cd-field">
                 <span>Artifact/load directory</span>
-                <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/yawar/kafka-artifacts" />
+                <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
               </label>
             </div>
           </section>

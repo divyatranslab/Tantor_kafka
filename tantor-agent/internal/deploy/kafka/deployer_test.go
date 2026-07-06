@@ -120,17 +120,19 @@ func TestUsesFlatKafkaConfigLayout(t *testing.T) {
 }
 
 func TestValidateMetaPropertiesRequiresMatchingIdentity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "meta.properties")
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "meta.properties")
 	if err := os.WriteFile(path, []byte("cluster.id=cluster-identity-12345\nnode.id=101\n"), 0600); err != nil {
 		t.Fatalf("write meta.properties: %v", err)
 	}
-	if err := validateMetaProperties(path, "cluster-identity-12345", "101"); err != nil {
+	dirs := []string{tmpDir}
+	if err := validateMetaProperties(context.Background(), nil, dirs, "cluster-identity-12345", "101"); err != nil {
 		t.Fatalf("matching identity rejected: %v", err)
 	}
-	if err := validateMetaProperties(path, "different-cluster", "101"); err == nil {
+	if err := validateMetaProperties(context.Background(), nil, dirs, "different-cluster", "101"); err == nil {
 		t.Fatal("cluster identity mismatch was accepted")
 	}
-	if err := validateMetaProperties(path, "cluster-identity-12345", "102"); err == nil {
+	if err := validateMetaProperties(context.Background(), nil, dirs, "cluster-identity-12345", "102"); err == nil {
 		t.Fatal("node identity mismatch was accepted")
 	}
 }
