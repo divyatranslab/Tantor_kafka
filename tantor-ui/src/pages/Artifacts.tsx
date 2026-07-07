@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   Package, Upload, CheckCircle, XCircle, ChevronDown, ChevronUp,
   Loader2, HardDrive, X, RefreshCw, Server, DownloadCloud,
-  Power, PowerOff, Trash2, AlertTriangle, MoreVertical, Terminal
+  Power, PowerOff, Trash2, AlertTriangle
 } from 'lucide-react';
 import './Artifacts.css';
 
@@ -53,10 +53,6 @@ export function Artifacts() {
   const [actingKey, setActingKey] = useState<string | null>(null);
   const [uploadMsg, setUploadMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [logsModalArtifactId, setLogsModalArtifactId] = useState<string | null>(null);
-  const [artifactLogs, setArtifactLogs] = useState<any[]>([]);
-  const [logsLoading, setLogsLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [serviceType, setServiceType] = useState('KAFKA');
   const [versionInput, setVersionInput] = useState('');
@@ -96,23 +92,6 @@ export function Artifacts() {
     const res = await fetch('/api/v1/ui/parcels');
     if (!res.ok) return;
     setHostParcels(await res.json());
-  };
-
-  const openLogsModal = async (artifactId: string) => {
-    setOpenMenuId(null);
-    setLogsModalArtifactId(artifactId);
-    setLogsLoading(true);
-    setArtifactLogs([]);
-    try {
-      const res = await fetch(`/api/v1/artifacts/${artifactId}/logs`);
-      if (res.ok) {
-        setArtifactLogs(await res.json());
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLogsLoading(false);
-    }
   };
 
   const refreshAll = async () => {
@@ -394,7 +373,7 @@ export function Artifacts() {
   };
 
   return (
-    <div className="artifacts-page animate-fade-in" onClick={() => setOpenMenuId(null)}>
+    <div className="artifacts-page animate-fade-in">
       <header className="page-header flex-between">
         <div>
           <h1>Parcels</h1>
@@ -469,30 +448,15 @@ export function Artifacts() {
                     </div>
                     <span className="chevron">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
                   </button>
-                  <div className="version-card-tools menu-anchor" onClick={e => e.stopPropagation()}>
+                  <div className="version-card-tools">
                     <button
-                      className="btn icon-only"
-                      onClick={() => setOpenMenuId(openMenuId === ver.id ? null : ver.id)}
-                      title="Artifact actions"
+                      className="artifact-delete-button"
+                      disabled={!canDeleteBinary || actingKey !== null}
+                      onClick={() => deleteArtifactBinary(ver)}
+                      title={canDeleteBinary ? 'Delete uploaded binary' : 'Remove from all hosts before deleting binary'}
                     >
-                      <MoreVertical size={16} />
+                      {actingKey === deleteKey ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
                     </button>
-                    {openMenuId === ver.id && (
-                      <div className="host-action-menu">
-                        <button onClick={() => openLogsModal(ver.id)}>
-                          <Terminal size={14} /> View Logs
-                        </button>
-                        <button 
-                          className="danger" 
-                          onClick={() => deleteArtifactBinary(ver)} 
-                          disabled={!canDeleteBinary || actingKey !== null}
-                          title={canDeleteBinary ? 'Delete uploaded binary' : 'Remove from all hosts before deleting binary'}
-                        >
-                          {actingKey === deleteKey ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />} 
-                          Delete
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -662,41 +626,6 @@ export function Artifacts() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {logsModalArtifactId && (
-        <div className="modal-overlay" onClick={() => setLogsModalArtifactId(null)}>
-          <div className="modal logs-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Artifact Logs</h2>
-              <button className="modal-close" onClick={() => setLogsModalArtifactId(null)}>
-                <X size={14} />
-              </button>
-            </div>
-            <div className="logs-container">
-              {logsLoading ? (
-                <div className="state-center">
-                  <Loader2 size={24} className="spin" />
-                  <p>Fetching logs...</p>
-                </div>
-              ) : artifactLogs.length === 0 ? (
-                <p>No logs found for this artifact.</p>
-              ) : (
-                <div className="log-entries">
-                  {artifactLogs.map((log, index) => (
-                    <div key={log.id || index} className="log-entry">
-                      <span className="log-timestamp">{new Date(log.created_at || log.createdAt).toLocaleString()}</span>
-                      <span className="log-message">{log.log_message || log.logMessage || log.message}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setLogsModalArtifactId(null)}>Close</button>
-            </div>
           </div>
         </div>
       )}

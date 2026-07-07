@@ -126,7 +126,7 @@ export function Hosts() {
         </div>
         <div className="header-actions">
           <button className="btn" onClick={() => setShowEnrollModal(true)}>
-            Agent Connectivity
+            + Add node
           </button>
           <button className="btn" onClick={fetchHosts}>
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
@@ -248,7 +248,7 @@ export function Hosts() {
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Add a new agent connectivity</h2>
+              <h2>Add a new node</h2>
               <button className="modal-close" onClick={() => setShowEnrollModal(false)}>
                 <X size={14} />
               </button>

@@ -1,5 +1,0 @@
-ALTER TABLE artifact DROP COLUMN IF EXISTS name;
-ALTER TABLE artifact DROP COLUMN IF EXISTS classifier;
-ALTER TABLE artifact DROP COLUMN IF EXISTS manifest;
-ALTER TABLE artifact DROP COLUMN IF EXISTS description;
-ALTER TABLE artifact DROP COLUMN IF EXISTS version_lock;
