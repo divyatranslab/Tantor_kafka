@@ -12,6 +12,9 @@ import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
+import org.springframework.jdbc.core.JdbcTemplate;
+import java.util.List;
+import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,15 +50,18 @@ public class ArtifactController {
     private final ManifestService manifestService;
     private final ObjectMapper objectMapper;
     private final ArtifactAuditService auditService;
+    private final JdbcTemplate jdbcTemplate;
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
                               ObjectMapper objectMapper,
-                              ArtifactAuditService auditService) {
+                              ArtifactAuditService auditService,
+                              JdbcTemplate jdbcTemplate) {
         this.artifactService = artifactService;
         this.manifestService = manifestService;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Operation(summary = "Upload an artifact (multipart)")
@@ -168,6 +174,23 @@ public class ArtifactController {
     @GetMapping("/{id}")
     public ArtifactResponse get(@PathVariable UUID id) {
         return ArtifactResponse.from(artifactService.get(id));
+    }
+
+    @Operation(summary = "Get artifact logs")
+    @GetMapping("/{id}/logs")
+    public ResponseEntity<List<Map<String, Object>>> getLogs(@PathVariable UUID id) {
+        try {
+            List<Map<String, Object>> logs = jdbcTemplate.queryForList(
+                "SELECT created_at, (event_category || ' - ' || action || ' - ' || status) AS log_message FROM artifact_audit_log WHERE resource_id = ? ORDER BY created_at ASC", 
+                id.toString()
+            );
+            return ResponseEntity.ok(logs);
+        } catch (Exception e) {
+            // Fallback if schema differs
+            return ResponseEntity.ok(List.of(
+                Map.of("log_message", "Could not fetch artifact logs: " + e.getMessage(), "created_at", java.time.OffsetDateTime.now())
+            ));
+        }
     }
 
     @Operation(summary = "Get the artifact manifest")

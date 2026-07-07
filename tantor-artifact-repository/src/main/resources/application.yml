@@ -16,6 +16,7 @@ spring:
     url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
     username: ${TANTOR_DB_USER:postgres}
     password: ${TANTOR_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2

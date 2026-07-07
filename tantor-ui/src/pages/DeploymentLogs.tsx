@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download } from 'lucide-react';
+import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, MoreVertical } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
 import './DeploymentLogs.css';
 
@@ -62,6 +62,8 @@ export function DeploymentLogs() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
+  const [showLiveLogs, setShowLiveLogs] = useState(false);
+  const [openLogsMenu, setOpenLogsMenu] = useState(false);
 
   const fetchTasks = async () => {
     try {
@@ -208,6 +210,12 @@ export function DeploymentLogs() {
   const activeStepIndex = DEPLOYMENT_STEPS.indexOf(selectedTask.currentStep || '');
   const isFailed = selectedTask.status === 'FAILED';
   const isSuccess = selectedTask.status === 'SUCCESS';
+  
+  const progressPercent = isSuccess 
+    ? 100 
+    : (activeStepIndex === -1 
+      ? (isFailed ? 100 : 0) 
+      : Math.round((activeStepIndex / DEPLOYMENT_STEPS.length) * 100));
 
   return (
     <div className="deployment-log-view animate-fade-in">
@@ -310,15 +318,47 @@ export function DeploymentLogs() {
           </div>
         )}
 
-        <div className="deployment-console" style={{ flex: 1, minHeight: 400 }}>
-          <div className="deployment-console-header"><Terminal size={14} /><span>Live Logs {selectedTask.currentStep ? `(${selectedTask.currentStep})` : ''}</span></div>
-          <div className="deployment-console-body" ref={logBodyRef}>
-            <pre>
-              {selectedTask.currentStep && stepLogsObj[selectedTask.currentStep]
-                ? stepLogsObj[selectedTask.currentStep]
-                : (selectedTask.logOutput || 'Waiting for the agent to report output...')}
-            </pre>
+        <div className="deployment-console" style={{ flex: 1, minHeight: 400, position: 'relative', display: 'flex', flexDirection: 'column' }}>
+          <div className="deployment-console-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 15px', background: '#2d2d2d', color: '#fff', borderTopLeftRadius: '6px', borderTopRightRadius: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Terminal size={14} />
+              <span>{showLiveLogs ? `Live Logs ${selectedTask.currentStep ? `(${selectedTask.currentStep})` : ''}` : 'Deployment Progress'}</span>
+            </div>
+            <div style={{ position: 'relative' }}>
+              <button className="btn btn-ghost icon-only" style={{ color: '#fff', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }} onClick={() => setOpenLogsMenu(!openLogsMenu)}>
+                <MoreVertical size={16} />
+              </button>
+              {openLogsMenu && (
+                <div className="logs-action-menu" style={{ position: 'absolute', top: '100%', right: 0, background: '#fff', border: '1px solid #eaeaea', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', padding: '4px 0', zIndex: 10, minWidth: '160px' }}>
+                  <button style={{ width: '100%', padding: '8px 16px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', color: '#333' }} onClick={() => { setShowLiveLogs(!showLiveLogs); setOpenLogsMenu(false); }}>
+                    {showLiveLogs ? 'Show Progress Bar' : 'Show Live Logs'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
+          
+          {!showLiveLogs ? (
+            <div className="progress-content" style={{ flex: 1, padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#fff', border: '1px solid #eaeaea', borderTop: 'none', borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' }}>
+              <h3 style={{ margin: '0 0 20px', color: '#333', fontSize: '18px' }}>
+                {isSuccess ? 'Deployment Complete' : (isFailed ? 'Deployment Finished with Errors' : 'Deployment in Progress...')}
+              </h3>
+              <div className="progress-bar-bg" style={{ width: '100%', maxWidth: '500px', height: '12px', background: '#eaeaea', borderRadius: '6px', overflow: 'hidden', marginBottom: '15px' }}>
+                <div className="progress-bar-fill" style={{ width: `${progressPercent}%`, height: '100%', background: isFailed ? '#dc3545' : '#4c6fff', transition: 'width 0.5s ease-in-out' }} />
+              </div>
+              <div className="progress-stats" style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
+                {progressPercent}% Complete
+              </div>
+            </div>
+          ) : (
+            <div className="deployment-console-body" ref={logBodyRef} style={{ flex: 1 }}>
+              <pre>
+                {selectedTask.currentStep && stepLogsObj[selectedTask.currentStep]
+                  ? stepLogsObj[selectedTask.currentStep]
+                  : (selectedTask.logOutput || 'Waiting for the agent to report output...')}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </div>

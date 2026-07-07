@@ -1,0 +1,6 @@
+ALTER TABLE artifact ADD COLUMN IF NOT EXISTS action VARCHAR(40) NOT NULL DEFAULT 'UPLOAD';
+ALTER TABLE artifact ADD COLUMN IF NOT EXISTS downloaded_by VARCHAR(128);
+ALTER TABLE artifact ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMPTZ;
+ALTER TABLE artifact ADD COLUMN IF NOT EXISTS verified_checksum BOOLEAN;
+
+CREATE INDEX IF NOT EXISTS ix_artifact_action_created ON artifact(action, created_at DESC);

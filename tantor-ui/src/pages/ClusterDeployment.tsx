@@ -15,6 +15,7 @@ import {
   Search,
   Server,
   Settings2,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react';
@@ -136,11 +137,6 @@ const UI_ONLY_PROPERTY_KEYS = new Set(['node.host', 'advertised.host', 'controll
 
 const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string }> = [
   {
-    id: 'broker_controller',
-    label: 'Broker + Controller',
-    detail: 'One combined Kafka process using server.properties.',
-  },
-  {
     id: 'broker',
     label: 'Broker',
     detail: 'Broker process only using broker.properties.',
@@ -151,9 +147,9 @@ const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string 
     detail: 'Controller process only using controller.properties.',
   },
   {
-    id: 'separate',
+    id: 'broker_controller',
     label: 'Broker and Controller',
-    detail: 'Two JVMs on the same VM using broker.properties and controller.properties.',
+    detail: 'One combined Kafka process using server.properties.',
   },
 ];
 
@@ -349,6 +345,7 @@ export function ClusterDeployment() {
   const [loadingHosts, setLoadingHosts] = useState(true);
   const [loadingVersions, setLoadingVersions] = useState(true);
   const [loadingCluster, setLoadingCluster] = useState(false);
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
 
   const [clusterName, setClusterName] = useState('');
   const [kafkaVersion, setKafkaVersion] = useState('');
@@ -448,6 +445,31 @@ export function ClusterDeployment() {
     }
   };
 
+  const approveHost = async (id: string) => {
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' });
+      if (res.ok) {
+        loadHosts();
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteHost = async (id: string) => {
+    if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadHosts();
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        alert(errorData.message || 'Failed to disconnect node.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('An error occurred while disconnecting the node.');
+    }
+  };
+
   const loadVersions = async () => {
     setLoadingVersions(true);
     try {
@@ -484,6 +506,32 @@ export function ClusterDeployment() {
     const needle = `${host.hostname} ${displayIp(host)} ${host.id}`.toLowerCase();
     return needle.includes(nodeSearch.toLowerCase());
   });
+
+  const activeHosts = hosts.filter(h => h.status !== 'PENDING');
+  const activeHostIps = new Set(activeHosts.map(host => displayIp(host)));
+  const pendingHosts = Array.from(
+    hosts
+      .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h)))
+      .reduce<Map<string, Host>>((byIp, host) => {
+        const ip = displayIp(host);
+        const existing = byIp.get(ip);
+        const heartbeat = Date.parse(host.lastHeartbeat || '') || 0;
+        const existingHeartbeat = Date.parse(existing?.lastHeartbeat || '') || 0;
+        const expectedSuffix = `-${ip.split('.').pop()}`;
+        const isCanonicalId = String(host.id || '').endsWith(expectedSuffix);
+        const existingIsCanonicalId = String(existing?.id || '').endsWith(expectedSuffix);
+
+        if (
+          !existing
+          || (isCanonicalId && !existingIsCanonicalId)
+          || (isCanonicalId === existingIsCanonicalId && heartbeat > existingHeartbeat)
+        ) {
+          byIp.set(ip, host);
+        }
+        return byIp;
+      }, new Map<string, Host>())
+      .values(),
+  );
 
   const roleOptions = isAddNodeMode
     ? (deploymentMode === 'zookeeper' ? ZOOKEEPER_ROLE_OPTIONS : KRAFT_ROLE_OPTIONS).filter(role => role.id === 'broker')
@@ -1331,10 +1379,15 @@ export function ClusterDeployment() {
             <div className="cd-panel-title">
               <Network size={18} />
               <h2>Nodes and Roles</h2>
-              <button className="cd-ghost-btn" onClick={loadHosts}>
-                <RefreshCw size={14} className={loadingHosts ? 'spin' : ''} />
-                Refresh
-              </button>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+                <button className="cd-ghost-btn" onClick={() => setShowEnrollModal(true)}>
+                  Add Node
+                </button>
+                <button className="cd-ghost-btn" onClick={loadHosts}>
+                  <RefreshCw size={14} className={loadingHosts ? 'spin' : ''} />
+                  Refresh
+                </button>
+              </div>
             </div>
 
             <div className="cd-node-picker">
@@ -1391,18 +1444,19 @@ export function ClusterDeployment() {
                       <span>{displayIp(host)}</span>
                     </div>
                   </div>
-                  <div className="cd-role-buttons">
-                    {roleOptions.map(role => (
-                      <button
-                        key={role.id}
-                        className={(rolesByHost[host.id] || defaultRoleForMode) === role.id ? 'active' : ''}
-                        onClick={() => {
-                          setRolesByHost(prev => ({ ...prev, [host.id]: role.id }));
-                          setPrereqResults({});
-                        }}
-                      >
+                  <div className="cd-role-checkboxes" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                    {availableRoles.map(role => (
+                      <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}>
+                        <input
+                          type="checkbox"
+                          checked={rolesByHost[host.id] === role.id || (!rolesByHost[host.id] && role.id === defaultRoleForMode)}
+                          onChange={() => {
+                            setRolesByHost(prev => ({ ...prev, [host.id]: role.id }));
+                            setPrereqResults({});
+                          }}
+                        />
                         {role.label}
-                      </button>
+                      </label>
                     ))}
                   </div>
                   <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
@@ -1661,6 +1715,47 @@ export function ClusterDeployment() {
             </div>
             <div className="cd-config-modal-footer">
               <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showEnrollModal && (
+        <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Add a new agent connectivity</h2>
+              <button className="modal-close" onClick={() => setShowEnrollModal(false)}>
+                <X size={14} />
+              </button>
+            </div>
+
+            <p className="modal-section-title">Discovered nodes waiting to connect</p>
+
+            {pendingHosts.length === 0 ? (
+              <div className="empty-pending" style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+                No new nodes discovered. Run the agent script on a VM to discover it.
+              </div>
+            ) : pendingHosts.map(host => (
+              <div key={host.id} className="pending-node" style={{ display: 'flex', justifyContent: 'space-between', padding: '15px', borderBottom: '1px solid #eaeaea', alignItems: 'center' }}>
+                <div className="pending-node-info">
+                  <p className="name" style={{ margin: '0 0 4px', fontWeight: 600 }}>{host.hostname}</p>
+                  <p className="ip" style={{ margin: 0, fontSize: '12px', color: '#666' }}>{displayIp(host)}</p>
+                </div>
+                <div className="pending-node-actions" style={{ display: 'flex', gap: '8px' }}>
+                  <button className="btn btn-primary-action" style={{ background: '#4c6fff', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' }} onClick={() => approveHost(host.id)}>
+                    Connect
+                  </button>
+                  <button className="btn icon-only danger" style={{ background: 'transparent', border: 'none', color: '#dc3545', cursor: 'pointer', padding: '6px' }} title="Reject & remove" onClick={() => deleteHost(host.id)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <hr className="modal-divider" style={{ border: 'none', borderTop: '1px solid #eaeaea', margin: '20px 0' }} />
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 20px 20px' }}>
+              <button className="cd-secondary-btn" onClick={() => setShowEnrollModal(false)}>Close</button>
             </div>
           </div>
         </div>

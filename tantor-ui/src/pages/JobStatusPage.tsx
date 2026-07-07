@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, Server, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, Server, CheckCircle2, MoreVertical } from 'lucide-react';
 import './JobStatusPage.css';
 
 type Job = {
@@ -35,6 +35,8 @@ export function JobStatusPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showLiveLogs, setShowLiveLogs] = useState(false);
+  const [openLogsMenu, setOpenLogsMenu] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const fetchJob = async () => {
@@ -141,6 +143,20 @@ export function JobStatusPage() {
     });
   };
 
+  const formatStepName = (name: string) => {
+    return name
+      .replace(/ on [0-9a-fA-F-]+/g, '')
+      .replace(/\bbroker_controller\b/g, 'Broker & Controller')
+      .replace(/\bbroker_zookeeper\b/g, 'Broker & ZooKeeper')
+      .replace(/\bbroker\b/g, 'Broker')
+      .replace(/\bcontroller\b/g, 'Controller')
+      .replace(/\bzookeeper\b/g, 'ZooKeeper');
+  };
+
+  const totalSteps = steps.length;
+  const completedSteps = steps.filter(s => s.status === 'SUCCESS' || s.status === 'ROLLED_BACK').length;
+  const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+
   return (
     <div className="job-status-page animate-fade-in">
       <div className="page-header-actions">
@@ -200,7 +216,7 @@ export function JobStatusPage() {
                   {getStatusIcon(step.status, 16)}
                 </div>
                 <span className={`step-name ${step.status === 'PENDING' ? 'pending-text' : ''}`}>
-                  {step.name}
+                  {formatStepName(step.name)}
                 </span>
               </div>
             ))}
@@ -209,17 +225,46 @@ export function JobStatusPage() {
         </div>
 
         <div className="job-logs-container glass-panel">
-          <div className="logs-header">
-            <Terminal size={18} />
-            <span>Live Logs</span>
-            {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+          <div className="logs-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Terminal size={18} />
+              <span>{showLiveLogs ? 'Live Logs' : 'Deployment Progress'}</span>
+              {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <button className="btn btn-ghost icon-only" onClick={() => setOpenLogsMenu(!openLogsMenu)}>
+                <MoreVertical size={18} />
+              </button>
+              {openLogsMenu && (
+                <div className="logs-action-menu" style={{ position: 'absolute', top: '100%', right: 0, background: '#fff', border: '1px solid #eaeaea', borderRadius: '4px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '4px 0', zIndex: 10, minWidth: '150px' }}>
+                  <button style={{ width: '100%', padding: '8px 16px', background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer', color: '#333' }} onClick={() => { setShowLiveLogs(!showLiveLogs); setOpenLogsMenu(false); }}>
+                    {showLiveLogs ? 'Show Progress Bar' : 'Show Live Logs'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="logs-content">
-            <pre className="logs-text">
-              {renderLogs(job.logs)}
-            </pre>
-            <div ref={logsEndRef} />
-          </div>
+          
+          {!showLiveLogs ? (
+            <div className="progress-content" style={{ padding: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+              <h3 style={{ margin: '0 0 20px', color: '#333', fontSize: '18px' }}>
+                {isFinished ? (job.status === 'SUCCESS' ? 'Deployment Complete' : 'Deployment Finished with Errors') : 'Deployment in Progress...'}
+              </h3>
+              <div className="progress-bar-bg" style={{ width: '100%', maxWidth: '500px', height: '12px', background: '#eaeaea', borderRadius: '6px', overflow: 'hidden', marginBottom: '15px' }}>
+                <div className="progress-bar-fill" style={{ width: `${progressPercent}%`, height: '100%', background: job.status === 'FAILED' ? '#dc3545' : '#4c6fff', transition: 'width 0.5s ease-in-out' }} />
+              </div>
+              <div className="progress-stats" style={{ color: '#666', fontSize: '14px', fontWeight: 500 }}>
+                {progressPercent}% Complete ({completedSteps} / {totalSteps} steps)
+              </div>
+            </div>
+          ) : (
+            <div className="logs-content">
+              <pre className="logs-text">
+                {renderLogs(job.logs)}
+              </pre>
+              <div ref={logsEndRef} />
+            </div>
+          )}
         </div>
       </div>
     </div>

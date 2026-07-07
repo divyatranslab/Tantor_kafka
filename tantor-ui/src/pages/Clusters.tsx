@@ -160,6 +160,9 @@ export function Clusters() {
           <p>Deploy and manage your Tantor Kafka environments</p>
         </div>
         <div className="header-actions">
+          <button className="btn btn-primary-action" onClick={() => navigate('/cluster-deployment')}>
+            <Network size={13} /> Deploy cluster
+          </button>
           <button className="btn" onClick={fetchClusters}>
             <RefreshCw size={13} className={loading ? 'spin' : ''} />
             Refresh
