@@ -25,6 +25,7 @@ type Host = {
   id: string;
   hostname: string;
   status: string;
+  lastHeartbeat?: string;
   available?: boolean;
   availabilityReason?: string;
   clusterId?: string;
@@ -1445,7 +1446,7 @@ export function ClusterDeployment() {
                     </div>
                   </div>
                   <div className="cd-role-checkboxes" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                    {availableRoles.map(role => (
+                    {roleOptions.map(role => (
                       <label key={role.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}>
                         <input
                           type="checkbox"
