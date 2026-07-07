@@ -1,1 +1,1 @@
-ALTER TABLE artifact ADD COLUMN IF NOT EXISTS downloaded_at TIMESTAMP;
+ALTER TABLE artifact ADD COLUMN downloaded_at TIMESTAMP;
