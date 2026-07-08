@@ -31,6 +31,10 @@ interface ClusterInfo {
   sourceLabel?: string;
   accessLabel?: string;
   hosts?: ClusterHost[];
+  managedHostsCount?: number;
+  totalHostsCount?: number;
+  telemetry?: string;
+  lastAgentHeartbeat?: string;
 }
 
 export function Clusters() {
@@ -260,16 +264,29 @@ export function Clusters() {
                         </div>
                       </td>
                       <td>
-                        <div className="disk-cell">
-                          <div>
-                            <HardDrive size={13} />
-                            <span>{diskLabel(host)}</span>
+                        {cluster.mode === 'EXTERNAL' ? (
+                          <div className="env-cell">
+                            <div>
+                              <span>Telemetry: {cluster.telemetry || 'None'}</span>
+                            </div>
+                            <small>{cluster.managedHostsCount || 0} / {cluster.totalHostsCount || cluster.nodeCount || 0} hosts</small>
                           </div>
-                          {progress > 0 && <span className="disk-meter"><i style={{ width: `${progress}%` }} /></span>}
-                        </div>
+                        ) : (
+                          <div className="disk-cell">
+                            <div>
+                              <HardDrive size={13} />
+                              <span>{diskLabel(host)}</span>
+                            </div>
+                            {progress > 0 && <span className="disk-meter"><i style={{ width: `${progress}%` }} /></span>}
+                          </div>
+                        )}
                       </td>
                       <td>
-                        <span className="heartbeat-text">{formatHeartbeat(host?.lastHeartbeat)}</span>
+                        <span className="heartbeat-text">
+                          {cluster.mode === 'EXTERNAL' 
+                            ? formatHeartbeat(cluster.lastAgentHeartbeat) 
+                            : formatHeartbeat(host?.lastHeartbeat)}
+                        </span>
                       </td>
                       <td>
                         <div className="source-cell">

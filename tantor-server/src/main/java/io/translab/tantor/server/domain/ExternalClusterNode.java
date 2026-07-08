@@ -46,4 +46,19 @@ public class ExternalClusterNode {
 
     @Column(name = "last_seen")
     private OffsetDateTime lastSeen;
+
+    @Column(name = "port")
+    private Integer port;
+
+    @Column(name = "install_dir")
+    private String installDir;
+
+    @Column(name = "config_file")
+    private String configFile;
+
+    @Column(name = "data_dirs")
+    private String dataDirs;
+
+    @Column(name = "log_dirs")
+    private String logDirs;
 }

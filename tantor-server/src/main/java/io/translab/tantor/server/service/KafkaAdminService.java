@@ -153,18 +153,103 @@ public class KafkaAdminService {
                     log.warn("Connected to bootstrap {}, but failed to count topics: {}", bootstrapServers, e.getMessage());
                 }
 
-                List<Map<String, Object>> brokers = nodes.stream()
-                        .map(node -> {
-                            Map<String, Object> broker = new HashMap<>();
-                            broker.put("id", node.id());
-                            broker.put("broker_id", String.valueOf(node.id()));
-                            broker.put("host", node.host());
-                            broker.put("port", node.port());
-                            broker.put("endpoint", node.host() + ":" + node.port());
-                            broker.put("rack", node.rack() == null ? "" : node.rack());
-                            return broker;
-                        })
-                        .collect(Collectors.toList());
+                List<Map<String, Object>> finalNodes = new ArrayList<>();
+                Map<Integer, Map<String, Object>> nodeMap = new HashMap<>();
+
+                // 1. All nodes returned by describeCluster().nodes() are brokers.
+                for (org.apache.kafka.common.Node node : nodes) {
+                    Map<String, Object> nodeData = new HashMap<>();
+                    nodeData.put("id", node.id());
+                    nodeData.put("broker_id", String.valueOf(node.id()));
+                    nodeData.put("host", node.host());
+                    nodeData.put("port", node.port());
+                    nodeData.put("endpoint", node.host() + ":" + node.port());
+                    nodeData.put("rack", node.rack() == null ? "" : node.rack());
+                    nodeData.put("isBroker", true);
+                    nodeData.put("isController", false); // Default, might be updated below
+                    nodeMap.put(node.id(), nodeData);
+                }
+
+                // Try to resolve dedicated controller endpoints via broker configuration (controller.quorum.voters)
+                Map<Integer, String> voterEndpoints = new HashMap<>();
+                if (!nodes.isEmpty()) {
+                    org.apache.kafka.common.Node firstBroker = nodes.iterator().next();
+                    org.apache.kafka.common.config.ConfigResource resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(firstBroker.id()));
+                    try {
+                        org.apache.kafka.clients.admin.DescribeConfigsResult configResult = client.describeConfigs(java.util.Collections.singletonList(resource));
+                        java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> configs = configResult.all().get();
+                        org.apache.kafka.clients.admin.Config brokerConfig = configs.get(resource);
+                        if (brokerConfig != null) {
+                            org.apache.kafka.clients.admin.ConfigEntry quorumVoters = brokerConfig.get("controller.quorum.voters");
+                            if (quorumVoters != null && quorumVoters.value() != null) {
+                                // Format: 108@192.168.3.208:9096,109@192.168.3.149:9096
+                                for (String voterStr : quorumVoters.value().split(",")) {
+                                    String[] parts = voterStr.split("@");
+                                    if (parts.length == 2) {
+                                        try {
+                                            voterEndpoints.put(Integer.parseInt(parts[0]), parts[1]);
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to fetch broker config to resolve controller endpoints: {}", e.getMessage());
+                    }
+                }
+
+                // 2. Query KRaft quorum to find all controllers
+                try {
+                    org.apache.kafka.clients.admin.QuorumInfo quorumInfo = client.describeMetadataQuorum().quorumInfo().get();
+                    for (org.apache.kafka.clients.admin.QuorumInfo.ReplicaState voter : quorumInfo.voters()) {
+                        int voterId = voter.replicaId();
+                        if (nodeMap.containsKey(voterId)) {
+                            // It's a combined broker + controller
+                            nodeMap.get(voterId).put("isController", true);
+                        } else {
+                            // Dedicated controller not returned in describeCluster().nodes()
+                            String host = "unknown";
+                            int port = 0;
+                            
+                            // Map from controller.quorum.voters if available
+                            if (voterEndpoints.containsKey(voterId)) {
+                                String endpoint = voterEndpoints.get(voterId);
+                                String[] epParts = endpoint.split(":");
+                                if (epParts.length == 2) {
+                                    host = epParts[0];
+                                    try {
+                                        port = Integer.parseInt(epParts[1]);
+                                    } catch (NumberFormatException ignored) {}
+                                }
+                            }
+                            
+                            Map<String, Object> nodeData = new HashMap<>();
+                            nodeData.put("id", voterId);
+                            nodeData.put("broker_id", String.valueOf(voterId));
+                            nodeData.put("host", host);
+                            nodeData.put("port", port);
+                            nodeData.put("endpoint", host + ":" + port);
+                            nodeData.put("rack", "");
+                            nodeData.put("isBroker", false);
+                            nodeData.put("isController", true);
+                            nodeMap.put(voterId, nodeData);
+                        }
+                    }
+                } catch (Exception e) {
+                    // Fallback for Zookeeper clusters or older Kafka versions without describeMetadataQuorum
+                    // We just rely on the brokers.
+                    log.warn("Failed to fetch KRaft quorum info (likely Zookeeper mode): {}", e.getMessage());
+                }
+
+                finalNodes.addAll(nodeMap.values());
+                
+                // Deterministic sorting by node ID
+                finalNodes.sort((a, b) -> Integer.compare((Integer) a.get("id"), (Integer) b.get("id")));
+
+                long actualBrokerCount = finalNodes.stream().filter(n -> Boolean.TRUE.equals(n.get("isBroker"))).count();
+                if (actualBrokerCount == 0 || clusterId == null || clusterId.isBlank()) {
+                    throw new RuntimeException("Controller listener detected or invalid cluster data. Please use a broker bootstrap listener.");
+                }
 
                 Map<String, Object> result = new HashMap<>();
                 result.put("success", true);
@@ -176,13 +261,17 @@ public class KafkaAdminService {
                 result.put("mode", "auto-detected by Kafka client");
                 result.put("clusterId", clusterId);
                 result.put("kafka_cluster_id", clusterId == null ? "" : clusterId);
-                result.put("brokerCount", brokers.size());
-                result.put("brokers", brokers);
+                result.put("brokerCount", finalNodes.stream().filter(n -> Boolean.TRUE.equals(n.get("isBroker"))).count());
+                result.put("brokers", finalNodes);
                 result.put("topicCount", topicCount);
                 result.put("topic_count", topicCount);
                 result.put("topics", Collections.emptyList());
-                result.put("controllerId", controller == null ? null : controller.id());
-                result.put("controller_id", controller == null ? null : controller.id());
+                
+                Integer activeControllerId = controller == null ? null : controller.id();
+                result.put("controllerId", activeControllerId);
+                result.put("controller_id", activeControllerId);
+                result.put("activeControllerId", activeControllerId);
+                
                 result.put("kafka_version", "auto-detected by Kafka client");
                 result.put("socket_results", socketResults(bootstrapServers.trim()));
                 result.put("message", "Bootstrap connection successful.");

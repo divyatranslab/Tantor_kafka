@@ -29,6 +29,33 @@ public class ClusterOverviewDto {
     private UptimeSummary uptime;
     private PartitionSummary partitions;
     private List<BrokerRow> brokers;
+    private List<ControllerRow> controllers;
+    private List<NodePathRow> nodePaths;
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ControllerRow {
+        private int nodeId;
+        private String host;
+        private Integer port;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class NodePathRow {
+        private int nodeId;
+        private String host;
+        private String role;
+        private String installDir;
+        private String config;
+        private String dataDir;
+        private String logDir;
+        private boolean hasTelemetry;
+    }
 
     @Data
     @Builder
@@ -61,7 +88,7 @@ public class ClusterOverviewDto {
     public static class BrokerRow {
         private int brokerId;
         private String host;
-        private int port;
+        private Integer port;
         private String rack;
         private boolean controller;
         private long diskUsageBytes;

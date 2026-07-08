@@ -1,6 +1,6 @@
 discovery:
-  host_id: "456-123-208"
-  agent_name: "discovery-agent-208"
+  host_id: "456-123-149"
+  agent_name: "discovery-agent-149"
   server_url: "http://192.168.3.122:8443"
   interval: "15s"
   scan_paths:

@@ -30,7 +30,25 @@ interface BrokerRow {
   replicas: number;
   replicaSkewPct: number | null;
   leaders: number;
+  leaders: number;
   leaderSkewPct: number | null;
+}
+
+interface ControllerRow {
+  nodeId: number;
+  host: string;
+  port: number | null;
+}
+
+interface NodePathRow {
+  nodeId: number;
+  host: string;
+  role: string;
+  installDir: string;
+  config: string;
+  dataDir: string;
+  logDir: string;
+  hasTelemetry: boolean;
 }
 
 interface ClusterOverviewResponse {
@@ -45,7 +63,10 @@ interface ClusterOverviewResponse {
   warnings: string[];
   uptime: OverviewSummary;
   partitions: PartitionSummary;
+  partitions: PartitionSummary;
   brokers: BrokerRow[];
+  controllers: ControllerRow[];
+  nodePaths: NodePathRow[];
 }
 
 export function ClusterOverview() {
@@ -137,14 +158,18 @@ export function ClusterOverview() {
       {overview.warnings?.map(warning => <Notice key={warning} kind="warning" text={warning} />)}
 
       <section className="overview-band">
-        <h2>Cluster identity and paths</h2>
+        <h2>Cluster Identity</h2>
         <div className="overview-grid uptime">
           <OverviewTile label="Kafka Cluster ID" value={overview.kafkaClusterId || '-'} />
           <OverviewTile label="Cluster type" value={overview.originType || '-'} />
-          <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
-          <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
-          <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
-          <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
+          {overview.originType !== 'EXTERNAL' && (
+            <>
+              <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
+              <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
+              <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
+              <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
+            </>
+          )}
         </div>
       </section>
 
@@ -199,13 +224,85 @@ export function ClusterOverview() {
                 <td>{formatSkew(broker.replicaSkewPct)}</td>
                 <td>{broker.leaders}</td>
                 <td>{formatSkew(broker.leaderSkewPct)}</td>
-                <td>{broker.port > 0 ? broker.port : '-'}</td>
+                <td>{broker.port ? broker.port : '-'}</td>
                 <td className="font-mono">{broker.host}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {overview.controllers && overview.controllers.length > 0 && (
+        <div className="overview-table-wrap" style={{ marginTop: '2rem' }}>
+          <h2>Controller Voters</h2>
+          <table className="data-table overview-table">
+            <thead>
+              <tr>
+                <th>Node ID</th>
+                <th>Host</th>
+                <th>Port</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.controllers.map(c => (
+                <tr key={c.nodeId}>
+                  <td>
+                    <div className="overview-broker-id">
+                      <CheckCircle2 size={15} />
+                      <span>{c.nodeId}</span>
+                    </div>
+                  </td>
+                  <td className="font-mono">{c.host}</td>
+                  <td>{c.port ? c.port : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {overview.originType === 'EXTERNAL' && overview.nodePaths && (
+        <div className="overview-table-wrap" style={{ marginTop: '2rem' }}>
+          <h2>Paths & Directories</h2>
+          <div className="text-muted text-sm mb-2" style={{ marginBottom: '12px' }}>
+            Path details available for {overview.nodePaths.filter(p => p.hasTelemetry).length} of {overview.nodePaths.length} nodes
+          </div>
+          <table className="data-table overview-table">
+            <thead>
+              <tr>
+                <th>Node ID</th>
+                <th>Host</th>
+                <th>Role</th>
+                <th>Install Dir</th>
+                <th>Config</th>
+                <th>Data Dir</th>
+                <th>Log Dir</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.nodePaths.map(p => (
+                <tr key={p.nodeId}>
+                  <td>{p.nodeId}</td>
+                  <td className="font-mono">{p.host}</td>
+                  <td><span className="role-badge">{p.role}</span></td>
+                  <td>{p.hasTelemetry ? (p.installDir || '-') : <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.hasTelemetry ? (p.config || '-') : <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.hasTelemetry ? (p.dataDir || '-') : <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.hasTelemetry ? (p.logDir || '-') : <span className="text-muted">Not reported</span>}</td>
+                  <td>
+                    {p.hasTelemetry ? (
+                      <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
+                    ) : (
+                      <span className="text-muted text-sm">No telemetry</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,41 +17,37 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
     @Modifying
     @Query(value = """
         INSERT INTO kf_external_cluster_nodes (
-            id, cluster_id, host, node_id, is_broker, is_controller,
+            id, cluster_id, host, node_id, is_broker, is_controller, port,
             cpu_usage_pct, memory_used_mb, memory_total_mb, disk_used_gb, disk_total_gb, last_seen
         ) VALUES (
-            gen_random_uuid(), :clusterId, :host, :nodeId, :isBroker, :isController,
+            gen_random_uuid(), :clusterId, :host, :nodeId, :isBroker, :isController, :port,
             NULL, NULL, NULL, NULL, NULL, NULL
         )
-        ON CONFLICT (cluster_id, host) DO UPDATE SET
-            node_id = EXCLUDED.node_id,
+        ON CONFLICT (cluster_id, node_id) DO UPDATE SET
+            host = EXCLUDED.host,
             is_broker = EXCLUDED.is_broker,
-            is_controller = EXCLUDED.is_controller
+            is_controller = EXCLUDED.is_controller,
+            port = EXCLUDED.port
         """, nativeQuery = true)
     void upsertTopology(
         @Param("clusterId") UUID clusterId,
         @Param("host") String host,
         @Param("nodeId") Integer nodeId,
         @Param("isBroker") Boolean isBroker,
-        @Param("isController") Boolean isController
+        @Param("isController") Boolean isController,
+        @Param("port") Integer port
     );
 
     @Modifying
     @Query(value = """
-        INSERT INTO kf_external_cluster_nodes (
-            id, cluster_id, host, node_id, is_broker, is_controller,
-            cpu_usage_pct, memory_used_mb, memory_total_mb, disk_used_gb, disk_total_gb, last_seen
-        ) VALUES (
-            gen_random_uuid(), :clusterId, :host, NULL, NULL, NULL,
-            :cpu, :memUsed, :memTotal, :diskUsed, :diskTotal, :lastSeen
-        )
-        ON CONFLICT (cluster_id, host) DO UPDATE SET
-            cpu_usage_pct = EXCLUDED.cpu_usage_pct,
-            memory_used_mb = EXCLUDED.memory_used_mb,
-            memory_total_mb = EXCLUDED.memory_total_mb,
-            disk_used_gb = EXCLUDED.disk_used_gb,
-            disk_total_gb = EXCLUDED.disk_total_gb,
-            last_seen = EXCLUDED.last_seen
+        UPDATE kf_external_cluster_nodes SET
+            cpu_usage_pct = :cpu,
+            memory_used_mb = :memUsed,
+            memory_total_mb = :memTotal,
+            disk_used_gb = :diskUsed,
+            disk_total_gb = :diskTotal,
+            last_seen = :lastSeen
+        WHERE cluster_id = :clusterId AND host = :host
         """, nativeQuery = true)
     void upsertTelemetry(
         @Param("clusterId") UUID clusterId,

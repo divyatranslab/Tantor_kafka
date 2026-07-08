@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -154,11 +155,13 @@ public class BrokerMetricsCacheService {
 
     private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(ExternalCluster cluster) {
         return externalClusterService.brokerRecords(cluster).stream()
+                .filter(record -> "broker".equals(record.getRole()) || "broker_controller".equals(record.getRole()))
                 .map(record -> BrokerSummaryDto.builder()
                         .brokerId(record.getNodeId() != null ? record.getNodeId() : -1)
                         .hostname(record.getHostname() != null ? record.getHostname() : record.getBootstrap())
                         .role(record.getRole() != null ? record.getRole() : "broker")
                         .brokerHealth(record.getLastSeen() != null ? "HEALTHY" : "DEGRADED")
+                        .lastHeartbeat(record.getLastSeen() != null ? OffsetDateTime.parse(record.getLastSeen()) : null)
                         .isJmxReachable(false)
                         .metricsTimestamp(System.currentTimeMillis())
                         .cpuUsagePct(record.getCpuUsagePct() != null ? record.getCpuUsagePct() : 0.0)

@@ -264,7 +264,7 @@ export function Brokers() {
 
                 {/* Heartbeat */}
                 <td className="text-muted text-sm">
-                  {new Date(broker.lastHeartbeat).toLocaleTimeString()}
+                  {broker.lastHeartbeat ? new Date(broker.lastHeartbeat).toLocaleTimeString() : '-'}
                 </td>
 
               </tr>

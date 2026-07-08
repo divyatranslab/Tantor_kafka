@@ -58,6 +58,7 @@ export function ExternalClusters() {
     security: 'PLAINTEXT',
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
+  const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
@@ -90,6 +91,17 @@ export function ExternalClusters() {
       });
       const data = await res.json();
       setBootstrapResult(data);
+      
+      if (data.brokers) {
+        const initialSelection: Record<string, string> = {};
+        data.brokers.forEach((b: any) => {
+          if (b.hasActiveAgent && b.agentDiscoveryKey) {
+            initialSelection[b.host] = b.agentDiscoveryKey;
+          }
+        });
+        setSelectedAgents(initialSelection);
+      }
+
       if (!res.ok || data.connected !== true) {
         throw new Error(data.message || 'Bootstrap connection failed');
       }
@@ -117,7 +129,8 @@ export function ExternalClusters() {
         brokers: bootstrapResult?.brokers || [],
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
         kafkaVersion: bootstrapResult?.kafkaVersion || bootstrapResult?.kafka_version || 'Unknown',
-        kafkaMode: bootstrapResult?.kafkaMode || bootstrapResult?.mode || 'KRaft'
+        kafkaMode: bootstrapResult?.kafkaMode || bootstrapResult?.mode || 'KRaft',
+        selectedAgents: selectedAgents
       };
 
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
@@ -257,7 +270,7 @@ export function ExternalClusters() {
                 <div><span>Mode</span><strong>{bootstrapResult.kafkaMode || bootstrapResult.mode || 'Unknown'}</strong></div>
                 <div><span>Kafka version</span><strong>{bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Unknown'}</strong></div>
                 <div><span>Brokers</span><strong>{bootstrapResult.brokerCount ?? bootstrapResult.brokers?.length ?? 0}</strong></div>
-                <div><span>Controller</span><strong>{bootstrapResult.controller_id ?? bootstrapResult.controllerId ?? '-'}</strong></div>
+                <div><span>Controller</span><strong>{bootstrapResult.activeControllerId ?? bootstrapResult.controller_id ?? bootstrapResult.controllerId ?? '-'}</strong></div>
                 <div><span>Topics</span><strong>{bootstrapResult.topic_count ?? bootstrapResult.topicCount ?? 0}</strong></div>
                 <div><span>Security</span><strong>{bootstrapResult.security || bootstrapResult.security_protocol || 'PLAINTEXT'}</strong></div>
               </div>
@@ -268,6 +281,7 @@ export function ExternalClusters() {
                   <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#64748b' }}>
+                        <th style={{ padding: '6px', width: '40px' }}></th>
                         <th style={{ padding: '6px' }}>Node ID</th>
                         <th style={{ padding: '6px' }}>Host</th>
                         <th style={{ padding: '6px' }}>Port</th>
@@ -275,16 +289,47 @@ export function ExternalClusters() {
                       </tr>
                     </thead>
                     <tbody>
-                      {bootstrapResult.brokers.map((broker: any) => (
-                        <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      {bootstrapResult.brokers.map((broker: any) => {
+                        const isSelected = !!selectedAgents[broker.host];
+                        const isDisabled = !broker.hasActiveAgent;
+                        return (
+                        <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                          <td style={{ padding: '6px', textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={isDisabled}
+                              onChange={(e) => {
+                                setSelectedAgents(prev => {
+                                  const next = { ...prev };
+                                  if (e.target.checked) {
+                                    next[broker.host] = broker.agentDiscoveryKey;
+                                  } else {
+                                    delete next[broker.host];
+                                  }
+                                  return next;
+                                });
+                              }}
+                              style={{ cursor: isDisabled ? 'not-allowed' : 'pointer' }}
+                            />
+                          </td>
                           <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
-                          <td style={{ padding: '6px' }}>{broker.host}</td>
+                          <td style={{ padding: '6px' }}>
+                            {broker.host}
+                            {isDisabled && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
+                          </td>
                           <td style={{ padding: '6px' }}>{broker.port}</td>
                           <td style={{ padding: '6px' }}>
-                            {(broker.node_id || broker.broker_id || broker.id) == (bootstrapResult.controller_id ?? bootstrapResult.controllerId) ? <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span> : <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>}
+                            {broker.isController && broker.isBroker ? (
+                              <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
+                            ) : broker.isController ? (
+                              <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>
+                            ) : (
+                              <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                            )}
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
@@ -296,14 +341,15 @@ export function ExternalClusters() {
             </div>
           )}
 
-          <div className="panel-actions">
-            <button
-              className="btn btn-primary-action"
-              onClick={registerBootstrap}
-              disabled={registering || bootstrapResult?.connected !== true}
+          <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+            <button className="btn" onClick={() => setBootstrapResult(null)}>Cancel</button>
+            <button 
+              className="btn primary" 
+              onClick={registerBootstrap} 
+              disabled={registering || bootstrapResult?.connected !== true || Object.keys(selectedAgents).length === 0}
             >
-              {registering ? <RefreshCw size={14} className="spin" /> : <ExternalLink size={14} />}
-              Connect cluster
+              {registering ? <RefreshCw size={15} className="spin" /> : <Globe size={15} />}
+              Connect Cluster
             </button>
           </div>
         </div>
