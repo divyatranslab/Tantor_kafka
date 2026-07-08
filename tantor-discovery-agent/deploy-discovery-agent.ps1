@@ -1,7 +1,7 @@
 param (
-    [string]$VmIp = "192.168.3.149", # Change this to whatever VM you want to deploy to
-    [string]$VmUser = "root",
-    [string]$AgentDir = "/srv/tantor-discovery-agent"
+    [string]$VmIp = "192.168.3.222", # Change this to whatever VM you want to deploy to
+    [string]$VmUser = "apb_app",
+    [string]$AgentDir = "/tmp/tantor-discovery-agent"
 )
 
 Write-Host "=================================================" -ForegroundColor Cyan
@@ -21,11 +21,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[2/4] Stopping existing discovery agent on $VmIp..." -ForegroundColor Yellow
 $removePreviousAgent = @"
 set -Eeuo pipefail
-systemctl disable --now tantor-discovery-agent.service 2>/dev/null || true
-rm -f /etc/systemd/system/tantor-discovery-agent.service
-pkill -f '^(.*/)?tantor-discovery-agent(-linux)?( |$)' 2>/dev/null || true
-systemctl daemon-reload
-systemctl reset-failed 2>/dev/null || true
+sudo systemctl disable --now tantor-discovery-agent.service 2>/dev/null || true
+sudo rm -f /etc/systemd/system/tantor-discovery-agent.service
+sudo pkill -f '^(.*/)?tantor-discovery-agent(-linux)?( |$)' 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl reset-failed 2>/dev/null || true
 sleep 2
 exit 0
 "@
@@ -42,7 +42,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[3/4] Uploading new agent binary..." -ForegroundColor Yellow
-ssh "${VmUser}@${VmIp}" "mkdir -p ${AgentDir} && rm -f ${AgentDir}/tantor-discovery-agent-linux"
+ssh "${VmUser}@${VmIp}" "sudo mkdir -p ${AgentDir} && sudo chown ${VmUser} ${AgentDir} && rm -f ${AgentDir}/tantor-discovery-agent-linux"
 scp tantor-discovery-agent-linux "${VmUser}@${VmIp}:${AgentDir}/"
 scp configs\discovery.yaml "${VmUser}@${VmIp}:${AgentDir}/"
 if ($LASTEXITCODE -ne 0) {
@@ -81,30 +81,31 @@ $serviceBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($servi
 $startCommand = @"
 set -Eeuo pipefail
 trap 'rc=`$?; echo "Agent deployment failed at remote line `$LINENO (exit `$rc)" >&2' ERR
-systemctl stop tantor-discovery-agent.service 2>/dev/null || true
-pkill -f '^(.*/)?tantor-discovery-agent(-linux)?( |$)' 2>/dev/null || true
+sudo systemctl stop tantor-discovery-agent.service 2>/dev/null || true
+sudo pkill -f '^(.*/)?tantor-discovery-agent(-linux)?( |$)' 2>/dev/null || true
 sleep 2
-mkdir -p ${AgentDir}/logs
+sudo mkdir -p ${AgentDir}/logs
+sudo chown -R ${VmUser} ${AgentDir}
 chmod +x ${AgentDir}/tantor-discovery-agent-linux
 printf '%s' '${launcherBase64}' | base64 --decode > ${AgentDir}/run-discovery-agent.sh
 chmod 0755 ${AgentDir}/run-discovery-agent.sh
-printf '%s' '${serviceBase64}' | base64 --decode > /etc/systemd/system/tantor-discovery-agent.service
+printf '%s' '${serviceBase64}' | base64 --decode | sudo tee /etc/systemd/system/tantor-discovery-agent.service > /dev/null
 test -s ${AgentDir}/run-discovery-agent.sh || exit 1
 test -s /etc/systemd/system/tantor-discovery-agent.service || exit 1
-systemctl daemon-reload
-systemctl enable --now tantor-discovery-agent.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now tantor-discovery-agent.service
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
-  systemctl is-active --quiet tantor-discovery-agent.service && break
+  sudo systemctl is-active --quiet tantor-discovery-agent.service && break
   sleep 1
 done
-systemctl is-active --quiet tantor-discovery-agent.service
+sudo systemctl is-active --quiet tantor-discovery-agent.service
 "@
 $startCommand = $startCommand -replace "`r`n", "`n"
 $startCommandBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($startCommand))
 ssh "${VmUser}@${VmIp}" "printf '%s' '${startCommandBase64}' | base64 --decode | bash"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Agent service failed to start!" -ForegroundColor Red
-    ssh "${VmUser}@${VmIp}" "ls -l /etc/systemd/system/tantor-discovery-agent.service ${AgentDir}/run-discovery-agent.sh 2>/dev/null || true; systemctl status tantor-discovery-agent.service --no-pager || true; journalctl -u tantor-discovery-agent.service -n 50 --no-pager || true; tail -n 50 ${AgentDir}/discovery-agent.log 2>/dev/null || true"
+    ssh "${VmUser}@${VmIp}" "ls -l /etc/systemd/system/tantor-discovery-agent.service ${AgentDir}/run-discovery-agent.sh 2>/dev/null || true; sudo systemctl status tantor-discovery-agent.service --no-pager || true; sudo journalctl -u tantor-discovery-agent.service -n 50 --no-pager || true; tail -n 50 ${AgentDir}/discovery-agent.log 2>/dev/null || true"
     exit 1
 }
 

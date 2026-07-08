@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.security.EncryptionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
@@ -30,6 +31,7 @@ public class KafkaAdminService {
     private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+    private final EncryptionService encryptionService;
 
     private final Map<UUID, AdminClient> adminClients = new ConcurrentHashMap<>();
 
@@ -63,6 +65,9 @@ public class KafkaAdminService {
             String servers = ext.getBootstrapServers();
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, servers);
             log.info("Using external bootstrap servers for cluster {}: {}", clusterId, servers);
+            
+            applySecurityProperties(props, ext, true);
+            
             props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
             props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
             return props;
@@ -128,12 +133,21 @@ public class KafkaAdminService {
     }
 
     public Map<String, Object> inspectBootstrapServers(String bootstrapServers) {
-        if (bootstrapServers == null || bootstrapServers.isBlank()) {
+        ExternalCluster temp = new ExternalCluster();
+        temp.setBootstrapServers(bootstrapServers);
+        return inspectBootstrapServers(temp, false);
+    }
+    
+    public Map<String, Object> inspectBootstrapServers(ExternalCluster cluster, boolean decryptPasswords) {
+        if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
             throw new IllegalArgumentException("Bootstrap servers are required.");
         }
 
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers.trim());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.getBootstrapServers().trim());
+        
+        applySecurityProperties(props, cluster, decryptPasswords);
+        
         // Use a short timeout (5-10s) so the UI doesn't hang indefinitely for unreachable brokers
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "5000");
         props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
@@ -150,7 +164,7 @@ public class KafkaAdminService {
                 try {
                     topicCount = client.listTopics(new ListTopicsOptions().listInternal(false)).names().get().size();
                 } catch (Exception e) {
-                    log.warn("Connected to bootstrap {}, but failed to count topics: {}", bootstrapServers, e.getMessage());
+                    log.warn("Connected to bootstrap {}, but failed to count topics: {}", cluster.getBootstrapServers(), e.getMessage());
                 }
 
                 List<Map<String, Object>> finalNodes = new ArrayList<>();
@@ -255,8 +269,8 @@ public class KafkaAdminService {
                 result.put("success", true);
                 result.put("connected", true);
                 result.put("status", "CONNECTED");
-                result.put("bootstrapServers", bootstrapServers.trim());
-                result.put("bootstrap_servers", bootstrapServers.trim());
+                result.put("bootstrapServers", cluster.getBootstrapServers().trim());
+                result.put("bootstrap_servers", cluster.getBootstrapServers().trim());
                 result.put("security_protocol", "PLAINTEXT");
                 result.put("mode", "auto-detected by Kafka client");
                 result.put("clusterId", clusterId);
@@ -273,7 +287,7 @@ public class KafkaAdminService {
                 result.put("activeControllerId", activeControllerId);
                 
                 result.put("kafka_version", "auto-detected by Kafka client");
-                result.put("socket_results", socketResults(bootstrapServers.trim()));
+                result.put("socket_results", socketResults(cluster.getBootstrapServers().trim()));
                 result.put("message", "Bootstrap connection successful.");
                 return result;
             } catch (InterruptedException e) {
@@ -281,14 +295,29 @@ public class KafkaAdminService {
                 throw new RuntimeException("Interrupted while testing bootstrap connection.");
             } catch (Exception e) {
                 lastException = e;
-                log.warn("Attempt {} to inspect bootstrap {} failed: {}", attempt, bootstrapServers, e.getMessage());
-                if (attempt < 3) {
+                log.warn("Attempt {} to inspect bootstrap {} failed: {}", attempt, cluster.getBootstrapServers(), e.getMessage());
+                
+                String errorMsg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+                if (errorMsg.contains("sasl authentication failed") || errorMsg.contains("invalid credentials")) {
+                    throw new RuntimeException("Authentication failed. Invalid SASL username or password.", e);
+                }
+                if (errorMsg.contains("unsupported sasl mechanism")) {
+                    throw new RuntimeException("Unsupported SASL mechanism. Verify broker-supported mechanism.", e);
+                }
+                if (errorMsg.contains("sslhandshakeexception") || errorMsg.contains("sun.security.validator.validatorexception") || errorMsg.contains("pkix path building failed")) {
+                    throw new RuntimeException("SSL trust validation failed. The uploaded truststore does not contain the CA that signed the broker certificate: CN=lab-root-ca.", e);
+                }
+                if (errorMsg.contains("connection reset") || errorMsg.contains("eof") || errorMsg.contains("disconnected")) {
+                    throw new RuntimeException("Security protocol mismatch. Broker closed the connection. Verify selected protocol and listener port.", e);
+                }
+
+                if (attempt < 1) {
                     try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
                 }
             }
         }
         
-        throw new RuntimeException("Failed to connect to bootstrap servers after 3 attempts: " + lastException.getMessage());
+        throw new RuntimeException("Failed to connect to bootstrap servers: " + (lastException != null ? lastException.getMessage() : "Unknown error"));
     }
 
     private List<Map<String, Object>> socketResults(String bootstrapServers) {
@@ -617,6 +646,72 @@ public class KafkaAdminService {
             log.error("Failed to alter broker config", e);
             refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to alter broker config: " + e.getMessage());
+        }
+    }
+
+    private void applySecurityProperties(Properties props, ExternalCluster cluster, boolean decryptPasswords) {
+        String protocol = cluster.getSecurityProtocol();
+        if (protocol == null || protocol.isBlank()) {
+            protocol = "PLAINTEXT";
+        }
+        if ("PLAINTEXT".equalsIgnoreCase(protocol)) {
+            props.put("security.protocol", "PLAINTEXT");
+            return;
+        }
+
+        props.put("security.protocol", protocol.toUpperCase());
+
+        // SSL Configuration
+        if ("SSL".equalsIgnoreCase(protocol) || "SASL_SSL".equalsIgnoreCase(protocol)) {
+            if (Boolean.TRUE.equals(cluster.getDisableHostnameVerification())) {
+                props.put("ssl.endpoint.identification.algorithm", "");
+            }
+            if (cluster.getTruststorePath() != null && !cluster.getTruststorePath().isBlank()) {
+                if ("PEM".equalsIgnoreCase(cluster.getTruststoreType())) {
+                    props.put("ssl.truststore.type", "PEM");
+                    try {
+                        String pemContent = java.nio.file.Files.readString(java.nio.file.Paths.get(cluster.getTruststorePath()));
+                        props.put("ssl.truststore.certificates", pemContent);
+                    } catch (Exception e) {
+                        log.error("Failed to read PEM truststore from {}", cluster.getTruststorePath(), e);
+                        throw new RuntimeException("Failed to read PEM truststore", e);
+                    }
+                } else {
+                    props.put("ssl.truststore.location", cluster.getTruststorePath());
+                    if (cluster.getTruststorePasswordEncrypted() != null && !cluster.getTruststorePasswordEncrypted().isBlank()) {
+                        String pw = decryptPasswords ? encryptionService.decrypt(cluster.getTruststorePasswordEncrypted()) : cluster.getTruststorePasswordEncrypted();
+                        props.put("ssl.truststore.password", pw);
+                    }
+                    if (cluster.getTruststoreType() != null && !cluster.getTruststoreType().isBlank()) {
+                        props.put("ssl.truststore.type", cluster.getTruststoreType().toUpperCase());
+                    }
+                }
+            }
+        }
+
+        // SASL Configuration
+        if ("SASL_PLAINTEXT".equalsIgnoreCase(protocol) || "SASL_SSL".equalsIgnoreCase(protocol)) {
+            String mechanism = cluster.getSaslMechanism();
+            if (mechanism == null || mechanism.isBlank()) {
+                throw new IllegalArgumentException("SASL mechanism is required for " + protocol);
+            }
+            props.put("sasl.mechanism", mechanism.toUpperCase());
+            
+            String username = cluster.getSaslUsername();
+            String passwordEnc = cluster.getSaslPasswordEncrypted();
+            if (username != null && !username.isBlank() && passwordEnc != null && !passwordEnc.isBlank()) {
+                String password = decryptPasswords ? encryptionService.decrypt(passwordEnc) : passwordEnc;
+                // Escape quotes and backslashes for JAAS
+                String escapedUsername = username.replace("\\", "\\\\").replace("\"", "\\\"");
+                String escapedPassword = password.replace("\\", "\\\\").replace("\"", "\\\"");
+                
+                String module = "org.apache.kafka.common.security.plain.PlainLoginModule";
+                if (mechanism.toUpperCase().startsWith("SCRAM")) {
+                    module = "org.apache.kafka.common.security.scram.ScramLoginModule";
+                }
+                String jaas = String.format("%s required username=\"%s\" password=\"%s\";", module, escapedUsername, escapedPassword);
+                props.put("sasl.jaas.config", jaas);
+            }
         }
     }
 }

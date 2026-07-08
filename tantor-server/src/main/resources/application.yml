@@ -38,6 +38,9 @@ server:
 
 tantor:
   security:
+    encryption:
+      key: ${TANTOR_ENCRYPTION_KEY:1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p}
+    truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
     jwt:
       secret: ${TANTOR_JWT_SECRET:v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E=}
       expiration-ms: 86400000 # 24 hours

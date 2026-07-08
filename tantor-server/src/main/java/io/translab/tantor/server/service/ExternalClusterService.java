@@ -13,6 +13,8 @@ import io.translab.tantor.server.repository.DiscoveryAgentRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.DiscoveryAgent;
+import io.translab.tantor.server.security.EncryptionService;
+import io.translab.tantor.server.security.TruststoreStorageService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,12 +55,14 @@ public class ExternalClusterService {
     private final ObjectMapper objectMapper;
     private final ActivityAlertService activityAlertService;
     private final AuditService auditService;
+    private final EncryptionService encryptionService;
+    private final TruststoreStorageService truststoreStorageService;
 
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalDiscoveryReport> pendingDiscoveries = new ConcurrentHashMap<>();
 
-    public Map<String, Object> testBootstrap(String bootstrapServers) {
-        String query = bootstrapServers.trim();
+    public Map<String, Object> testBootstrap(BootstrapExternalClusterRequest request) {
+        String query = request.getBootstrapServers().trim();
         String queryHost = extractHostFromBootstrap(query);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -66,9 +70,43 @@ public class ExternalClusterService {
         
         try {
             // 1. PRIMARY: Try connecting directly via Kafka Admin API FIRST
-            Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(query);
-            result.putAll(adminData);
-            adminSuccess = true;
+            // Since cluster is not registered yet, we create a temporary DTO to pass properties
+            ExternalCluster tempCluster = new ExternalCluster();
+            tempCluster.setBootstrapServers(query);
+            tempCluster.setSecurityProtocol(request.getSecurityProtocol());
+            tempCluster.setSaslMechanism(request.getSaslMechanism());
+            tempCluster.setSaslUsername(request.getSaslUsername());
+            tempCluster.setSaslPasswordEncrypted(request.getSaslPassword()); // Plaintext during test
+            tempCluster.setTruststoreType(request.getTruststoreType());
+            tempCluster.setTruststorePasswordEncrypted(request.getTruststorePassword());
+            tempCluster.setKeystoreType(request.getKeystoreType());
+            tempCluster.setKeystorePasswordEncrypted(request.getKeystorePassword());
+            tempCluster.setKeyPasswordEncrypted(request.getKeyPassword());
+            tempCluster.setDisableHostnameVerification(Boolean.TRUE.equals(request.getDisableHostnameVerification()));
+            
+            // Handle temporary truststore file for test connection
+            if (request.getTruststoreBase64() != null && !request.getTruststoreBase64().isBlank()) {
+                String tempPath = truststoreStorageService.saveTruststore(UUID.randomUUID(), request.getTruststoreType(), request.getTruststoreBase64());
+                tempCluster.setTruststorePath(tempPath);
+            }
+            if (request.getKeystoreBase64() != null && !request.getKeystoreBase64().isBlank()) {
+                String tempPath = truststoreStorageService.saveTruststore(UUID.randomUUID(), "keystore_" + request.getKeystoreType(), request.getKeystoreBase64());
+                tempCluster.setKeystorePath(tempPath);
+            }
+
+            try {
+                Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(tempCluster, false); // false = don't decrypt since we passed plaintext
+                result.putAll(adminData);
+                adminSuccess = true;
+            } finally {
+                // Clean up temporary files
+                if (tempCluster.getTruststorePath() != null) {
+                    try { java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(tempCluster.getTruststorePath())); } catch (Exception ignored) {}
+                }
+                if (tempCluster.getKeystorePath() != null) {
+                    try { java.nio.file.Files.deleteIfExists(java.nio.file.Paths.get(tempCluster.getKeystorePath())); } catch (Exception ignored) {}
+                }
+            }
         } catch (Exception e) {
             // It failed. Don't throw yet, check if agent is enrolled as fallback.
             result.put("connected", false);
@@ -185,7 +223,7 @@ public class ExternalClusterService {
             inspection.put("connected", true);
             inspection.put("clusterId", request.getClusterId());
             inspection.put("brokerCount", request.getBrokerCount());
-            inspection.put("security_protocol", request.getSecurity());
+            inspection.put("security_protocol", request.getSecurityProtocol() != null ? request.getSecurityProtocol() : request.getSecurity());
             inspection.put("agentFound", request.getAgentFound());
             inspection.put("discoveryKey", request.getDiscoveryKey());
             inspection.put("kafka_version", request.getKafkaVersion());
@@ -193,7 +231,7 @@ public class ExternalClusterService {
             inspection.put("controllerId", request.getControllerId());
             inspection.put("brokers", request.getBrokers());
         } else {
-            inspection = testBootstrap(bootstrap);
+            inspection = testBootstrap(request);
         }
         
         // Ensure Kafka Admin API was able to connect
@@ -213,11 +251,35 @@ public class ExternalClusterService {
         savedCluster.setEnvironment(blankToDefault(request.getEnvironment(), "unknown"));
         savedCluster.setKafkaMode(String.valueOf(inspection.get("mode")));
         savedCluster.setSecurity(String.valueOf(inspection.get("security_protocol")));
+        savedCluster.setSecurityProtocol(request.getSecurityProtocol());
+        savedCluster.setSaslMechanism(request.getSaslMechanism());
+        savedCluster.setSaslUsername(request.getSaslUsername());
+        savedCluster.setSaslPasswordEncrypted(encryptionService.encrypt(request.getSaslPassword()));
+        
+        savedCluster.setDisableHostnameVerification(Boolean.TRUE.equals(request.getDisableHostnameVerification()));
+        savedCluster.setTruststoreType(request.getTruststoreType());
+        savedCluster.setTruststorePasswordEncrypted(encryptionService.encrypt(request.getTruststorePassword()));
+        savedCluster.setKeystoreType(request.getKeystoreType());
+        savedCluster.setKeystorePasswordEncrypted(encryptionService.encrypt(request.getKeystorePassword()));
+        savedCluster.setKeyPasswordEncrypted(encryptionService.encrypt(request.getKeyPassword()));
+        
         if (inspection.get("brokerCount") instanceof Number) {
             savedCluster.setBrokerCount(((Number) inspection.get("brokerCount")).intValue());
         }
         savedCluster.setStatus("SUCCESS");
         savedCluster = externalClusterRepository.save(savedCluster);
+
+        // Save truststore/keystore files if provided
+        if (request.getTruststoreBase64() != null && !request.getTruststoreBase64().isBlank()) {
+            String path = truststoreStorageService.saveTruststore(savedCluster.getId(), request.getTruststoreType(), request.getTruststoreBase64());
+            savedCluster.setTruststorePath(path);
+            savedCluster = externalClusterRepository.save(savedCluster);
+        }
+        if (request.getKeystoreBase64() != null && !request.getKeystoreBase64().isBlank()) {
+            String path = truststoreStorageService.saveTruststore(savedCluster.getId(), "keystore_" + request.getKeystoreType(), request.getKeystoreBase64());
+            savedCluster.setKeystorePath(path);
+            savedCluster = externalClusterRepository.save(savedCluster);
+        }
 
         // Process Selected Agents
         if (request.getSelectedAgents() != null && !request.getSelectedAgents().isEmpty()) {
@@ -1026,7 +1088,21 @@ public class ExternalClusterService {
         private String bootstrapServers;
         private String kafkaVersion;
         private String kafkaMode;
-        private String security;
+        private String security; // Legacy or UI fallback
+        private String securityProtocol;
+        private String saslMechanism;
+        private String saslUsername;
+        private String saslPassword;
+        private String truststoreType;
+        private String truststorePassword;
+        private String truststoreBase64;
+        private String truststoreFilename;
+        private String keystoreType;
+        private String keystorePassword;
+        private String keyPassword;
+        private String keystoreBase64;
+        private String keystoreFilename;
+        private Boolean disableHostnameVerification;
         private String clusterId;
         private Integer brokerCount;
         private Boolean agentFound;

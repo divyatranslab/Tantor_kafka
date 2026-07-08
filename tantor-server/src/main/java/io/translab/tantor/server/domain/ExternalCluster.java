@@ -32,6 +32,42 @@ public class ExternalCluster {
     @Column(name = "security")
     private String security;
 
+    @Column(name = "security_protocol")
+    private String securityProtocol;
+
+    @Column(name = "sasl_mechanism")
+    private String saslMechanism;
+
+    @Column(name = "sasl_username")
+    private String saslUsername;
+
+    @Column(name = "sasl_password_encrypted")
+    private String saslPasswordEncrypted;
+
+    @Column(name = "truststore_path")
+    private String truststorePath;
+
+    @Column(name = "truststore_password_encrypted")
+    private String truststorePasswordEncrypted;
+
+    @Column(name = "truststore_type")
+    private String truststoreType;
+
+    @Column(name = "keystore_path")
+    private String keystorePath;
+
+    @Column(name = "keystore_password_encrypted")
+    private String keystorePasswordEncrypted;
+
+    @Column(name = "key_password_encrypted")
+    private String keyPasswordEncrypted;
+
+    @Column(name = "keystore_type")
+    private String keystoreType;
+
+    @Column(name = "disable_hostname_verification")
+    private Boolean disableHostnameVerification = false;
+
     @Column(name = "broker_count")
     private Integer brokerCount;
 

@@ -34,7 +34,7 @@ public class ExternalClusterController {
 
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/test")
     public ResponseEntity<Map<String, Object>> testBootstrap(@RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
-        return ResponseEntity.ok(externalClusterService.testBootstrap(request.getBootstrapServers()));
+        return ResponseEntity.ok(externalClusterService.testBootstrap(request));
     }
 
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/register")

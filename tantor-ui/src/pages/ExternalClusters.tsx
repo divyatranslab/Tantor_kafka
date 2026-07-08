@@ -55,7 +55,20 @@ export function ExternalClusters() {
     environment: 'prod',
     bootstrapServers: '',
     kafkaVersion: '',
-    security: 'PLAINTEXT',
+    securityProtocol: 'PLAINTEXT',
+    saslMechanism: 'PLAIN',
+    saslUsername: '',
+    saslPassword: '',
+    truststoreType: 'JKS',
+    truststorePassword: '',
+    truststoreBase64: '',
+    truststoreFilename: '',
+    keystoreType: 'JKS',
+    keystorePassword: '',
+    keyPassword: '',
+    keystoreBase64: '',
+    keystoreFilename: '',
+    disableHostnameVerification: false,
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
@@ -77,7 +90,7 @@ export function ExternalClusters() {
   restart_command: "systemctl restart kafka"`
   ), [serverHint]);
 
-  const testBootstrap = async () => {
+    const testBootstrap = async () => {
     if (!form.bootstrapServers.trim()) return;
     setTesting(true);
     setError('');
@@ -87,7 +100,7 @@ export function ExternalClusters() {
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bootstrapServers: form.bootstrapServers }),
+        body: JSON.stringify(form),
       });
       const data = await res.json();
       setBootstrapResult(data);
@@ -111,6 +124,24 @@ export function ExternalClusters() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fieldBase64: string, fieldFilename: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const result = evt.target?.result;
+      if (typeof result === 'string') {
+        const base64Content = result.split(',')[1] || result;
+        setForm(prev => ({
+          ...prev,
+          [fieldBase64]: base64Content,
+          [fieldFilename]: file.name
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const registerBootstrap = async () => {
@@ -238,15 +269,142 @@ export function ExternalClusters() {
                   }}
                 />
                 <button 
-                  className="btn icon-only" 
+                  className="btn" 
                   onClick={testBootstrap} 
                   title="Test Connection"
                   disabled={!form.bootstrapServers.trim() || testing}
                 >
                   <RefreshCw size={14} className={testing ? 'spin' : ''} />
+                  Test Connection
                 </button>
               </div>
             </label>
+            
+            {/* Security Settings Section */}
+            <div className="span-2" style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>Security Configuration</h3>
+            </div>
+            
+            <label>
+              Security Protocol
+              <select 
+                value={form.securityProtocol} 
+                onChange={e => {
+                  setForm(prev => ({ ...prev, securityProtocol: e.target.value }));
+                  setBootstrapResult(null);
+                }}
+              >
+                <option value="PLAINTEXT">PLAINTEXT</option>
+                <option value="SSL">SSL</option>
+                <option value="SASL_PLAINTEXT">SASL_PLAINTEXT</option>
+                <option value="SASL_SSL">SASL_SSL</option>
+              </select>
+            </label>
+
+            {(form.securityProtocol === 'SASL_PLAINTEXT' || form.securityProtocol === 'SASL_SSL') && (
+              <>
+                <label>
+                  SASL Mechanism
+                  <select 
+                    value={form.saslMechanism} 
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, saslMechanism: e.target.value }));
+                      setBootstrapResult(null);
+                    }}
+                  >
+                    <option value="PLAIN">PLAIN</option>
+                    <option value="SCRAM-SHA-256">SCRAM-SHA-256</option>
+                    <option value="SCRAM-SHA-512">SCRAM-SHA-512</option>
+                  </select>
+                </label>
+                <label>
+                  SASL Username
+                  <input 
+                    type="text" 
+                    placeholder="Username" 
+                    value={form.saslUsername}
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, saslUsername: e.target.value }));
+                      setBootstrapResult(null);
+                    }}
+                  />
+                </label>
+                <label>
+                  SASL Password
+                  <input 
+                    type="password" 
+                    placeholder="Password" 
+                    value={form.saslPassword}
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, saslPassword: e.target.value }));
+                      setBootstrapResult(null);
+                    }}
+                  />
+                </label>
+              </>
+            )}
+
+            {(form.securityProtocol === 'SSL' || form.securityProtocol === 'SASL_SSL') && (
+              <>
+                <label>
+                  Disable Hostname Verification
+                  <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px', gap: '8px' }}>
+                    <input 
+                      type="checkbox" 
+                      style={{ width: 'auto' }}
+                      checked={form.disableHostnameVerification}
+                      onChange={e => {
+                        setForm(prev => ({ ...prev, disableHostnameVerification: e.target.checked }));
+                        setBootstrapResult(null);
+                      }}
+                    />
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>Skip checking hostname in certificate</span>
+                  </div>
+                </label>
+                <label>
+                  Truststore Type
+                  <select 
+                    value={form.truststoreType} 
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, truststoreType: e.target.value }));
+                      setBootstrapResult(null);
+                    }}
+                  >
+                    <option value="JKS">JKS</option>
+                    <option value="PKCS12">PKCS12</option>
+                    <option value="PEM">PEM / X.509</option>
+                  </select>
+                </label>
+                <label className="span-2">
+                  Truststore File (CA Certificate)
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '4px' }}>
+                    <input 
+                      type="file" 
+                      onChange={e => {
+                        handleFileUpload(e, 'truststoreBase64', 'truststoreFilename');
+                        setBootstrapResult(null);
+                      }}
+                      style={{ border: 'none', padding: 0 }}
+                    />
+                    {form.truststoreFilename && <span style={{ fontSize: '12px', color: '#10b981' }}><CheckCircle2 size={12} style={{ verticalAlign: 'middle', marginRight: '4px' }} />{form.truststoreFilename} attached</span>}
+                  </div>
+                </label>
+                {form.truststoreType !== 'PEM' && (
+                  <label>
+                    Truststore Password
+                    <input 
+                      type="password" 
+                      placeholder="Password" 
+                      value={form.truststorePassword}
+                      onChange={e => {
+                        setForm(prev => ({ ...prev, truststorePassword: e.target.value }));
+                        setBootstrapResult(null);
+                      }}
+                    />
+                  </label>
+                )}
+              </>
+            )}
           </div>
 
           {testing && (
@@ -263,6 +421,11 @@ export function ExternalClusters() {
                 <div>
                   <strong>{form.name || 'External Kafka cluster'}</strong>
                   <span>{(bootstrapResult.success ?? bootstrapResult.connected) ? 'Bootstrap connection verified' : 'Bootstrap connection failed'}</span>
+                  {!(bootstrapResult.success ?? bootstrapResult.connected) && bootstrapResult.message && (
+                    <div style={{ fontSize: '12px', marginTop: '4px', color: '#ef4444' }}>
+                      {bootstrapResult.message}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="inspection-facts">
