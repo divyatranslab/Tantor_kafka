@@ -15,10 +15,10 @@ public interface HostParcelRepository extends JpaRepository<HostParcel, UUID> {
     Optional<HostParcel> findFirstByLastTaskIdOrderByCreatedAtDescIdDesc(UUID lastTaskId);
 
     @org.springframework.data.jpa.repository.Query(value = """
-        select hp.* from host_parcels hp
+        select hp.* from kf_host_parcels hp
         join (
           select distinct on (host_id, artifact_id) id
-          from host_parcels
+          from kf_host_parcels
           order by host_id, artifact_id, created_at desc, id desc
         ) latest on latest.id = hp.id
         order by hp.created_at desc
@@ -26,10 +26,10 @@ public interface HostParcelRepository extends JpaRepository<HostParcel, UUID> {
     List<HostParcel> findLatestStates();
 
     @org.springframework.data.jpa.repository.Query(value = """
-        select hp.* from host_parcels hp
+        select hp.* from kf_host_parcels hp
         join (
           select distinct on (host_id, artifact_id) id
-          from host_parcels
+          from kf_host_parcels
           where host_id = :hostId and service_type = :serviceType
           order by host_id, artifact_id, created_at desc, id desc
         ) latest on latest.id = hp.id
@@ -37,4 +37,15 @@ public interface HostParcelRepository extends JpaRepository<HostParcel, UUID> {
         """, nativeQuery = true)
     List<HostParcel> findLatestActive(@org.springframework.data.repository.query.Param("hostId") String hostId,
                                       @org.springframework.data.repository.query.Param("serviceType") String serviceType);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.data.jpa.repository.Query(value = """
+        INSERT INTO kf_artifact_audit_log (id, actor_user, event_category, action, resource_type, artifact_id, status, details, created_at)
+        VALUES (gen_random_uuid(), :actor, 'DISTRIBUTION', :action, 'HOST_PARCEL', :artifactId, :status, CAST(:details AS jsonb), now())
+        """, nativeQuery = true)
+    void recordArtifactAudit(@org.springframework.data.repository.query.Param("actor") String actor,
+                             @org.springframework.data.repository.query.Param("action") String action,
+                             @org.springframework.data.repository.query.Param("artifactId") String artifactId,
+                             @org.springframework.data.repository.query.Param("status") String status,
+                             @org.springframework.data.repository.query.Param("details") String details);
 }

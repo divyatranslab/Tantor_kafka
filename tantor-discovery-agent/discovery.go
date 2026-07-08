@@ -19,15 +19,17 @@ type DiscoveredCluster struct {
 	Security         string // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
 	BrokerCount      int
 	NodeID           int
-	ProcessRoles     string // broker, controller, broker,controller
-	IsRunning        bool
-	InstallPath      string
-	PropsFile        string
-	LogDirs          string
-	Environment      string
+	ProcessRoles        string // broker, controller, broker,controller
+	Listeners           string
+	AdvertisedListeners string
+	IsRunning           bool
+	InstallPath         string
+	PropsFile           string
+	LogDirs             string
+	Environment         string
 }
 
-func runDiscovery(serverURL, hostname, environment string, scanPaths []string) []DiscoveredCluster {
+func runDiscovery(serverURL, hostname, environment string, scanPaths []string, hostID, agentName string) []DiscoveredCluster {
 	// Step 1: build a set of running Kafka PIDs and their server.properties.
 	runningProps := getRunningKafkaPropsFiles()
 	fmt.Printf("Running Kafka processes: %d\n", len(runningProps))
@@ -118,7 +120,7 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string) [
 	apiURL := strings.TrimRight(serverURL, "/") + "/api/v1/ui/external-clusters/discovery/report"
 	ok, fail := 0, 0
 	for _, c := range clusters {
-		if registerCluster(apiURL, c) {
+		if registerCluster(apiURL, c, hostID, agentName) {
 			ok++
 		} else {
 			fail++

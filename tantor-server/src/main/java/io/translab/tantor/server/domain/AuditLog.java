@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "audit_logs")
+@Table(name = "kf_audit_logs")
 @Getter
 @Setter
 public class AuditLog {
@@ -21,17 +21,17 @@ public class AuditLog {
     @Column(nullable = false, length = 100)
     private String action;
 
-    @Column(name = "entity_type", nullable = false, length = 80)
+    @Column(name = "resource_type", nullable = false, length = 80)
     private String resourceType;
 
-    @Column(name = "entity_id", length = 255)
+    @Column(name = "resource_id", length = 255)
     private String resourceId;
 
     @Column(name = "cluster_id")
     private UUID clusterId;
 
-    @Column(nullable = false)
-    private String actor;
+    @Column(name = "actor_user", nullable = false)
+    private String actorUser;
 
     @Column(name = "event_category", nullable = false, length = 80)
     private String category;
@@ -50,8 +50,8 @@ public class AuditLog {
     @Column(name = "ip_address", length = 64)
     private String ipAddress;
 
-    @Column(nullable = false, length = 80)
-    private String source;
+    @Column(name = "origin", nullable = false, length = 80)
+    private String origin;
 
     @Column(name = "request_id", length = 100)
     private String requestId;

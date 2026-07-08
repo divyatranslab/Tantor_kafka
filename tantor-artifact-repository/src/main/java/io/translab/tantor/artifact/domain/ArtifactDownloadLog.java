@@ -16,7 +16,7 @@ import java.util.UUID;
  * auditable trail of which binaries were pulled by which agent and when.
  */
 @Entity
-@Table(name = "artifact_download_log")
+@Table(name = "kf_artifact_download_log")
 public class ArtifactDownloadLog {
 
     @Id

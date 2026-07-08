@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "activity_logs")
+@Table(name = "kf_activity_logs")
 @Data
 public class ActivityLog {
 

@@ -1,5 +1,8 @@
 discovery:
-  server_url: "http://192.168.3.142:8443"
+  host_id: "456-123-208"
+  agent_name: "discovery-agent-208"
+  server_url: "http://localhost:8443"
+  interval: "15s"
   scan_paths:
     - "/srv/apps"
     - "/data/apps"

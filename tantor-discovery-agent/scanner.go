@@ -20,6 +20,10 @@ func getRunningKafkaPropsFiles() map[string]bool {
 		// also try kafka.server.KafkaServer
 		out, err = exec.Command("pgrep", "-f", "kafka.server.KafkaServer").Output()
 	}
+	if err != nil {
+		// KRaft mode in Kafka 3.0+ uses kafka.server.KafkaRaftServer
+		out, err = exec.Command("pgrep", "-f", "kafka.server.KafkaRaftServer").Output()
+	}
 	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		return result
 	}

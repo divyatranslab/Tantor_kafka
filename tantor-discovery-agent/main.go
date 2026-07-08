@@ -80,7 +80,7 @@ func main() {
 		go pollForTasksLoop(serverURL, hostname, cfg.Discovery.RestartCommand, clustersChan)
 
 		for {
-			clusters := runDiscovery(serverURL, hostname, environment, scanPaths)
+			clusters := runDiscovery(serverURL, hostname, environment, scanPaths, cfg.Discovery.HostID, cfg.Discovery.AgentName)
 			select {
 			case clustersChan <- clusters:
 			default:
@@ -90,6 +90,6 @@ func main() {
 			time.Sleep(duration)
 		}
 	} else {
-		runDiscovery(serverURL, hostname, environment, scanPaths)
+		runDiscovery(serverURL, hostname, environment, scanPaths, cfg.Discovery.HostID, cfg.Discovery.AgentName)
 	}
 }

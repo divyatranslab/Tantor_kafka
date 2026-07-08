@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "ldap_configs")
+@Table(name = "kf_ldap_configs")
 @Getter
 @Setter
 public class LdapConfig {

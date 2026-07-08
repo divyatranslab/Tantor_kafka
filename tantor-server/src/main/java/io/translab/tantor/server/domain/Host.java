@@ -9,7 +9,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Entity
-@Table(name = "hosts")
+@Table(name = "kf_hosts")
 @Getter
 @Setter
 public class Host {

@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "alerts")
+@Table(name = "kf_alerts")
 @Data
 public class Alert {
 

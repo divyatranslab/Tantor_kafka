@@ -17,7 +17,7 @@ import java.util.UUID;
  * disk at {@link #relativePath}; this row is the index entry.
  */
 @Entity
-@Table(name = "artifact")
+@Table(name = "kf_artifact")
 public class Artifact {
 
     @Id

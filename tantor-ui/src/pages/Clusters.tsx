@@ -100,7 +100,11 @@ export function Clusters() {
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
   const statusLabel = (c: ClusterInfo) => {
-    if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'Connected' : c.status;
+    if (c.mode === 'EXTERNAL') {
+      if (c.status === 'SUCCESS') return 'Connected';
+      if (c.status === 'DEGRADED') return 'Degraded';
+      return c.status;
+    }
     if (c.status === 'SUCCESS') return 'Active';
     return c.status;
   };
@@ -275,7 +279,10 @@ export function Clusters() {
                           <span className={`access-pill ${cluster.managementLevel === 'BOOTSTRAP_ONLY' ? 'metadata' : 'managed'}`}>
                             {managementLabel(cluster)}
                           </span>
-                          <span className={`cluster-status-badge ${statusClass(cluster)}`}>
+                          <span 
+                            className={`cluster-status-badge ${statusClass(cluster)}`}
+                            title={cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined}
+                          >
                             {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
                               <RefreshCw size={11} className="spin" />
                             )}
@@ -294,7 +301,7 @@ export function Clusters() {
                           </button>
                           {openMenuId === cluster.id && (
                             <div className="cluster-action-menu">
-                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster)}>
                                 <RotateCcw size={14} />
                                 Rolling restart
                               </button>
@@ -302,7 +309,7 @@ export function Clusters() {
                                 <Settings size={14} />
                                 Configuration change
                               </button>
-                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster)}>
                                 <ServerCog size={14} />
                                 Add node
                               </button>

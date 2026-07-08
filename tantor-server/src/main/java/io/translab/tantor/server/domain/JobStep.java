@@ -11,7 +11,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "job_steps")
+@Table(name = "kf_job_steps")
 @Getter
 @Setter
 public class JobStep {

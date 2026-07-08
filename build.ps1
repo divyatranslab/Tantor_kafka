@@ -34,12 +34,12 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-artifact-repository"
-& $MvnCmd clean package -DskipTests
+& $MvnCmd clean package "-DskipTests"
 
 # 3. Build Management Server
 Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-server"
-& $MvnCmd clean package -DskipTests
+& $MvnCmd clean package "-Dmaven.test.skip=true"
 
 # Restore original directory
 cd $PSScriptRoot

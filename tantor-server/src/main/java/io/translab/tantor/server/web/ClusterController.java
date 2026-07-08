@@ -2,8 +2,10 @@ package io.translab.tantor.server.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
@@ -34,10 +36,13 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/v1/ui/clusters")
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class ClusterController {
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
+    private final ExternalClusterRepository externalClusterRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
     private final io.translab.tantor.server.repository.TaskRepository taskRepository;
     private final io.translab.tantor.server.repository.HostRepository hostRepository;
     private final io.translab.tantor.server.repository.HostParcelRepository hostParcelRepository;
@@ -84,12 +89,38 @@ public class ClusterController {
             m.put("hosts", hosts);
             result.add(m);
         }
+        for (ExternalCluster c : externalClusterRepository.findByStatusNot("DELETED")) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", c.getId());
+            m.put("name", c.getName());
+            m.put("clusterName", c.getName());
+            m.put("originType", "EXTERNAL");
+            m.put("installDirectory", c.getInstallPath());
+            m.put("kafkaVersion", c.getKafkaVersion());
+            m.put("mode", "EXTERNAL");
+            m.put("environment", c.getEnvironment());
+            m.put("createdAt", c.getCreatedAt());
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
+            m.put("nodeIds", new ArrayList<>());
+            m.put("status", c.getStatus());
+            m.put("bootstrapServers", c.getBootstrapServers());
+            m.put("clusterId", c.getId().toString());
+            m.put("kafkaClusterId", c.getKafkaClusterId());
+            m.put("config", new HashMap<>());
+            m.put("managementLevel", externalClusterService.isAgentManaged(c) ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY");
+            m.put("sourceLabel", "External");
+            m.put("accessLabel", "Bootstrap only");
+            m.put("nodeCount", c.getBrokerCount() != null ? c.getBrokerCount() : 0);
+            m.put("hosts", new ArrayList<>());
+            result.add(m);
+        }
         return result;
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getCluster(@PathVariable java.util.UUID id) {
-        return clusterRepository.findById(id).map(c -> {
+        var internalOpt = clusterRepository.findById(id).map(c -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -116,6 +147,62 @@ public class ClusterController {
             m.put("accessLabel", accessLabel(c));
             List<Map<String, Object>> hosts = clusterHosts(c);
             m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
+            m.put("hosts", hosts);
+            return ResponseEntity.ok(m);
+        });
+        
+        if (internalOpt.isPresent()) {
+            return internalOpt.get();
+        }
+        
+        return externalClusterRepository.findById(id).map(c -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id", c.getId());
+            m.put("name", c.getName());
+            m.put("clusterName", c.getName());
+            m.put("originType", "EXTERNAL");
+            m.put("kafkaVersion", c.getKafkaVersion());
+            m.put("mode", "EXTERNAL");
+            m.put("environment", c.getEnvironment());
+            m.put("createdAt", c.getCreatedAt());
+            m.put("createdBy", c.getCreatedBy());
+            m.put("updatedBy", c.getUpdatedBy());
+            m.put("nodeIds", new ArrayList<>());
+            m.put("status", c.getStatus());
+            m.put("bootstrapServers", c.getBootstrapServers());
+            m.put("clusterId", c.getId().toString());
+            m.put("kafkaClusterId", c.getKafkaClusterId());
+            m.put("installDirectory", c.getInstallPath());
+            m.put("configDirectory", "");
+            m.put("dataDirectory", "");
+            m.put("logDirectory", c.getLogDirs());
+            m.put("config", new HashMap<>());
+            m.put("managementLevel", externalClusterService.isAgentManaged(c) ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY");
+            m.put("sourceLabel", "External");
+            m.put("accessLabel", "Bootstrap only");
+            m.put("nodeCount", c.getBrokerCount() != null ? c.getBrokerCount() : 0);
+            
+            List<Map<String, Object>> hosts = new ArrayList<>();
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
+            for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
+                Map<String, Object> hm = new HashMap<>();
+                hm.put("id", n.getId().toString());
+                hm.put("nodeId", n.getNodeId());
+                hm.put("hostname", n.getHost());
+                hm.put("ipAddress", n.getHost());
+                
+                boolean isBroker = Boolean.TRUE.equals(n.getIsBroker());
+                boolean isController = Boolean.TRUE.equals(n.getIsController());
+                String role = "unknown";
+                if (isBroker && isController) role = "broker,controller";
+                else if (isBroker) role = "broker";
+                else if (isController) role = "controller";
+                
+                hm.put("role", role);
+                hm.put("status", "ACTIVE");
+                hosts.add(hm);
+            }
+            
             m.put("hosts", hosts);
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
@@ -160,10 +247,20 @@ public class ClusterController {
 
     @GetMapping("/{id}/brokers")
     public ResponseEntity<Map<String, Object>> getClusterBrokers(@PathVariable java.util.UUID id) {
-        return clusterRepository.findById(id).map(cluster -> {
-            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+        if (clusterRepository.findById(id).isPresent()) {
+            return clusterRepository.findById(id).map(cluster -> {
+                List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+                Map<String, Object> response = new HashMap<>();
+                response.put("clusterId", cluster.getId());
+                response.put("brokers", brokers);
+                return ResponseEntity.ok(response);
+            }).orElse(ResponseEntity.notFound().build());
+        }
+
+        return externalClusterRepository.findById(id).map(extCluster -> {
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(extCluster);
             Map<String, Object> response = new HashMap<>();
-            response.put("clusterId", cluster.getId());
+            response.put("clusterId", extCluster.getId());
             response.put("brokers", brokers);
             return ResponseEntity.ok(response);
         }).orElse(ResponseEntity.notFound().build());
@@ -171,10 +268,49 @@ public class ClusterController {
 
     @GetMapping("/{id}/overview")
     public ResponseEntity<io.translab.tantor.server.dto.ClusterOverviewDto> getClusterOverview(@PathVariable java.util.UUID id) {
-        if (clusterRepository.findById(id).isEmpty()) {
-            return ResponseEntity.notFound().build();
+        if (clusterRepository.findById(id).isPresent()) {
+            return ResponseEntity.ok(clusterOverviewService.getOverview(id));
         }
-        return ResponseEntity.ok(clusterOverviewService.getOverview(id));
+
+        return externalClusterRepository.findById(id).map(extCluster -> {
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(id);
+            int brokerCount = 0;
+            int activeControllerCount = 0;
+            List<io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow> brokerRows = new ArrayList<>();
+
+            for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+                if (Boolean.TRUE.equals(node.getIsBroker())) brokerCount++;
+                if (Boolean.TRUE.equals(node.getIsController())) activeControllerCount++;
+
+                brokerRows.add(io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow.builder()
+                        .brokerId(node.getNodeId() != null ? node.getNodeId() : -1)
+                        .host(node.getHost())
+                        .port(9092)
+                        .controller(Boolean.TRUE.equals(node.getIsController()))
+                        .diskUsageBytes(node.getDiskUsedGb() != null ? node.getDiskUsedGb() * 1024L * 1024L * 1024L : 0L)
+                        .build());
+            }
+
+            io.translab.tantor.server.dto.ClusterOverviewDto dto = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
+                    .clusterId(extCluster.getId())
+                    .kafkaClusterId(extCluster.getKafkaClusterId())
+                    .name(extCluster.getName())
+                    .kafkaVersion(extCluster.getKafkaVersion())
+                    .controllerType(extCluster.getKafkaMode())
+                    .originType("EXTERNAL")
+                    .generatedAt(java.time.OffsetDateTime.now())
+                    .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder()
+                            .brokerCount(extCluster.getBrokerCount() != null ? extCluster.getBrokerCount() : brokerCount)
+                            .activeController(activeControllerCount > 0 ? 1 : 0)
+                            .version(extCluster.getKafkaVersion())
+                            .controllerType(extCluster.getKafkaMode())
+                            .build())
+                    .partitions(io.translab.tantor.server.dto.ClusterOverviewDto.PartitionSummary.builder().build())
+                    .brokers(brokerRows)
+                    .build();
+
+            return ResponseEntity.ok(dto);
+        }).orElse(ResponseEntity.notFound().build());
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -486,23 +622,51 @@ public class ClusterController {
                 }
             }
             return ResponseEntity.ok().build();
-        } else {
-            return ResponseEntity.notFound().build();
+        } 
+        
+        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
+        if (extClusterOpt.isPresent()) {
+            io.translab.tantor.server.domain.ExternalCluster extCluster = extClusterOpt.get();
+            externalClusterRepository.delete(extCluster);
+            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_DELETED", "CLUSTER", extCluster.getId().toString(),
+                    extCluster.getId(), "SUCCESS", null, null, null,
+                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+            activityAlertService.logActivity("INFO", "Deleted external cluster", id);
+            return ResponseEntity.ok().build();
         }
+        
+        return ResponseEntity.notFound().build();
     }
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/force-delete/{id}")
     public ResponseEntity<Void> forceDeleteCluster(@PathVariable java.util.UUID id) {
-        clusterRepository.findById(id).ifPresent(cluster -> {
-            if ("EXTERNAL".equals(cluster.getMode()) || !initiateClusterCleanup(cluster)) {
+        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
+        if (optionalCluster.isPresent()) {
+            Cluster cluster = optionalCluster.get();
+            if (cluster.getServices() == null || cluster.getServices().isEmpty() || "EXTERNAL".equals(cluster.getMode())) {
                 markClusterDeleted(cluster);
                 activityAlertService.logActivity("INFO", "Force-deleted cluster without VM cleanup task", id);
             } else {
                 activityAlertService.logActivity("WARN", "Force-delete requested; VM cleanup task dispatched before deleting cluster", id);
+                initiateClusterCleanup(cluster);
+                markClusterDeleted(cluster);
             }
-        });
-        return ResponseEntity.ok().build();
+            return ResponseEntity.ok().build();
+        } 
+
+        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
+        if (extClusterOpt.isPresent()) {
+            io.translab.tantor.server.domain.ExternalCluster extCluster = extClusterOpt.get();
+            externalClusterRepository.delete(extCluster);
+            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_FORCE_DELETED", "CLUSTER", extCluster.getId().toString(),
+                    extCluster.getId(), "SUCCESS", null, null, null,
+                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+            activityAlertService.logActivity("INFO", "Force-deleted external cluster", id);
+            return ResponseEntity.ok().build();
+        }
+
+        return ResponseEntity.notFound().build();
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -1386,7 +1550,7 @@ public class ClusterController {
             return level;
         }
         if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
-            return externalClusterService.isAgentManaged(cluster) ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY";
+            return "BOOTSTRAP_ONLY";
         }
         return "INTERNAL_MANAGED";
     }
@@ -1414,18 +1578,6 @@ public class ClusterController {
                         hosts.add(hostSummary(service, host));
                     }
                 });
-            }
-        }
-
-        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && hosts.isEmpty()) {
-            Set<String> seen = hosts.stream()
-                    .map(item -> String.valueOf(item.getOrDefault("bootstrap", "")))
-                    .collect(Collectors.toSet());
-            for (io.translab.tantor.server.service.ExternalClusterService.ExternalBrokerRecord broker : externalClusterService.brokerRecords(cluster)) {
-                String bootstrap = broker.getBootstrap() == null ? "" : broker.getBootstrap();
-                if (!seen.contains(bootstrap)) {
-                    hosts.add(externalBrokerSummary(broker));
-                }
             }
         }
         return hosts;

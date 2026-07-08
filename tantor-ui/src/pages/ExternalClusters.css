@@ -317,6 +317,34 @@
   font-size: 12px;
 }
 
+.inspection-admin-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  background: #fff8e5;
+  border-top: 1px solid #efede8;
+  color: #72510f;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.inspection-admin-warning svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.inspection-admin-warning p {
+  margin: 0;
+}
+
+.inspection-admin-warning a {
+  color: #185fa5;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .inspection-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));

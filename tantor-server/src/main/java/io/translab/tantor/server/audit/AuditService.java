@@ -44,8 +44,8 @@ public class AuditService {
                          UUID clusterId, String status, Object oldValue, Object newValue,
                          Object approval, Object details) {
         AuditLog event = new AuditLog();
-        event.setActor(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
-        event.setSource(text(source, "MANAGEMENT_SERVER"));
+        event.setActorUser(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
+        event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
         event.setResourceType(text(resourceType, "SYSTEM").toUpperCase(Locale.ROOT));
@@ -130,7 +130,7 @@ public class AuditService {
         }
     }
 
-    private String currentActor() {
+    public String currentActor() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getName() == null || "anonymousUser".equals(auth.getName())) return "system";
         return auth.getName();

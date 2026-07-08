@@ -10,7 +10,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "config_versions")
+@Table(name = "kf_config_versions")
 @Getter
 @Setter
 public class ConfigVersion {

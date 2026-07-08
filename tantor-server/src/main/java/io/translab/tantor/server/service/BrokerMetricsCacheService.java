@@ -3,6 +3,7 @@ package io.translab.tantor.server.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.dto.BrokerSummaryDto;
@@ -44,14 +45,8 @@ public class BrokerMetricsCacheService {
             return cached.brokers;
         }
 
-        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && (cluster.getServices() == null || cluster.getServices().isEmpty())) {
-            List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
-            cache.put(cluster.getId(), new CachedBrokers(brokers, now));
-            return brokers;
-        }
-
         // Cache miss or expired, fetch asynchronously
-        List<CompletableFuture<BrokerSummaryDto>> futures = cluster.getServices().stream()
+        List<CompletableFuture<BrokerSummaryDto>> futures = cluster.getServices() == null ? new ArrayList<>() : cluster.getServices().stream()
             .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole()) || "controller".equals(svc.getRole()))
             .map(svc -> CompletableFuture.supplyAsync(() -> fetchMetricsForBroker(svc)))
             .collect(Collectors.toList());
@@ -68,6 +63,19 @@ public class BrokerMetricsCacheService {
             }
         }
 
+        cache.put(cluster.getId(), new CachedBrokers(brokers, now));
+        return brokers;
+    }
+
+    public List<BrokerSummaryDto> getBrokerSummaries(ExternalCluster cluster) {
+        CachedBrokers cached = cache.get(cluster.getId());
+        long now = System.currentTimeMillis();
+        
+        if (cached != null && (now - cached.timestamp < CACHE_TTL_MS)) {
+            return cached.brokers;
+        }
+
+        List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
         cache.put(cluster.getId(), new CachedBrokers(brokers, now));
         return brokers;
     }
@@ -144,47 +152,25 @@ public class BrokerMetricsCacheService {
         return builder.build();
     }
 
-    private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(Cluster cluster) {
-        try {
-            return kafkaAdminService.describeClusterNodes(cluster.getId()).stream()
-                    .map(node -> BrokerSummaryDto.builder()
-                            .brokerId(node.id())
-                            .hostname(node.host() + ":" + node.port())
-                            .role("broker")
-                            .brokerHealth("HEALTHY")
-                            .isJmxReachable(false)
-                            .metricsTimestamp(System.currentTimeMillis())
-                            .cpuUsagePct(0.0)
-                            .memoryTotalMb(0L)
-                            .memoryUsedMb(0L)
-                            .diskTotalGb(0L)
-                            .diskUsedGb(0L)
-                            .messagesInPerSec(0.0)
-                            .bytesInPerSec(0.0)
-                            .bytesOutPerSec(0.0)
-                            .build())
-                    .collect(Collectors.toList());
-        } catch (Exception e) {
-            log.warn("Failed to describe bootstrap-only external brokers for cluster {}: {}", cluster.getId(), e.getMessage());
-            return externalClusterService.brokerRecords(cluster).stream()
-                    .map(record -> BrokerSummaryDto.builder()
-                            .brokerId(record.getNodeId())
-                            .hostname(record.getBootstrap())
-                            .role("broker")
-                            .brokerHealth("DEGRADED")
-                            .isJmxReachable(false)
-                            .metricsTimestamp(System.currentTimeMillis())
-                            .cpuUsagePct(0.0)
-                            .memoryTotalMb(0L)
-                            .memoryUsedMb(0L)
-                            .diskTotalGb(0L)
-                            .diskUsedGb(0L)
-                            .messagesInPerSec(0.0)
-                            .bytesInPerSec(0.0)
-                            .bytesOutPerSec(0.0)
-                            .build())
-                    .collect(Collectors.toList());
-        }
+    private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(ExternalCluster cluster) {
+        return externalClusterService.brokerRecords(cluster).stream()
+                .map(record -> BrokerSummaryDto.builder()
+                        .brokerId(record.getNodeId() != null ? record.getNodeId() : -1)
+                        .hostname(record.getHostname() != null ? record.getHostname() : record.getBootstrap())
+                        .role(record.getRole() != null ? record.getRole() : "broker")
+                        .brokerHealth(record.getLastSeen() != null ? "HEALTHY" : "DEGRADED")
+                        .isJmxReachable(false)
+                        .metricsTimestamp(System.currentTimeMillis())
+                        .cpuUsagePct(record.getCpuUsagePct() != null ? record.getCpuUsagePct() : 0.0)
+                        .memoryTotalMb(record.getMemoryTotalMb() != null ? record.getMemoryTotalMb() : 0L)
+                        .memoryUsedMb(record.getMemoryUsedMb() != null ? record.getMemoryUsedMb() : 0L)
+                        .diskTotalGb(record.getDiskTotalGb() != null ? record.getDiskTotalGb() : 0L)
+                        .diskUsedGb(record.getDiskUsedGb() != null ? record.getDiskUsedGb() : 0L)
+                        .messagesInPerSec(0.0)
+                        .bytesInPerSec(0.0)
+                        .bytesOutPerSec(0.0)
+                        .build())
+                .collect(Collectors.toList());
     }
 
     private void simulateMetrics(BrokerSummaryDto.BrokerSummaryDtoBuilder builder) {
