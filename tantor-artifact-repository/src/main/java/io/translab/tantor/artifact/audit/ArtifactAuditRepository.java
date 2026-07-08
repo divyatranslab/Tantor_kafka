@@ -13,6 +13,7 @@ public interface ArtifactAuditRepository extends JpaRepository<ArtifactAuditLog,
     Optional<ArtifactAuditLog> findFirstByOrderByCreatedAtDescIdDesc();
     List<ArtifactAuditLog> findAllByOrderByCreatedAtAscIdAsc();
     Page<ArtifactAuditLog> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    List<ArtifactAuditLog> findByResourceIdOrderByCreatedAtDesc(String resourceId);
 
     @Query(value = "select pg_advisory_xact_lock(772904222)", nativeQuery = true)
     void lockLedger();

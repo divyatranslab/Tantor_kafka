@@ -39,6 +39,10 @@ public class ArtifactAuditService {
         return repository.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 500)));
     }
 
+    public java.util.List<ArtifactAuditLog> getLogsForResource(String resourceId) {
+        return repository.findByResourceIdOrderByCreatedAtDesc(resourceId);
+    }
+
     public String integrity() {
         return "NOT_ENABLED";
     }

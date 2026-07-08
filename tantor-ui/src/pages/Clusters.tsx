@@ -160,6 +160,9 @@ export function Clusters() {
           <p>Deploy and manage your Tantor Kafka environments</p>
         </div>
         <div className="header-actions">
+          <button className="btn btn-primary-action" onClick={() => navigate('/cluster-deployment')}>
+            <Network size={13} /> Deploy Cluster
+          </button>
           <button className="btn" onClick={fetchClusters}>
             <RefreshCw size={13} className={loading ? 'spin' : ''} />
             Refresh
@@ -177,15 +180,8 @@ export function Clusters() {
           <Network size={32} style={{ color: '#c0beb8' }} />
           <h2>No clusters yet</h2>
           <p>
-            You haven't added any Kafka clusters. Click below to provision
-            your first cluster or connect an external one.
+            You haven't added any Kafka clusters. Click above to provision your first cluster or connect an external one.
           </p>
-          <button
-            className="btn btn-primary-action"
-            onClick={() => navigate('/cluster-deployment')}
-          >
-            <Network size={13} /> Cluster Deployment
-          </button>
         </div>
       ) : (
         <section className="clusters-inventory">

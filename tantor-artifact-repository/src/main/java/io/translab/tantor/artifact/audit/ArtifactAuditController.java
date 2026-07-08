@@ -22,4 +22,10 @@ public class ArtifactAuditController {
         return Map.of("events", result.getContent(), "total", result.getTotalElements(),
                 "page", result.getNumber(), "totalPages", result.getTotalPages(), "integrity", service.integrity());
     }
+
+    @GetMapping("/{resourceId}")
+    public Map<String, Object> getByResource(@org.springframework.web.bind.annotation.PathVariable String resourceId) {
+        java.util.List<ArtifactAuditLog> logs = service.getLogsForResource(resourceId);
+        return Map.of("events", logs, "total", logs.size(), "integrity", service.integrity());
+    }
 }

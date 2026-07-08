@@ -18,6 +18,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
+import { AgentConnectivityModal } from '../components/AgentConnectivityModal';
 import './ClusterDeployment.css';
 
 type Host = {
@@ -383,6 +384,7 @@ export function ClusterDeployment() {
   const [kraftValidation, setKraftValidation] = useState<KraftValidationReport | null>(null);
   const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
 
   useEffect(() => {
     loadHosts();
@@ -1331,6 +1333,9 @@ export function ClusterDeployment() {
             <div className="cd-panel-title">
               <Network size={18} />
               <h2>Nodes and Roles</h2>
+              <button className="cd-ghost-btn" onClick={() => setShowEnrollModal(true)}>
+                Add node
+              </button>
               <button className="cd-ghost-btn" onClick={loadHosts}>
                 <RefreshCw size={14} className={loadingHosts ? 'spin' : ''} />
                 Refresh
@@ -1392,18 +1397,44 @@ export function ClusterDeployment() {
                     </div>
                   </div>
                   <div className="cd-role-buttons">
-                    {roleOptions.map(role => (
-                      <button
-                        key={role.id}
-                        className={(rolesByHost[host.id] || defaultRoleForMode) === role.id ? 'active' : ''}
-                        onClick={() => {
-                          setRolesByHost(prev => ({ ...prev, [host.id]: role.id }));
-                          setPrereqResults({});
-                        }}
-                      >
-                        {role.label}
-                      </button>
-                    ))}
+                    {roleOptions.filter(r => r.id !== 'separate').map(role => {
+                      const currentRole = rolesByHost[host.id] || defaultRoleForMode;
+                      let isActive = currentRole === role.id;
+
+                      if (deploymentMode === 'kraft') {
+                        if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
+                        if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
+                      }
+
+                      return (
+                        <label
+                          key={role.id}
+                          className={`cd-role-label ${isActive ? 'active' : ''}`}
+                        >
+                          <input 
+                            type="checkbox" 
+                            checked={isActive}
+                            onChange={() => {
+                              let nextRole = role.id;
+                              
+                              if (deploymentMode === 'kraft') {
+                                if (role.id === 'broker') {
+                                  if (currentRole === 'controller') nextRole = 'separate';
+                                  else if (currentRole === 'separate') nextRole = 'controller';
+                                } else if (role.id === 'controller') {
+                                  if (currentRole === 'broker') nextRole = 'separate';
+                                  else if (currentRole === 'separate') nextRole = 'broker';
+                                }
+                              }
+                              
+                              setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
+                              setPrereqResults({});
+                            }}
+                          />
+                          <span>{role.label}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                   <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
                     <FileText size={14} />
@@ -1576,6 +1607,12 @@ export function ClusterDeployment() {
             </button>
           </div>
         </div>
+      )}
+      {showEnrollModal && (
+        <AgentConnectivityModal onClose={() => {
+          setShowEnrollModal(false);
+          loadHosts();
+        }} />
       )}
       {configModalHost && (
         <div className="cd-modal-backdrop" onClick={() => setConfigModalHostId(null)}>

@@ -40,10 +40,7 @@ const navSections: NavSection[] = [
         label: 'Clusters',
         subItems: [
           { label: 'All Clusters', path: '/clusters' },
-          { label: 'Deploy Cluster', path: '/cluster-deployment' },
           { label: 'External Clusters', path: '/external-clusters' },
-          { label: 'Schema Registry', path: '/schema-registry' },
-          { label: 'Kafka Connect', path: '/kafka-connect' },
         ],
       },
       { icon: Server, label: 'Hosts', path: '/hosts' },
