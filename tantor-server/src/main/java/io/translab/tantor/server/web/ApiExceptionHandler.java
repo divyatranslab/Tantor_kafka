@@ -21,9 +21,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("Data integrity violation", ex);
+        String cause = ex.getRootCause() != null ? ex.getRootCause().getMessage() : ex.getMessage();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
             "message",
-            "The requested change conflicts with existing data. Check duplicate names or active host assignments."
+            "Data Conflict: " + cause
         ));
     }
 

@@ -177,10 +177,11 @@ export function Hosts() {
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${available ? 'available' : 'occupied'}`}>
-                        {available ? 'Available' : 'Occupied'}
+                      <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : 'occupied'}`}>
+                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' : 
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' : 'Available'}
                       </span>
-                      {!available && (
+                      {host.status !== 'AVAILABLE' && (
                         <div className="cluster-lock">
                           <span>{host.clusterName || 'Assigned cluster'}</span>
                           <code>{host.kafkaClusterId || host.clusterId}</code>
@@ -215,7 +216,7 @@ export function Hosts() {
                   </td>
                   <td>
                     {discoveryAgent ? (
-                      <span className="discovery-managed-label">Managed from Existing Clusters</span>
+                      <span className="discovery-managed-label">Managed from External Clusters</span>
                     ) : (
                     <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
                       <button
@@ -227,10 +228,12 @@ export function Hosts() {
                       </button>
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
-                          {host.status === 'OCCUPIED' ? (
+                          {host.status === 'OCCUPIED_INTERNAL' ? (
                             <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
-                          ) : (
+                          ) : host.status === 'AVAILABLE' ? (
                             <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
+                          ) : (
+                            <div className="menu-info">Externally Managed</div>
                           )}
                         </div>
                       )}

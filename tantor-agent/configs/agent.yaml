@@ -1,5 +1,5 @@
 agent:
-  host_id: "123e4567-e89b-12d3-a456-426614174002"
+  host_id: "123e4567-e89b-12d3-a456-426614174008"
   agent_name: "agent-node-149"
   server_url: "http://172.20.10.2:8443"
   cert_file: "/etc/tantor/certs/agent.crt"

@@ -2,7 +2,9 @@ package io.translab.tantor.server.service;
 
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.dto.ClusterOverviewDto;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -34,11 +36,42 @@ import java.util.UUID;
 public class ClusterOverviewService {
 
     private final ClusterRepository clusterRepository;
+    private final ExternalClusterRepository externalClusterRepository;
     private final KafkaAdminService kafkaAdminService;
 
     public ClusterOverviewDto getOverview(UUID clusterId) {
-        Cluster cluster = clusterRepository.findById(clusterId)
-                .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
+        String clusterName;
+        String kafkaVersion;
+        String originType;
+        String mode;
+        String installDirectory;
+        String configDirectory;
+        String dataDirectory;
+        String logDirectory;
+        
+        var internalOpt = clusterRepository.findById(clusterId);
+        if (internalOpt.isPresent()) {
+            Cluster cluster = internalOpt.get();
+            clusterName = cluster.getName();
+            kafkaVersion = cluster.getKafkaVersion();
+            originType = cluster.getOriginType();
+            mode = cluster.getMode();
+            installDirectory = cluster.getInstallDirectory();
+            configDirectory = cluster.getConfigDirectory();
+            dataDirectory = cluster.getDataDirectory();
+            logDirectory = cluster.getLogDirectory();
+        } else {
+            ExternalCluster ext = externalClusterRepository.findById(clusterId)
+                    .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
+            clusterName = ext.getName();
+            kafkaVersion = ext.getKafkaVersion();
+            originType = "EXTERNAL";
+            mode = ext.getKafkaMode();
+            installDirectory = ext.getInstallPath();
+            configDirectory = "";
+            dataDirectory = "";
+            logDirectory = ext.getLogDirs();
+        }
 
         AdminClient client = kafkaAdminService.getAdminClient(clusterId);
         List<String> warnings = new ArrayList<>();
@@ -65,24 +98,24 @@ public class ClusterOverviewService {
                     .map(stats -> stats.toDto(controller != null && stats.node.id() == controller.id(), avgReplicas, avgLeaders, brokerCount))
                     .toList();
 
-            String controllerType = controllerType(cluster);
+            String controllerType = "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
             return ClusterOverviewDto.builder()
-                    .clusterId(cluster.getId())
+                    .clusterId(clusterId)
                     .kafkaClusterId(kafkaClusterId)
-                    .name(cluster.getName())
-                    .kafkaVersion(cluster.getKafkaVersion())
+                    .name(clusterName)
+                    .kafkaVersion(kafkaVersion)
                     .controllerType(controllerType)
-                    .originType(cluster.getOriginType())
-                    .installDirectory(cluster.getInstallDirectory())
-                    .configDirectory(cluster.getConfigDirectory())
-                    .dataDirectory(cluster.getDataDirectory())
-                    .logDirectory(cluster.getLogDirectory())
+                    .originType(originType)
+                    .installDirectory(installDirectory)
+                    .configDirectory(configDirectory)
+                    .dataDirectory(dataDirectory)
+                    .logDirectory(logDirectory)
                     .generatedAt(OffsetDateTime.now())
                     .warnings(warnings)
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
                             .activeController(controller == null ? null : controller.id())
-                            .version(cluster.getKafkaVersion())
+                            .version(kafkaVersion)
                             .controllerType(controllerType)
                             .build())
                     .partitions(ClusterOverviewDto.PartitionSummary.builder()

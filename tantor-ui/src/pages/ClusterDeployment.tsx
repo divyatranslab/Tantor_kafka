@@ -1182,7 +1182,7 @@ export function ClusterDeployment() {
           </button>
           <button className="cd-choice-card" onClick={() => navigate('/external-clusters')}>
             <Database size={26} />
-            <span>Existing cluster</span>
+            <span>External Cluster</span>
             <small>Connect or discover an external Kafka cluster.</small>
           </button>
         </div>
@@ -1197,7 +1197,7 @@ export function ClusterDeployment() {
           <h1>{stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}</h1>
           <p>{stage === 'details'
             ? isAddNodeMode
-              ? 'Existing cluster details are loaded. Select new nodes and roles to add.'
+              ? 'External cluster details are loaded. Select new nodes and roles to add.'
               : 'Define the cluster, select nodes, and choose roles.'
             : 'Run prerequisites across every selected node before deployment.'}</p>
         </div>

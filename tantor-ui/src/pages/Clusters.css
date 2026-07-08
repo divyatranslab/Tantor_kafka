@@ -618,6 +618,12 @@
   border: 0.5px solid #e8b4b4;
 }
 
+.cluster-status-badge.degraded {
+  background: #fff6df;
+  color: #7a5407;
+  border: 0.5px solid #f0d796;
+}
+
 .cluster-status-badge.external {
   background: #f5f4f1;
   color: #5f5e5a;

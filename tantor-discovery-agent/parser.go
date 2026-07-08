@@ -139,20 +139,22 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	clusterName = fmt.Sprintf("%s-%s", clusterName, extractFirstPort(bootstrap))
 
 	return &DiscoveredCluster{
-		Name:             clusterName,
-		Hostname:         hostname,
-		BootstrapServers: bootstrap,
-		KafkaClusterID:   clusterID,
-		KafkaMode:        kafkaMode,
-		ProcessRoles:     processRoles,
-		Security:         security,
-		BrokerCount:      brokerCount,
-		NodeID:           nodeID,
-		IsRunning:        isRunning,
-		InstallPath:      installPath,
-		PropsFile:        propsFile,
-		LogDirs:          logDirs,
-		Environment:      defaultEnv,
+		Name:                clusterName,
+		Hostname:            hostname,
+		BootstrapServers:    bootstrap,
+		KafkaClusterID:      clusterID,
+		KafkaMode:           kafkaMode,
+		ProcessRoles:        processRoles,
+		Security:            security,
+		BrokerCount:         brokerCount,
+		NodeID:              nodeID,
+		IsRunning:           isRunning,
+		InstallPath:         installPath,
+		PropsFile:           propsFile,
+		LogDirs:             logDirs,
+		Environment:         defaultEnv,
+		Listeners:           props["listeners"],
+		AdvertisedListeners: props["advertised.listeners"],
 	}
 }
 

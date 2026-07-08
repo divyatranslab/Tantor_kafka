@@ -24,11 +24,11 @@ public class ArtifactAuditService {
     public void record(String actor, String action, String resourceId, String status,
                        Object oldValue, Object newValue, Object details, String ipAddress) {
         ArtifactAuditLog event = new ArtifactAuditLog();
-        event.setActor(actor == null || actor.isBlank() ? "system" : actor);
+        event.setActorUser(actor == null || actor.isBlank() ? "system" : actor);
         event.setCategory("PACKAGE");
         event.setAction(action);
         event.setResourceType("ARTIFACT");
-        event.setResourceId(resourceId);
+        event.setArtifactId(resourceId);
         event.setStatus(status);
         event.setDetails(json(details));
         event.setCreatedAt(OffsetDateTime.now());

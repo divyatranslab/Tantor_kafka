@@ -8,14 +8,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	
-)
+	"time"
+
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem")
 
 // =========================================================================
 // Payload sent to the Tantor server
 // =========================================================================
 
 type ExternalClusterPayload struct {
+	HostID           string `json:"hostId"`
+	AgentName        string `json:"agentName"`
 	Name             string `json:"name"`
 	Environment      string `json:"environment"`
 	BootstrapServers string `json:"bootstrapServers"`
@@ -27,8 +32,16 @@ type ExternalClusterPayload struct {
 	NodeID           int    `json:"nodeId"`
 	IsRunning        bool   `json:"isRunning"`
 	InstallPath      string `json:"installPath"`
-	LogDirs          string `json:"logDirs"`
-	Hostname         string `json:"hostname"`
+	LogDirs             string `json:"logDirs"`
+	Hostname            string `json:"hostname"`
+	Listeners           string `json:"listeners"`
+	AdvertisedListeners string `json:"advertisedListeners"`
+	ProcessRoles        string `json:"processRoles"`
+	CpuUsagePct         float64 `json:"cpuUsagePct"`
+	MemoryUsedMb        int64   `json:"memoryUsedMb"`
+	MemoryTotalMb       int64   `json:"memoryTotalMb"`
+	DiskUsedGb          int64   `json:"diskUsedGb"`
+	DiskTotalGb         int64   `json:"diskTotalGb"`
 }
 
 func externalAgentURL(serverURL, clusterName, suffix string) string {
@@ -52,8 +65,10 @@ func completeAgentTask(serverURL string, cluster DiscoveredCluster, hostname, st
 	}
 }
 
-func registerCluster(apiURL string, c DiscoveredCluster) bool {
+func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName string) bool {
 	payload := ExternalClusterPayload{
+		HostID:           hostID,
+		AgentName:        agentName,
 		Name:             c.Name,
 		Environment:      c.Environment,
 		BootstrapServers: c.BootstrapServers,
@@ -64,9 +79,26 @@ func registerCluster(apiURL string, c DiscoveredCluster) bool {
 		BrokerCount:      c.BrokerCount,
 		NodeID:           c.NodeID,
 		IsRunning:        c.IsRunning,
-		InstallPath:      c.InstallPath,
-		LogDirs:          c.LogDirs,
-		Hostname:         c.Hostname,
+		InstallPath:         c.InstallPath,
+		LogDirs:             c.LogDirs,
+		Hostname:            c.Hostname,
+		Listeners:           c.Listeners,
+		AdvertisedListeners: c.AdvertisedListeners,
+		ProcessRoles:        c.ProcessRoles,
+	}
+
+	// Fetch CPU, RAM, and Disk telemetry
+	cpuPercents, _ := cpu.Percent(time.Second, false)
+	if len(cpuPercents) > 0 {
+		payload.CpuUsagePct = cpuPercents[0]
+	}
+	if v, _ := mem.VirtualMemory(); v != nil {
+		payload.MemoryTotalMb = int64(v.Total / 1024 / 1024)
+		payload.MemoryUsedMb = int64(v.Used / 1024 / 1024)
+	}
+	if d, _ := disk.Usage("/"); d != nil {
+		payload.DiskTotalGb = int64(d.Total / 1024 / 1024 / 1024)
+		payload.DiskUsedGb = int64(d.Used / 1024 / 1024 / 1024)
 	}
 
 	body, err := json.Marshal(payload)

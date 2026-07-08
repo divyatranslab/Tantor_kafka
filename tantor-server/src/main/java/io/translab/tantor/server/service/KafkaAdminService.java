@@ -2,15 +2,16 @@ package io.translab.tantor.server.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.translab.tantor.server.domain.Cluster;
-import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 public class KafkaAdminService {
 
     private final ClusterRepository clusterRepository;
+    private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
 
@@ -47,10 +49,26 @@ public class KafkaAdminService {
      * a different listener than the rest of the cluster-management API.
      */
     public Properties getKafkaClientProperties(UUID clusterId) {
-        Cluster cluster = clusterRepository.findById(clusterId)
-                .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
-
+        Optional<io.translab.tantor.server.domain.Cluster> clusterOpt = clusterRepository.findById(clusterId);
+        Optional<ExternalCluster> extOpt = externalClusterRepository.findById(clusterId);
+        
+        if (clusterOpt.isEmpty() && extOpt.isEmpty()) {
+            throw new IllegalArgumentException("Cluster not found");
+        }
+        
         Properties props = new Properties();
+
+        if (extOpt.isPresent()) {
+            ExternalCluster ext = extOpt.get();
+            String servers = ext.getBootstrapServers();
+            props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, servers);
+            log.info("Using external bootstrap servers for cluster {}: {}", clusterId, servers);
+            props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+            props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
+            return props;
+        }
+
+        io.translab.tantor.server.domain.Cluster cluster = clusterOpt.get();
 
         if ("EXTERNAL".equals(cluster.getMode()) && cluster.getBootstrapServers() != null) {
             String servers = cluster.getBootstrapServers();
@@ -58,7 +76,7 @@ public class KafkaAdminService {
             log.info("Using external bootstrap servers for cluster {}: {}", clusterId, servers);
         } else {
             List<String> bootstrapServers = new ArrayList<>();
-            for (ClusterServiceAssignment svc : cluster.getServices()) {
+            for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
                 if ("broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole())) {
                     Host host = hostRepository.findById(svc.getHostId()).orElse(null);
                     if (host != null) {
@@ -103,8 +121,8 @@ public class KafkaAdminService {
 
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, String.join(",", bootstrapServers));
         }
-        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
-        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
+        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
 
         return props;
     }
@@ -116,62 +134,161 @@ public class KafkaAdminService {
 
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers.trim());
+        // Use a short timeout (5-10s) so the UI doesn't hang indefinitely for unreachable brokers
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "5000");
-        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "5000");
+        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
 
-        try (AdminClient client = AdminClient.create(props)) {
-            DescribeClusterResult clusterResult = client.describeCluster();
-            Collection<org.apache.kafka.common.Node> nodes = clusterResult.nodes().get();
-            org.apache.kafka.common.Node controller = clusterResult.controller().get();
-            String clusterId = clusterResult.clusterId().get();
+        Exception lastException = null;
+        for (int attempt = 1; attempt <= 1; attempt++) {
+            try (AdminClient client = AdminClient.create(props)) {
+                DescribeClusterResult clusterResult = client.describeCluster();
+                Collection<org.apache.kafka.common.Node> nodes = clusterResult.nodes().get();
+                org.apache.kafka.common.Node controller = clusterResult.controller().get();
+                String clusterId = clusterResult.clusterId().get();
 
-            int topicCount = 0;
-            try {
-                topicCount = client.listTopics(new ListTopicsOptions().listInternal(false)).names().get().size();
+                int topicCount = 0;
+                try {
+                    topicCount = client.listTopics(new ListTopicsOptions().listInternal(false)).names().get().size();
+                } catch (Exception e) {
+                    log.warn("Connected to bootstrap {}, but failed to count topics: {}", bootstrapServers, e.getMessage());
+                }
+
+                List<Map<String, Object>> finalNodes = new ArrayList<>();
+                Map<Integer, Map<String, Object>> nodeMap = new HashMap<>();
+
+                // 1. All nodes returned by describeCluster().nodes() are brokers.
+                for (org.apache.kafka.common.Node node : nodes) {
+                    Map<String, Object> nodeData = new HashMap<>();
+                    nodeData.put("id", node.id());
+                    nodeData.put("broker_id", String.valueOf(node.id()));
+                    nodeData.put("host", node.host());
+                    nodeData.put("port", node.port());
+                    nodeData.put("endpoint", node.host() + ":" + node.port());
+                    nodeData.put("rack", node.rack() == null ? "" : node.rack());
+                    nodeData.put("isBroker", true);
+                    nodeData.put("isController", false); // Default, might be updated below
+                    nodeMap.put(node.id(), nodeData);
+                }
+
+                // Try to resolve dedicated controller endpoints via broker configuration (controller.quorum.voters)
+                Map<Integer, String> voterEndpoints = new HashMap<>();
+                if (!nodes.isEmpty()) {
+                    org.apache.kafka.common.Node firstBroker = nodes.iterator().next();
+                    org.apache.kafka.common.config.ConfigResource resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(firstBroker.id()));
+                    try {
+                        org.apache.kafka.clients.admin.DescribeConfigsResult configResult = client.describeConfigs(java.util.Collections.singletonList(resource));
+                        java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> configs = configResult.all().get();
+                        org.apache.kafka.clients.admin.Config brokerConfig = configs.get(resource);
+                        if (brokerConfig != null) {
+                            org.apache.kafka.clients.admin.ConfigEntry quorumVoters = brokerConfig.get("controller.quorum.voters");
+                            if (quorumVoters != null && quorumVoters.value() != null) {
+                                // Format: 108@192.168.3.208:9096,109@192.168.3.149:9096
+                                for (String voterStr : quorumVoters.value().split(",")) {
+                                    String[] parts = voterStr.split("@");
+                                    if (parts.length == 2) {
+                                        try {
+                                            voterEndpoints.put(Integer.parseInt(parts[0]), parts[1]);
+                                        } catch (NumberFormatException ignored) {}
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to fetch broker config to resolve controller endpoints: {}", e.getMessage());
+                    }
+                }
+
+                // 2. Query KRaft quorum to find all controllers
+                try {
+                    org.apache.kafka.clients.admin.QuorumInfo quorumInfo = client.describeMetadataQuorum().quorumInfo().get();
+                    for (org.apache.kafka.clients.admin.QuorumInfo.ReplicaState voter : quorumInfo.voters()) {
+                        int voterId = voter.replicaId();
+                        if (nodeMap.containsKey(voterId)) {
+                            // It's a combined broker + controller
+                            nodeMap.get(voterId).put("isController", true);
+                        } else {
+                            // Dedicated controller not returned in describeCluster().nodes()
+                            String host = "unknown";
+                            int port = 0;
+                            
+                            // Map from controller.quorum.voters if available
+                            if (voterEndpoints.containsKey(voterId)) {
+                                String endpoint = voterEndpoints.get(voterId);
+                                String[] epParts = endpoint.split(":");
+                                if (epParts.length == 2) {
+                                    host = epParts[0];
+                                    try {
+                                        port = Integer.parseInt(epParts[1]);
+                                    } catch (NumberFormatException ignored) {}
+                                }
+                            }
+                            
+                            Map<String, Object> nodeData = new HashMap<>();
+                            nodeData.put("id", voterId);
+                            nodeData.put("broker_id", String.valueOf(voterId));
+                            nodeData.put("host", host);
+                            nodeData.put("port", port);
+                            nodeData.put("endpoint", host + ":" + port);
+                            nodeData.put("rack", "");
+                            nodeData.put("isBroker", false);
+                            nodeData.put("isController", true);
+                            nodeMap.put(voterId, nodeData);
+                        }
+                    }
+                } catch (Exception e) {
+                    // Fallback for Zookeeper clusters or older Kafka versions without describeMetadataQuorum
+                    // We just rely on the brokers.
+                    log.warn("Failed to fetch KRaft quorum info (likely Zookeeper mode): {}", e.getMessage());
+                }
+
+                finalNodes.addAll(nodeMap.values());
+                
+                // Deterministic sorting by node ID
+                finalNodes.sort((a, b) -> Integer.compare((Integer) a.get("id"), (Integer) b.get("id")));
+
+                long actualBrokerCount = finalNodes.stream().filter(n -> Boolean.TRUE.equals(n.get("isBroker"))).count();
+                if (actualBrokerCount == 0 || clusterId == null || clusterId.isBlank()) {
+                    throw new RuntimeException("Controller listener detected or invalid cluster data. Please use a broker bootstrap listener.");
+                }
+
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", true);
+                result.put("connected", true);
+                result.put("status", "CONNECTED");
+                result.put("bootstrapServers", bootstrapServers.trim());
+                result.put("bootstrap_servers", bootstrapServers.trim());
+                result.put("security_protocol", "PLAINTEXT");
+                result.put("mode", "auto-detected by Kafka client");
+                result.put("clusterId", clusterId);
+                result.put("kafka_cluster_id", clusterId == null ? "" : clusterId);
+                result.put("brokerCount", finalNodes.stream().filter(n -> Boolean.TRUE.equals(n.get("isBroker"))).count());
+                result.put("brokers", finalNodes);
+                result.put("topicCount", topicCount);
+                result.put("topic_count", topicCount);
+                result.put("topics", Collections.emptyList());
+                
+                Integer activeControllerId = controller == null ? null : controller.id();
+                result.put("controllerId", activeControllerId);
+                result.put("controller_id", activeControllerId);
+                result.put("activeControllerId", activeControllerId);
+                
+                result.put("kafka_version", "auto-detected by Kafka client");
+                result.put("socket_results", socketResults(bootstrapServers.trim()));
+                result.put("message", "Bootstrap connection successful.");
+                return result;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while testing bootstrap connection.");
             } catch (Exception e) {
-                log.warn("Connected to bootstrap {}, but failed to count topics: {}", bootstrapServers, e.getMessage());
+                lastException = e;
+                log.warn("Attempt {} to inspect bootstrap {} failed: {}", attempt, bootstrapServers, e.getMessage());
+                if (attempt < 3) {
+                    try { Thread.sleep(2000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
             }
-
-            List<Map<String, Object>> brokers = nodes.stream()
-                    .map(node -> {
-                        Map<String, Object> broker = new HashMap<>();
-                        broker.put("id", node.id());
-                        broker.put("broker_id", String.valueOf(node.id()));
-                        broker.put("host", node.host());
-                        broker.put("port", node.port());
-                        broker.put("endpoint", node.host() + ":" + node.port());
-                        broker.put("rack", node.rack() == null ? "" : node.rack());
-                        return broker;
-                    })
-                    .collect(Collectors.toList());
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("connected", true);
-            result.put("status", "CONNECTED");
-            result.put("bootstrapServers", bootstrapServers.trim());
-            result.put("bootstrap_servers", bootstrapServers.trim());
-            result.put("security_protocol", "PLAINTEXT");
-            result.put("mode", "auto-detected by Kafka client");
-            result.put("clusterId", clusterId);
-            result.put("kafka_cluster_id", clusterId == null ? "" : clusterId);
-            result.put("brokerCount", brokers.size());
-            result.put("brokers", brokers);
-            result.put("topicCount", topicCount);
-            result.put("topic_count", topicCount);
-            result.put("topics", Collections.emptyList());
-            result.put("controllerId", controller == null ? null : controller.id());
-            result.put("controller_id", controller == null ? null : controller.id());
-            result.put("kafka_version", "auto-detected by Kafka client");
-            result.put("socket_results", socketResults(bootstrapServers.trim()));
-            result.put("message", "Bootstrap connection successful.");
-            return result;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while testing bootstrap connection.");
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to connect to bootstrap servers: " + e.getMessage());
         }
+        
+        throw new RuntimeException("Failed to connect to bootstrap servers after 3 attempts: " + lastException.getMessage());
     }
 
     private List<Map<String, Object>> socketResults(String bootstrapServers) {
@@ -259,30 +376,66 @@ public class KafkaAdminService {
 
     public List<Map<String, Object>> listTopics(UUID clusterId) {
         AdminClient client = getAdminClient(clusterId);
-        try {
-            ListTopicsOptions options = new ListTopicsOptions().listInternal(false);
-            Set<String> topicNames = client.listTopics(options).names().get();
-            DescribeTopicsResult describeTopicsResult = client.describeTopics(topicNames);
-            Map<String, TopicDescription> descriptions = describeTopicsResult.allTopicNames().get();
+        Set<String> topicNames = null;
+        Exception lastException = null;
 
-            return descriptions.values().stream().map(desc -> {
-                Map<String, Object> map = new HashMap<>();
-                map.put("name", desc.name());
-                map.put("underReplicated", desc.partitions().stream().filter(p -> p.replicas().size() > p.isr().size()).count());
-                return map;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                ListTopicsOptions options = new ListTopicsOptions().listInternal(false);
+                topicNames = client.listTopics(options).names().get();
+                break;
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Attempt {} failed to list topics for cluster {}: {}", attempt, clusterId, e.getMessage());
+                refreshAdminClient(clusterId);
+                client = getAdminClient(clusterId);
+                try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+
+        if (topicNames == null) {
+            log.error("Failed to list topics after 3 attempts", lastException);
+            throw new RuntimeException("Failed to list topics: " + (lastException != null ? lastException.getMessage() : "timeout"));
+        }
+
+        try {
+            return topicNames.stream().map(name -> {
+                Map<String, Object> topic = new HashMap<>();
+                topic.put("name", name);
+                topic.put("isInternal", false);
+                return topic;
             }).collect(Collectors.toList());
-        } catch (InterruptedException | ExecutionException e) {
-            log.error("Failed to list topics", e);
-            refreshAdminClient(clusterId);
-            throw new RuntimeException("Failed to list topics: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("Failed to map topics", e);
+            throw new RuntimeException("Failed to map topics: " + e.getMessage());
         }
     }
 
     public io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto> listTopicsPaginated(UUID clusterId, int page, int size, String search, String sortBy, boolean includeInternal) {
         AdminClient client = getAdminClient(clusterId);
+        Set<String> allTopicNames = null;
+        Exception lastException = null;
+
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                ListTopicsOptions options = new ListTopicsOptions().listInternal(includeInternal);
+                allTopicNames = client.listTopics(options).names().get();
+                break;
+            } catch (Exception e) {
+                lastException = e;
+                log.warn("Attempt {} failed to list topics for cluster {}: {}", attempt, clusterId, e.getMessage());
+                refreshAdminClient(clusterId);
+                client = getAdminClient(clusterId);
+                try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+
+        if (allTopicNames == null) {
+            log.error("Failed to list topics after 3 attempts", lastException);
+            throw new RuntimeException("Failed to list topics: " + (lastException != null ? lastException.getMessage() : "timeout"));
+        }
+
         try {
-            ListTopicsOptions options = new ListTopicsOptions().listInternal(includeInternal);
-            Set<String> allTopicNames = client.listTopics(options).names().get();
 
             // Filter and Sort in memory
             List<String> filteredNames = allTopicNames.stream()

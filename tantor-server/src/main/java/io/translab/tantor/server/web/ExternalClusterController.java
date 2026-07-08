@@ -1,6 +1,7 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.service.ExternalClusterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -38,18 +39,22 @@ public class ExternalClusterController {
 
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/register")
     public ResponseEntity<Map<String, Object>> registerBootstrap(@RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
-        Cluster cluster = externalClusterService.registerBootstrapCluster(request);
+        ExternalCluster cluster = externalClusterService.registerBootstrapCluster(request);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName()));
     }
 
     @PostMapping("/api/v1/ui/external-clusters/discovery/report")
-    public ResponseEntity<Map<String, Object>> reportDiscovery(@RequestBody ExternalClusterService.ExternalDiscoveryReport request) {
+    public ResponseEntity<Map<String, Object>> reportDiscovery(
+            @RequestBody ExternalClusterService.ExternalDiscoveryReport request,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        String remoteIp = httpRequest.getRemoteAddr();
+        request.setIpAddresses("[\"" + remoteIp + "\"]");
         return ResponseEntity.ok(externalClusterService.recordDiscoveryReport(request));
     }
 
     @PostMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/connect")
     public ResponseEntity<Map<String, Object>> connectDiscovery(@PathVariable String discoveryKey) {
-        Cluster cluster = externalClusterService.connectDiscovery(discoveryKey);
+        ExternalCluster cluster = externalClusterService.connectDiscovery(discoveryKey);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName(), "status", "connected"));
     }
 

@@ -8,7 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "host_parcels")
+@Table(name = "kf_host_parcels")
 @Getter
 @Setter
 public class HostParcel {

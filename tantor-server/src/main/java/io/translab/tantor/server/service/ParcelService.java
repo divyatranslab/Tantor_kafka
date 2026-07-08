@@ -270,9 +270,24 @@ public class ParcelService {
         if (parcel.getErrorMsg() != null && !parcel.getErrorMsg().isBlank()) {
             details.put("error", parcel.getErrorMsg());
         }
-        auditService.record("PARCEL", "PARCEL_" + parcel.getAction() + "_" + status,
-                "HOST_PARCEL", parcel.getId().toString(), task.getClusterId(), status,
-                null, null, null, details);
+        String detailsJson = "{}";
+        try {
+            detailsJson = objectMapper.writeValueAsString(details);
+        } catch (Exception ignored) {}
+        
+        String actor = "system";
+        try {
+            actor = auditService.currentActor();
+            if (actor == null || actor.isBlank()) actor = "system";
+        } catch (Exception ignored) {}
+
+        hostParcelRepository.recordArtifactAudit(
+                actor,
+                "PARCEL_" + parcel.getAction() + "_" + status,
+                parcel.getArtifactId().toString(),
+                status,
+                detailsJson
+        );
     }
 
     private HostParcel copyEvent(HostParcel source, String action) {

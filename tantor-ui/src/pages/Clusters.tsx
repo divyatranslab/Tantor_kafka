@@ -31,6 +31,10 @@ interface ClusterInfo {
   sourceLabel?: string;
   accessLabel?: string;
   hosts?: ClusterHost[];
+  managedHostsCount?: number;
+  totalHostsCount?: number;
+  telemetry?: string;
+  lastAgentHeartbeat?: string;
 }
 
 export function Clusters() {
@@ -100,7 +104,11 @@ export function Clusters() {
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
   const statusLabel = (c: ClusterInfo) => {
-    if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'Connected' : c.status;
+    if (c.mode === 'EXTERNAL') {
+      if (c.status === 'SUCCESS') return 'Connected';
+      if (c.status === 'DEGRADED') return 'Degraded';
+      return c.status;
+    }
     if (c.status === 'SUCCESS') return 'Active';
     return c.status;
   };
@@ -252,16 +260,29 @@ export function Clusters() {
                         </div>
                       </td>
                       <td>
-                        <div className="disk-cell">
-                          <div>
-                            <HardDrive size={13} />
-                            <span>{diskLabel(host)}</span>
+                        {cluster.mode === 'EXTERNAL' ? (
+                          <div className="env-cell">
+                            <div>
+                              <span>Telemetry: {cluster.telemetry || 'None'}</span>
+                            </div>
+                            <small>{cluster.managedHostsCount || 0} / {cluster.totalHostsCount || cluster.nodeCount || 0} hosts</small>
                           </div>
-                          {progress > 0 && <span className="disk-meter"><i style={{ width: `${progress}%` }} /></span>}
-                        </div>
+                        ) : (
+                          <div className="disk-cell">
+                            <div>
+                              <HardDrive size={13} />
+                              <span>{diskLabel(host)}</span>
+                            </div>
+                            {progress > 0 && <span className="disk-meter"><i style={{ width: `${progress}%` }} /></span>}
+                          </div>
+                        )}
                       </td>
                       <td>
-                        <span className="heartbeat-text">{formatHeartbeat(host?.lastHeartbeat)}</span>
+                        <span className="heartbeat-text">
+                          {cluster.mode === 'EXTERNAL' 
+                            ? formatHeartbeat(cluster.lastAgentHeartbeat) 
+                            : formatHeartbeat(host?.lastHeartbeat)}
+                        </span>
                       </td>
                       <td>
                         <div className="source-cell">
@@ -271,7 +292,10 @@ export function Clusters() {
                           <span className={`access-pill ${cluster.managementLevel === 'BOOTSTRAP_ONLY' ? 'metadata' : 'managed'}`}>
                             {managementLabel(cluster)}
                           </span>
-                          <span className={`cluster-status-badge ${statusClass(cluster)}`}>
+                          <span 
+                            className={`cluster-status-badge ${statusClass(cluster)}`}
+                            title={cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined}
+                          >
                             {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
                               <RefreshCw size={11} className="spin" />
                             )}
@@ -290,7 +314,7 @@ export function Clusters() {
                           </button>
                           {openMenuId === cluster.id && (
                             <div className="cluster-action-menu">
-                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster)}>
                                 <RotateCcw size={14} />
                                 Rolling restart
                               </button>
@@ -298,7 +322,7 @@ export function Clusters() {
                                 <Settings size={14} />
                                 Configuration change
                               </button>
-                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster) || cluster.mode === 'EXTERNAL'}>
+                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster)}>
                                 <ServerCog size={14} />
                                 Add node
                               </button>

@@ -43,6 +43,9 @@ public class HostController {
 
     private final HostRepository hostRepository;
     private final ClusterRepository clusterRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
+    private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final TaskRepository taskRepository;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
@@ -314,7 +317,54 @@ public class HostController {
         Optional<Cluster> activeCluster = host.getClusterId() == null
                 ? Optional.empty()
                 : clusterRepository.findById(host.getClusterId()).filter(cluster -> !"DELETED".equalsIgnoreCase(cluster.getStatus()));
-        summary.put("available", activeCluster.isEmpty());
+                
+        boolean hasExternalCluster = false;
+        UUID extClusterId = null;
+        String extClusterName = "External Cluster";
+
+        String hostIpRaw = host.getIpAddresses() != null ? host.getIpAddresses().replace("[", "").replace("]", "").replace("\"", "").trim() : "";
+        String[] hostIps = hostIpRaw.isEmpty() ? new String[0] : hostIpRaw.split(",");
+
+        List<io.translab.tantor.server.domain.ExternalClusterNode> allExternalNodes = externalClusterNodeRepository.findAll();
+        for (io.translab.tantor.server.domain.ExternalClusterNode n : allExternalNodes) {
+            if ((host.getHostname() != null && host.getHostname().equals(n.getHost())) || 
+                (hostIps.length > 0 && java.util.Arrays.asList(hostIps).contains(n.getHost()))) {
+                hasExternalCluster = true;
+                extClusterId = n.getClusterId();
+                if (extClusterId != null) {
+                    extClusterName = externalClusterRepository.findById(extClusterId)
+                        .map(io.translab.tantor.server.domain.ExternalCluster::getName)
+                        .orElse("External Cluster");
+                }
+                break;
+            }
+        }
+
+        if (hasExternalCluster) {
+            summary.put("available", false);
+            summary.put("status", "OCCUPIED_EXTERNAL");
+            summary.put("clusterName", extClusterName);
+            if (extClusterId != null) {
+                summary.put("clusterId", extClusterId.toString());
+                
+                // Override agent details with Discovery Agent if it exists for this cluster
+                List<io.translab.tantor.server.domain.DiscoveryAgent> discAgents = discoveryAgentRepository.findByClusterId(extClusterId);
+                if (discAgents != null && !discAgents.isEmpty()) {
+                    io.translab.tantor.server.domain.DiscoveryAgent discAgent = discAgents.get(0);
+                    summary.put("agentStatus", discAgent.getStatus());
+                    summary.put("agentType", "KAFKA_DISCOVERY");
+                    summary.put("agentVersion", discAgent.getVersion());
+                    summary.put("agentPath", "/srv/tantor-agent/tantor-discovery-agent-linux");
+                }
+            }
+        } else if (activeCluster.isPresent() || "OCCUPIED".equalsIgnoreCase(effectiveStatus)) {
+            summary.put("available", false);
+            summary.put("status", "OCCUPIED_INTERNAL");
+        } else {
+            summary.put("available", true);
+            summary.put("status", "AVAILABLE");
+        }
+        
         activeCluster.ifPresent(cluster -> {
             summary.put("clusterId", cluster.getId().toString());
             summary.put("clusterName", cluster.getName());

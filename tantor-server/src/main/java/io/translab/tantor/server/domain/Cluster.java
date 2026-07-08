@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "clusters")
+@Table(name = "kf_clusters")
 @Data
 public class Cluster {
 

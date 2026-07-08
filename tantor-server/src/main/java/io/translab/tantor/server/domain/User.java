@@ -7,7 +7,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "users")
+@Table(name = "kf_users")
 @Getter
 @Setter
 public class User {
