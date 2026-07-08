@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -32,28 +33,16 @@ type DiscoveredCluster struct {
 func runDiscovery(serverURL, hostname, environment string, scanPaths []string, hostID, agentName string) []DiscoveredCluster {
 	// Step 1: build a set of running Kafka PIDs and their server.properties.
 	runningProps := getRunningKafkaPropsFiles()
-	fmt.Printf("Running Kafka processes: %d\n", len(runningProps))
-	for props := range runningProps {
+	fmt.Printf("Running Kafka processes/services: %d\n", len(runningProps))
+	for _, props := range runningProps {
 		fmt.Printf("  - %s\n", props)
 	}
 
 	// Step 2: scan the filesystem for all properties files.
 	allProps := findAllConfigProperties(scanPaths)
 
-	// MERGE running properties into allProps so we never miss a running cluster
-	// even if it's installed in a strange path that wasn't in scanPaths
-	for propsFile := range runningProps {
-		found := false
-		for _, p := range allProps {
-			if p == propsFile {
-				found = true
-				break
-			}
-		}
-		if !found {
-			allProps = append(allProps, propsFile)
-		}
-	}
+	// Since runningProps are now raw command lines / ExecStarts, we don't merge them directly into allProps.
+	// allProps relies purely on filesystem scanning now, which is safer.
 
 	fmt.Printf("\nFound %d config file(s) to process:\n", len(allProps))
 	for _, p := range allProps {
@@ -70,7 +59,22 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 	seen := map[string]bool{}
 
 	for _, propsFile := range allProps {
-		isRunning := runningProps[propsFile]
+		isRunning := false
+		baseProps := filepath.Base(propsFile)
+		dirName := filepath.Base(filepath.Dir(propsFile)) // e.g. "config" or "kraft"
+		
+		for _, cmdline := range runningProps {
+			if strings.Contains(cmdline, propsFile) {
+				isRunning = true
+				break
+			}
+			// Check if it's referenced relatively (e.g. config/server.properties)
+			if strings.Contains(cmdline, filepath.Join(dirName, baseProps)) {
+				isRunning = true
+				break
+			}
+		}
+
 		dc := parseServerProperties(propsFile, isRunning, hostname, environment)
 		if dc == nil {
 			continue

@@ -45,6 +45,7 @@ public class HostController {
     private final ClusterRepository clusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
     private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
+    private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final TaskRepository taskRepository;
     private final io.translab.tantor.server.service.ActivityAlertService activityAlertService;
     private final HostStatusService hostStatusService;
@@ -345,6 +346,16 @@ public class HostController {
             summary.put("clusterName", extClusterName);
             if (extClusterId != null) {
                 summary.put("clusterId", extClusterId.toString());
+                
+                // Override agent details with Discovery Agent if it exists for this cluster
+                List<io.translab.tantor.server.domain.DiscoveryAgent> discAgents = discoveryAgentRepository.findByClusterId(extClusterId);
+                if (discAgents != null && !discAgents.isEmpty()) {
+                    io.translab.tantor.server.domain.DiscoveryAgent discAgent = discAgents.get(0);
+                    summary.put("agentStatus", discAgent.getStatus());
+                    summary.put("agentType", "KAFKA_DISCOVERY");
+                    summary.put("agentVersion", discAgent.getVersion());
+                    summary.put("agentPath", "/srv/tantor-agent/tantor-discovery-agent-linux");
+                }
             }
         } else if (activeCluster.isPresent() || "OCCUPIED".equalsIgnoreCase(effectiveStatus)) {
             summary.put("available", false);

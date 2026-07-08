@@ -134,11 +134,12 @@ public class KafkaAdminService {
 
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers.trim());
-        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
+        // Use a short timeout (5-10s) so the UI doesn't hang indefinitely for unreachable brokers
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "5000");
+        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "10000");
 
         Exception lastException = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= 1; attempt++) {
             try (AdminClient client = AdminClient.create(props)) {
                 DescribeClusterResult clusterResult = client.describeCluster();
                 Collection<org.apache.kafka.common.Node> nodes = clusterResult.nodes().get();

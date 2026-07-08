@@ -239,7 +239,7 @@ export function ExternalClusters() {
           {testing && (
             <div className="inspection-loading">
               <RefreshCw size={15} className="spin" />
-              Searching for discovery agent heartbeat matching this bootstrap URL...
+              Testing direct connection via Kafka Admin API...
             </div>
           )}
 

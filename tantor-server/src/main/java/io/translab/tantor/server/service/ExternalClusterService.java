@@ -60,8 +60,22 @@ public class ExternalClusterService {
         String query = bootstrapServers.trim();
         String queryHost = extractHostFromBootstrap(query);
 
-        Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(query);
+        Map<String, Object> result = new LinkedHashMap<>();
+        boolean adminSuccess = false;
+        
+        try {
+            // 1. PRIMARY: Try connecting directly via Kafka Admin API FIRST
+            Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(query);
+            result.putAll(adminData);
+            adminSuccess = true;
+        } catch (Exception e) {
+            // It failed. Don't throw yet, check if agent is enrolled as fallback.
+            result.put("connected", false);
+            result.put("message", e.getMessage());
+        }
 
+        // 2. Check if a Discovery Agent has already reported this cluster
+        boolean agentFound = false;
         for (Map.Entry<String, ExternalDiscoveryReport> entry : pendingDiscoveries.entrySet()) {
             ExternalDiscoveryReport report = entry.getValue();
             boolean matchBootstrap = report.getBootstrapServers() != null && report.getBootstrapServers().contains(query);
@@ -69,45 +83,45 @@ public class ExternalClusterService {
             boolean matchIp = report.getIpAddresses() != null && report.getIpAddresses().contains(queryHost);
             
             if (matchBootstrap || matchHostname || matchIp) {
-                Map<String, Object> result = new LinkedHashMap<>(adminData);
-                result.put("connected", true); // Ensure connection holds true
-                result.put("success", true);
-                result.put("status", "CONNECTED");
+                agentFound = true;
                 result.put("agentFound", true);
                 result.put("discoveryKey", entry.getKey());
-                result.put("bootstrapServers", report.getBootstrapServers());
-                result.put("bootstrap_servers", report.getBootstrapServers());
+                result.put("agentType", "KAFKA_DISCOVERY");
                 
-                // prefer native kafka cluster id if available, otherwise agent's
-                if (!result.containsKey("cluster_id")) {
+                // If AdminClient failed, use the Agent's data as a fallback to show in UI
+                if (!adminSuccess) {
+                    result.put("connected", true); 
+                    result.put("success", true);
+                    result.put("status", "CONNECTED");
+                    result.put("bootstrapServers", report.getBootstrapServers());
+                    result.put("bootstrap_servers", report.getBootstrapServers());
                     result.put("clusterId", report.getKafkaClusterId());
                     result.put("cluster_id", report.getKafkaClusterId());
-                } else {
-                    result.put("clusterId", result.get("cluster_id"));
-                }
-                
-                result.put("kafkaVersion", blankToDefault(report.getKafkaVersion(), "Unknown"));
-                result.put("kafka_version", blankToDefault(report.getKafkaVersion(), "Unknown"));
-                result.put("kafkaMode", blankToDefault(report.getKafkaMode(), "Unknown"));
-                result.put("mode", blankToDefault(report.getKafkaMode(), "Unknown"));
-                
-                if (!result.containsKey("broker_count")) {
+                    result.put("kafkaVersion", blankToDefault(report.getKafkaVersion(), "Unknown"));
+                    result.put("kafka_version", blankToDefault(report.getKafkaVersion(), "Unknown"));
+                    result.put("kafkaMode", blankToDefault(report.getKafkaMode(), "Unknown"));
+                    result.put("mode", blankToDefault(report.getKafkaMode(), "Unknown"));
                     result.put("brokerCount", report.getBrokerCount());
+                    result.put("topics", java.util.Collections.emptyList());
+                    result.put("security_protocol", blankToDefault(report.getSecurity(), "PLAINTEXT"));
+                    result.put("security", blankToDefault(report.getSecurity(), "PLAINTEXT"));
+                    result.put("message", "Discovered via Tantor Agent. (Direct Admin API connection failed)");
                 } else {
-                    result.put("brokerCount", result.get("broker_count"));
+                    // Just add the agent message to the successful admin data
+                    result.put("message", "Direct Connection successful. Discovery Agent also enrolled.");
                 }
-                
-                result.put("topics", java.util.Collections.emptyList());
-                result.put("security_protocol", blankToDefault(report.getSecurity(), "PLAINTEXT"));
-                result.put("security", blankToDefault(report.getSecurity(), "PLAINTEXT"));
-                result.put("agentType", "KAFKA_DISCOVERY");
-                result.put("message", "Discovered via Tantor Agent.");
-                return result;
+                break;
             }
         }
         
-        Map<String, Object> result = new HashMap<>(adminData);
-        result.put("agentFound", false);
+        if (!agentFound) {
+            result.put("agentFound", false);
+            // If admin also failed and no agent found, rethrow to trigger the UI error properly
+            if (!adminSuccess) {
+                throw new IllegalArgumentException(String.valueOf(result.getOrDefault("message", "Admin connection failed and no agent enrolled.")));
+            }
+        }
+
         return result;
     }
 
@@ -145,18 +159,7 @@ public class ExternalClusterService {
 
         // Point 2: Ensure the discovery agent is actively running if required
         if (!Boolean.TRUE.equals(inspection.get("agentFound"))) {
-            ExternalDiscoveryReport report = new ExternalDiscoveryReport();
-            report.setName(request.getName() != null && !request.getName().isBlank() ? request.getName() : "cluster-" + System.currentTimeMillis());
-            report.setEnvironment(request.getEnvironment());
-            report.setBootstrapServers(bootstrap);
-            report.setKafkaClusterId((String) inspection.getOrDefault("clusterId", inspection.get("kafka_cluster_id")));
-            report.setBrokerCount((Integer) inspection.getOrDefault("brokerCount", inspection.get("broker_count")));
-            report.setSecurity((String) inspection.get("security_protocol"));
-            report.setKafkaVersion((String) inspection.get("kafka_version"));
-            report.setKafkaMode((String) inspection.get("mode"));
-            report.setRunning(true);
-            
-            savedCluster = upsertDiscoveryCluster(report);
+            throw new IllegalArgumentException("Discovery Agent is not enrolled for this cluster. A Tantor Discovery Agent must be deployed first.");
         } else {
             String discoveryKey = String.valueOf(inspection.get("discoveryKey"));
             savedCluster = connectDiscovery(discoveryKey);
@@ -197,6 +200,7 @@ public class ExternalClusterService {
         Optional<ExternalCluster> connectedCluster = findExternalCluster(report.getKafkaClusterId(), report.getName(), report.getBootstrapServers().trim());
         if (connectedCluster.isPresent()) {
             ExternalCluster cluster = upsertDiscoveryCluster(report);
+            upsertDiscoveryAgent(report, cluster);
             String targetHost = report.getHostname() != null ? report.getHostname() : extractHostFromBootstrap(report.getBootstrapServers());
             try {
                 String resolvedIp = java.net.InetAddress.getByName(targetHost).getHostAddress();

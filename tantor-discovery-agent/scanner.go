@@ -12,45 +12,38 @@ import (
 // Running-process detection
 // =========================================================================
 
-func getRunningKafkaPropsFiles() map[string]bool {
-	result := make(map[string]bool)
+func getRunningKafkaPropsFiles() []string {
+	var result []string
 
-	out, err := exec.Command("pgrep", "-f", "kafka.Kafka").Output()
-	if err != nil {
-		// also try kafka.server.KafkaServer
-		out, err = exec.Command("pgrep", "-f", "kafka.server.KafkaServer").Output()
-	}
-	if err != nil {
-		// KRaft mode in Kafka 3.0+ uses kafka.server.KafkaRaftServer
-		out, err = exec.Command("pgrep", "-f", "kafka.server.KafkaRaftServer").Output()
-	}
-	if err != nil || len(strings.TrimSpace(string(out))) == 0 {
-		return result
-	}
-
-	for _, pid := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		pid = strings.TrimSpace(pid)
-		if pid == "" {
-			continue
-		}
-		// Read /proc/<pid>/cmdline for the full command line
-		cmdline := readProcessCmdline(pid)
-		if cmdline == "" {
-			continue
-		}
-		for _, token := range strings.Fields(cmdline) {
-			if strings.HasSuffix(token, ".properties") {
-				// Resolve to absolute path
-				abs, err := filepath.Abs(token)
-				if err == nil {
-					result[abs] = true
-				} else {
-					result[token] = true
-				}
+	// 1. Try to find running processes via pgrep java
+	out, _ := exec.Command("pgrep", "java").Output()
+	if len(strings.TrimSpace(string(out))) > 0 {
+		for _, pid := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			pid = strings.TrimSpace(pid)
+			if pid == "" {
+				continue
 			}
+			cmdline := readProcessCmdline(pid)
+			if cmdline == "" || (!strings.Contains(strings.ToLower(cmdline), "kafka") && !strings.Contains(strings.ToLower(cmdline), "server.properties")) {
+				continue
+			}
+			result = append(result, cmdline)
 		}
 	}
+
+	// 2. Try to find running processes via systemd
+	systemdProps := getSystemdRunningKafkaPropsFiles()
+	result = append(result, systemdProps...)
+
 	return result
+}
+
+func readProcessCwd(pid string) string {
+	cwd, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid))
+	if err == nil {
+		return cwd
+	}
+	return ""
 }
 
 func readProcessCmdline(pid string) string {
@@ -66,6 +59,34 @@ func readProcessCmdline(pid string) string {
 		return string(out)
 	}
 	return ""
+}
+
+func getSystemdRunningKafkaPropsFiles() []string {
+	var result []string
+	if err := exec.Command("systemctl", "--version").Run(); err != nil {
+		return result
+	}
+
+	out1, _ := exec.Command("systemctl", "list-units", "--type=service", "--state=running", "--no-legend", "--plain").Output()
+	
+	lines := strings.Split(string(out1), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		unit := fields[0]
+
+		execStartOut, _ := exec.Command("systemctl", "show", unit, "--property=ExecStart", "--value").Output()
+		execStartStr := string(execStartOut)
+		
+		if !strings.Contains(strings.ToLower(execStartStr), "kafka") && !strings.Contains(strings.ToLower(execStartStr), "server.properties") && !strings.Contains(strings.ToLower(execStartStr), "broker.properties") {
+			continue
+		}
+
+		result = append(result, execStartStr)
+	}
+	return result
 }
 
 // =========================================================================
