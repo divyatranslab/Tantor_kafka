@@ -68,3 +68,22 @@ export async function cleanupTask(clusterId: string, taskId: string): Promise<an
     method: 'POST',
   });
 }
+
+// ── Security - ACLs ──────────────────────────────────
+export const getAcls = (clusterId: string, params?: { principal?: string; resource_type?: string; resource_name?: string }) => {
+  const query = new URLSearchParams(params as any).toString();
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/security/acls${query ? '?' + query : ''}`);
+};
+
+export const createAcl = (clusterId: string, data: any) =>
+  fetchWithAuth(`/api/v1/clusters/${clusterId}/security/acls`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const deleteAcl = (clusterId: string, data: any) =>
+  fetchWithAuth(`/api/v1/clusters/${clusterId}/security/acls`, {
+    method: 'DELETE',
+    body: JSON.stringify(data),
+  });
+

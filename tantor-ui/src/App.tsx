@@ -28,6 +28,7 @@ import { TopNavbar } from './components/TopNavbar';
 import { ClusterNodes } from './pages/ClusterNodes';
 import { JobsList } from './pages/JobsList';
 import { JobStatusPage } from './pages/JobStatusPage';
+import { ClusterSecurity } from './pages/ClusterSecurity';
 import './App.css';
 
 function App() {
@@ -44,8 +45,6 @@ function App() {
               <Route path="/clusters" element={<Clusters />} />
               <Route path="/cluster-deployment" element={<ClusterDeployment />} />
               <Route path="/external-clusters" element={<ExternalClusters />} />
-              <Route path="/schema-registry" element={<SchemaRegistry />} />
-              <Route path="/kafka-connect" element={<KafkaConnect />} />
               <Route path="/clusters/:id" element={<ClusterDetails />}>
                 <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="overview" element={<ClusterOverview />} />
@@ -58,6 +57,9 @@ function App() {
                 <Route path="config" element={<ConfigEditor />} />
                 <Route path="actions" element={<ClusterActions />} />
                 <Route path="logs" element={<DeploymentLogs />} />
+                <Route path="security" element={<ClusterSecurity />} />
+                <Route path="schema-registry" element={<SchemaRegistry />} />
+                <Route path="kafka-connect" element={<KafkaConnect />} />
               </Route>
               <Route path="/artifacts" element={<Artifacts />} />
               <Route path="/jobs" element={<JobsList />} />

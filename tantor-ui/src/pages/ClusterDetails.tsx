@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import './ClusterDetails.css';
 
@@ -105,6 +105,9 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/security`, icon: Shield, label: 'Security', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
   ];
 

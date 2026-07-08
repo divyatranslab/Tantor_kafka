@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useCluster } from '../contexts/ClusterContext';
+import { useParams } from 'react-router-dom';
 import { Eye, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import './DataServiceTabs.css';
 
@@ -29,7 +29,7 @@ const emptySchema = `{
 }`;
 
 export function SchemaRegistry() {
-  const { activeClusterId: id } = useCluster();
+  const { id } = useParams<{ id: string }>();
   const [summary, setSummary] = useState<SchemaSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
