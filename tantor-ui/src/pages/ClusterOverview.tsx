@@ -30,7 +30,6 @@ interface BrokerRow {
   replicas: number;
   replicaSkewPct: number | null;
   leaders: number;
-  leaders: number;
   leaderSkewPct: number | null;
 }
 
@@ -62,7 +61,6 @@ interface ClusterOverviewResponse {
   generatedAt: string;
   warnings: string[];
   uptime: OverviewSummary;
-  partitions: PartitionSummary;
   partitions: PartitionSummary;
   brokers: BrokerRow[];
   controllers: ControllerRow[];

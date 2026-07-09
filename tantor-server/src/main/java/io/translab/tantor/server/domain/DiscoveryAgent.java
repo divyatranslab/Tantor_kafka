@@ -33,6 +33,9 @@ public class DiscoveryAgent {
     @Column(name = "version")
     private String version;
 
+    @Column(name = "can_execute_tasks")
+    private Boolean canExecuteTasks;
+
     @Column(name = "cluster_id")
     private UUID clusterId;
 

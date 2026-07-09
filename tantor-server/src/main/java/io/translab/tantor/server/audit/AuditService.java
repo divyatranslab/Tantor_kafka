@@ -44,7 +44,7 @@ public class AuditService {
                          UUID clusterId, String status, Object oldValue, Object newValue,
                          Object approval, Object details) {
         AuditLog event = new AuditLog();
-        event.setActorUser(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
+        event.setUserName(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
         event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
@@ -56,7 +56,22 @@ public class AuditService {
         event.setDetails(json(details));
         event.setIpAddress(ipOverride == null ? requestIp() : ipOverride);
         event.setRequestId(requestId());
-        event.setCreatedAt(Instant.now());
+        event.setCreatedTime(Instant.now());
+
+        if ("ARTIFACT".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
+            try {
+                event.setArtifactId(UUID.fromString(event.getResourceId()));
+                java.util.List<Object[]> hostInfo = repository.findArtifactHostInfo(event.getResourceId());
+                if (hostInfo != null && !hostInfo.isEmpty()) {
+                    Object[] row = hostInfo.get(0);
+                    if (row[0] != null) event.setHostIp(row[0].toString());
+                    if (row[1] != null) event.setHostName(row[1].toString());
+                }
+            } catch (Exception e) {
+                // Ignore invalid UUID or DB errors
+            }
+        }
+
         return repository.saveAndFlush(event).getId();
     }
 
@@ -69,19 +84,19 @@ public class AuditService {
             equalIgnoreCase(predicates, cb, root.get("action"), action);
             equalIgnoreCase(predicates, cb, root.get("status"), status);
             equalIgnoreCase(predicates, cb, root.get("resourceType"), resourceType);
-            if (actor != null && !actor.isBlank()) predicates.add(cb.equal(root.get("actor"), actor));
-            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), from));
-            if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), to));
+            if (actor != null && !actor.isBlank()) predicates.add(cb.equal(root.get("userName"), actor));
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("createdTime"), from));
+            if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdTime"), to));
             if (search != null && !search.isBlank()) {
                 String like = "%" + search.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("resourceId")), like),
-                        cb.like(cb.lower(root.get("actor")), like),
+                        cb.like(cb.lower(root.get("userName")), like),
                         cb.like(cb.lower(root.get("action")), like),
                         cb.like(cb.lower(root.get("resourceType")), like)));
             }
             return cb.and(predicates.toArray(Predicate[]::new));
-        }, PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdAt", "id")));
+        }, PageRequest.of(Math.max(page, 0), safeSize, Sort.by(Sort.Direction.DESC, "createdTime", "id")));
     }
 
     public Map<String, Object> summary() {

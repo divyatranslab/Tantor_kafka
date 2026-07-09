@@ -26,7 +26,7 @@ class AuditServiceTest {
         var captor = org.mockito.ArgumentCaptor.forClass(AuditLog.class);
         verify(repository).saveAndFlush(captor.capture());
         AuditLog event = captor.getValue();
-        assertThat(event.getActorUser()).isEqualTo("operator-1");
+        assertThat(event.getUserName()).isEqualTo("operator-1");
         assertThat(event.getDetails()).contains("approved");
         assertThat(service.verifyIntegrity()).isEqualTo("NOT_ENABLED");
     }

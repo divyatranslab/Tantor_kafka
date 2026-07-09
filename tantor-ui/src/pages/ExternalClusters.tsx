@@ -5,8 +5,8 @@ import {
   ChevronDown,
   CheckCircle2,
   Copy,
-  ExternalLink,
   Globe,
+  Play,
   RefreshCw,
   Server,
   Terminal,
@@ -27,7 +27,7 @@ interface BootstrapResult {
   cluster_id?: string;
   kafka_cluster_id?: string;
   brokerCount?: number;
-  brokers?: unknown[];
+  brokers?: any[];
   topicCount?: number;
   topic_count?: number;
   topics?: unknown[];
@@ -154,8 +154,7 @@ export function ExternalClusters() {
         ...form,
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
         brokerCount: bootstrapResult?.brokerCount ?? bootstrapResult?.brokers?.length ?? 0,
-        agentFound: bootstrapResult?.agentFound ?? false,
-        discoveryKey: bootstrapResult?.discoveryKey || null,
+        agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
         security: bootstrapResult?.security || bootstrapResult?.security_protocol || 'PLAINTEXT',
         brokers: bootstrapResult?.brokers || [],
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
@@ -280,7 +279,6 @@ export function ExternalClusters() {
               </div>
             </label>
             
-            {/* Security Settings Section */}
             <div className="span-2" style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
               <h3 style={{ fontSize: '14px', fontWeight: 600, color: '#334155', marginBottom: '12px' }}>Security Configuration</h3>
             </div>
@@ -421,23 +419,31 @@ export function ExternalClusters() {
                 <div>
                   <strong>{form.name || 'External Kafka cluster'}</strong>
                   <span>{(bootstrapResult.success ?? bootstrapResult.connected) ? 'Bootstrap connection verified' : 'Bootstrap connection failed'}</span>
-                  {!(bootstrapResult.success ?? bootstrapResult.connected) && bootstrapResult.message && (
-                    <div style={{ fontSize: '12px', marginTop: '4px', color: '#ef4444' }}>
-                      {bootstrapResult.message}
-                    </div>
-                  )}
                 </div>
               </div>
-              <div className="inspection-facts">
-                <div><span>Cluster ID</span><strong title={bootstrapResult.cluster_id || bootstrapResult.kafka_cluster_id || bootstrapResult.clusterId}>{bootstrapResult.cluster_id || bootstrapResult.kafka_cluster_id || bootstrapResult.clusterId || '-'}</strong></div>
-                <div><span>Mode</span><strong>{bootstrapResult.kafkaMode || bootstrapResult.mode || 'Unknown'}</strong></div>
-                <div><span>Kafka version</span><strong>{bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Unknown'}</strong></div>
-                <div><span>Brokers</span><strong>{bootstrapResult.brokerCount ?? bootstrapResult.brokers?.length ?? 0}</strong></div>
-                <div><span>Controller</span><strong>{bootstrapResult.activeControllerId ?? bootstrapResult.controller_id ?? bootstrapResult.controllerId ?? '-'}</strong></div>
-                <div><span>Topics</span><strong>{bootstrapResult.topic_count ?? bootstrapResult.topicCount ?? 0}</strong></div>
-                <div><span>Security</span><strong>{bootstrapResult.security || bootstrapResult.security_protocol || 'PLAINTEXT'}</strong></div>
+
+              <div className="bootstrap-summary">
+                <div className="summary-item"><Server size={14}/> <span>{bootstrapResult.brokers?.length ?? bootstrapResult.brokerCount ?? 0} broker(s) detected</span></div>
+                <div className="summary-item">
+                   <CheckCircle2 size={14}/> 
+                   <span>
+                      Version {(() => {
+                        const v = bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Unknown';
+                        return v === 'auto-detected by Kafka client' ? 'Auto-detected' : v;
+                      })()} · {bootstrapResult.controllerId || bootstrapResult.controller_id || 'Unknown controller'}
+                   </span>
+                </div>
+                <div className="summary-item">
+                   <Play size={14}/> 
+                   <span>
+                      {(() => {
+                        const m = bootstrapResult.mode || bootstrapResult.kafkaMode || 'KRaft';
+                        return m === 'auto-detected by Kafka client' ? 'Auto-detected' : m;
+                      })()} Mode · {bootstrapResult.security_protocol || bootstrapResult.security || 'PLAINTEXT'}
+                   </span>
+                </div>
               </div>
-              
+
               {bootstrapResult.brokers && bootstrapResult.brokers.length > 0 && (
                 <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                   <h4 style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Discovered Nodes</h4>

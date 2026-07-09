@@ -45,11 +45,19 @@ public class AgentService {
         Host host = existing == null ? new Host() : existing;
         host.setId(dto.getHostId());
         host.setHostname(dto.getHostname());
+        List<String> selectedIps = selectHostIp(dto.getIpAddresses());
+        if (!selectedIps.isEmpty()) {
+            host.setHostIp(selectedIps.get(0));
+        }
         try {
-            host.setIpAddresses(objectMapper.writeValueAsString(selectHostIp(dto.getIpAddresses())));
+            host.setIpAddresses(objectMapper.writeValueAsString(selectedIps));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize IPs for host {}", dto.getHostId(), e);
         }
+        host.setResourceType("HOST");
+        host.setUser("system");
+        host.setRemoved(false);
+        host.setAction(existing == null ? "HOST_REGISTERED" : "HOST_UPDATED");
         host.setOsDetails(dto.getOsDetails());
         host.setAgentVersion(dto.getAgentVersion());
         host.setAgentName(dto.getAgentName());

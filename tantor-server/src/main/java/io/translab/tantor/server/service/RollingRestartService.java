@@ -169,9 +169,10 @@ public class RollingRestartService {
 
     private void waitForExternalTask(String externalTaskId) throws InterruptedException {
         for (int i = 0; i < 60; i++) {
-            String status = externalClusterService.getExternalTaskStatus(externalTaskId);
-            if (status.startsWith("COMPLETED")) return;
-            if (status.startsWith("FAILED")) throw new RuntimeException(status);
+            Map<String, Object> statusMap = externalClusterService.getExternalTaskStatus(externalTaskId);
+            String status = String.valueOf(statusMap.get("status"));
+            if ("SUCCESS".equals(status)) return;
+            if ("FAILED".equals(status)) throw new RuntimeException(String.valueOf(statusMap.get("message")));
             Thread.sleep(2000);
         }
         throw new RuntimeException("Timeout waiting for external agent task to finish");

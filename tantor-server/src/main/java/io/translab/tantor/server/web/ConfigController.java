@@ -9,6 +9,7 @@ import io.translab.tantor.server.domain.JobStatus;
 import io.translab.tantor.server.domain.JobStep;
 import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.DiscoveryAgentRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
@@ -25,6 +26,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import io.translab.tantor.server.domain.JobStepStatus;
+import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.domain.JobStatus;
+import io.translab.tantor.server.domain.JobStepStatus;
 
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/config")
@@ -39,40 +44,159 @@ public class ConfigController {
     private final ActivityAlertService activityAlertService;
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final JobService jobService;
+    private final DiscoveryAgentRepository discoveryAgentRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
-        if (cluster == null) return ResponseEntity.notFound().build();
-
-        Map<Integer, Map<String, Object>> dynamicConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
-        
-        Map<String, Object> response = new java.util.HashMap<>();
-        response.put("dynamicConfigs", dynamicConfigs);
-        
-        Map<String, Object> staticConfigs = new HashMap<>();
-        Map<String, Object> deploymentConfig = new HashMap<>();
-        
-        try {
-            if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
-                deploymentConfig = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+        if (cluster != null) {
+            Map<Integer, Map<String, Object>> dynamicConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+            
+            Map<String, Object> response = new java.util.HashMap<>();
+            response.put("dynamicConfigs", dynamicConfigs);
+            
+            Map<String, Object> staticConfigs = new HashMap<>();
+            Map<String, Object> deploymentConfig = new HashMap<>();
+            
+            try {
+                if (cluster.getConfigJson() != null && !cluster.getConfigJson().isEmpty()) {
+                    deploymentConfig = objectMapper.readValue(cluster.getConfigJson(), Map.class);
+                }
+            } catch(Exception e) {
+                deploymentConfig = new HashMap<>();
             }
-        } catch(Exception e) {
-            deploymentConfig = new HashMap<>();
+
+            String installDir = activeKafkaInstallDir(deploymentConfig);
+            Map<String, Object> activeProperties = buildActiveServerProperties(cluster, deploymentConfig, installDir);
+            String activeFilePath = activeServerConfigPath(cluster, installDir);
+            
+            staticConfigs.put("filePath", activeFilePath);
+            staticConfigs.put("properties", activeProperties);
+            staticConfigs.put("deploymentParameters", deploymentConfig);
+            staticConfigs.put("configFiles", buildConfigFiles(cluster, deploymentConfig, installDir, activeFilePath, activeProperties));
+            response.put("serviceTopology", buildServiceTopology(cluster, deploymentConfig, installDir));
+            response.put("staticConfigs", staticConfigs);
+
+            return ResponseEntity.ok(response);
         }
 
-        String installDir = activeKafkaInstallDir(deploymentConfig);
-        Map<String, Object> activeProperties = buildActiveServerProperties(cluster, deploymentConfig, installDir);
-        String activeFilePath = activeServerConfigPath(cluster, installDir);
-        
-        staticConfigs.put("filePath", activeFilePath);
-        staticConfigs.put("properties", activeProperties);
-        staticConfigs.put("deploymentParameters", deploymentConfig);
-        staticConfigs.put("configFiles", buildConfigFiles(cluster, deploymentConfig, installDir, activeFilePath, activeProperties));
-        response.put("serviceTopology", buildServiceTopology(cluster, deploymentConfig, installDir));
-        response.put("staticConfigs", staticConfigs);
+        io.translab.tantor.server.domain.ExternalCluster externalCluster = externalClusterRepository.findById(clusterId).orElse(null);
+        if (externalCluster == null) return ResponseEntity.notFound().build();
 
+        Map<String, Object> response = new HashMap<>();
+        response.put("dynamicConfigs", new HashMap<>());
+        
+        List<Map<String, Object>> topology = new ArrayList<>();
+        List<Map<String, Object>> configFiles = new ArrayList<>();
+        
+        List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(clusterId);
+        List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents = discoveryAgentRepository.findAll();
+        
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            Map<String, Object> topoNode = new HashMap<>();
+            topoNode.put("hostId", node.getHost());
+            topoNode.put("hostAddress", node.getHost());
+            
+            String role = "Broker";
+            if (Boolean.TRUE.equals(node.getIsBroker()) && Boolean.TRUE.equals(node.getIsController())) role = "Broker + Controller";
+            else if (Boolean.TRUE.equals(node.getIsController())) role = "Controller";
+            
+            topoNode.put("role", role);
+            topoNode.put("nodeId", node.getNodeId() != null ? node.getNodeId() : Math.abs(node.getHost().hashCode()));
+            topoNode.put("isBroker", node.getIsBroker());
+            topoNode.put("isController", node.getIsController());
+            topoNode.put("serviceName", "kafka.service"); // fallback, actual restart uses agent's discovered service
+            topoNode.put("configFilePath", node.getConfigFile());
+            topoNode.put("configFileName", node.getConfigFile() != null ? new java.io.File(node.getConfigFile()).getName() : "server.properties");
+            
+            boolean canExecute = false;
+            for (io.translab.tantor.server.domain.DiscoveryAgent agent : allAgents) {
+                if (agent.getIpAddresses() != null && agent.getIpAddresses().contains(node.getHost()) && "ONLINE".equals(agent.getStatus())) {
+                    canExecute = Boolean.TRUE.equals(agent.getCanExecuteTasks());
+                    break;
+                }
+            }
+            topoNode.put("canExecuteTasks", canExecute);
+            
+            topology.add(topoNode);
+            
+            Map<String, Object> staticFile = new HashMap<>();
+            staticFile.put("id", "ext_" + topoNode.get("nodeId"));
+            staticFile.put("nodeId", topoNode.get("nodeId"));
+            staticFile.put("label", role + " Properties (" + node.getHost() + ")");
+            staticFile.put("path", node.getConfigFile());
+            staticFile.put("role", role);
+            staticFile.put("properties", new HashMap<>());
+            configFiles.add(staticFile);
+        }
+        
+        response.put("serviceTopology", topology);
+        Map<String, Object> staticConfigs = new HashMap<>();
+        staticConfigs.put("configFiles", configFiles);
+        response.put("staticConfigs", staticConfigs);
+        
         return ResponseEntity.ok(response);
+
+
+    }
+
+    @PostMapping("/rolling-apply")
+    public ResponseEntity<Map<String, Object>> rollingApply(
+            @PathVariable UUID clusterId,
+            @RequestBody Map<String, Object> payload) {
+        Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
+        if (cluster == null) return ResponseEntity.notFound().build();
+
+        Job job = new Job();
+        job.setType(JobType.ROLLING_CONFIG_UPDATE);
+        job.setStatus(JobStatus.PENDING);
+        job.setResourceKey("cluster:" + clusterId);
+        job.setRollbackSupported(false);
+
+        try {
+            Map<String, Object> jobPayload = new HashMap<>();
+            jobPayload.put("clusterId", clusterId.toString());
+            jobPayload.put("rollingRestart", payload.get("rollingRestart"));
+            jobPayload.put("changes", payload.get("changes"));
+            job.setPayload(objectMapper.writeValueAsString(jobPayload));
+        } catch (JsonProcessingException e) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        List<JobStep> steps = new ArrayList<>();
+        int order = 1;
+        steps.add(createStep("ALL", "PREFLIGHT", order++));
+        steps.add(createStep("ALL", "BACKUP_ALL", order++));
+
+        List<Map<String, Object>> changes = (List<Map<String, Object>>) payload.get("changes");
+        if (changes != null) {
+            for (Map<String, Object> change : changes) {
+                String host = (String) change.get("host");
+                steps.add(createStep(host, "WRITE_CONFIG: " + host, order++));
+                if (Boolean.TRUE.equals(payload.get("rollingRestart"))) {
+                    steps.add(createStep(host, "RESTART_SERVICE: " + host, order++));
+                    steps.add(createStep(host, "HEALTH_CHECK: " + host, order++));
+                }
+            }
+        }
+        steps.add(createStep("ALL", "FINAL_VERIFY", order++));
+
+        Job savedJob = jobService.createJob(job, steps);
+        
+        activityAlertService.logActivity("INFO", "Requested rolling config update for cluster: " + cluster.getName(), clusterId);
+        
+        return ResponseEntity.ok(Map.of("jobId", savedJob.getId().toString()));
+    }
+
+    private JobStep createStep(String targetId, String name, int order) {
+        JobStep step = new JobStep();
+        step.setTargetId(targetId);
+        step.setName(name);
+        step.setStepOrder(order);
+        step.setStatus(JobStepStatus.PENDING);
+        return step;
     }
 
     private String activeKafkaInstallDir(Map<String, Object> config) {
@@ -200,13 +324,32 @@ public class ConfigController {
             item.put("hostAddress", hostAddressForService(service));
             item.put("role", service.getRole());
             item.put("nodeId", service.getNodeId());
-            item.put("serviceName", serviceNameForRole(service.getRole()));
+            item.put("isBroker", isBrokerRole(service.getRole()));
+            item.put("isController", isControllerRole(service.getRole()));
+            item.put("serviceName", serviceNameForRole(service.getRole()) + ".service");
             item.put("systemdUnit", serviceNameForRole(service.getRole()) + ".service");
             item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), serviceInstallDir));
             item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(serviceConfig, "listener_port", "9092") : "");
             item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(serviceConfig, "controller_port", "9093") : "");
             item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(serviceConfig, defaultKafkaDataDir(serviceConfig)) : "");
             item.put("metadataLogDir", metadataLogDirForRole(service.getRole(), serviceConfig, defaultKafkaDataDir(serviceConfig)));
+            
+            if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+                discoveryAgentRepository.findById(service.getHostId()).ifPresentOrElse(agent -> {
+                    item.put("agentStatus", agent.getStatus());
+                    item.put("managedStatus", "managed");
+                    item.put("canExecuteTasks", agent.getCanExecuteTasks() != null && agent.getCanExecuteTasks());
+                }, () -> {
+                    item.put("agentStatus", "OFFLINE");
+                    item.put("managedStatus", "unmanaged");
+                    item.put("canExecuteTasks", false);
+                });
+            } else {
+                item.put("agentStatus", "ONLINE");
+                item.put("managedStatus", "managed");
+                item.put("canExecuteTasks", true);
+            }
+            
             topology.add(item);
         }
         return topology;
@@ -785,6 +928,35 @@ public class ConfigController {
             return "<redacted>";
         }
         return value;
+    }
+
+    @PostMapping("/read")
+    public ResponseEntity<Map<String, Object>> readConfig(@PathVariable UUID clusterId, @RequestBody Map<String, Object> request) {
+        String nodeIdStr = String.valueOf(request.get("nodeId"));
+        Integer targetNodeId = null;
+        try { targetNodeId = Integer.parseInt(nodeIdStr); } catch (Exception e) {}
+
+        List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(clusterId);
+        io.translab.tantor.server.domain.ExternalClusterNode targetNode = null;
+        for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
+            if (n.getNodeId() != null && n.getNodeId().equals(targetNodeId)) {
+                targetNode = n;
+                break;
+            } else if (n.getNodeId() == null && Math.abs(n.getHost().hashCode()) == targetNodeId) {
+                targetNode = n;
+                break;
+            }
+        }
+
+        if (targetNode == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Node not found"));
+        }
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("configFilePath", targetNode.getConfigFile());
+
+        Map<String, Object> taskResponse = externalClusterService.queueTask(clusterId, targetNode.getHost(), "read_config", payload);
+        return ResponseEntity.ok(taskResponse);
     }
 
     @Data

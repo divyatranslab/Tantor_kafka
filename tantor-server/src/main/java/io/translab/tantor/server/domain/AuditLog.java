@@ -30,8 +30,8 @@ public class AuditLog {
     @Column(name = "cluster_id")
     private UUID clusterId;
 
-    @Column(name = "actor_user", nullable = false)
-    private String actorUser;
+    @Column(name = "user_name", nullable = false)
+    private String userName;
 
     @Column(name = "event_category", nullable = false, length = 80)
     private String category;
@@ -56,6 +56,15 @@ public class AuditLog {
     @Column(name = "request_id", length = 100)
     private String requestId;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
+    @Column(name = "created_time", nullable = false, updatable = false)
+    private Instant createdTime = Instant.now();
+
+    @Column(name = "host_name", length = 255)
+    private String hostName;
+
+    @Column(name = "host_ip", length = 100)
+    private String hostIp;
+
+    @Column(name = "artifact_id")
+    private UUID artifactId;
 }
