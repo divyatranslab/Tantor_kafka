@@ -77,6 +77,9 @@ public class ClusterController {
             m.put("createdAt", c.getCreatedAt());
             m.put("createdBy", c.getCreatedBy());
             m.put("updatedBy", c.getUpdatedBy());
+            m.put("user", c.getUser());
+            m.put("role", c.getRole());
+            m.put("configPath", c.getConfigPath());
             m.put("nodeIds", c.getNodeIds());
             m.put("status", c.getStatus());
             m.put("bootstrapServers", c.getBootstrapServers());
@@ -174,6 +177,9 @@ public class ClusterController {
             m.put("createdAt", c.getCreatedAt());
             m.put("createdBy", c.getCreatedBy());
             m.put("updatedBy", c.getUpdatedBy());
+            m.put("user", c.getUser());
+            m.put("role", c.getRole());
+            m.put("configPath", c.getConfigPath());
             m.put("nodeIds", c.getNodeIds());
             m.put("status", c.getStatus());
             m.put("bootstrapServers", c.getBootstrapServers());
@@ -459,6 +465,10 @@ public class ClusterController {
         cluster.setConfigDirectory(activeKafkaInstallDir(deploymentConfig) + "/config");
         cluster.setDataDirectory(blankString(deploymentConfig.get("kafka_data_dir")));
         cluster.setLogDirectory(blankString(deploymentConfig.get("kafka_app_log_dir")));
+        String clusterRole = clusterRoleForServices(request.getServices());
+        cluster.setUser("system");
+        cluster.setRole(clusterRole);
+        cluster.setConfigPath(configFileForRole(clusterRole, deploymentMode, request.getKafka_version(), activeKafkaInstallDir(deploymentConfig)));
         cluster.setCreatedBy("system");
         cluster.setUpdatedBy("system");
         cluster.setNodeIds(request.getServices().stream()
@@ -645,6 +655,9 @@ public class ClusterController {
                 .filter(java.util.Objects::nonNull)
                 .distinct().sorted().toList());
         cluster.setBootstrapServers(String.valueOf(persistedClusterConfig.getOrDefault("bootstrap_servers", cluster.getBootstrapServers())));
+        String clusterRole = clusterRoleForServices(allServices);
+        cluster.setRole(clusterRole);
+        cluster.setConfigPath(configFileForRole(clusterRole, deploymentMode, cluster.getKafkaVersion(), activeKafkaInstallDir(persistedClusterConfig)));
         try {
             cluster.setConfigJson(objectMapper.writeValueAsString(persistedClusterConfig));
         } catch (Exception e) {
@@ -1523,6 +1536,23 @@ public class ClusterController {
             return List.of("broker", "zookeeper");
         }
         return List.of(role);
+    }
+
+    private String clusterRoleForServices(List<ServiceAssignmentReq> services) {
+        if (services == null || services.isEmpty()) return "broker";
+        boolean hasBroker = false;
+        boolean hasController = false;
+        for (ServiceAssignmentReq service : services) {
+            String role = service.getRole();
+            if ("broker_controller".equals(role) || "broker+controller".equals(role)) return "broker_controller";
+            if ("broker".equals(role)) hasBroker = true;
+            if ("controller".equals(role)) hasController = true;
+            if ("schema_registry".equals(role) || "schema registry".equalsIgnoreCase(String.valueOf(role))) return "schema_registry";
+            if ("connect".equals(role)) return "connect";
+        }
+        if (hasBroker) return "broker";
+        if (hasController) return "controller";
+        return services.get(0).getRole() == null || services.get(0).getRole().isBlank() ? "broker" : services.get(0).getRole();
     }
 
     private String systemdServiceName(String role) {
