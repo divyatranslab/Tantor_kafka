@@ -454,32 +454,32 @@ export function ExternalClusters() {
                     <tbody>
                       {bootstrapResult.brokers.map((broker: any) => {
                         const isSelected = !!selectedAgents[broker.host];
-                        const isDisabled = !broker.hasActiveAgent;
+                        const hasAgent = !!broker.hasActiveAgent;
                         return (
                         <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
                           <td style={{ padding: '6px', textAlign: 'center' }}>
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              disabled={isDisabled}
+                              disabled={false}
                               onChange={(e) => {
                                 setSelectedAgents(prev => {
                                   const next = { ...prev };
                                   if (e.target.checked) {
-                                    next[broker.host] = broker.agentDiscoveryKey;
+                                    next[broker.host] = broker.agentDiscoveryKey || broker.host;
                                   } else {
                                     delete next[broker.host];
                                   }
                                   return next;
                                 });
                               }}
-                              style={{ cursor: isDisabled ? 'not-allowed' : 'pointer' }}
+                              style={{ cursor: 'pointer' }}
                             />
                           </td>
                           <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
                           <td style={{ padding: '6px' }}>
                             {broker.host}
-                            {isDisabled && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
+                            {!hasAgent && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
                           </td>
                           <td style={{ padding: '6px' }}>{broker.port}</td>
                           <td style={{ padding: '6px' }}>
@@ -509,7 +509,7 @@ export function ExternalClusters() {
             <button 
               className="btn primary" 
               onClick={registerBootstrap} 
-              disabled={registering || bootstrapResult?.connected !== true || Object.keys(selectedAgents).length === 0}
+              disabled={registering || bootstrapResult?.connected !== true}
             >
               {registering ? <RefreshCw size={15} className="spin" /> : <Globe size={15} />}
               Connect Cluster

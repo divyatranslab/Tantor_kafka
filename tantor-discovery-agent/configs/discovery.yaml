@@ -1,11 +1,11 @@
 discovery:
-  host_id: "456-123-222"
-  agent_name: "discovery-agent-222"
-  server_url: "http://192.168.3.122:8443"
+  host_id: "161-test-001"
+  agent_name: "discovery-agent-161"
+  server_url: "http://172.20.10.130:8443"
   interval: "15s"
   scan_paths:
     - "/srv/apps"
     - "/data/apps"
     - "/opt"
-  node_name: ""
+  node_name: "kafka-node-161"
   restart_command: "systemctl restart kafka"

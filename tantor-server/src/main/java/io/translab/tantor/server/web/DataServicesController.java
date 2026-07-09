@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -38,6 +40,7 @@ public class DataServicesController {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
 
     private final ClusterRepository clusterRepository;
+    private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -283,8 +286,16 @@ public class DataServicesController {
     }
 
     private Cluster getCluster(UUID clusterId) {
-        return clusterRepository.findById(clusterId)
-                .orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        return clusterRepository.findById(clusterId).orElseGet(() -> {
+            ExternalCluster ext = externalClusterRepository.findById(clusterId).orElse(null);
+            if (ext != null) {
+                Cluster dummy = new Cluster();
+                dummy.setId(ext.getId());
+                dummy.setBootstrapServers(ext.getBootstrapServers());
+                return dummy;
+            }
+            throw new IllegalArgumentException("Cluster not found.");
+        });
     }
 
     private String customBaseUrl(String ip, Integer port, Cluster cluster, ServiceKind kind) {
