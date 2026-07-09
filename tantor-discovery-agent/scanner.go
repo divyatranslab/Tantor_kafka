@@ -12,8 +12,39 @@ import (
 // Running-process detection
 // =========================================================================
 
-func getRunningKafkaPropsFiles() []string {
-	var result []string
+type ProcessInfo struct {
+	Cmdline     string
+	SystemdUnit string
+	Cwd         string
+	Pid         string
+}
+
+func extractPropsPath(cmdline, cwd string) string {
+	// Look for any .properties file in the cmdline
+	fields := strings.Fields(cmdline)
+	for _, f := range fields {
+		if strings.HasSuffix(f, ".properties") {
+			// It might be like -D... but usually properties is a standalone arg
+			// Wait, let's strip any leading prefix if it's not a standalone arg
+			// But for Kafka it is usually a standalone arg: bin/kafka-server-start.sh config/server.properties
+			if !filepath.IsAbs(f) && cwd != "" {
+				abs, err := filepath.Abs(filepath.Join(cwd, f))
+				if err == nil {
+					return abs
+				}
+			}
+			abs, err := filepath.Abs(f)
+			if err == nil {
+				return abs
+			}
+			return f
+		}
+	}
+	return ""
+}
+
+func getRunningKafkaPropsFiles() []ProcessInfo {
+	var result []ProcessInfo
 
 	// 1. Try to find running processes via pgrep java
 	out, _ := exec.Command("pgrep", "java").Output()
@@ -24,10 +55,11 @@ func getRunningKafkaPropsFiles() []string {
 				continue
 			}
 			cmdline := readProcessCmdline(pid)
-			if cmdline == "" || (!strings.Contains(strings.ToLower(cmdline), "kafka") && !strings.Contains(strings.ToLower(cmdline), "server.properties")) {
+			cwd := readProcessCwd(pid)
+			if cmdline == "" || (!strings.Contains(strings.ToLower(cmdline), "kafka") && !strings.Contains(strings.ToLower(cmdline), ".properties")) {
 				continue
 			}
-			result = append(result, cmdline)
+			result = append(result, ProcessInfo{Cmdline: cmdline, Cwd: cwd, Pid: pid})
 		}
 	}
 
@@ -61,8 +93,8 @@ func readProcessCmdline(pid string) string {
 	return ""
 }
 
-func getSystemdRunningKafkaPropsFiles() []string {
-	var result []string
+func getSystemdRunningKafkaPropsFiles() []ProcessInfo {
+	var result []ProcessInfo
 	if err := exec.Command("systemctl", "--version").Run(); err != nil {
 		return result
 	}
@@ -79,12 +111,14 @@ func getSystemdRunningKafkaPropsFiles() []string {
 
 		execStartOut, _ := exec.Command("systemctl", "show", unit, "--property=ExecStart", "--value").Output()
 		execStartStr := string(execStartOut)
+		cwdOut, _ := exec.Command("systemctl", "show", unit, "--property=WorkingDirectory", "--value").Output()
+		cwdStr := strings.TrimSpace(string(cwdOut))
 		
-		if !strings.Contains(strings.ToLower(execStartStr), "kafka") && !strings.Contains(strings.ToLower(execStartStr), "server.properties") && !strings.Contains(strings.ToLower(execStartStr), "broker.properties") {
+		if !strings.Contains(strings.ToLower(execStartStr), "kafka") && !strings.Contains(strings.ToLower(execStartStr), ".properties") {
 			continue
 		}
 
-		result = append(result, execStartStr)
+		result = append(result, ProcessInfo{Cmdline: execStartStr, SystemdUnit: unit, Cwd: cwdStr})
 	}
 	return result
 }

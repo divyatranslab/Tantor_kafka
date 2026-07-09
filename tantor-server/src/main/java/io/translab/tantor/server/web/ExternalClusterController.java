@@ -64,12 +64,12 @@ public class ExternalClusterController {
     }
 
     @GetMapping("/api/v1/ui/external-clusters/tasks/{taskId}")
-    public ResponseEntity<Map<String, String>> getExternalTaskStatus(@PathVariable String taskId) {
-        return ResponseEntity.ok(Map.of("taskId", taskId, "status", externalClusterService.getExternalTaskStatus(taskId)));
+    public ResponseEntity<Map<String, Object>> getExternalTaskStatus(@PathVariable String taskId) {
+        return ResponseEntity.ok(externalClusterService.getExternalTaskStatus(taskId));
     }
 
     @GetMapping("/api/v1/ui/external-clusters/discovery/{clusterName}/tasks")
-    public ResponseEntity<Map<String, String>> pollDiscoveryTask(
+    public ResponseEntity<Map<String, Object>> pollDiscoveryTask(
             @PathVariable String clusterName,
             @RequestParam String hostname,
             @RequestParam String bootstrap) {
@@ -101,7 +101,7 @@ public class ExternalClusterController {
 
     // Compatibility endpoints for the older discovery-agent build.
     @GetMapping("/api/v1/ui/clusters/external/{clusterName}/tasks")
-    public ResponseEntity<Map<String, String>> pollLegacyDiscoveryTask(
+    public ResponseEntity<Map<String, Object>> pollLegacyDiscoveryTask(
             @PathVariable String clusterName,
             @RequestParam String hostname,
             @RequestParam String bootstrap) {

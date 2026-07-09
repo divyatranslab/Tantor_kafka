@@ -61,6 +61,21 @@ public class Host {
     @Column(name = "java_version")
     private String javaVersion;
 
+    @Column(name = "host_ip")
+    private String hostIp;
+
+    @Column(name = "removed")
+    private Boolean removed = false;
+
+    @Column(name = "action")
+    private String action;
+
+    @Column(name = "resource_type")
+    private String resourceType;
+
+    @Column(name = "user_name")
+    private String user;
+
     @Column(name = "cluster_id")
     private UUID clusterId;
 

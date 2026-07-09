@@ -28,6 +28,7 @@ type DiscoveredCluster struct {
 	PropsFile           string
 	LogDirs             string
 	Environment         string
+	SystemdService      string
 }
 
 func runDiscovery(serverURL, hostname, environment string, scanPaths []string, hostID, agentName string) []DiscoveredCluster {
@@ -35,42 +36,67 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 	runningProps := getRunningKafkaPropsFiles()
 	fmt.Printf("Running Kafka processes/services: %d\n", len(runningProps))
 	for _, props := range runningProps {
-		fmt.Printf("  - %s\n", props)
+		fmt.Printf("  - %s (Service: %s)\n", props.Cmdline, props.SystemdUnit)
 	}
 
-	// Step 2: scan the filesystem for all properties files.
-	allProps := findAllConfigProperties(scanPaths)
+	// Step 2: Extract exact config file paths from running processes.
+	var exactProps []string
+	seenPath := map[string]bool{}
 
-	// Since runningProps are now raw command lines / ExecStarts, we don't merge them directly into allProps.
-	// allProps relies purely on filesystem scanning now, which is safer.
+	for _, processInfo := range runningProps {
+		absPath := extractPropsPath(processInfo.Cmdline, processInfo.Cwd)
+		if absPath != "" {
+			if !seenPath[absPath] {
+				exactProps = append(exactProps, absPath)
+				seenPath[absPath] = true
+			}
+		}
+	}
 
-	fmt.Printf("\nFound %d config file(s) to process:\n", len(allProps))
-	for _, p := range allProps {
+	// Step 3: scan the filesystem for offline properties files.
+	fsProps := findAllConfigProperties(scanPaths)
+	for _, p := range fsProps {
+		if !seenPath[p] {
+			exactProps = append(exactProps, p)
+			seenPath[p] = true
+		}
+	}
+
+	fmt.Printf("\nFound %d config file(s) to process:\n", len(exactProps))
+	for _, p := range exactProps {
 		fmt.Printf("  - %s\n", p)
 	}
 
-	if len(allProps) == 0 {
+	if len(exactProps) == 0 {
 		fmt.Println("\nNo Kafka installations found. Exiting.")
 		return nil
 	}
 
-	// Step 3: parse each properties file into a discovered cluster.
+	// Step 4: parse each properties file into a discovered cluster.
 	var clusters []DiscoveredCluster
 	seen := map[string]bool{}
 
-	for _, propsFile := range allProps {
+	for _, propsFile := range exactProps {
 		isRunning := false
 		baseProps := filepath.Base(propsFile)
 		dirName := filepath.Base(filepath.Dir(propsFile)) // e.g. "config" or "kraft"
 		
-		for _, cmdline := range runningProps {
+		systemdService := ""
+		for _, processInfo := range runningProps {
+			cmdline := processInfo.Cmdline
 			if strings.Contains(cmdline, propsFile) {
 				isRunning = true
+				if processInfo.SystemdUnit != "" {
+					systemdService = processInfo.SystemdUnit
+				}
 				break
 			}
 			// Check if it's referenced relatively (e.g. config/server.properties)
 			if strings.Contains(cmdline, filepath.Join(dirName, baseProps)) {
 				isRunning = true
+				if processInfo.SystemdUnit != "" {
+					systemdService = processInfo.SystemdUnit
+				}
 				break
 			}
 		}
@@ -79,6 +105,8 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 		if dc == nil {
 			continue
 		}
+		
+		dc.SystemdService = systemdService
 
 		// deduplicate by bootstrap servers
 		if seen[dc.BootstrapServers] {

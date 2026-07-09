@@ -140,12 +140,13 @@ public class RollingRestartJobHandler implements JobHandler {
             Map<String, Object> queued = externalClusterService.queueRestart(clusterId);
             String taskId = String.valueOf(queued.get("taskId"));
             for (int attempt = 0; attempt < 120; attempt++) {
-                String status = externalClusterService.getExternalTaskStatus(taskId);
-                if (status.startsWith("COMPLETED")) {
-                    jobService.completeStep(step.getId(), status);
+                Map<String, Object> statusMap = externalClusterService.getExternalTaskStatus(taskId);
+                String status = String.valueOf(statusMap.get("status"));
+                if ("SUCCESS".equals(status)) {
+                    jobService.completeStep(step.getId(), "Restart task completed successfully");
                     return;
                 }
-                if (status.startsWith("FAILED")) throw new RuntimeException(status);
+                if ("FAILED".equals(status)) throw new RuntimeException(String.valueOf(statusMap.get("message")));
                 try {
                     Thread.sleep(2000);
                 } catch (InterruptedException e) {

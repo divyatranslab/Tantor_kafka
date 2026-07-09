@@ -165,7 +165,6 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
-              const available = host.available !== false;
               const discoveryAgent = host.agentType === 'KAFKA_DISCOVERY';
 
               return (

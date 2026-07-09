@@ -14,6 +14,22 @@ import java.util.UUID;
 
 /**
  * Persistent metadata for a single stored artifact. The binary itself lives on
+package io.translab.tantor.artifact.domain;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Persistent metadata for a single stored artifact. The binary itself lives on
  * disk at {@link #relativePath}; this row is the index entry.
  */
 @Entity
@@ -24,17 +40,20 @@ public class Artifact {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "artifact_id")
+    private UUID artifactId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "service_type", nullable = false, length = 40)
     private ServiceType serviceType;
 
-    @Column(name = "version", nullable = false, length = 80)
+    @Column(name = "version_no", nullable = false, length = 80)
     private String version;
 
-    @Column(name = "file_name", nullable = false, length = 512)
+    @Column(name = "binary_file_name", nullable = false, length = 512)
     private String fileName;
 
-    @Column(name = "relative_path", nullable = false, length = 1024)
+    @Column(name = "path_of_tar", nullable = false, length = 1024)
     private String relativePath;
 
     @Column(name = "full_file_path", length = 2048)
@@ -52,7 +71,7 @@ public class Artifact {
     @Column(name = "content_type", nullable = false, length = 128)
     private String contentType = "application/gzip";
 
-    @Column(name = "checksum_sha256", nullable = false, length = 64)
+    @Column(name = "checksum", nullable = false, length = 64)
     private String checksumSha256;
 
     @Column(name = "checksum_md5", length = 32)
@@ -77,11 +96,23 @@ public class Artifact {
     @Column(name = "verified_checksum")
     private Boolean verifiedChecksum;
 
-    @Column(name = "created_at", nullable = false, updatable = false)
+    @Column(name = "created_time", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "update_time", nullable = false)
     private OffsetDateTime updatedAt;
+
+    @Column(name = "host_ip", length = 100)
+    private String hostIp;
+
+    @Column(name = "hostname", length = 255)
+    private String hostname;
+
+    @Column(name = "user_name", length = 255)
+    private String userName;
+
+    @Column(name = "resource_type", length = 80)
+    private String resourceType;
 
     @PrePersist
     void onCreate() {
@@ -103,6 +134,9 @@ public class Artifact {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+
+    public UUID getArtifactId() { return artifactId; }
+    public void setArtifactId(UUID artifactId) { this.artifactId = artifactId; }
 
     public ServiceType getServiceType() { return serviceType; }
     public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
@@ -150,5 +184,17 @@ public class Artifact {
 
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }
+
+    public String getHostIp() { return hostIp; }
+    public void setHostIp(String hostIp) { this.hostIp = hostIp; }
+
+    public String getHostname() { return hostname; }
+    public void setHostname(String hostname) { this.hostname = hostname; }
+
+    public String getUserName() { return userName; }
+    public void setUserName(String userName) { this.userName = userName; }
+
+    public String getResourceType() { return resourceType; }
+    public void setResourceType(String resourceType) { this.resourceType = resourceType; }
 
 }

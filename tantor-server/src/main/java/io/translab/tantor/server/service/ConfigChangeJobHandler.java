@@ -135,9 +135,10 @@ public class ConfigChangeJobHandler implements JobHandler {
             );
             String taskId = String.valueOf(queued.get("taskId"));
             for (int attempt = 0; attempt < 120; attempt++) {
-                String status = externalClusterService.getExternalTaskStatus(taskId);
-                if (status.startsWith("COMPLETED")) return;
-                if (status.startsWith("FAILED")) throw new RuntimeException(status);
+                Map<String, Object> statusMap = externalClusterService.getExternalTaskStatus(taskId);
+                String status = String.valueOf(statusMap.get("status"));
+                if ("SUCCESS".equals(status)) return;
+                if ("FAILED".equals(status)) throw new RuntimeException(String.valueOf(statusMap.get("message")));
                 try {
                     Thread.sleep(2000);
                 } catch (InterruptedException e) {

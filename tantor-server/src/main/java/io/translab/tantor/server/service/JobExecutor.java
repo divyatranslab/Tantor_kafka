@@ -73,7 +73,7 @@ public class JobExecutor {
     private String jobCategory(Job job) {
         return switch (job.getType()) {
             case DEPLOYMENT, ADD_HOST -> "DEPLOYMENT";
-            case CONFIG_CHANGE -> "CONFIG_CHANGE";
+            case CONFIG_CHANGE, ROLLING_CONFIG_UPDATE -> "CONFIG_CHANGE";
             case ROLLING_RESTART -> "RESTART";
             case MONITORING_ENABLEMENT -> "MONITORING";
             case ONBOARDING -> "ONBOARDING";

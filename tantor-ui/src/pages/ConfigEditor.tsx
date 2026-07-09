@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  CheckCircle2, FileText, GitCompare, History, Loader2, Plus, RefreshCw,
-  RotateCcw, Save, Server, ShieldCheck, Trash2, UploadCloud,
-} from 'lucide-react';
+import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
+
+interface ServiceTopologyItem {
+  hostId: string;
+  hostAddress: string;
+  role: string;
+  nodeId: number;
+  systemdUnit: string;
+  configPath: string;
+  isBroker: boolean;
+  isController: boolean;
+  serviceName: string;
+  agentStatus: string;
+  managedStatus: string;
+  canExecuteTasks: boolean;
+}
 
 interface StaticConfigFile {
   id: string;
@@ -19,333 +31,378 @@ interface StaticConfigFile {
   properties: Record<string, unknown>;
 }
 
-interface ServiceTopologyItem {
-  hostId: string;
-  hostAddress: string;
-  role: string;
-  nodeId: number;
-  systemdUnit: string;
-  configPath: string;
-}
-
 interface ConfigPayload {
   serviceTopology?: ServiceTopologyItem[];
   staticConfigs: { configFiles?: StaticConfigFile[] };
 }
 
-interface ConfigDiff {
+interface StagedProperty {
   key: string;
-  type: 'ADDED' | 'REMOVED' | 'MODIFIED';
   oldValue: string;
   newValue: string;
 }
 
-interface PreviewResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
-  diff: ConfigDiff[];
+interface StagedChange {
+  nodeId: number;
+  host: string;
+  serviceName: string;
+  configFilePath: string;
+  properties: StagedProperty[];
 }
-
-interface ConfigVersion {
-  id: string;
-  configVersion: number;
-  component: string;
-  configFileName: string;
-  status: string;
-  approvalRequired: boolean;
-  createdBy: string;
-  approvedBy?: string;
-  createdAt: string;
-  appliedAt?: string;
-  rollbackVersion?: number;
-  jobId?: string;
-}
-
-const generatedKeys = new Set([
-  'process.roles', 'node.id', 'broker.id', 'listeners', 'advertised.listeners',
-  'controller.quorum.voters', 'controller.quorum.bootstrap.servers',
-  'zookeeper.connect', 'dataDir', 'clientPort', 'servers',
-]);
-
-const editableVersionStatuses = new Set(['VALIDATED', 'APPROVED', 'FAILED']);
 
 export function ConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [payload, setPayload] = useState<ConfigPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [working, setWorking] = useState('');
-  const [selectedHostId, setSelectedHostId] = useState('');
-  const [selectedFileId, setSelectedFileId] = useState('');
-  const [baselineProperties, setBaselineProperties] = useState<Record<string, string>>({});
+  
+  const [loading, setLoading] = useState(false);
+  const [topology, setTopology] = useState<ServiceTopologyItem[]>([]);
+  const [configFiles, setConfigFiles] = useState<StaticConfigFile[]>([]);
+  
+  const [fetchedProperties, setFetchedProperties] = useState<Record<number, Record<string, string>>>({});
+  const [readingConfig, setReadingConfig] = useState(false);
+  const [readStatus, setReadStatus] = useState<string>('');
+
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
+  
+  // staged changes by nodeId
+  const [stagedChanges, setStagedChanges] = useState<Record<number, StagedChange>>({});
+  
+  // currently editing draft
   const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
-  const [newKey, setNewKey] = useState('');
-  const [newValue, setNewValue] = useState('');
-  const [restart, setRestart] = useState(true);
-  const [approvalRequired, setApprovalRequired] = useState(true);
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
-  const [versions, setVersions] = useState<ConfigVersion[]>([]);
+  const [rollingRestart, setRollingRestart] = useState(true);
+  const [applying, setApplying] = useState(false);
 
   const fetchConfigs = async () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config`);
-      if (response.ok) setPayload(await response.json());
+      if (response.ok) {
+        const payload: ConfigPayload = await response.json();
+        setTopology(payload.serviceTopology || []);
+        setConfigFiles(payload.staticConfigs.configFiles || []);
+      } else {
+        alert('Failed to fetch cluster configuration');
+      }
+    } catch (e) {
+      alert('Error fetching config');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchConfigs(); }, [id]);
+  const selectedNode = useMemo(() => {
+    if (selectedNodeId === null) return null;
+    return topology.find(t => t.nodeId === selectedNodeId);
+  }, [selectedNodeId, topology]);
 
-  const files = payload?.staticConfigs.configFiles || [];
-  const topology = payload?.serviceTopology || [];
-  const hosts = useMemo(() => {
-    const unique = new Map<string, { id: string; address: string; services: number }>();
-    topology.forEach(service => {
-      const current = unique.get(service.hostId);
-      unique.set(service.hostId, {
-        id: service.hostId,
-        address: service.hostAddress,
-        services: (current?.services || 0) + 1,
-      });
-    });
-    return Array.from(unique.values());
-  }, [topology]);
+  const selectedFile = useMemo(() => {
+    if (!selectedNode) return null;
+    return configFiles.find(f => f.nodeId === selectedNode.nodeId);
+  }, [selectedNode, configFiles]);
 
-  useEffect(() => {
-    if (!selectedHostId && hosts[0]) setSelectedHostId(hosts[0].id);
-  }, [hosts, selectedHostId]);
-
-  const hostFiles = files.filter(file => !selectedHostId || file.hostId === selectedHostId);
-  const selectedFile = hostFiles.find(file => file.id === selectedFileId) || hostFiles[0];
-
-  useEffect(() => {
-    if (selectedFile && selectedFile.id !== selectedFileId) setSelectedFileId(selectedFile.id);
-  }, [selectedFile, selectedFileId]);
-
-  useEffect(() => {
-    if (!selectedFile) return;
-    const properties = Object.fromEntries(
-      Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
-    );
-    setBaselineProperties(properties);
-    setDraftProperties(properties);
-    setPreview(null);
-  }, [selectedFile?.id]);
-
-  const fetchVersions = async (serviceId?: string) => {
-    if (!serviceId) { setVersions([]); return; }
-    const response = await fetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
-    if (response.ok) setVersions(await response.json());
-  };
-
-  useEffect(() => { fetchVersions(selectedFile?.serviceId); }, [id, selectedFile?.serviceId]);
-
-  const selectHost = (hostId: string) => {
-    setSelectedHostId(hostId);
-    setSelectedFileId(files.find(file => file.hostId === hostId)?.id || '');
-  };
-
-  const mutateDraft = (updater: (current: Record<string, string>) => Record<string, string>) => {
-    setDraftProperties(current => updater(current));
-    setPreview(null);
-  };
-
-  const addProperty = () => {
-    const key = newKey.trim();
-    if (!key || !/^[A-Za-z0-9._-]+$/.test(key)) {
-      alert('Enter a valid Kafka property key.');
-      return;
+  const selectNode = (nodeId: number) => {
+    // save current draft before switching
+    if (selectedNode && selectedFile) {
+      saveDraftToStaged();
     }
-    mutateDraft(current => ({ ...current, [key]: newValue }));
-    setNewKey('');
-    setNewValue('');
+    setSelectedNodeId(nodeId);
+    
+    // If not already fetched, and the node has an agent, fetch it!
+    const node = topology.find(t => t.nodeId === nodeId);
+    if (node && node.canExecuteTasks && !fetchedProperties[nodeId]) {
+      readConfigFromAgent(nodeId);
+    }
   };
 
-  const versionRequest = {
-    currentProperties: baselineProperties,
-    properties: draftProperties,
-    configFileName: selectedFile?.path,
-    approvalRequired,
-    restart,
-  };
-
-  const reviewChange = async () => {
-    if (!selectedFile?.serviceId) return;
-    setWorking('preview');
+  const readConfigFromAgent = async (nodeId: number) => {
+    setReadingConfig(true);
+    setReadStatus('Initiating read_config task...');
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || 'Unable to validate configuration.'); return; }
-      setPreview(data);
-    } finally {
-      setWorking('');
-    }
-  };
-
-  const saveVersion = async () => {
-    if (!selectedFile?.serviceId || !preview?.valid) return;
-    setWorking('save');
-    try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || 'Unable to save configuration version.'); return; }
-      await fetchVersions(selectedFile.serviceId);
-      alert(`Version v${data.configVersion} saved. The active production file has not been changed.`);
-    } finally {
-      setWorking('');
-    }
-  };
-
-  const versionAction = async (version: ConfigVersion, action: 'approve' | 'apply' | 'rollback') => {
-    if (action === 'apply') {
-      const message = restart
-        ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
-        : `Apply configuration v${version.configVersion} without restarting Kafka? Static properties will not become active until a later restart.`;
-      if (!window.confirm(message)) return;
-    }
-    setWorking(`${action}-${version.id}`);
-    try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
+      const startRes = await fetch(`/api/v1/clusters/${id}/config/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: action === 'apply' ? JSON.stringify({ restart }) : undefined,
+        body: JSON.stringify({ nodeId })
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || `${action} failed.`); return; }
-      if (action === 'apply' && data.jobId) {
-        navigate(`/jobs/${data.jobId}`);
+      if (!startRes.ok) {
+        setReadStatus('Failed to start task or agent offline.');
+        setReadingConfig(false);
         return;
       }
-      await fetchVersions(selectedFile?.serviceId);
-      if (action === 'rollback') {
-        alert(`Rollback saved as new version v${data.configVersion}. Approve it if required, then apply it.`);
+      const startData = await startRes.json();
+      if (!startData.taskId) {
+        setReadStatus('Task failed to start.');
+        setReadingConfig(false);
+        return;
       }
+      const taskId = startData.taskId;
+
+      let complete = false;
+      while (!complete) {
+        await new Promise(r => setTimeout(r, 2000));
+        const statusRes = await fetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
+        if (!statusRes.ok) break;
+        const statusData = await statusRes.json();
+        if (statusData.status === 'SUCCESS') {
+           setFetchedProperties(prev => ({ ...prev, [nodeId]: statusData.data || {} }));
+           setReadStatus('');
+           complete = true;
+        } else if (statusData.status === 'FAILED') {
+           setReadStatus('Task failed: ' + (statusData.message || ''));
+           complete = true;
+        } else {
+           setReadStatus('Waiting for agent to read file...');
+        }
+      }
+    } catch (e) {
+       setReadStatus('Error reading config.');
     } finally {
-      setWorking('');
+       setReadingConfig(false);
     }
   };
 
-  if (loading && !payload) {
-    return <div className="state-center"><Loader2 className="spin" /> Loading node configurations...</div>;
-  }
+  const saveDraftToStaged = () => {
+    if (!selectedNode || !selectedFile) return;
+    const baseProperties = Object.fromEntries(
+      Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
+    );
+    const changed: StagedProperty[] = [];
+    
+    // Find modified or added
+    for (const [k, v] of Object.entries(draftProperties)) {
+      if (baseProperties[k] !== v) {
+        changed.push({ key: k, oldValue: baseProperties[k] || '', newValue: v });
+      }
+    }
+    
+    // Find deleted
+    for (const [k, v] of Object.entries(baseProperties)) {
+      if (!(k in draftProperties)) {
+        changed.push({ key: k, oldValue: v, newValue: '' });
+      }
+    }
 
-  const activeVersion = versions.find(version => version.status === 'APPLIED');
+    setStagedChanges(prev => {
+      const next = { ...prev };
+      if (changed.length > 0) {
+        next[selectedNode.nodeId] = {
+          nodeId: selectedNode.nodeId,
+          host: selectedNode.hostAddress,
+          serviceName: selectedNode.serviceName,
+          configFilePath: selectedNode.configPath,
+          properties: changed,
+        };
+      } else {
+        delete next[selectedNode.nodeId];
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setDraftProperties({});
+      return;
+    }
+    const liveProps = fetchedProperties[selectedFile.nodeId!] || selectedFile.properties || {};
+    const baseProps = Object.fromEntries(
+      Object.entries(liveProps).map(([key, value]) => [key, String(value ?? '')])
+    );
+    // Apply staged changes to draft
+    const staged = stagedChanges[selectedFile.nodeId!];
+    if (staged) {
+      staged.properties.forEach(p => {
+        if (p.newValue === '') {
+          delete baseProps[p.key];
+        } else {
+          baseProps[p.key] = p.newValue;
+        }
+      });
+    }
+    setDraftProperties(baseProps);
+  }, [selectedFile, selectedNodeId]); // re-run when node changes
+
+  const mutateDraft = (key: string, value: string | null) => {
+    setDraftProperties(prev => {
+      const next = { ...prev };
+      if (value === null) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+  };
+
+  const applyChanges = async () => {
+    // save current screen
+    saveDraftToStaged();
+    
+    const changesArray = Object.values(stagedChanges);
+    if (changesArray.length === 0) {
+      alert('No changes staged.');
+      return;
+    }
+    
+    setApplying(true);
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/config/rolling-apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          changes: changesArray,
+          rollingRestart: rollingRestart
+        })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.jobId) {
+        navigate(`/jobs/${data.jobId}`);
+      } else {
+        alert(data.message || 'Failed to apply configuration.');
+      }
+    } catch (e) {
+      alert('Error applying changes.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const stagedNodesCount = Object.keys(stagedChanges).length;
 
   return (
     <div className="node-config-page versioned-config-page">
       <header className="node-config-header">
-        <div><h2>Versioned Configuration Change</h2><p>Review, validate and save an immutable version before anything reaches a node.</p></div>
-        <button onClick={fetchConfigs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
+        <div>
+          <h2>Staged Rolling Configuration Update</h2>
+          <p>Stage changes across multiple nodes and apply them safely with a rolling restart.</p>
+        </div>
+        <button onClick={fetchConfigs} disabled={loading} className="primary">
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Fetch Nodes
+        </button>
       </header>
 
-      <div className="config-flow-strip">
-        <span><GitCompare size={14} /> Diff</span><b>→</b><span><CheckCircle2 size={14} /> Validate</span><b>→</b>
-        <span><Save size={14} /> Save version</span><b>→</b><span><ShieldCheck size={14} /> Approve</span><b>→</b>
-        <span><UploadCloud size={14} /> Backup &amp; apply</span>
-      </div>
+      {topology.length > 0 && (
+        <section className="node-config-section">
+          <div className="node-config-section-title">
+            <span>1</span>
+            <div><h3>Select Node to Edit</h3><p>Select a node to stage configuration changes.</p></div>
+          </div>
+          
+          <div className="node-config-hosts">
+            <select 
+              value={selectedNodeId || ''} 
+              onChange={e => selectNode(Number(e.target.value))}
+              className="node-select"
+              style={{ padding: '8px', width: '100%', maxWidth: '400px', borderRadius: '4px', border: '1px solid #ccc' }}
+            >
+              <option value="" disabled>Select a node to edit...</option>
+              {topology.map(node => (
+                <option key={node.nodeId} value={node.nodeId}>
+                  {node.hostAddress} (Node {node.nodeId}) - {node.role} {node.canExecuteTasks ? '' : '[No Task Agent]'} {stagedChanges[node.nodeId] ? '(Staged)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+      )}
 
-      <section className="node-config-section">
-        <div className="node-config-section-title"><span>1</span><div><h3>Select node</h3><p>Each VM may contain one or more Kafka services.</p></div></div>
-        <div className="node-config-hosts">
-          {hosts.map(host => (
-            <button key={host.id} className={selectedHostId === host.id ? 'active' : ''} onClick={() => selectHost(host.id)}>
-              <Server size={16} /><span><strong>{host.address}</strong><small>{host.id} · {host.services} service{host.services === 1 ? '' : 's'}</small></span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="node-config-section">
-        <div className="node-config-section-title"><span>2</span><div><h3>Select configuration file</h3><p>Only files belonging to the selected node are shown.</p></div></div>
-        <div className="node-config-files">
-          {hostFiles.map(file => (
-            <button key={file.id} className={selectedFile?.id === file.id ? 'active' : ''} onClick={() => setSelectedFileId(file.id)}>
-              <FileText size={15} /><span><strong>{file.label}</strong><small>{file.path}</small></span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {selectedFile ? <>
-        <section className="node-config-section editor">
-          <div className="node-config-editor-head">
-            <div><h3>{selectedFile.label}</h3><p>{selectedFile.path}</p></div>
-            <div className="config-options">
-              <label><input type="checkbox" checked={approvalRequired} onChange={event => setApprovalRequired(event.target.checked)} /> Require approval</label>
-              <label><input type="checkbox" checked={restart} onChange={event => { setRestart(event.target.checked); setPreview(null); }} /> Restart after apply</label>
+      {selectedNode && selectedFile && (
+        <section className="node-config-section editor-section">
+          <div className="node-config-section-title">
+            <span>2</span>
+            <div>
+              <h3>Edit Properties: Node {selectedNode.nodeId}</h3>
+              <p>File: <code>{selectedFile.path}</code></p>
             </div>
           </div>
-
-          <div className="node-config-table-wrap">
-            <table className="node-config-table">
-              <thead><tr><th>Property</th><th>Value</th><th>Action</th></tr></thead>
-              <tbody>
-                {Object.entries(draftProperties).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
-                  const generated = generatedKeys.has(key);
-                  return <tr key={key}>
-                    <td><code>{key}</code>{generated && <small>Managed by Tantor</small>}</td>
-                    <td><input value={value} disabled={generated} onChange={event => mutateDraft(current => ({ ...current, [key]: event.target.value }))} /></td>
-                    <td><button title={`Remove ${key}`} disabled={generated} onClick={() => mutateDraft(current => { const next = { ...current }; delete next[key]; return next; })}><Trash2 size={14} /></button></td>
-                  </tr>;
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="node-config-add">
-            <input placeholder="property.key" value={newKey} onChange={event => setNewKey(event.target.value)} />
-            <input placeholder="value" value={newValue} onChange={event => setNewValue(event.target.value)} />
-            <button onClick={addProperty}><Plus size={14} /> Add property</button>
-          </div>
-
+          
+          {readingConfig ? (
+            <div className="empty-state" style={{ padding: '2rem', textAlign: 'center' }}>
+              <Loader2 className="spin" size={32} style={{ margin: '0 auto 1rem', display: 'block', color: '#6366f1' }} />
+              <p>{readStatus}</p>
+            </div>
+          ) : !selectedNode.canExecuteTasks ? (
+            <div className="empty-state" style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
+              <ShieldAlert size={32} style={{ margin: '0 auto 1rem', display: 'block' }} />
+              <p>No active task-capable agent available.</p>
+              <small>Configuration editing is disabled because the Discovery Agent is offline or lacks capabilities.</small>
+            </div>
+          ) : readStatus ? (
+            <div className="empty-state" style={{ padding: '2rem', textAlign: 'center', color: '#ef4444' }}>
+              <p>{readStatus}</p>
+              <button onClick={() => readConfigFromAgent(selectedNode.nodeId!)} className="secondary" style={{ marginTop: '1rem' }}>Retry</button>
+            </div>
+          ) : (
+            <div className="node-config-table-wrap">
+              <table className="node-config-table">
+                <thead><tr><th>Property</th><th>Current Value</th><th>New Value</th></tr></thead>
+                <tbody>
+                  {Object.entries(draftProperties).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
+                    const baseValue = fetchedProperties[selectedNode.nodeId!]?.[key] || selectedFile.properties?.[key] || '';
+                    const isModified = value !== baseValue;
+                    return (
+                      <tr key={key} className={isModified ? 'modified-row' : ''}>
+                        <td><code>{key}</code></td>
+                        <td><span className="current-val" title={String(baseValue)}>{String(baseValue) || <em>(Not set)</em>}</span></td>
+                        <td>
+                          <div className="new-val-input-group" style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                              type="text"
+                              value={String(value)}
+                              onChange={e => mutateDraft(key, e.target.value)}
+                              placeholder={String(baseValue) || ''}
+                            />
+                            {isModified && (
+                              <button className="icon-btn revert" onClick={() => mutateDraft(key, String(baseValue))} title="Revert to current">
+                                <RefreshCw size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          
           <div className="node-config-footer">
-            <span>Target: {selectedFile.hostId} · node {selectedFile.nodeId} · {selectedFile.role}</span>
-            <button onClick={reviewChange} disabled={!!working}>{working === 'preview' ? <Loader2 size={14} className="spin" /> : <GitCompare size={14} />} Review &amp; validate</button>
+             <button onClick={saveDraftToStaged} disabled={readingConfig || !selectedNode.canExecuteTasks}>
+               <Save size={14}/> Stage Changes
+             </button>
           </div>
         </section>
+      )}
 
-        {preview && <section className="node-config-section config-review">
-          <div className="node-config-section-title"><span>3</span><div><h3>Old vs new</h3><p>The server validates this exact snapshot again when the version is saved.</p></div></div>
-          {preview.errors.length > 0 && <div className="config-messages error">{preview.errors.map(message => <p key={message}>{message}</p>)}</div>}
-          {preview.warnings.length > 0 && <div className="config-messages warning">{preview.warnings.map(message => <p key={message}>{message}</p>)}</div>}
+      {stagedNodesCount > 0 && (
+        <section className="node-config-section config-review">
+          <div className="node-config-section-title">
+            <span>2</span>
+            <div><h3>Pending Changes Summary</h3><p>Review staged changes before applying them.</p></div>
+          </div>
+          
           <div className="config-diff-list">
-            {preview.diff.map(item => <div className={`config-diff-row ${item.type.toLowerCase()}`} key={item.key}>
-              <div><span>{item.type}</span><code>{item.key}</code></div>
-              <pre>{item.oldValue || '∅'}</pre><b>→</b><pre>{item.newValue || '∅'}</pre>
-            </div>)}
+            {Object.values(stagedChanges).map(change => (
+              <div key={change.nodeId} className="staged-node-block">
+                <h4>Node {change.nodeId} ({change.host}) - {change.configFilePath}</h4>
+                {change.properties.map(p => (
+                  <div className="config-diff-row modified" key={p.key}>
+                    <div><span>MODIFIED</span><code>{p.key}</code></div>
+                    <pre>{p.oldValue || '∅'}</pre><b>→</b><pre>{p.newValue || '∅'}</pre>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
-          <div className="config-review-footer">
-            <span>{preview.valid ? 'Validation passed. Saving creates history only; it does not apply the file.' : 'Fix validation errors before saving.'}</span>
-            <button onClick={saveVersion} disabled={!preview.valid || !!working}>{working === 'save' ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Save as new version</button>
-          </div>
-        </section>}
 
-        <section className="node-config-section config-history">
-          <div className="node-config-section-title"><span>4</span><div><h3>Version history</h3><p>Backups, approvals, applies and rollback lineage remain auditable.</p></div></div>
-          {versions.length === 0 ? <div className="empty-state"><History size={18} /> No saved versions yet.</div> :
-            <div className="version-list">{versions.map(version => <article key={version.id} className={version.id === activeVersion?.id ? 'active-version' : ''}>
-              <div className="version-main">
-                <strong>v{version.configVersion}</strong><span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
-                {version.rollbackVersion && <span className="rollback-tag">restores v{version.rollbackVersion}</span>}
-                <small>created by {version.createdBy || 'unknown'} · {new Date(version.createdAt).toLocaleString()}</small>
-                {version.approvedBy && <small>approved by {version.approvedBy}</small>}
-              </div>
-              <div className="version-actions">
-                {version.status === 'PENDING_APPROVAL' && <button onClick={() => versionAction(version, 'approve')} disabled={!!working}><ShieldCheck size={13} /> Approve</button>}
-                {editableVersionStatuses.has(version.status) && (!version.approvalRequired || !!version.approvedBy) && <button className="primary" onClick={() => versionAction(version, 'apply')} disabled={!!working}><UploadCloud size={13} /> Apply</button>}
-                {version.jobId && <button onClick={() => navigate(`/jobs/${version.jobId}`)}>View job</button>}
-                {version.status !== 'APPLIED' && ['SUPERSEDED'].includes(version.status) && <button onClick={() => versionAction(version, 'rollback')} disabled={!!working}><RotateCcw size={13} /> Restore</button>}
-              </div>
-            </article>)}</div>}
+          <div className="config-review-footer">
+            <label>
+              <input type="checkbox" checked={rollingRestart} onChange={e => setRollingRestart(e.target.checked)} /> 
+              Perform rolling restart to apply immediately
+            </label>
+            <button className="primary" onClick={applyChanges} disabled={applying}>
+              {applying ? <Loader2 size={14} className="spin" /> : <Play size={14} />} Apply Changes
+            </button>
+          </div>
         </section>
-      </> : <div className="empty-state">No managed configuration file is available for this node.</div>}
+      )}
     </div>
   );
 }

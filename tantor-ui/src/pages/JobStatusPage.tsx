@@ -59,6 +59,15 @@ function getBusinessStepName(rawName: string): string {
     return 'Validate KRaft Cluster Health';
   }
 
+  // Rolling Config Update Steps
+  if (rawName === 'PREFLIGHT') return 'Preflight Validation';
+  if (rawName === 'BACKUP_ALL') return 'Global Configuration Backup';
+  if (rawName === 'WRITE_CONFIG') return 'Write Configuration';
+  if (rawName === 'RESTART_SERVICE') return 'Restart Service';
+  if (rawName === 'HEALTH_CHECK') return 'Health Check';
+  if (rawName === 'ROLLBACK') return 'Rollback Configuration';
+  if (rawName === 'FINAL_VERIFY') return 'Final Verification';
+
   return rawName;
 }
 
@@ -260,6 +269,13 @@ export function JobStatusPage() {
           )}
         </div>
       </div>
+      
+      {job.status === 'FAILED' && steps.some(s => s.name === 'ROLLBACK' && s.status === 'SUCCESS') && (
+        <div className="overview-alert error" style={{ marginBottom: '16px' }}>
+          <AlertTriangle size={17} />
+          <span>Previously successful nodes remain changed. Failed node was rolled back.</span>
+        </div>
+      )}
 
       <div className="top-status-bar glass-panel">
         <div className="status-col">

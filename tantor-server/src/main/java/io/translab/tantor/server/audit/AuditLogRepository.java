@@ -8,4 +8,7 @@ import java.util.UUID;
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSpecificationExecutor<AuditLog> {
     long countByStatus(String status);
     long countByCategory(String category);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT host_ip, host_name FROM kf_artifact_audit_log WHERE artifact_id = CAST(:artifactId AS UUID) AND host_ip IS NOT NULL LIMIT 1", nativeQuery = true)
+    java.util.List<Object[]> findArtifactHostInfo(@org.springframework.data.repository.query.Param("artifactId") String artifactId);
 }

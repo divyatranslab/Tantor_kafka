@@ -116,6 +116,15 @@ public class ArtifactService {
         artifact.setUpdatedBy(artifact.getCreatedBy());
 
         try {
+            artifact.setHostIp(getRealHostIp());
+            artifact.setHostname(getRealHostName());
+            artifact.setUserName(cmd.createdBy() != null ? cmd.createdBy() : "system");
+        } catch (Exception e) {
+            artifact.setHostIp("127.0.0.1");
+            artifact.setHostname("localhost");
+        }
+
+        try {
             // 4. Validate package contents (extraction test, Kafka version check, malware scan)
             packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName());
 
@@ -246,5 +255,50 @@ public class ArtifactService {
             throw new IllegalArgumentException("Storage directory must be a safe repository-relative path");
         }
         return normalized + "/" + cmd.serviceType().directory() + "/" + cmd.version() + "/" + artifactId;
+    }
+    private String getRealHostIp() {
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                String localAddr = servletAttrs.getRequest().getLocalAddr();
+                if (localAddr != null && !localAddr.startsWith("127.") && !localAddr.equals("0:0:0:0:0:0:0:1") && !localAddr.equals("::1")) {
+                    return localAddr;
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface iface = interfaces.nextElement();
+                if (iface.isLoopback() || !iface.isUp()) continue;
+                java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    java.net.InetAddress addr = addresses.nextElement();
+                    if (addr instanceof java.net.Inet4Address && !addr.isLoopbackAddress()) {
+                        return addr.getHostAddress();
+                    }
+                }
+            }
+            return java.net.InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            return "127.0.0.1";
+        }
+    }
+
+    private String getRealHostName() {
+        try {
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
+                String localName = servletAttrs.getRequest().getLocalName();
+                if (localName != null && !localName.equalsIgnoreCase("localhost") && !localName.equalsIgnoreCase("127.0.0.1") && !localName.equals("0:0:0:0:0:0:0:1") && !localName.equals("::1")) {
+                    return localName;
+                }
+            }
+        } catch (Exception ignored) {}
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "localhost";
+        }
     }
 }

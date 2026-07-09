@@ -40,7 +40,6 @@ const navSections: NavSection[] = [
         label: 'Clusters',
         subItems: [
           { label: 'All Clusters', path: '/clusters' },
-          { label: 'External Clusters', path: '/external-clusters' },
         ],
       },
       { icon: Server, label: 'Hosts', path: '/hosts' },

@@ -59,7 +59,21 @@ public class ExternalClusterService {
     private final TruststoreStorageService truststoreStorageService;
 
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
+    private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalDiscoveryReport> pendingDiscoveries = new ConcurrentHashMap<>();
+
+    public Map<String, String> getExternalTaskData(String taskId) {
+        for (ExternalAgentTask task : pendingTasks.values()) {
+            if (taskId.equals(task.getTaskId())) {
+                return task.getData();
+            }
+        }
+        return null;
+    }
+
+    public void removeExternalTask(String taskId) {
+        pendingTasks.entrySet().removeIf(entry -> taskId.equals(entry.getValue().getTaskId()));
+    }
 
     public Map<String, Object> testBootstrap(BootstrapExternalClusterRequest request) {
         String query = request.getBootstrapServers().trim();
@@ -477,7 +491,8 @@ public class ExternalClusterService {
     }
 
     private ExternalCluster saveDiscoveryCluster(ExternalDiscoveryReport report, String bootstrap, ExternalCluster cluster) {
-        cluster.setName(cluster.getId() == null ? report.getName().trim() : cluster.getName());
+        boolean isNew = cluster.getId() == null;
+        cluster.setName(isNew ? report.getName().trim() : cluster.getName());
         cluster.setBootstrapServers(bootstrap);
         cluster.setKafkaClusterId(blankToDefault(report.getKafkaClusterId(), null));
         cluster.setInstallPath(blankToDefault(report.getInstallPath(), null));
@@ -503,25 +518,27 @@ public class ExternalClusterService {
         
         report.setLastSeen(OffsetDateTime.now().toString());
 
-        activityAlertService.logActivity("INFO", "Discovered external cluster via agent: " + saved.getName(), saved.getId());
-        
-        auditService.record(
-            "CLUSTER_MANAGEMENT",
-            "EXTERNAL_CLUSTER_CONNECTED",
-            "CLUSTER",
-            saved.getId().toString(),
-            saved.getId(),
-            "SUCCESS",
-            null,
-            null,
-            null,
-            Map.of(
-                "message", "Successfully connected to external cluster " + saved.getName(),
-                "kafkaClusterId", String.valueOf(saved.getKafkaClusterId()),
-                "brokerCount", report.getBrokerCount(),
-                "nodes", writeJson(report)
-            )
-        );
+        if (isNew) {
+            activityAlertService.logActivity("INFO", "Discovered external cluster via agent: " + saved.getName(), saved.getId());
+            
+            auditService.record(
+                "CLUSTER_MANAGEMENT",
+                "EXTERNAL_CLUSTER_CONNECTED",
+                "CLUSTER",
+                saved.getId().toString(),
+                saved.getId(),
+                "SUCCESS",
+                null,
+                null,
+                null,
+                Map.of(
+                    "name", saved.getName(),
+                    "bootstrapServers", saved.getBootstrapServers(),
+                    "kafkaVersion", saved.getKafkaVersion(),
+                    "environment", saved.getEnvironment()
+                )
+            );
+        }
         
         return saved;
     }
@@ -640,13 +657,40 @@ public class ExternalClusterService {
         return Map.of("taskId", taskId, "status", "queued", "brokers", String.valueOf(brokers.size()));
     }
 
-    public Map<String, String> pollAgentTask(String clusterName, String hostname, String bootstrap) {
+    public Map<String, Object> queueTask(UUID clusterId, String hostname, String taskName, Map<String, Object> payload) {
+        ExternalCluster cluster = externalClusterRepository.findById(clusterId)
+                .orElseThrow(() -> new RuntimeException("External cluster not found"));
+        
+        String taskId = UUID.randomUUID().toString();
+        ExternalAgentTask task = new ExternalAgentTask();
+        task.setTaskId(taskId);
+        task.setTask(taskName);
+        task.setClusterName(cluster.getName());
+        task.setStatus("PENDING");
+        task.setHostname(hostname);
+        task.setBootstrap(cluster.getBootstrapServers());
+        
+        if (payload != null) {
+            if (payload.containsKey("configFilePath")) task.setConfigFilePath(String.valueOf(payload.get("configFilePath")));
+            if (payload.containsKey("backupDirPath")) task.setBackupDirPath(String.valueOf(payload.get("backupDirPath")));
+            if (payload.containsKey("backupFilePath")) task.setBackupFilePath(String.valueOf(payload.get("backupFilePath")));
+            if (payload.containsKey("serviceName")) task.setServiceName(String.valueOf(payload.get("serviceName")));
+            if (payload.containsKey("configChanges")) task.setConfigChanges((Map<String, String>) payload.get("configChanges"));
+        }
+        
+        String key = taskKey(cluster.getName(), hostname, cluster.getBootstrapServers());
+        pendingTasks.put(key, task);
+        
+        return Map.of("taskId", taskId, "status", "queued");
+    }
+
+    public Map<String, Object> pollAgentTask(String clusterName, String hostname, String bootstrap) {
         ExternalAgentTask task = pendingTasks.get(taskKey(clusterName, hostname, bootstrap));
         if (task == null || !"PENDING".equals(task.getStatus())) {
             return Map.of("task", "NONE");
         }
         task.setStatus("IN_PROGRESS");
-        Map<String, String> response = new LinkedHashMap<>();
+        Map<String, Object> response = new LinkedHashMap<>();
         response.put("task", task.getTask());
         response.put("taskId", task.getTaskId());
         if (task.getConfigKey() != null) {
@@ -654,6 +698,21 @@ public class ExternalClusterService {
         }
         if (task.getConfigValue() != null) {
             response.put("configValue", task.getConfigValue());
+        }
+        if (task.getConfigFilePath() != null) {
+            response.put("configFilePath", task.getConfigFilePath());
+        }
+        if (task.getBackupDirPath() != null) {
+            response.put("backupDirPath", task.getBackupDirPath());
+        }
+        if (task.getBackupFilePath() != null) {
+            response.put("backupFilePath", task.getBackupFilePath());
+        }
+        if (task.getConfigChanges() != null) {
+            response.put("configChanges", task.getConfigChanges());
+        }
+        if (task.getServiceName() != null) {
+            response.put("serviceName", task.getServiceName());
         }
         response.put("restart", String.valueOf(task.isRestart()));
         return response;
@@ -666,12 +725,35 @@ public class ExternalClusterService {
         }
         task.setStatus(blankToDefault(completion.getStatus(), "SUCCESS"));
         task.setMessage(completion.getMessage());
+        if (completion.getData() != null) {
+            task.setData(completion.getData());
+        }
         if (!"FAILED".equalsIgnoreCase(task.getStatus())) {
+            completedTasks.put(task.getTaskId(), task);
+            pendingTasks.remove(taskKey(clusterName, hostname, bootstrap));
+        } else {
+            completedTasks.put(task.getTaskId(), task);
             pendingTasks.remove(taskKey(clusterName, hostname, bootstrap));
         }
     }
 
-    public String getExternalTaskStatus(String taskId) {
+    public Map<String, Object> getExternalTaskStatus(String taskId) {
+        Map<String, Object> result = new HashMap<>();
+        
+        ExternalAgentTask completed = completedTasks.get(taskId);
+        if (completed != null) {
+            result.put("taskId", taskId);
+            result.put("status", completed.getStatus());
+            if (completed.getMessage() != null) {
+                result.put("message", completed.getMessage());
+            }
+            if (completed.getData() != null) {
+                result.put("data", completed.getData());
+            }
+            completedTasks.remove(taskId);
+            return result;
+        }
+
         boolean anyPending = false;
         boolean anyFailed = false;
         List<String> messages = new ArrayList<>();
@@ -689,13 +771,17 @@ public class ExternalClusterService {
                 messages.add(task.getMessage());
             }
         }
+        
+        result.put("taskId", taskId);
         if (anyFailed) {
-            return "FAILED: " + String.join("; ", messages);
+            result.put("status", "FAILED");
+            result.put("message", String.join("; ", messages));
+        } else if (anyPending) {
+            result.put("status", "IN_PROGRESS");
+        } else {
+            result.put("status", "SUCCESS");
         }
-        if (anyPending) {
-            return "External agent task is still running...";
-        }
-        return "COMPLETED successfully.";
+        return result;
     }
 
     public boolean isAgentManaged(ExternalCluster cluster) {
@@ -815,6 +901,7 @@ public class ExternalClusterService {
         agent.setIpAddresses(blankToDefault(report.getIpAddresses(), writeJson(List.of(extractHostFromBootstrap(report.getBootstrapServers())))));
         agent.setVersion("tantor-discovery-agent");
         agent.setStatus(report.isRunning() ? "ONLINE" : "OFFLINE");
+        agent.setCanExecuteTasks(report.isCanExecuteTasks());
         agent.setLastHeartbeat(OffsetDateTime.now());
         if (cluster != null) {
             agent.setClusterId(cluster.getId());
@@ -1134,6 +1221,7 @@ public class ExternalClusterService {
         private String hostname;
         private String ipAddresses;
         private String lastSeen;
+        private boolean canExecuteTasks;
         private String listeners;
         private String advertisedListeners;
         private String processRoles;
@@ -1193,6 +1281,12 @@ public class ExternalClusterService {
         private String configValue;
         private boolean restart;
         private String message;
+        private String configFilePath;
+        private String backupDirPath;
+        private String backupFilePath;
+        private Map<String, String> configChanges;
+        private String serviceName;
+        private Map<String, String> data;
     }
 
     @Scheduled(fixedDelay = 60000)
@@ -1241,5 +1335,6 @@ public class ExternalClusterService {
     public static class AgentTaskCompletion {
         private String status;
         private String message;
+        private Map<String, String> data;
     }
 }

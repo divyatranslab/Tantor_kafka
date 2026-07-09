@@ -56,10 +56,6 @@ export function AuditLogs() {
           if (!response.ok) throw new Error(`Management audit API returned ${response.status}`);
           return response.json() as Promise<AuditResponse>;
         }),
-        fetch('/api/v1/artifacts/audit?size=500').then(async response => {
-          if (!response.ok) throw new Error(`Package audit API returned ${response.status}`);
-          return response.json() as Promise<AuditResponse>;
-        }),
       ]);
       const combined = results.flatMap(result => result.status === 'fulfilled' ? result.value.events || [] : [])
         .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());

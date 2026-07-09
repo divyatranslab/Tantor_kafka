@@ -42,6 +42,7 @@ type ExternalClusterPayload struct {
 	MemoryTotalMb       int64   `json:"memoryTotalMb"`
 	DiskUsedGb          int64   `json:"diskUsedGb"`
 	DiskTotalGb         int64   `json:"diskTotalGb"`
+	CanExecuteTasks     bool    `json:"canExecuteTasks"`
 }
 
 func externalAgentURL(serverURL, clusterName, suffix string) string {
@@ -85,6 +86,7 @@ func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName strin
 		Listeners:           c.Listeners,
 		AdvertisedListeners: c.AdvertisedListeners,
 		ProcessRoles:        c.ProcessRoles,
+		CanExecuteTasks:     true,
 	}
 
 	// Fetch CPU, RAM, and Disk telemetry

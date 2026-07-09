@@ -10,28 +10,55 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.OffsetDateTime;
 import java.util.Map;
 
+import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
+import io.translab.tantor.artifact.domain.Artifact;
+import java.util.Optional;
+import java.util.UUID;
+
 @Service
 public class ArtifactAuditService {
     private final ArtifactAuditRepository repository;
     private final ObjectMapper objectMapper;
+    private final ArtifactJpaRepository artifactRepository;
 
-    public ArtifactAuditService(ArtifactAuditRepository repository, ObjectMapper objectMapper) {
+    public ArtifactAuditService(ArtifactAuditRepository repository, ObjectMapper objectMapper, ArtifactJpaRepository artifactRepository) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+        this.artifactRepository = artifactRepository;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String actor, String action, String resourceId, String status,
                        Object oldValue, Object newValue, Object details, String ipAddress) {
         ArtifactAuditLog event = new ArtifactAuditLog();
-        event.setActorUser(actor == null || actor.isBlank() ? "system" : actor);
+        event.setUserName(actor == null || actor.isBlank() ? "system" : actor);
         event.setCategory("PACKAGE");
         event.setAction(action);
         event.setResourceType("ARTIFACT");
-        event.setArtifactId(resourceId);
+        if (resourceId != null) event.setArtifactId(resourceId);
         event.setStatus(status);
         event.setDetails(json(details));
         event.setCreatedAt(OffsetDateTime.now());
+        
+        String finalActor = actor == null || actor.isBlank() ? "system" : actor;
+        event.setCreatedBy(finalActor);
+
+        if (resourceId != null) {
+            try {
+                Optional<Artifact> opt = artifactRepository.findById(UUID.fromString(resourceId));
+                if (opt.isPresent()) {
+                    Artifact a = opt.get();
+                    event.setHostIp(a.getHostIp());
+                    event.setHostName(a.getHostname());
+                    event.setVersion(a.getVersion());
+                    event.setPathOfTar(a.getRelativePath());
+                    event.setChecksum(a.getChecksumSha256());
+                }
+            } catch (Exception e) {
+                // ignore invalid UUID
+            }
+        }
+        
         repository.saveAndFlush(event);
     }
 
@@ -40,7 +67,7 @@ public class ArtifactAuditService {
     }
 
     public java.util.List<ArtifactAuditLog> getLogsForResource(String resourceId) {
-        return repository.findByResourceIdOrderByCreatedAtDesc(resourceId);
+        return repository.findByArtifactIdOrderByCreatedAtDesc(resourceId);
     }
 
     public String integrity() {
