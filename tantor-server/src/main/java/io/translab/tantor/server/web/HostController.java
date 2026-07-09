@@ -186,19 +186,32 @@ public class HostController {
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is not in PENDING state."));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is already connected or occupied."));
         }
 
-        host.setStatus("ACTIVE");
-        hostRepository.save(host);
-        
+        Job job = new Job();
+        job.setType(JobType.ONBOARDING);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(true);
+        job.setResourceKey("host:" + id);
+        JobStep step = new JobStep();
+        step.setStepOrder(1);
+        step.setName("Connect host " + host.getHostname());
+        step.setTargetId(id);
+        try {
+            String payload = objectMapper.writeValueAsString(Map.of("hostId", id));
+            job.setPayload(payload);
+            step.setPayload(payload);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Unable to create onboarding job."));
+        }
+        Job saved = jobService.createJob(job, List.of(step));
         activityAlertService.logAudit("INFO", "APPROVAL", "APPROVE", "Host onboarding approved", "HOST", id,
-                host.getClusterId(), "PENDING", "ACTIVE", "SUCCESS", "APPROVED", null);
-        auditService.record("APPROVAL", "HOST_APPROVED", "HOST", id, host.getClusterId(), "SUCCESS",
-                Map.of("status", "PENDING"), Map.of("status", "ACTIVE"),
+                host.getClusterId(), "PENDING", "ONBOARDING_QUEUED", "SUCCESS", "APPROVED", "jobId=" + saved.getId());
+        auditService.record("APPROVAL", "HOST_ONBOARDING_APPROVED", "HOST", id, host.getClusterId(), "SUCCESS",
+                Map.of("status", host.getStatus()), Map.of("jobId", saved.getId(), "status", "ONBOARDING_REQUESTED"),
                 Map.of("approved", true), Map.of("hostname", String.valueOf(host.getHostname())));
-                
-        return ResponseEntity.ok(hostSummary(host));
+        return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
     @Transactional
@@ -344,12 +357,13 @@ public class HostController {
                     summary.put("agentPath", "/srv/tantor-agent/tantor-discovery-agent-linux");
                 }
             }
+        } else if ("PENDING".equalsIgnoreCase(effectiveStatus)) {
+            // Host is awaiting approval — keep it in the modal, not the main table
+            summary.put("available", false);
+            summary.put("status", "PENDING");
         } else if (activeCluster.isPresent() || "OCCUPIED".equalsIgnoreCase(effectiveStatus)) {
             summary.put("available", false);
             summary.put("status", "OCCUPIED_INTERNAL");
-        } else if ("PENDING".equalsIgnoreCase(effectiveStatus)) {
-            summary.put("available", false);
-            summary.put("status", "PENDING");
         } else {
             summary.put("available", true);
             summary.put("status", "AVAILABLE");
