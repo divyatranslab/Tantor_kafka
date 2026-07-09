@@ -50,9 +50,44 @@ export function KafkaConnect() {
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
   const [customIp, setCustomIp] = useState('');
   const [customPort, setCustomPort] = useState('');
+  const [protocol, setProtocol] = useState('http');
+  const [certificate, setCertificate] = useState('');
+  const [certType, setCertType] = useState('PEM');
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPassword, setCertPassword] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const buildHeaders = async (baseHeaders: Record<string, string> = {}) => {
+    const headers = { ...baseHeaders };
+    if (certType === 'PEM' && certificate.trim()) {
+      headers['X-Custom-Certificate'] = btoa(certificate.trim());
+      headers['X-Custom-Certificate-Type'] = 'PEM';
+    } else if (certType === 'PKCS12' && certFile) {
+      const base64 = await readFileAsBase64(certFile);
+      headers['X-Custom-Certificate'] = base64;
+      headers['X-Custom-Certificate-Type'] = 'PKCS12';
+      if (certPassword) {
+        headers['X-Custom-Certificate-Password'] = certPassword;
+      }
+    }
+    return headers;
+  };
 
   const getQueryParams = () => {
     const params = new URLSearchParams();
+    if (protocol) params.append('protocol', protocol);
     if (customIp.trim()) params.append('ip', customIp.trim());
     if (customPort.trim()) params.append('port', customPort.trim());
     const qs = params.toString();
@@ -63,7 +98,10 @@ export function KafkaConnect() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/summary${getQueryParams()}`);
+      const hdrs = await buildHeaders();
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/summary${getQueryParams()}`, {
+        headers: hdrs
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       setSummary(data);
@@ -95,9 +133,10 @@ export function KafkaConnect() {
     setError(null);
     try {
       const body = JSON.parse(connectorJson);
+      const hdrs = await buildHeaders({ 'Content-Type': 'application/json' });
       const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors${getQueryParams()}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: hdrs,
         body: JSON.stringify(body)
       });
       const data = await res.json().catch(() => ({}));
@@ -120,7 +159,11 @@ export function KafkaConnect() {
       const url = action === 'delete'
         ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}${getQueryParams()}`
         : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}${getQueryParams()}`;
-      const res = await fetch(url, { method: action === 'delete' ? 'DELETE' : 'PUT' });
+      const hdrs = await buildHeaders();
+      const res = await fetch(url, { 
+        method: action === 'delete' ? 'DELETE' : 'PUT',
+        headers: hdrs
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
       await load();
@@ -142,8 +185,15 @@ export function KafkaConnect() {
       <div className="ds-header">
         <h2>Kafka Connect</h2>
         <div className="ds-actions">
+          <select value={protocol} onChange={e => setProtocol(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }}>
+            <option value="http">http://</option>
+            <option value="https">https://</option>
+          </select>
           <input type="text" placeholder="Custom IP" value={customIp} onChange={e => setCustomIp(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '120px' }} />
           <input type="number" placeholder="Port" value={customPort} onChange={e => setCustomPort(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }} />
+          <button className="ds-button" onClick={() => setShowAdvanced(!showAdvanced)} title="TLS/Security Options">
+            Certificate
+          </button>
           <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
@@ -152,6 +202,49 @@ export function KafkaConnect() {
           </button>
         </div>
       </div>
+
+      {showAdvanced && (
+        <div className="ds-form" style={{ padding: '0 0 10px 0' }}>
+          <div className="ds-field">
+            <label>Certificate Type</label>
+            <select value={certType} onChange={e => setCertType(e.target.value)}>
+              <option value="PEM">PEM (Text)</option>
+              <option value="PKCS12">PKCS12 / JKS (.p12, .jks)</option>
+            </select>
+          </div>
+          {certType === 'PEM' ? (
+            <div className="ds-field">
+              <label>Custom CA Certificate (PEM Format)</label>
+              <textarea 
+                value={certificate} 
+                onChange={e => setCertificate(e.target.value)} 
+                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                style={{ minHeight: '120px' }}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="ds-field">
+                <label>Truststore File (.p12)</label>
+                <input 
+                  type="file" 
+                  accept=".p12,.pfx,.jks"
+                  onChange={e => setCertFile(e.target.files ? e.target.files[0] : null)} 
+                />
+              </div>
+              <div className="ds-field">
+                <label>Truststore Password</label>
+                <input 
+                  type="password" 
+                  value={certPassword} 
+                  onChange={e => setCertPassword(e.target.value)} 
+                  placeholder="Password"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {error && <div className="ds-alert">{error}</div>}
 

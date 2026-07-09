@@ -10,6 +10,7 @@ import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -43,9 +44,36 @@ public class DataServicesController {
     private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newBuilder()
+    private final HttpClient defaultHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
+
+    private HttpClient getHttpClient(String encodedCert) {
+        if (encodedCert == null || encodedCert.isBlank()) {
+            return defaultHttpClient;
+        }
+        try {
+            org.springframework.web.context.request.ServletRequestAttributes attrs = 
+                (org.springframework.web.context.request.ServletRequestAttributes) org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes();
+            String certType = attrs.getRequest().getHeader("X-Custom-Certificate-Type");
+            String certPassword = attrs.getRequest().getHeader("X-Custom-Certificate-Password");
+
+            javax.net.ssl.SSLContext sslContext;
+            if ("PKCS12".equalsIgnoreCase(certType)) {
+                sslContext = SslUtils.createSslContextFromPkcs12(encodedCert, certPassword);
+            } else {
+                String pemCertificate = new String(java.util.Base64.getDecoder().decode(encodedCert), StandardCharsets.UTF_8);
+                sslContext = SslUtils.createSslContextFromPem(pemCertificate);
+            }
+
+            return HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(3))
+                    .sslContext(sslContext)
+                    .build();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to initialize SSL context from provided certificate: " + e.getMessage(), e);
+        }
+    }
 
     @GetMapping("/connections")
     public ResponseEntity<?> connections(@PathVariable UUID clusterId) {
@@ -59,12 +87,14 @@ public class DataServicesController {
     @GetMapping("/schema-registry/summary")
     public ResponseEntity<?> schemaRegistrySummary(
             @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY);
-        JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null);
+        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY);
+        JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null, encodedCert);
 
         List<Map<String, Object>> subjects = new ArrayList<>();
         for (JsonNode subjectNode : subjectsNode) {
@@ -73,7 +103,7 @@ public class DataServicesController {
             row.put("subject", subject);
             row.put("type", subjectType(subject));
             try {
-                JsonNode latest = requestJson(baseUrl, "GET", "/subjects/" + pathSegment(subject) + "/versions/latest", null);
+                JsonNode latest = requestJson(baseUrl, "GET", "/subjects/" + pathSegment(subject) + "/versions/latest", null, encodedCert);
                 row.put("version", latest.path("version").asInt(0));
                 row.put("id", latest.path("id").asInt(0));
                 row.put("schemaType", latest.path("schemaType").asText("AVRO"));
@@ -103,39 +133,45 @@ public class DataServicesController {
     public ResponseEntity<?> createSchemaVersion(
             @PathVariable UUID clusterId,
             @PathVariable String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestBody JsonNode body
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "POST",
-                "/subjects/" + pathSegment(subject) + "/versions", body);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "POST",
+                "/subjects/" + pathSegment(subject) + "/versions", body, encodedCert);
     }
 
     @DeleteMapping("/schema-registry/subjects/{subject}")
     public ResponseEntity<?> deleteSubject(
             @PathVariable UUID clusterId,
             @PathVariable String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "DELETE",
-                "/subjects/" + pathSegment(subject), null);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "DELETE",
+                "/subjects/" + pathSegment(subject), null, encodedCert);
     }
 
     @GetMapping("/kafka-connect/summary")
     public ResponseEntity<?> kafkaConnectSummary(
             @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT);
+        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT);
 
-        JsonNode root = requestJson(baseUrl, "GET", "/", null);
-        JsonNode connectorsNode = requestJson(baseUrl, "GET", "/connectors", null);
-        JsonNode pluginsNode = requestJson(baseUrl, "GET", "/connector-plugins", null);
+        JsonNode root = requestJson(baseUrl, "GET", "/", null, encodedCert);
+        JsonNode connectorsNode = requestJson(baseUrl, "GET", "/connectors", null, encodedCert);
+        JsonNode pluginsNode = requestJson(baseUrl, "GET", "/connector-plugins", null, encodedCert);
 
         List<Map<String, Object>> connectors = new ArrayList<>();
         int runningTasks = 0;
@@ -147,8 +183,8 @@ public class DataServicesController {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("name", name);
 
-            JsonNode config = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/config", null);
-            JsonNode status = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/status", null);
+            JsonNode config = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/config", null, encodedCert);
+            JsonNode status = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/status", null, encodedCert);
             String state = status.path("connector").path("state").asText("UNKNOWN");
             if ("RUNNING".equalsIgnoreCase(state)) {
                 runningConnectors++;
@@ -192,25 +228,29 @@ public class DataServicesController {
     @PostMapping("/kafka-connect/connectors")
     public ResponseEntity<?> createConnector(
             @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestBody JsonNode body
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "POST", "/connectors", body);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "POST", "/connectors", body, encodedCert);
     }
 
     @PutMapping("/kafka-connect/connectors/{name}/config")
     public ResponseEntity<?> updateConnectorConfig(
             @PathVariable UUID clusterId,
             @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestBody JsonNode body
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
-                "/connectors/" + pathSegment(name) + "/config", body);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
+                "/connectors/" + pathSegment(name) + "/config", body, encodedCert);
     }
 
     @PutMapping("/kafka-connect/connectors/{name}/{action:pause|resume|restart}")
@@ -218,32 +258,36 @@ public class DataServicesController {
             @PathVariable UUID clusterId,
             @PathVariable String name,
             @PathVariable String action,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
-                "/connectors/" + pathSegment(name) + "/" + action, null);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
+                "/connectors/" + pathSegment(name) + "/" + action, null, encodedCert);
     }
 
     @DeleteMapping("/kafka-connect/connectors/{name}")
     public ResponseEntity<?> deleteConnector(
             @PathVariable UUID clusterId,
             @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "DELETE",
-                "/connectors/" + pathSegment(name), null);
+        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "DELETE",
+                "/connectors/" + pathSegment(name), null, encodedCert);
     }
 
-    private ResponseEntity<?> forwardJson(String baseUrl, String method, String path, JsonNode body) {
-        JsonNode response = requestJson(baseUrl, method, path, body);
+    private ResponseEntity<?> forwardJson(String baseUrl, String method, String path, JsonNode body, String encodedCert) {
+        JsonNode response = requestJson(baseUrl, method, path, body, encodedCert);
         return ResponseEntity.ok(response);
     }
 
-    private JsonNode requestJson(String baseUrl, String method, String path, JsonNode body) {
+    private JsonNode requestJson(String baseUrl, String method, String path, JsonNode body, String encodedCert) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(normalizeBaseUrl(baseUrl) + path))
@@ -257,7 +301,8 @@ public class DataServicesController {
                         .method(method, HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)));
             }
 
-            HttpResponse<String> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpClient client = getHttpClient(encodedCert);
+            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new DataServiceException(response.statusCode(), response.body());
             }
@@ -298,11 +343,12 @@ public class DataServicesController {
         });
     }
 
-    private String customBaseUrl(String ip, Integer port, Cluster cluster, ServiceKind kind) {
+    private String customBaseUrl(String protocol, String ip, Integer port, Cluster cluster, ServiceKind kind) {
+        String scheme = (protocol != null && !protocol.isBlank()) ? protocol : "http";
         if (ip != null && !ip.isBlank() && port != null) {
-            return "http://" + ip + ":" + port;
+            return scheme + "://" + ip + ":" + port;
         } else if (ip != null && !ip.isBlank()) {
-            return "http://" + ip + ":" + kind.defaultPort();
+            return scheme + "://" + ip + ":" + kind.defaultPort();
         }
         return serviceBaseUrl(cluster, kind);
     }

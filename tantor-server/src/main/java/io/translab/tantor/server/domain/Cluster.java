@@ -48,6 +48,15 @@ public class Cluster {
     @Column(name = "updated_by", nullable = false)
     private String updatedBy = "system";
 
+    @Column(name = "\"user\"")
+    private String user;
+
+    @Column(name = "role")
+    private String role;
+
+    @Column(name = "config_path")
+    private String configPath;
+
     @Column(name = "kafka_version", nullable = false)
     private String kafkaVersion;
 
@@ -76,6 +85,7 @@ public class Cluster {
         updatedAt = now;
         if (createdBy == null || createdBy.isBlank()) createdBy = "system";
         if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+        if (user == null || user.isBlank()) user = createdBy;
         if (nodeIds == null) nodeIds = new ArrayList<>();
     }
 
@@ -83,6 +93,7 @@ public class Cluster {
     void onUpdate() {
         updatedAt = Instant.now();
         if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+        if (user == null || user.isBlank()) user = updatedBy;
     }
 
     @Column(name = "deleted_at")
