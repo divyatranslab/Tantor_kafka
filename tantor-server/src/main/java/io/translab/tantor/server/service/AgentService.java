@@ -35,6 +35,9 @@ public class AgentService {
     private final ActivityAlertService activityAlertService;
     private final AuditService auditService;
 
+    @org.springframework.beans.factory.annotation.Value("${tantor.hosts.approval-workflow.enabled:false}")
+    private boolean approvalWorkflowEnabled;
+
     @Transactional
     public void registerHost(HostRegistrationDto dto) {
         Host existing = hostRepository.findById(dto.getHostId()).orElse(null);
@@ -64,9 +67,9 @@ public class AgentService {
         host.setAgentPath(dto.getAgentPath());
         host.setAgentStatus("ONLINE");
         if (host.getStatus() == null) {
-            host.setStatus("PENDING");
+            host.setStatus(approvalWorkflowEnabled ? "PENDING" : "ACTIVE");
         } else if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
-            host.setStatus("ONLINE");
+            host.setStatus("ACTIVE");
         }
         host.setLastHeartbeat(OffsetDateTime.now());
         
@@ -95,7 +98,7 @@ public class AgentService {
             host.setLastHeartbeat(OffsetDateTime.now());
             host.setAgentStatus("ONLINE");
             if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
-                host.setStatus("ONLINE");
+                host.setStatus("ACTIVE");
             }
             hostRepository.save(host);
             log.debug("Processed heartbeat for host: {}", dto.getHostId());

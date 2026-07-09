@@ -91,8 +91,8 @@ export function Hosts() {
       || 'Unknown';
   };
 
-  const activeHosts = hosts.filter(h => h.status !== 'PENDING');
-  const activeHostIps = new Set(activeHosts.map(host => displayIp(host.ipAddresses)));
+  const activeHosts = hosts;
+  const activeHostIps = new Set(hosts.filter(h => h.status !== 'PENDING').map(host => displayIp(host.ipAddresses)));
   const pendingHosts = Array.from(
     hosts
       .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h.ipAddresses)))
@@ -176,9 +176,10 @@ export function Hosts() {
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : 'occupied'}`}>
+                      <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : host.status === 'PENDING' ? 'warning' : 'occupied'}`}>
                         {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' : 
-                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' : 'Available'}
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' : 
+                         host.status === 'PENDING' ? 'Pending Approval' : 'Available'}
                       </span>
                       {host.status !== 'AVAILABLE' && (
                         <div className="cluster-lock">
@@ -227,7 +228,12 @@ export function Hosts() {
                       </button>
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
-                          {host.status === 'OCCUPIED_INTERNAL' ? (
+                          {host.status === 'PENDING' ? (
+                            <>
+                              <button onClick={() => approveHost(host.id)}>Approve</button>
+                              <button className="text-danger" onClick={() => deleteHost(host.id)}>Reject</button>
+                            </>
+                          ) : host.status === 'OCCUPIED_INTERNAL' ? (
                             <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
                           ) : host.status === 'AVAILABLE' ? (
                             <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
