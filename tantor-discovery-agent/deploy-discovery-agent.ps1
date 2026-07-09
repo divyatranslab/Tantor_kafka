@@ -1,6 +1,6 @@
 param (
-    [string]$VmIp = "192.168.3.222", # Change this to whatever VM you want to deploy to
-    [string]$VmUser = "apb_app",
+    [string]$VmIp = "192.168.3.161", # Change this to whatever VM you want to deploy to
+    [string]$VmUser = "root",
     [string]$AgentDir = "/tmp/tantor-discovery-agent"
 )
 

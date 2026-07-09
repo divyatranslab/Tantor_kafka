@@ -1358,7 +1358,7 @@ export function ClusterDeployment() {
                   </div>
                   <div className="cd-node-options">
                     {filteredHosts.map(host => {
-                      const disabled = host.status !== 'ONLINE' || host.available === false;
+                      const disabled = host.status !== 'AVAILABLE' || host.available === false;
                       const checked = draftNodeIds.includes(host.id);
                       return (
                         <button
