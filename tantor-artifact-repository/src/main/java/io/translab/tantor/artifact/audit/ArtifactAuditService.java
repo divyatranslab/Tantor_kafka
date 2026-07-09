@@ -40,7 +40,7 @@ public class ArtifactAuditService {
     }
 
     public java.util.List<ArtifactAuditLog> getLogsForResource(String resourceId) {
-        return repository.findByResourceIdOrderByCreatedAtDesc(resourceId);
+        return repository.findByArtifactIdOrderByCreatedAtDesc(resourceId);
     }
 
     public String integrity() {

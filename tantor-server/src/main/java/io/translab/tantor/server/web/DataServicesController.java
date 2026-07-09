@@ -54,9 +54,13 @@ public class DataServicesController {
     }
 
     @GetMapping("/schema-registry/summary")
-    public ResponseEntity<?> schemaRegistrySummary(@PathVariable UUID clusterId) {
+    public ResponseEntity<?> schemaRegistrySummary(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port
+    ) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = serviceBaseUrl(cluster, ServiceKind.SCHEMA_REGISTRY);
+        String baseUrl = customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY);
         JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null);
 
         List<Map<String, Object>> subjects = new ArrayList<>();
@@ -96,24 +100,35 @@ public class DataServicesController {
     public ResponseEntity<?> createSchemaVersion(
             @PathVariable UUID clusterId,
             @PathVariable String subject,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
             @RequestBody JsonNode body
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.SCHEMA_REGISTRY), "POST",
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "POST",
                 "/subjects/" + pathSegment(subject) + "/versions", body);
     }
 
     @DeleteMapping("/schema-registry/subjects/{subject}")
-    public ResponseEntity<?> deleteSubject(@PathVariable UUID clusterId, @PathVariable String subject) {
+    public ResponseEntity<?> deleteSubject(
+            @PathVariable UUID clusterId,
+            @PathVariable String subject,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port
+    ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.SCHEMA_REGISTRY), "DELETE",
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "DELETE",
                 "/subjects/" + pathSegment(subject), null);
     }
 
     @GetMapping("/kafka-connect/summary")
-    public ResponseEntity<?> kafkaConnectSummary(@PathVariable UUID clusterId) {
+    public ResponseEntity<?> kafkaConnectSummary(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port
+    ) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT);
+        String baseUrl = customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT);
 
         JsonNode root = requestJson(baseUrl, "GET", "/", null);
         JsonNode connectorsNode = requestJson(baseUrl, "GET", "/connectors", null);
@@ -172,19 +187,26 @@ public class DataServicesController {
     }
 
     @PostMapping("/kafka-connect/connectors")
-    public ResponseEntity<?> createConnector(@PathVariable UUID clusterId, @RequestBody JsonNode body) {
+    public ResponseEntity<?> createConnector(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestBody JsonNode body
+    ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT), "POST", "/connectors", body);
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "POST", "/connectors", body);
     }
 
     @PutMapping("/kafka-connect/connectors/{name}/config")
     public ResponseEntity<?> updateConnectorConfig(
             @PathVariable UUID clusterId,
             @PathVariable String name,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
             @RequestBody JsonNode body
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT), "PUT",
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
                 "/connectors/" + pathSegment(name) + "/config", body);
     }
 
@@ -192,17 +214,24 @@ public class DataServicesController {
     public ResponseEntity<?> connectorAction(
             @PathVariable UUID clusterId,
             @PathVariable String name,
-            @PathVariable String action
+            @PathVariable String action,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port
     ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT), "PUT",
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
                 "/connectors/" + pathSegment(name) + "/" + action, null);
     }
 
     @DeleteMapping("/kafka-connect/connectors/{name}")
-    public ResponseEntity<?> deleteConnector(@PathVariable UUID clusterId, @PathVariable String name) {
+    public ResponseEntity<?> deleteConnector(
+            @PathVariable UUID clusterId,
+            @PathVariable String name,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port
+    ) {
         Cluster cluster = getCluster(clusterId);
-        return forwardJson(serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT), "DELETE",
+        return forwardJson(customBaseUrl(ip, port, cluster, ServiceKind.KAFKA_CONNECT), "DELETE",
                 "/connectors/" + pathSegment(name), null);
     }
 
@@ -256,6 +285,15 @@ public class DataServicesController {
     private Cluster getCluster(UUID clusterId) {
         return clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+    }
+
+    private String customBaseUrl(String ip, Integer port, Cluster cluster, ServiceKind kind) {
+        if (ip != null && !ip.isBlank() && port != null) {
+            return "http://" + ip + ":" + port;
+        } else if (ip != null && !ip.isBlank()) {
+            return "http://" + ip + ":" + kind.defaultPort();
+        }
+        return serviceBaseUrl(cluster, kind);
     }
 
     private String serviceBaseUrl(Cluster cluster, ServiceKind kind) {

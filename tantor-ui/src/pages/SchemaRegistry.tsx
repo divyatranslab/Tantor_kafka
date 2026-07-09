@@ -39,12 +39,22 @@ export function SchemaRegistry() {
   const [subject, setSubject] = useState('');
   const [schemaType, setSchemaType] = useState('AVRO');
   const [schema, setSchema] = useState(emptySchema);
+  const [customIp, setCustomIp] = useState('');
+  const [customPort, setCustomPort] = useState('');
+
+  const getQueryParams = () => {
+    const params = new URLSearchParams();
+    if (customIp.trim()) params.append('ip', customIp.trim());
+    if (customPort.trim()) params.append('port', customPort.trim());
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/summary`);
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/summary${getQueryParams()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       setSummary(data);
@@ -67,7 +77,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(subject.trim())}/versions`, {
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(subject.trim())}/versions${getQueryParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType, schema })
@@ -91,7 +101,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`, {
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}${getQueryParams()}`, {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
@@ -109,6 +119,8 @@ export function SchemaRegistry() {
       <div className="ds-header">
         <h2>Schema Registry</h2>
         <div className="ds-actions">
+          <input type="text" placeholder="Custom IP" value={customIp} onChange={e => setCustomIp(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '120px' }} />
+          <input type="number" placeholder="Port" value={customPort} onChange={e => setCustomPort(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }} />
           <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
