@@ -7,5 +7,5 @@ discovery:
     - "/srv/apps"
     - "/data/apps"
     - "/opt"
-  node_name: ""
+  node_name: "kafka-node-161"
   restart_command: "systemctl restart kafka"

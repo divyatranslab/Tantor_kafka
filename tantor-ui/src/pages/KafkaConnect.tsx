@@ -48,12 +48,22 @@ export function KafkaConnect() {
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
   const [showCreate, setShowCreate] = useState(false);
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
+  const [customIp, setCustomIp] = useState('');
+  const [customPort, setCustomPort] = useState('');
+
+  const getQueryParams = () => {
+    const params = new URLSearchParams();
+    if (customIp.trim()) params.append('ip', customIp.trim());
+    if (customPort.trim()) params.append('port', customPort.trim());
+    const qs = params.toString();
+    return qs ? `?${qs}` : '';
+  };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`);
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/summary${getQueryParams()}`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       setSummary(data);
@@ -85,7 +95,7 @@ export function KafkaConnect() {
     setError(null);
     try {
       const body = JSON.parse(connectorJson);
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors`, {
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors${getQueryParams()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -108,8 +118,8 @@ export function KafkaConnect() {
     setError(null);
     try {
       const url = action === 'delete'
-        ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}`
-        : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}`;
+        ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}${getQueryParams()}`
+        : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}${getQueryParams()}`;
       const res = await fetch(url, { method: action === 'delete' ? 'DELETE' : 'PUT' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
@@ -132,6 +142,8 @@ export function KafkaConnect() {
       <div className="ds-header">
         <h2>Kafka Connect</h2>
         <div className="ds-actions">
+          <input type="text" placeholder="Custom IP" value={customIp} onChange={e => setCustomIp(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '120px' }} />
+          <input type="number" placeholder="Port" value={customPort} onChange={e => setCustomPort(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }} />
           <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>

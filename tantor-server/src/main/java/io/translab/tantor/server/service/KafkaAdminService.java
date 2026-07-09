@@ -170,33 +170,31 @@ public class KafkaAdminService {
                 List<Map<String, Object>> finalNodes = new ArrayList<>();
                 Map<Integer, Map<String, Object>> nodeMap = new HashMap<>();
 
-                // 1. All nodes returned by describeCluster().nodes() are brokers.
+                // Get configurations for all nodes to determine roles
+                List<org.apache.kafka.common.config.ConfigResource> resources = new ArrayList<>();
                 for (org.apache.kafka.common.Node node : nodes) {
-                    Map<String, Object> nodeData = new HashMap<>();
-                    nodeData.put("id", node.id());
-                    nodeData.put("broker_id", String.valueOf(node.id()));
-                    nodeData.put("host", node.host());
-                    nodeData.put("port", node.port());
-                    nodeData.put("endpoint", node.host() + ":" + node.port());
-                    nodeData.put("rack", node.rack() == null ? "" : node.rack());
-                    nodeData.put("isBroker", true);
-                    nodeData.put("isController", false); // Default, might be updated below
-                    nodeMap.put(node.id(), nodeData);
+                    resources.add(new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(node.id())));
                 }
-
-                // Try to resolve dedicated controller endpoints via broker configuration (controller.quorum.voters)
+                
+                Map<Integer, String> processRolesMap = new HashMap<>();
                 Map<Integer, String> voterEndpoints = new HashMap<>();
-                if (!nodes.isEmpty()) {
-                    org.apache.kafka.common.Node firstBroker = nodes.iterator().next();
-                    org.apache.kafka.common.config.ConfigResource resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(firstBroker.id()));
+                
+                if (!resources.isEmpty()) {
                     try {
-                        org.apache.kafka.clients.admin.DescribeConfigsResult configResult = client.describeConfigs(java.util.Collections.singletonList(resource));
+                        org.apache.kafka.clients.admin.DescribeConfigsResult configResult = client.describeConfigs(resources);
                         java.util.Map<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> configs = configResult.all().get();
-                        org.apache.kafka.clients.admin.Config brokerConfig = configs.get(resource);
-                        if (brokerConfig != null) {
+                        
+                        for (Map.Entry<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> entry : configs.entrySet()) {
+                            int nodeId = Integer.parseInt(entry.getKey().name());
+                            org.apache.kafka.clients.admin.Config brokerConfig = entry.getValue();
+                            
+                            org.apache.kafka.clients.admin.ConfigEntry processRolesEntry = brokerConfig.get("process.roles");
+                            if (processRolesEntry != null && processRolesEntry.value() != null) {
+                                processRolesMap.put(nodeId, processRolesEntry.value());
+                            }
+                            
                             org.apache.kafka.clients.admin.ConfigEntry quorumVoters = brokerConfig.get("controller.quorum.voters");
-                            if (quorumVoters != null && quorumVoters.value() != null) {
-                                // Format: 108@192.168.3.208:9096,109@192.168.3.149:9096
+                            if (quorumVoters != null && quorumVoters.value() != null && voterEndpoints.isEmpty()) {
                                 for (String voterStr : quorumVoters.value().split(",")) {
                                     String[] parts = voterStr.split("@");
                                     if (parts.length == 2) {
@@ -208,9 +206,34 @@ public class KafkaAdminService {
                             }
                         }
                     } catch (Exception e) {
-                        log.warn("Failed to fetch broker config to resolve controller endpoints: {}", e.getMessage());
+                        log.warn("Failed to fetch broker config: {}", e.getMessage());
                     }
                 }
+
+                for (org.apache.kafka.common.Node node : nodes) {
+                    Map<String, Object> nodeData = new HashMap<>();
+                    nodeData.put("id", node.id());
+                    nodeData.put("broker_id", String.valueOf(node.id()));
+                    nodeData.put("host", node.host());
+                    nodeData.put("port", node.port());
+                    nodeData.put("endpoint", node.host() + ":" + node.port());
+                    nodeData.put("rack", node.rack() == null ? "" : node.rack());
+                    
+                    String roles = processRolesMap.get(node.id());
+                    boolean isBroker = true;
+                    boolean isController = controller != null && controller.id() == node.id();
+                    
+                    if (roles != null && !roles.isBlank()) {
+                        isBroker = roles.contains("broker");
+                        isController = roles.contains("controller");
+                    }
+                    
+                    nodeData.put("isBroker", isBroker);
+                    nodeData.put("isController", isController);
+                    nodeMap.put(node.id(), nodeData);
+                }
+
+                // voterEndpoints are already resolved from the first successful broker config
 
                 // 2. Query KRaft quorum to find all controllers
                 try {
