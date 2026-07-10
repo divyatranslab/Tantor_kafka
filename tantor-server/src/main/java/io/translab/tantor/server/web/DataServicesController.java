@@ -9,10 +9,13 @@ import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
+import io.translab.tantor.server.security.EncryptionService;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.service.DataServiceConnectionService;
+import io.translab.tantor.server.dto.ConnectionResponse;
+import io.translab.tantor.server.dto.SaveConnectionRequest;
 import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -44,36 +47,161 @@ public class DataServicesController {
     private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+    private final DataServiceConnectionService dataServiceConnectionService;
+    private final EncryptionService encryptionService;
     private final HttpClient defaultHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
 
+    // ── HTTP client resolution ───────────────────────────────────────────────
+
+    /**
+     * Builds client from a request-scoped X-Custom-Certificate header (backward-compat override).
+     * certType must be "PKCS12_JKS" or "PEM".
+     */
     private HttpClient getHttpClient(String encodedCert) {
-        if (encodedCert == null || encodedCert.isBlank()) {
-            return defaultHttpClient;
-        }
+        if (encodedCert == null || encodedCert.isBlank()) return defaultHttpClient;
         try {
-            org.springframework.web.context.request.ServletRequestAttributes attrs = 
-                (org.springframework.web.context.request.ServletRequestAttributes) org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes();
+            org.springframework.web.context.request.ServletRequestAttributes attrs =
+                (org.springframework.web.context.request.ServletRequestAttributes)
+                    org.springframework.web.context.request.RequestContextHolder.currentRequestAttributes();
             String certType = attrs.getRequest().getHeader("X-Custom-Certificate-Type");
             String certPassword = attrs.getRequest().getHeader("X-Custom-Certificate-Password");
 
             javax.net.ssl.SSLContext sslContext;
-            if ("PKCS12".equalsIgnoreCase(certType)) {
+            if ("PKCS12_JKS".equalsIgnoreCase(certType)) {
                 sslContext = SslUtils.createSslContextFromPkcs12(encodedCert, certPassword);
             } else {
-                String pemCertificate = new String(java.util.Base64.getDecoder().decode(encodedCert), StandardCharsets.UTF_8);
-                sslContext = SslUtils.createSslContextFromPem(pemCertificate);
+                String pem = new String(java.util.Base64.getDecoder().decode(encodedCert), StandardCharsets.UTF_8);
+                sslContext = SslUtils.createSslContextFromPem(pem);
             }
-
-            return HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(3))
-                    .sslContext(sslContext)
-                    .build();
+            return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).sslContext(sslContext).build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize SSL context from provided certificate: " + e.getMessage(), e);
         }
     }
+
+    /**
+     * Client resolution order:
+     *  1. Request header cert (backward-compat per-request override)
+     *  2. Saved connection cert (connectionId validated against clusterId+serviceType)
+     *  3. defaultHttpClient
+     */
+    private HttpClient getHttpClientForCluster(String encodedCert, UUID clusterId,
+                                                String serviceType, UUID connectionId) {
+        if (encodedCert != null && !encodedCert.isBlank()) return getHttpClient(encodedCert);
+        return dataServiceConnectionService.getActiveConnection(clusterId, serviceType, connectionId)
+                .map(conn -> {
+                    // No certificate configured — use plain HTTP client
+                    if (conn.getCertificateData() == null || conn.getCertificateData().isBlank())
+                        return defaultHttpClient;
+                    // Certificate IS configured — MUST use it. Never silently fall back to the
+                    // plain JDK default client, which would fail for self-signed certs with a
+                    // misleading SunCertPathBuilderException instead of a clear cert error.
+                    try {
+                        javax.net.ssl.SSLContext sslContext;
+                        if ("PKCS12_JKS".equalsIgnoreCase(conn.getCertificateType())) {
+                            String pwd = conn.getTruststorePasswordEncrypted() != null
+                                    ? encryptionService.decrypt(conn.getTruststorePasswordEncrypted()) : null;
+                            sslContext = SslUtils.createSslContextFromPkcs12(conn.getCertificateData(), pwd);
+                        } else {
+                            String pem = new String(java.util.Base64.getDecoder()
+                                    .decode(conn.getCertificateData()), StandardCharsets.UTF_8);
+                            sslContext = SslUtils.createSslContextFromPem(pem);
+                        }
+                        return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).sslContext(sslContext).build();
+                    } catch (Exception e) {
+                        // Propagate as RuntimeException so caller gets a clear error message
+                        // instead of silently connecting without SSL (which fails for self-signed certs).
+                        throw new RuntimeException(
+                                "Failed to initialize SSL context from saved certificate: " + e.getMessage(), e);
+                    }
+                })
+                .orElse(defaultHttpClient);
+    }
+
+    private String callerUsername() {
+        return "admin"; // Placeholder — replace with SecurityContextHolder principal
+    }
+
+    // ── Persisted connection CRUD ────────────────────────────────────────────
+
+    @GetMapping("/schema-registry/connections")
+    public ResponseEntity<?> listSchemaRegistryConnections(@PathVariable UUID clusterId) {
+        return ResponseEntity.ok(dataServiceConnectionService.listConnections(clusterId, "SCHEMA_REGISTRY"));
+    }
+
+    @GetMapping("/kafka-connect/connections")
+    public ResponseEntity<?> listKafkaConnectConnections(@PathVariable UUID clusterId) {
+        return ResponseEntity.ok(dataServiceConnectionService.listConnections(clusterId, "KAFKA_CONNECT"));
+    }
+
+    @DeleteMapping("/schema-registry/connections/{connectionId}")
+    public ResponseEntity<?> deleteSchemaRegistryConnection(@PathVariable UUID clusterId, @PathVariable UUID connectionId) {
+        dataServiceConnectionService.deleteConnection(clusterId, "SCHEMA_REGISTRY", connectionId, callerUsername());
+        return ResponseEntity.ok(Map.of("message", "Connection deleted successfully"));
+    }
+
+    @DeleteMapping("/kafka-connect/connections/{connectionId}")
+    public ResponseEntity<?> deleteKafkaConnectConnection(@PathVariable UUID clusterId, @PathVariable UUID connectionId) {
+        dataServiceConnectionService.deleteConnection(clusterId, "KAFKA_CONNECT", connectionId, callerUsername());
+        return ResponseEntity.ok(Map.of("message", "Connection deleted successfully"));
+    }
+
+
+    /** GET single connection — by connectionId if given, else default/first. */
+    @GetMapping("/schema-registry/connection")
+    public ResponseEntity<?> getSchemaRegistryConnection(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) UUID connectionId) {
+        return dataServiceConnectionService.getConnectionResponse(clusterId, "SCHEMA_REGISTRY", connectionId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok).orElse(ResponseEntity.noContent().build());
+    }
+
+    /** Create new SR connection, or upsert by name. */
+    @PutMapping("/schema-registry/connection")
+    public ResponseEntity<?> saveSchemaRegistryConnection(
+            @PathVariable UUID clusterId,
+            @RequestBody SaveConnectionRequest req) {
+        return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", req, callerUsername()));
+    }
+
+    /** Update existing SR connection by connectionId. Prevents rename creating duplicate rows. */
+    @PutMapping("/schema-registry/connections/{connectionId}")
+    public ResponseEntity<?> updateSchemaRegistryConnectionById(
+            @PathVariable UUID clusterId,
+            @PathVariable UUID connectionId,
+            @RequestBody SaveConnectionRequest req) {
+        req.setId(connectionId); // inject path param into request so service resolves by id
+        return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", req, callerUsername()));
+    }
+
+    @GetMapping("/kafka-connect/connection")
+    public ResponseEntity<?> getKafkaConnectConnection(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) UUID connectionId) {
+        return dataServiceConnectionService.getConnectionResponse(clusterId, "KAFKA_CONNECT", connectionId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok).orElse(ResponseEntity.noContent().build());
+    }
+
+    @PutMapping("/kafka-connect/connection")
+    public ResponseEntity<?> saveKafkaConnectConnection(
+            @PathVariable UUID clusterId,
+            @RequestBody SaveConnectionRequest req) {
+        return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", req, callerUsername()));
+    }
+
+    /** Update existing KC connection by connectionId. */
+    @PutMapping("/kafka-connect/connections/{connectionId}")
+    public ResponseEntity<?> updateKafkaConnectConnectionById(
+            @PathVariable UUID clusterId,
+            @PathVariable UUID connectionId,
+            @RequestBody SaveConnectionRequest req) {
+        req.setId(connectionId);
+        return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", req, callerUsername()));
+    }
+
+    // ── Legacy URL summary ───────────────────────────────────────────────────
 
     @GetMapping("/connections")
     public ResponseEntity<?> connections(@PathVariable UUID clusterId) {
@@ -84,17 +212,21 @@ public class DataServicesController {
         ));
     }
 
+    // ── Schema Registry live-fetch endpoints ─────────────────────────────────
+
+    /** List subjects and their latest schema metadata. */
     @GetMapping("/schema-registry/summary")
     public ResponseEntity<?> schemaRegistrySummary(
             @PathVariable UUID clusterId,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
-            @RequestParam(required = false) Integer port
-    ) {
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY);
-        JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null, encodedCert);
+        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY, connectionId);
+        JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null,
+                encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
 
         List<Map<String, Object>> subjects = new ArrayList<>();
         for (JsonNode subjectNode : subjectsNode) {
@@ -103,32 +235,109 @@ public class DataServicesController {
             row.put("subject", subject);
             row.put("type", subjectType(subject));
             try {
-                JsonNode latest = requestJson(baseUrl, "GET", "/subjects/" + pathSegment(subject) + "/versions/latest", null, encodedCert);
+                JsonNode latest = requestJson(baseUrl, "GET",
+                        "/subjects/" + pathSeg(subject) + "/versions/latest",
+                        null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
                 row.put("version", latest.path("version").asInt(0));
                 row.put("id", latest.path("id").asInt(0));
                 row.put("schemaType", latest.path("schemaType").asText("AVRO"));
                 row.put("schema", latest.path("schema").asText(""));
             } catch (RuntimeException ignored) {
-                row.put("version", 0);
-                row.put("id", 0);
-                row.put("schemaType", "UNKNOWN");
-                row.put("schema", "");
+                row.put("version", 0); row.put("id", 0); row.put("schemaType", "UNKNOWN"); row.put("schema", "");
             }
             subjects.add(row);
         }
 
-        long keySubjects = subjects.stream().filter(item -> "KEY".equals(item.get("type"))).count();
-        long valueSubjects = subjects.stream().filter(item -> "VALUE".equals(item.get("type"))).count();
+        long keySubjects = subjects.stream().filter(i -> "KEY".equals(i.get("type"))).count();
+        long valueSubjects = subjects.stream().filter(i -> "VALUE".equals(i.get("type"))).count();
 
         return ResponseEntity.ok(Map.of(
-                "connection", baseUrl,
-                "subjects", subjects,
-                "totalSubjects", subjects.size(),
-                "keySubjects", keySubjects,
-                "valueSubjects", valueSubjects
-        ));
+                "connection", baseUrl, "subjects", subjects,
+                "totalSubjects", subjects.size(), "keySubjects", keySubjects, "valueSubjects", valueSubjects));
     }
 
+    /** Get global compatibility config. */
+    @GetMapping("/schema-registry/config")
+    public ResponseEntity<?> getGlobalCompatibility(
+            @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "GET", "/config", null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    /** Update global compatibility. */
+    @PutMapping("/schema-registry/config")
+    public ResponseEntity<?> updateGlobalCompatibility(
+            @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "PUT", "/config", body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    /** Get all versions for a subject, latest, and compatibility. */
+    @GetMapping("/schema-registry/subjects/{subject}/details")
+    public ResponseEntity<?> getSubjectDetails(
+            @PathVariable UUID clusterId,
+            @PathVariable String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        String baseUrl = customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId);
+        String seg = pathSeg(subject);
+
+        JsonNode latest = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions/latest",
+                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        JsonNode versionsNode = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions",
+                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+
+        List<Map<String, Object>> versions = new ArrayList<>();
+        for (JsonNode vNode : versionsNode) {
+            int v = vNode.asInt();
+            try {
+                JsonNode vDetail = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions/" + v,
+                        null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+                versions.add(Map.of(
+                        "version", vDetail.path("version").asInt(v),
+                        "id", vDetail.path("id").asInt(0),
+                        "schemaType", vDetail.path("schemaType").asText("AVRO"),
+                        "schema", vDetail.path("schema").asText("")));
+            } catch (RuntimeException ignored) {}
+        }
+
+        String compatibility = "BACKWARD";
+        try {
+            JsonNode compatNode = requestJson(baseUrl, "GET", "/config/" + seg,
+                    null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+            if (compatNode != null) {
+                compatibility = compatNode.path("compatibilityLevel").asText(compatNode.path("compatibility").asText("BACKWARD"));
+            }
+        } catch (RuntimeException ignored) {
+            // 404 means no subject-level compatibility is set (expected)
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "subject", subject,
+                "latest", Map.of(
+                        "version", latest.path("version").asInt(0),
+                        "id", latest.path("id").asInt(0),
+                        "schemaType", latest.path("schemaType").asText("AVRO"),
+                        "schema", latest.path("schema").asText("")),
+                "versions", versions,
+                "compatibility", compatibility));
+    }
+
+    /** Register a new schema version. */
     @PostMapping("/schema-registry/subjects/{subject}/versions")
     public ResponseEntity<?> createSchemaVersion(
             @PathVariable UUID clusterId,
@@ -137,13 +346,14 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestBody JsonNode body
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "POST",
-                "/subjects/" + pathSegment(subject) + "/versions", body, encodedCert);
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "POST", "/subjects/" + pathSeg(subject) + "/versions",
+                body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
+    /** Delete a subject and all its versions. */
     @DeleteMapping("/schema-registry/subjects/{subject}")
     public ResponseEntity<?> deleteSubject(
             @PathVariable UUID clusterId,
@@ -151,80 +361,133 @@ public class DataServicesController {
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
-            @RequestParam(required = false) Integer port
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY), "DELETE",
-                "/subjects/" + pathSegment(subject), null, encodedCert);
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "DELETE", "/subjects/" + pathSeg(subject),
+                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
+    /** Delete a specific schema version. */
+    @DeleteMapping("/schema-registry/subjects/{subject}/versions/{version}")
+    public ResponseEntity<?> deleteSchemaVersion(
+            @PathVariable UUID clusterId,
+            @PathVariable String subject,
+            @PathVariable String version,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version,
+                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    /** Update subject-level compatibility. */
+    @PutMapping("/schema-registry/subjects/{subject}/config")
+    public ResponseEntity<?> updateSubjectCompatibility(
+            @PathVariable UUID clusterId,
+            @PathVariable String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "PUT", "/config/" + pathSeg(subject),
+                body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    /** Check schema compatibility against a subject. */
+    @PostMapping("/schema-registry/subjects/{subject}/versions/{version}/compatibility")
+    public ResponseEntity<?> checkCompatibility(
+            @PathVariable UUID clusterId,
+            @PathVariable String subject,
+            @PathVariable String version,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "POST", "/compatibility/subjects/" + pathSeg(subject) + "/versions/" + version,
+                body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    // ── Kafka Connect live-fetch endpoints ───────────────────────────────────
+
+    /** Summary: version, connector list with status, plugins. */
     @GetMapping("/kafka-connect/summary")
     public ResponseEntity<?> kafkaConnectSummary(
             @PathVariable UUID clusterId,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
-            @RequestParam(required = false) Integer port
-    ) {
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
         Cluster cluster = getCluster(clusterId);
-        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT);
+        String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT, connectionId);
 
-        JsonNode root = requestJson(baseUrl, "GET", "/", null, encodedCert);
-        JsonNode connectorsNode = requestJson(baseUrl, "GET", "/connectors", null, encodedCert);
-        JsonNode pluginsNode = requestJson(baseUrl, "GET", "/connector-plugins", null, encodedCert);
+        JsonNode root = requestJson(baseUrl, "GET", "/", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        JsonNode connectorsNode = requestJson(baseUrl, "GET", "/connectors", null,
+                encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        JsonNode pluginsNode = requestJson(baseUrl, "GET", "/connector-plugins", null,
+                encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
 
         List<Map<String, Object>> connectors = new ArrayList<>();
-        int runningTasks = 0;
-        int totalTasks = 0;
-        int runningConnectors = 0;
+        int runningTasks = 0, totalTasks = 0, runningConnectors = 0;
 
-        for (JsonNode connectorNode : connectorsNode) {
-            String name = connectorNode.asText();
+        for (JsonNode connNode : connectorsNode) {
+            String name = connNode.asText();
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("name", name);
-
-            JsonNode config = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/config", null, encodedCert);
-            JsonNode status = requestJson(baseUrl, "GET", "/connectors/" + pathSegment(name) + "/status", null, encodedCert);
+            JsonNode config = requestJson(baseUrl, "GET", "/connectors/" + pathSeg(name) + "/config",
+                    null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+            JsonNode status = requestJson(baseUrl, "GET", "/connectors/" + pathSeg(name) + "/status",
+                    null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
             String state = status.path("connector").path("state").asText("UNKNOWN");
-            if ("RUNNING".equalsIgnoreCase(state)) {
-                runningConnectors++;
-            }
+            if ("RUNNING".equalsIgnoreCase(state)) runningConnectors++;
 
-            int connectorRunningTasks = 0;
-            int connectorTasks = 0;
+            int cRunning = 0, cTotal = 0;
             for (JsonNode task : status.path("tasks")) {
-                connectorTasks++;
-                if ("RUNNING".equalsIgnoreCase(task.path("state").asText())) {
-                    connectorRunningTasks++;
-                }
+                cTotal++;
+                if ("RUNNING".equalsIgnoreCase(task.path("state").asText())) cRunning++;
             }
-            runningTasks += connectorRunningTasks;
-            totalTasks += connectorTasks;
+            runningTasks += cRunning; totalTasks += cTotal;
 
             row.put("class", config.path("connector.class").asText(""));
-            row.put("state", state);
-            row.put("tasks", connectorTasks);
-            row.put("runningTasks", connectorRunningTasks);
-            row.put("config", config);
-            row.put("status", status);
+            row.put("state", state); row.put("tasks", cTotal); row.put("runningTasks", cRunning);
+            row.put("config", config); row.put("status", status);
             connectors.add(row);
         }
 
         List<Map<String, Object>> plugins = objectMapper.convertValue(pluginsNode, new TypeReference<>() {});
 
         return ResponseEntity.ok(Map.of(
-                "connection", baseUrl,
-                "cluster", root,
+                "connection", baseUrl, "cluster", root,
                 "version", root.path("version").asText("Unknown"),
-                "connectors", connectors,
-                "plugins", plugins,
-                "connectorCount", connectors.size(),
-                "taskCount", totalTasks,
-                "runningTasks", runningTasks,
-                "runningConnectors", runningConnectors
-        ));
+                "connectors", connectors, "plugins", plugins,
+                "connectorCount", connectors.size(), "taskCount", totalTasks,
+                "runningTasks", runningTasks, "runningConnectors", runningConnectors));
     }
 
+    /** Get connector plugins list. */
+    @GetMapping("/kafka-connect/connector-plugins")
+    public ResponseEntity<?> getConnectorPlugins(
+            @PathVariable UUID clusterId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "GET", "/connector-plugins", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+    }
+
+    /** Create connector. */
     @PostMapping("/kafka-connect/connectors")
     public ResponseEntity<?> createConnector(
             @PathVariable UUID clusterId,
@@ -232,12 +495,13 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestBody JsonNode body
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "POST", "/connectors", body, encodedCert);
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "POST", "/connectors", body, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
+    /** Update connector config. */
     @PutMapping("/kafka-connect/connectors/{name}/config")
     public ResponseEntity<?> updateConnectorConfig(
             @PathVariable UUID clusterId,
@@ -246,13 +510,14 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestBody JsonNode body
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
-                "/connectors/" + pathSegment(name) + "/config", body, encodedCert);
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "PUT", "/connectors/" + pathSeg(name) + "/config",
+                body, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
+    /** Pause / resume / restart a connector. */
     @PutMapping("/kafka-connect/connectors/{name}/{action:pause|resume|restart}")
     public ResponseEntity<?> connectorAction(
             @PathVariable UUID clusterId,
@@ -261,13 +526,14 @@ public class DataServicesController {
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
-            @RequestParam(required = false) Integer port
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "PUT",
-                "/connectors/" + pathSegment(name) + "/" + action, null, encodedCert);
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "PUT", "/connectors/" + pathSeg(name) + "/" + action,
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
+    /** Delete a connector. */
     @DeleteMapping("/kafka-connect/connectors/{name}")
     public ResponseEntity<?> deleteConnector(
             @PathVariable UUID clusterId,
@@ -275,19 +541,54 @@ public class DataServicesController {
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
-            @RequestParam(required = false) Integer port
-    ) {
-        Cluster cluster = getCluster(clusterId);
-        return forwardJson(customBaseUrl(protocol, ip, port, cluster, ServiceKind.KAFKA_CONNECT), "DELETE",
-                "/connectors/" + pathSegment(name), null, encodedCert);
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "DELETE", "/connectors/" + pathSeg(name),
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
-    private ResponseEntity<?> forwardJson(String baseUrl, String method, String path, JsonNode body, String encodedCert) {
-        JsonNode response = requestJson(baseUrl, method, path, body, encodedCert);
-        return ResponseEntity.ok(response);
+    /** Get tasks for a connector. */
+    @GetMapping("/kafka-connect/connectors/{name}/tasks")
+    public ResponseEntity<?> getConnectorTasks(
+            @PathVariable UUID clusterId,
+            @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "GET", "/connectors/" + pathSeg(name) + "/tasks",
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
-    private JsonNode requestJson(String baseUrl, String method, String path, JsonNode body, String encodedCert) {
+    /** Restart a specific task. */
+    @PostMapping("/kafka-connect/connectors/{name}/tasks/{taskId}/restart")
+    public ResponseEntity<?> restartTask(
+            @PathVariable UUID clusterId,
+            @PathVariable String name,
+            @PathVariable String taskId,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "POST", "/connectors/" + pathSeg(name) + "/tasks/" + taskId + "/restart",
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+    }
+
+    // ── Forwarding / request helpers ─────────────────────────────────────────
+
+    private ResponseEntity<?> forwardJson(String baseUrl, String method, String path,
+                                           JsonNode body, String encodedCert,
+                                           UUID clusterId, String serviceType, UUID connectionId) {
+        return ResponseEntity.ok(requestJson(baseUrl, method, path, body, encodedCert, clusterId, serviceType, connectionId));
+    }
+
+    private JsonNode requestJson(String baseUrl, String method, String path, JsonNode body,
+                                  String encodedCert, UUID clusterId, String serviceType, UUID connectionId) {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(normalizeBaseUrl(baseUrl) + path))
@@ -298,18 +599,17 @@ public class DataServicesController {
                 builder.method(method, HttpRequest.BodyPublishers.noBody());
             } else {
                 builder.header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                        .method(method, HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)));
+                        .method(method, HttpRequest.BodyPublishers.ofString(
+                                objectMapper.writeValueAsString(body)));
             }
 
-            HttpClient client = getHttpClient(encodedCert);
+            HttpClient client = getHttpClientForCluster(encodedCert, clusterId, serviceType, connectionId);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new DataServiceException(response.statusCode(), response.body());
             }
             String responseBody = response.body();
-            if (responseBody == null || responseBody.isBlank()) {
-                return objectMapper.createObjectNode();
-            }
+            if (responseBody == null || responseBody.isBlank()) return objectMapper.createObjectNode();
             return objectMapper.readTree(responseBody);
         } catch (DataServiceException e) {
             throw e;
@@ -324,11 +624,47 @@ public class DataServicesController {
     @ExceptionHandler(DataServiceException.class)
     public ResponseEntity<Map<String, Object>> handleDataServiceException(DataServiceException ex) {
         return ResponseEntity.status(HttpStatusCode.valueOf(Math.min(Math.max(ex.statusCode(), 400), 599)))
-                .body(Map.of(
-                        "message", ex.message(),
-                        "backendStatus", ex.statusCode()
-                ));
+                .body(Map.of("message", ex.message(), "backendStatus", ex.statusCode()));
     }
+
+    // ── Base URL resolution ──────────────────────────────────────────────────
+
+    /**
+     * Resolution order — MUST follow this priority:
+     *  1. ?ip= / ?protocol= / ?port= request params → manual override, always wins
+     *  2. connectionId param → validated DB lookup for this cluster+serviceType
+     *  3. Saved default / first-active DB connection
+     *  4. cluster.configJson key lookup
+     *  5. host:port default fallback
+     */
+    private String customBaseUrl(String protocol, String ip, Integer port,
+                                  Cluster cluster, ServiceKind kind, UUID connectionId) {
+        // PRIORITY 1: manual override params
+        String scheme = (protocol != null && !protocol.isBlank()) ? protocol : "http";
+        if (ip != null && !ip.isBlank() && port != null) return scheme + "://" + ip + ":" + port;
+        if (ip != null && !ip.isBlank())                 return scheme + "://" + ip + ":" + kind.defaultPort();
+
+        // PRIORITY 2+3: DB lookup (by connectionId → default → first active)
+        String dbUrl = dataServiceConnectionService
+                .resolveBaseUrlFromDb(cluster.getId(), kind.name(), connectionId)
+                .orElse(null);
+        if (dbUrl != null) return dbUrl;
+
+        // PRIORITY 4+5: configJson → host:port default
+        return serviceBaseUrl(cluster, kind);
+    }
+
+    private String serviceBaseUrl(Cluster cluster, ServiceKind kind) {
+        Map<String, Object> config = readConfig(cluster);
+        for (String key : kind.configKeys()) {
+            Object value = config.get(key);
+            if (value != null && !String.valueOf(value).isBlank())
+                return normalizeBaseUrl(String.valueOf(value));
+        }
+        return "http://" + firstClusterHost(cluster) + ":" + kind.defaultPort();
+    }
+
+    // ── Cluster / host helpers ───────────────────────────────────────────────
 
     private Cluster getCluster(UUID clusterId) {
         return clusterRepository.findById(clusterId).orElseGet(() -> {
@@ -343,114 +679,67 @@ public class DataServicesController {
         });
     }
 
-    private String customBaseUrl(String protocol, String ip, Integer port, Cluster cluster, ServiceKind kind) {
-        String scheme = (protocol != null && !protocol.isBlank()) ? protocol : "http";
-        if (ip != null && !ip.isBlank() && port != null) {
-            return scheme + "://" + ip + ":" + port;
-        } else if (ip != null && !ip.isBlank()) {
-            return scheme + "://" + ip + ":" + kind.defaultPort();
-        }
-        return serviceBaseUrl(cluster, kind);
-    }
-
-    private String serviceBaseUrl(Cluster cluster, ServiceKind kind) {
-        Map<String, Object> config = readConfig(cluster);
-        for (String key : kind.configKeys()) {
-            Object value = config.get(key);
-            if (value != null && !String.valueOf(value).isBlank()) {
-                return normalizeBaseUrl(String.valueOf(value));
-            }
-        }
-
-        String host = firstClusterHost(cluster);
-        return "http://" + host + ":" + kind.defaultPort();
-    }
-
     private String firstClusterHost(Cluster cluster) {
         if (cluster.getServices() != null) {
-            for (ClusterServiceAssignment service : cluster.getServices()) {
-                String host = resolveHostAddress(service.getHostId());
-                if (host != null && !host.isBlank()) {
-                    return host;
-                }
+            for (ClusterServiceAssignment s : cluster.getServices()) {
+                String h = resolveHostAddress(s.getHostId());
+                if (h != null && !h.isBlank()) return h;
             }
         }
-
         String bootstrap = cluster.getBootstrapServers();
         if (bootstrap != null && !bootstrap.isBlank()) {
             String first = bootstrap.split(",")[0].trim();
-            if (first.contains("://")) {
-                first = first.substring(first.indexOf("://") + 3);
-            }
+            if (first.contains("://")) first = first.substring(first.indexOf("://") + 3);
             int colon = first.lastIndexOf(':');
             return colon > 0 ? first.substring(0, colon) : first;
         }
-
         throw new IllegalArgumentException("No host is available for this cluster.");
     }
 
     private String resolveHostAddress(String hostId) {
         Host host = hostRepository.findById(hostId).orElse(null);
-        if (host == null) {
-            return hostId;
-        }
-        if (host.getIpAddresses() != null && !host.getIpAddresses().isBlank() && !"[]".equals(host.getIpAddresses())) {
+        if (host == null) return hostId;
+        if (host.getIpAddresses() != null && !host.getIpAddresses().isBlank()
+                && !"[]".equals(host.getIpAddresses())) {
             try {
                 List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<>() {});
-                if (!ips.isEmpty() && ips.get(0) != null && !ips.get(0).isBlank()) {
-                    return ips.get(0);
-                }
+                if (!ips.isEmpty() && ips.get(0) != null && !ips.get(0).isBlank()) return ips.get(0);
             } catch (Exception ignored) {
                 String first = host.getIpAddresses().replaceAll("\\[|\\]|\"", "").split(",")[0].trim();
-                if (!first.isBlank()) {
-                    return first;
-                }
+                if (!first.isBlank()) return first;
             }
         }
         return host.getHostname() == null || host.getHostname().isBlank() ? hostId : host.getHostname();
     }
 
     private Map<String, Object> readConfig(Cluster cluster) {
-        if (cluster.getConfigJson() == null || cluster.getConfigJson().isBlank()) {
-            return new HashMap<>();
-        }
-        try {
-            return objectMapper.readValue(cluster.getConfigJson(), new TypeReference<>() {});
-        } catch (Exception e) {
-            return new HashMap<>();
-        }
+        if (cluster.getConfigJson() == null || cluster.getConfigJson().isBlank()) return new HashMap<>();
+        try { return objectMapper.readValue(cluster.getConfigJson(), new TypeReference<>() {}); }
+        catch (Exception e) { return new HashMap<>(); }
     }
 
     private String normalizeBaseUrl(String baseUrl) {
-        String normalized = baseUrl.trim();
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
-        return normalized;
+        String n = baseUrl.trim();
+        while (n.endsWith("/")) n = n.substring(0, n.length() - 1);
+        return n;
     }
 
     private String subjectType(String subject) {
-        String normalized = subject.toLowerCase();
-        if (normalized.endsWith("-key")) {
-            return "KEY";
-        }
-        if (normalized.endsWith("-value")) {
-            return "VALUE";
-        }
+        String s = subject.toLowerCase();
+        if (s.endsWith("-key")) return "KEY";
+        if (s.endsWith("-value")) return "VALUE";
         return "OTHER";
     }
 
-    private String pathSegment(String value) {
+    private String pathSeg(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private enum ServiceKind {
         SCHEMA_REGISTRY(8081, List.of(
-                "schemaRegistryUrl", "schema_registry_url", "schema.registry.url", "schemaRegistryRestUrl"
-        )),
+                "schemaRegistryUrl", "schema_registry_url", "schema.registry.url", "schemaRegistryRestUrl")),
         KAFKA_CONNECT(8083, List.of(
-                "kafkaConnectUrl", "kafka_connect_url", "connectRestUrl", "connect_rest_url", "connect.rest.url"
-        ));
+                "kafkaConnectUrl", "kafka_connect_url", "connectRestUrl", "connect_rest_url", "connect.rest.url"));
 
         private final int defaultPort;
         private final List<String> configKeys;
@@ -460,33 +749,19 @@ public class DataServicesController {
             this.configKeys = configKeys;
         }
 
-        int defaultPort() {
-            return defaultPort;
-        }
-
-        List<String> configKeys() {
-            return configKeys;
-        }
+        int defaultPort() { return defaultPort; }
+        List<String> configKeys() { return configKeys; }
     }
 
     private static class DataServiceException extends RuntimeException {
         private final int statusCode;
         private final String body;
 
-        DataServiceException(int statusCode, String body) {
-            super(body);
-            this.statusCode = statusCode;
-            this.body = body;
-        }
+        DataServiceException(int statusCode, String body) { super(body); this.statusCode = statusCode; this.body = body; }
 
-        int statusCode() {
-            return statusCode;
-        }
-
+        int statusCode() { return statusCode; }
         String message() {
-            if (body == null || body.isBlank()) {
-                return "The native REST API returned HTTP " + statusCode + ".";
-            }
+            if (body == null || body.isBlank()) return "The native REST API returned HTTP " + statusCode + ".";
             return "The native REST API returned HTTP " + statusCode + ": " + body;
         }
     }
