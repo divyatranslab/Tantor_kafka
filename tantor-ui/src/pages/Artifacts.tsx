@@ -22,6 +22,8 @@ interface Host {
   id: string;
   hostname: string;
   status: string;
+  agentStatus?: string;
+  available?: boolean;
   ipAddress?: string;
   ipAddresses?: string;
 }
@@ -152,6 +154,12 @@ export function Artifacts() {
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
+  const isHostOnline = (host: Host) => {
+    const status = (host.status || '').toUpperCase();
+    const agentStatus = (host.agentStatus || '').toUpperCase();
+    return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';
+  };
+
   const runParcelAction = async (action: ParcelAction, ver: ArtifactVersion, host: Host) => {
     const key = `${action}-${ver.id}-${host.id}`;
     setActingKey(key);
@@ -184,7 +192,7 @@ export function Artifacts() {
 
   const distributeAll = async (ver: ArtifactVersion) => {
     const eligible = hosts.filter(host =>
-      host.status.toUpperCase() === 'ONLINE'
+      isHostOnline(host)
       && (() => {
         const state = getHostParcel(ver.id, host.id);
         return !state || ['FAILED', 'REMOVED'].includes(state.status);
@@ -329,7 +337,7 @@ export function Artifacts() {
   };
 
   const renderActions = (ver: ArtifactVersion, host: Host, state?: HostParcel) => {
-    const hostOnline = host.status === 'ONLINE' || host.status === 'online';
+    const hostOnline = isHostOnline(host);
     if (!hostOnline) {
       return (
         <span className="parcel-blocked">

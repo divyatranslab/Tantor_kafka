@@ -236,6 +236,10 @@ public class HostController {
             String previousStatus = host.getStatus();
             host.setClusterId(null);
             host.setStatus("PENDING");
+            host.setAgentStatus("OFFLINE");
+            host.setRemoved(true);
+            host.setLastHeartbeat(null);
+            host.setAction("HOST_REMOVED");
             hostRepository.save(host);
             activityAlertService.logAudit("INFO", "HOST", "DISCONNECT", "Host disconnected from management", "HOST", id,
                     previousClusterId, previousStatus, "PENDING", "SUCCESS", null, null);
@@ -361,6 +365,9 @@ public class HostController {
             // Host is awaiting approval — keep it in the modal, not the main table
             summary.put("available", false);
             summary.put("status", "PENDING");
+        } else if ("OFFLINE".equalsIgnoreCase(effectiveStatus) || "REMOVED".equalsIgnoreCase(effectiveStatus)) {
+            summary.put("available", false);
+            summary.put("status", effectiveStatus);
         } else if (activeCluster.isPresent() || "OCCUPIED".equalsIgnoreCase(effectiveStatus)) {
             summary.put("available", false);
             summary.put("status", "OCCUPIED_INTERNAL");

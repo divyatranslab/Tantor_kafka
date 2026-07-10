@@ -15,6 +15,12 @@ ALTER TABLE kf_audit_logs
 ALTER TABLE kf_audit_logs
     ALTER COLUMN id SET DEFAULT gen_random_uuid();
 
+ALTER TABLE kf_artifact
+    ADD COLUMN IF NOT EXISTS full_file_path VARCHAR(2048);
+
+ALTER TABLE kf_hosts
+    ADD COLUMN IF NOT EXISTS user_name VARCHAR(128);
+
 ALTER TABLE kf_artifact_audit_log
     ADD COLUMN IF NOT EXISTS full_file_path VARCHAR(2048),
     ADD COLUMN IF NOT EXISTS path_of_tar VARCHAR(1024),
@@ -66,7 +72,7 @@ BEGIN
         COALESCE(NULLIF(NEW.user_name, ''), NULLIF(NEW.created_by, ''), 'system'),
         COALESCE(NULLIF(NEW.event_category, ''), 'PACKAGE'),
         COALESCE(NULLIF(NEW.status, ''), 'SUCCESS'),
-        NEW.details,
+        NEW.details::jsonb,
         NULLIF(NEW.host_ip, ''),
         'ARTIFACT_REPO',
         NEW.created_at,
@@ -136,6 +142,27 @@ DROP TRIGGER IF EXISTS trg_host_to_global_audit ON kf_hosts;
 CREATE TRIGGER trg_host_to_global_audit
 AFTER INSERT OR UPDATE OF status, agent_status, host_ip, hostname, cluster_id, removed, action ON kf_hosts
 FOR EACH ROW EXECUTE PROCEDURE sync_host_to_global_audit();
+
+CREATE TABLE IF NOT EXISTS kf_cluster_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cluster_id UUID NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    event VARCHAR(255),
+    status VARCHAR(50),
+    origin VARCHAR(100),
+    resource VARCHAR(100),
+    resource_type VARCHAR(50) DEFAULT 'CLUSTER',
+    cluster_name VARCHAR(255),
+    bootstrap_ip VARCHAR(100),
+    env VARCHAR(50),
+    kafka_version VARCHAR(100),
+    mode VARCHAR(100),
+    user_id VARCHAR(255),
+    actor_user VARCHAR(128),
+    created_by VARCHAR(128),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    details JSONB
+);
 
 ALTER TABLE kf_cluster_audit_log
     ADD COLUMN IF NOT EXISTS severity VARCHAR(50),

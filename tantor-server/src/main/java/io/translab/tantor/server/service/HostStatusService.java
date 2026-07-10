@@ -16,6 +16,9 @@ public class HostStatusService {
         if (host == null) {
             return "OFFLINE";
         }
+        if (Boolean.TRUE.equals(host.getRemoved())) {
+            return "REMOVED";
+        }
 
         String status = host.getStatus();
         if ("PENDING".equalsIgnoreCase(status)) {

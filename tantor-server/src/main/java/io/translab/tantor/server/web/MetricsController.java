@@ -104,18 +104,6 @@ public class MetricsController {
             simulateMetrics(kfk);
         }
 
-        // Add realistic jitter to system metrics to make charts look alive
-        double cpu = host.getCpuUsagePct() != null ? host.getCpuUsagePct() : 0.0;
-        if (cpu < 1.0) cpu = 15.0 + new Random().nextDouble() * 10.0;
-        else cpu = cpu + (new Random().nextDouble() * 4.0 - 2.0);
-        sys.setCpuUsagePct(Math.max(0.1, Math.min(100.0, cpu)));
-
-        long memTotal = host.getMemTotalMb() == null || host.getMemTotalMb() == 0 ? 8192L : host.getMemTotalMb();
-        long memUsed = host.getMemUsedMb() == null || host.getMemUsedMb() < 100 ? (long)(memTotal * 0.55) : host.getMemUsedMb();
-        long memJitter = (long)((new Random().nextDouble() * 0.02 - 0.01) * memTotal);
-        sys.setMemTotalMb(memTotal);
-        sys.setMemUsedMb(Math.max(100L, Math.min(memTotal, memUsed + memJitter)));
-
         return nm;
     }
 

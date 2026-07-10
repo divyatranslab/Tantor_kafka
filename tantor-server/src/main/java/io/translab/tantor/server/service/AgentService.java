@@ -14,6 +14,7 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,9 +36,23 @@ public class AgentService {
     private final ActivityAlertService activityAlertService;
     private final AuditService auditService;
 
+    @Value("${tantor.hosts.heartbeat-timeout-seconds:90}")
+    private long heartbeatTimeoutSeconds;
+
+    public enum HeartbeatResult {
+        ACCEPTED,
+        NOT_FOUND,
+        SOURCE_MISMATCH
+    }
+
     @Transactional
-    public void registerHost(HostRegistrationDto dto) {
+    public boolean registerHost(HostRegistrationDto dto, String sourceIp) {
         Host existing = hostRepository.findById(dto.getHostId()).orElse(null);
+        if (existing != null && !Boolean.TRUE.equals(existing.getRemoved()) && !sourceMatches(existing, sourceIp) && !isHeartbeatStale(existing)) {
+            log.warn("Rejected duplicate registration for host {} from {}. Registered host IP is {}.",
+                    dto.getHostId(), sourceIp, existing.getHostIp());
+            return false;
+        }
         Map<String, Object> oldValue = existing == null ? Map.of() : Map.of(
                 "hostname", String.valueOf(existing.getHostname()),
                 "status", String.valueOf(existing.getStatus()),
@@ -81,11 +96,27 @@ public class AgentService {
         activityAlertService.logAudit("INFO", "AGENT", existing != null ? "RECONNECT" : "REGISTER",
                 existing != null ? "Agent reconnected" : "Agent registered", "HOST", dto.getHostId(), host.getClusterId(),
                 null, host.getStatus(), "SUCCESS", existing != null ? null : "PENDING", "agentVersion=" + dto.getAgentVersion());
+        return true;
     }
 
     @Transactional
-    public boolean processHeartbeat(HostHeartbeatDto dto) {
+    public void registerHost(HostRegistrationDto dto) {
+        registerHost(dto, null);
+    }
+
+    @Transactional
+    public HeartbeatResult processHeartbeat(HostHeartbeatDto dto, String sourceIp) {
         return hostRepository.findById(dto.getHostId()).map(host -> {
+            if (!sourceMatches(host, sourceIp)) {
+                if (isHeartbeatStale(host)) {
+                    log.warn("Host {} heartbeat from {} does not match registered IP {}, but the registered heartbeat is stale. Requesting re-registration.",
+                            dto.getHostId(), sourceIp, host.getHostIp());
+                    return HeartbeatResult.NOT_FOUND;
+                }
+                log.warn("Rejected heartbeat for host {} from {}. Registered host IP is {}.",
+                        dto.getHostId(), sourceIp, host.getHostIp());
+                return HeartbeatResult.SOURCE_MISMATCH;
+            }
             host.setCpuUsagePct(dto.getCpuUsagePct());
             host.setMemTotalMb(dto.getMemTotalMb());
             host.setMemUsedMb(dto.getMemUsedMb());
@@ -94,13 +125,19 @@ public class AgentService {
             host.setJavaVersion(dto.getJavaVersion());
             host.setLastHeartbeat(OffsetDateTime.now());
             host.setAgentStatus("ONLINE");
+            host.setRemoved(false);
             if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
                 host.setStatus("ONLINE");
             }
             hostRepository.save(host);
             log.debug("Processed heartbeat for host: {}", dto.getHostId());
-            return true;
-        }).orElse(false);
+            return HeartbeatResult.ACCEPTED;
+        }).orElse(HeartbeatResult.NOT_FOUND);
+    }
+
+    @Transactional
+    public boolean processHeartbeat(HostHeartbeatDto dto) {
+        return processHeartbeat(dto, null) == HeartbeatResult.ACCEPTED;
     }
 
     private List<String> selectHostIp(List<String> addresses) {
@@ -120,6 +157,52 @@ public class AgentService {
         if (ip.startsWith("10.")) return 1;
         if (ip.matches("^172\\.(1[6-9]|2\\d|3[01])\\..*")) return 2;
         return 3;
+    }
+
+    private boolean sourceMatches(Host host, String sourceIp) {
+        String normalized = normalizeIp(sourceIp);
+        if (normalized == null || isLoopback(normalized)) {
+            return true;
+        }
+        if (normalized.equals(normalizeIp(host.getHostIp()))) {
+            return true;
+        }
+        if (host.getIpAddresses() == null || host.getIpAddresses().isBlank()) {
+            return host.getHostIp() == null || host.getHostIp().isBlank();
+        }
+        try {
+            List<String> knownIps = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
+            return knownIps.stream().map(this::normalizeIp).anyMatch(normalized::equals);
+        } catch (Exception e) {
+            log.warn("Failed to parse known IPs for host {}", host.getId(), e);
+            return false;
+        }
+    }
+
+    private String normalizeIp(String value) {
+        if (value == null) return null;
+        String ip = value.trim();
+        if (ip.isBlank()) return null;
+        if (ip.startsWith("::ffff:")) {
+            ip = ip.substring("::ffff:".length());
+        }
+        int portIndex = ip.lastIndexOf(':');
+        if (portIndex > -1 && ip.indexOf(':') == portIndex && ip.substring(portIndex + 1).matches("\\d+")) {
+            ip = ip.substring(0, portIndex);
+        }
+        return ip;
+    }
+
+    private boolean isLoopback(String ip) {
+        return "localhost".equalsIgnoreCase(ip) || "0:0:0:0:0:0:0:1".equals(ip) || "::1".equals(ip) || ip.startsWith("127.");
+    }
+
+    private boolean isHeartbeatStale(Host host) {
+        if (host.getLastHeartbeat() == null) {
+            return true;
+        }
+        long timeoutSeconds = Math.max(heartbeatTimeoutSeconds, 1);
+        return host.getLastHeartbeat().isBefore(OffsetDateTime.now().minusSeconds(timeoutSeconds));
     }
 
     @Transactional

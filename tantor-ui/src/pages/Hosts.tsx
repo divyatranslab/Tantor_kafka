@@ -91,7 +91,7 @@ export function Hosts() {
       || 'Unknown';
   };
 
-  const activeHosts = hosts.filter(h => h.status !== 'PENDING');
+  const activeHosts = hosts.filter(h => h.status !== 'PENDING' && h.status !== 'REMOVED');
   const activeHostIps = new Set(activeHosts.map(host => displayIp(host.ipAddresses)));
   const pendingHosts = Array.from(
     hosts
@@ -177,8 +177,10 @@ export function Hosts() {
                   <td>
                     <div className="availability-cell">
                       <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : 'occupied'}`}>
-                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' : 
-                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' : 'Available'}
+                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' :
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' :
+                         host.status === 'OFFLINE' ? 'Unavailable - Offline' :
+                         host.status === 'REMOVED' ? 'Removed' : 'Available'}
                       </span>
                       {host.status !== 'AVAILABLE' && (
                         <div className="cluster-lock">

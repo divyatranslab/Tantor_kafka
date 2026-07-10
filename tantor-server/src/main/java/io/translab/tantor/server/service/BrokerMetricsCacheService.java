@@ -94,17 +94,9 @@ public class BrokerMetricsCacheService {
             .lastHeartbeat(host.getLastHeartbeat())
             .metricsTimestamp(System.currentTimeMillis());
 
-        // Hardware metrics (with jitter for UI simulation, consistent with existing logic)
-        double cpu = host.getCpuUsagePct() != null ? host.getCpuUsagePct() : 0.0;
-        if (cpu < 1.0) cpu = 15.0 + new Random().nextDouble() * 10.0;
-        else cpu = cpu + (new Random().nextDouble() * 4.0 - 2.0);
-        builder.cpuUsagePct(Math.max(0.1, Math.min(100.0, cpu)));
-
-        long memTotal = host.getMemTotalMb() == null || host.getMemTotalMb() == 0 ? 8192L : host.getMemTotalMb();
-        long memUsed = host.getMemUsedMb() == null || host.getMemUsedMb() < 100 ? (long)(memTotal * 0.55) : host.getMemUsedMb();
-        long memJitter = (long)((new Random().nextDouble() * 0.02 - 0.01) * memTotal);
-        builder.memoryTotalMb(memTotal);
-        builder.memoryUsedMb(Math.max(100L, Math.min(memTotal, memUsed + memJitter)));
+        builder.cpuUsagePct(host.getCpuUsagePct() != null ? host.getCpuUsagePct() : 0.0);
+        builder.memoryTotalMb(host.getMemTotalMb() != null ? host.getMemTotalMb() : 0L);
+        builder.memoryUsedMb(host.getMemUsedMb() != null ? host.getMemUsedMb() : 0L);
         
         builder.diskTotalGb(host.getDiskTotalGb() != null ? host.getDiskTotalGb() : 100L);
         builder.diskUsedGb(host.getDiskUsedGb() != null ? host.getDiskUsedGb() : 10L);

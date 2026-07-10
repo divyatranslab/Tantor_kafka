@@ -15,6 +15,8 @@ import io.translab.tantor.artifact.audit.ArtifactAuditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
@@ -42,6 +44,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/artifacts")
 public class ArtifactController {
+    private static final Logger log = LoggerFactory.getLogger(ArtifactController.class);
 
     private final ArtifactService artifactService;
     private final ManifestService manifestService;
@@ -93,7 +96,7 @@ public class ArtifactController {
         try {
             saved = artifactService.upload(cmd, file.getInputStream());
         } catch (RuntimeException | IOException e) {
-            auditService.record(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+            safeAudit(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
             throw e;
         }
@@ -138,7 +141,7 @@ public class ArtifactController {
         try {
             saved = artifactService.upload(cmd, request.getInputStream());
         } catch (RuntimeException | IOException e) {
-            auditService.record(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+            safeAudit(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
             throw e;
         }
@@ -209,19 +212,28 @@ public class ArtifactController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         Artifact artifact = artifactService.get(id);
         artifactService.delete(id);
-        auditService.record(currentUser(), "PACKAGE_REMOVED", id.toString(), "SUCCESS",
+        safeAudit(currentUser(), "PACKAGE_REMOVED", id.toString(), "SUCCESS",
                 Map.of("status", artifact.getStatus().name(), "fileName", artifact.getFileName()),
                 Map.of("status", "DELETED"), null, null);
         return ResponseEntity.noContent().build();
     }
 
     private void auditUpload(Artifact saved, String ipAddress) {
-        auditService.record(currentUser(), "PACKAGE_UPLOADED", saved.getId().toString(),
+        safeAudit(currentUser(), "PACKAGE_UPLOADED", saved.getId().toString(),
                 saved.getStatus() == ArtifactStatus.FAILED ? "FAILED" : "SUCCESS", null,
                 Map.of("serviceType", saved.getServiceType().name(), "version", saved.getVersion(),
                         "fileName", saved.getFileName(), "status", saved.getStatus().name(),
                         "sha256", saved.getChecksumSha256(), "size", saved.getFileSizeBytes()),
                 Map.of("validationStatus", saved.getStatus().name()), ipAddress);
+    }
+
+    private void safeAudit(String actor, String action, String resourceId, String status,
+                           Object oldValue, Object newValue, Object details, String ipAddress) {
+        try {
+            auditService.record(actor, action, resourceId, status, oldValue, newValue, details, ipAddress);
+        } catch (Exception e) {
+            log.warn("Artifact audit recording failed for action {} resource {}", action, resourceId, e);
+        }
     }
 
     private Map<String, String> parseAttributes(String attributesJson) {
