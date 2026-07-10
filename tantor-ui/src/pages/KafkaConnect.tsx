@@ -303,22 +303,6 @@ export function KafkaConnect() {
     }
   };
 
-  const restartTask = async (connectorName: string, taskId: string) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const url = `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(connectorName)}/tasks/${taskId}/restart`;
-      const res = await fetch(withConnId(url), { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to restart task.');
-      await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to restart task.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const statusClass = (state: string) => {
     if (state === 'RUNNING') return 'ds-status';
     if (state === 'PAUSED') return 'ds-status warn';
