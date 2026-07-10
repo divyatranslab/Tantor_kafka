@@ -28,9 +28,6 @@ public class AuditLog {
     private String resourceId;
 
     @Column(length = 255)
-    private String event;
-
-    @Column(length = 255)
     private String resource;
 
     @Column(name = "cluster_id")
@@ -63,9 +60,6 @@ public class AuditLog {
 
     @Column(name = "host_id", length = 255)
     private String hostId;
-
-    @Column(name = "artifact_id")
-    private UUID artifactId;
 
     @Column(name = "user_id", length = 255)
     private String userId;

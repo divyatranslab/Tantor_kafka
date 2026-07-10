@@ -41,11 +41,10 @@ public class AuditService {
                          UUID clusterId, String status, Object oldValue, Object newValue,
                          Object approval, Object details) {
         AuditLog event = new AuditLog();
-        event.setUserName(actorOverride == null || actorOverride.isBlank() ? currentActor() : actorOverride);
+        event.setUserName(resolveActor(actorOverride));
         event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
-        event.setEvent(event.getAction());
         event.setResourceType(text(resourceType, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setResourceId(resourceId);
         event.setResource(resourceId);
@@ -58,7 +57,6 @@ public class AuditService {
 
         if ("ARTIFACT".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
             try {
-                event.setArtifactId(UUID.fromString(event.getResourceId()));
                 java.util.List<Object[]> hostInfo = repository.findArtifactHostInfo(event.getResourceId());
                 if (hostInfo != null && !hostInfo.isEmpty()) {
                     Object[] row = hostInfo.get(0);
@@ -192,6 +190,29 @@ public class AuditService {
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
+
+    private String resolveActor(String actorOverride) {
+        if (actorOverride == null || actorOverride.isBlank()) {
+            return currentActor();
+        }
+        if (actorOverride.startsWith("agent:")) {
+            String hostId = actorOverride.substring("agent:".length());
+            try {
+                java.util.List<Object[]> rows = repository.findHostAgentInfo(hostId);
+                if (rows != null && !rows.isEmpty()) {
+                    Object[] row = rows.get(0);
+                    String name = row[0] == null || row[0].toString().isBlank()
+                            ? (row[2] == null ? hostId : row[2].toString())
+                            : row[0].toString();
+                    String ip = row[1] == null ? "" : row[1].toString();
+                    return ip.isBlank() ? name : name + " (" + ip + ")";
+                }
+            } catch (Exception ignored) {
+                // Keep audit writes non-blocking.
+            }
+        }
+        return actorOverride;
+    }
 
     private String firstHost(String bootstrapServers) {
         if (bootstrapServers == null || bootstrapServers.isBlank()) return null;

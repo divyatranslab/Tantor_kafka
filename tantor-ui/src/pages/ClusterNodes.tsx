@@ -126,7 +126,7 @@ export function ClusterNodes() {
                 <td><span className="cluster-node-role">{String(node.role || 'unknown').replaceAll('_', ' ')}</span></td>
                 <td>
                   <span className={`cluster-node-status ${(node.status || '').toLowerCase()}`}>
-                    {node.status === 'Unmanaged / No telemetry' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN'}
+                    {node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN'}
                   </span>
                 </td>
                 <td>{node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleString() : '-'}</td>

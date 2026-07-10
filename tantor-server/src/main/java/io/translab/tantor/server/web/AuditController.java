@@ -52,7 +52,6 @@ public class AuditController {
         view.put("userName", event.getUserName());
         view.put("category", event.getCategory());
         view.put("action", event.getAction());
-        view.put("event", event.getEvent() == null ? event.getAction() : event.getEvent());
         view.put("resourceType", event.getResourceType());
         view.put("resourceId", event.getResourceId());
         view.put("resource", event.getResource());
@@ -60,7 +59,6 @@ public class AuditController {
         view.put("hostId", event.getHostId());
         view.put("hostIp", event.getHostIp());
         view.put("hostName", event.getHostName());
-        view.put("artifactId", event.getArtifactId());
         view.put("userId", event.getUserId());
         view.put("status", event.getStatus());
         view.put("details", event.getDetails());

@@ -11,7 +11,6 @@ interface AuditEvent {
   actor: string;
   category: string;
   action: string;
-  event?: string;
   resourceType: string;
   resourceId?: string;
   resource?: string;
@@ -19,7 +18,6 @@ interface AuditEvent {
   hostId?: string;
   hostIp?: string;
   hostName?: string;
-  artifactId?: string;
   status: string;
   details?: unknown;
   createdAt?: string;
@@ -50,12 +48,23 @@ const isHostOnboardingEvent = (event: AuditEvent) => {
   return action.includes('ONBOARDING') || action.includes('REGISTER') || category === 'AGENT';
 };
 
+const isNoisyAuditEvent = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  const resourceType = normalized(event.resourceType);
+  return resourceType === 'JOB'
+    || action === 'CLUSTER_CREATED'
+    || action === 'CLUSTER_STATUS_CHANGED'
+    || action === 'KAFKA_NODE_DEPLOYED'
+    || action === 'KAFKA_NODE_DEPLOYMENT_FAILED'
+    || action.endsWith('_REQUESTED');
+};
+
 const actionLabel = (event: AuditEvent) => {
   const action = normalized(event.action);
   if (action.includes('ONBOARDING') && normalized(event.status) === 'SUCCESS') return 'Host Registered';
   if (action.includes('ONBOARDING')) return 'Host Onboarding Requested';
   if (action === 'REGISTER' || action === 'HOST_REGISTERED') return 'Host Registered';
-  return title(event.action || event.event || 'Captured');
+  return title(event.action || 'Captured');
 };
 
 const resourceTypeLabel = (event: AuditEvent) => {
@@ -70,10 +79,23 @@ const resourceName = (event: AuditEvent) => {
 };
 
 const detailLabel = (event: AuditEvent) => {
-  if (isArtifactEvent(event)) return '';
   const parsed = parseJson(event.details);
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const record = parsed as Record<string, unknown>;
+    if (isArtifactEvent(event)) {
+      const fileName = record.fileName || record.binaryFileName || record.name;
+      const version = record.version;
+      const validation = record.validationStatus || record.status || event.status;
+      return [fileName, version, validation].filter(Boolean).map(String).join(' / ');
+    }
+    if (normalized(event.resourceType) === 'CLUSTER') {
+      const version = record.kafkaVersion || record.version;
+      const mode = record.kafkaMode || record.mode;
+      const bootstrap = record.bootstrapServers || record.bootstrap;
+      const listeners = record.listeners || record.advertisedListeners || record.processRoles;
+      const status = record.status || event.status;
+      return [version, mode, bootstrap, listeners, status].filter(Boolean).map(String).join(' / ');
+    }
     const availability = record.availability || record.available;
     if (typeof availability === 'string') return title(availability);
     if (typeof availability === 'boolean') return availability ? 'Available' : 'Unavailable';
@@ -111,6 +133,7 @@ export function AuditLogs() {
         }),
       ]);
       const combined = results.flatMap(result => result.status === 'fulfilled' ? result.value.events || [] : [])
+        .filter(event => !isNoisyAuditEvent(event))
         .sort((left, right) => new Date(timeOf(right)).getTime() - new Date(timeOf(left)).getTime());
       setEvents(combined);
       const failures = results.filter(result => result.status === 'rejected').length;
@@ -134,7 +157,7 @@ export function AuditLogs() {
     if (actor !== 'ALL' && actorOf(event) !== actor) return false;
     if (resourceId.trim()) {
       const needle = resourceId.trim().toLowerCase();
-    const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.artifactId, event.clusterId]
+    const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
         .join(' ')
         .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;

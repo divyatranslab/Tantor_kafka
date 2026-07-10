@@ -284,15 +284,15 @@ export function ClusterOverview() {
                   <td>{p.nodeId}</td>
                   <td className="font-mono">{p.host}</td>
                   <td><span className="role-badge">{p.role}</span></td>
-                  <td>{p.hasTelemetry ? (p.installDir || '-') : <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.hasTelemetry ? (p.config || '-') : <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.hasTelemetry ? (p.dataDir || '-') : <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.hasTelemetry ? (p.logDir || '-') : <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.installDir || <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.config || <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.dataDir || <span className="text-muted">Not reported</span>}</td>
+                  <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
                   <td>
                     {p.hasTelemetry ? (
                       <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
                     ) : (
-                      <span className="text-muted text-sm">No telemetry</span>
+                      <span className="text-muted text-sm">Bootstrap metadata</span>
                     )}
                   </td>
                 </tr>

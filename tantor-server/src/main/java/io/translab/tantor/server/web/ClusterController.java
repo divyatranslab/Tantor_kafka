@@ -65,6 +65,9 @@ public class ClusterController {
     public List<Map<String, Object>> listClusters() {
         List<Map<String, Object>> result = new ArrayList<>();
         for (Cluster c : clusterRepository.findByStatusNot("DELETED")) {
+            if ("EXTERNAL".equalsIgnoreCase(c.getMode())) {
+                continue;
+            }
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -166,6 +169,9 @@ public class ClusterController {
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getCluster(@PathVariable java.util.UUID id) {
         var internalOpt = clusterRepository.findById(id).map(c -> {
+            if ("EXTERNAL".equalsIgnoreCase(c.getMode())) {
+                return null;
+            }
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -199,7 +205,7 @@ public class ClusterController {
             return ResponseEntity.ok(m);
         });
         
-        if (internalOpt.isPresent()) {
+        if (internalOpt.isPresent() && internalOpt.get() != null) {
             return internalOpt.get();
         }
         
@@ -258,10 +264,13 @@ public class ClusterController {
 
                 boolean hasAgent = agentMatch.isPresent();
                 
-                hm.put("status", hasAgent ? "Managed" : "Unmanaged / No telemetry");
+                hm.put("status", hasAgent ? "Managed" : "Bootstrap connected");
                 if (hasAgent && agentMatch.get().getLastHeartbeat() != null) {
                     hm.put("lastHeartbeat", agentMatch.get().getLastHeartbeat().toString());
-                } else if (!hasAgent) {
+                } else if (n.getLastSeen() != null) {
+                    hm.put("lastHeartbeat", n.getLastSeen().toString());
+                }
+                if (!hasAgent) {
                     OffsetDateTime now = OffsetDateTime.now();
                     Optional<io.translab.tantor.server.domain.DiscoveryAgent> availableAgent = discoveryAgentRepository.findAll().stream()
                         .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) &&
@@ -345,8 +354,9 @@ public class ClusterController {
 
     @GetMapping("/{id}/brokers")
     public ResponseEntity<Map<String, Object>> getClusterBrokers(@PathVariable java.util.UUID id) {
-        if (clusterRepository.findById(id).isPresent()) {
-            return clusterRepository.findById(id).map(cluster -> {
+        Optional<Cluster> clusterOpt = clusterRepository.findById(id);
+        if (clusterOpt.isPresent() && !"EXTERNAL".equalsIgnoreCase(clusterOpt.get().getMode())) {
+            return clusterOpt.map(cluster -> {
                 List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
                 Map<String, Object> response = new HashMap<>();
                 response.put("clusterId", cluster.getId());
@@ -366,7 +376,8 @@ public class ClusterController {
 
     @GetMapping("/{id}/overview")
     public ResponseEntity<io.translab.tantor.server.dto.ClusterOverviewDto> getClusterOverview(@PathVariable java.util.UUID id) {
-        if (clusterRepository.findById(id).isPresent()) {
+        Optional<Cluster> clusterOpt = clusterRepository.findById(id);
+        if (clusterOpt.isPresent() && !"EXTERNAL".equalsIgnoreCase(clusterOpt.get().getMode())) {
             return ResponseEntity.ok(clusterOverviewService.getOverview(id));
         }
 
@@ -494,10 +505,6 @@ public class ClusterController {
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
-        auditService.record("CLUSTER_CHANGE", "CLUSTER_CREATED", "CLUSTER", cluster.getId().toString(),
-                cluster.getId(), "SUCCESS", null, null, null,
-                Map.of("nodeIds", request.getServices().stream().map(ServiceAssignmentReq::getNode_id).toList(),
-                        "updatedBy", cluster.getUpdatedBy()));
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {

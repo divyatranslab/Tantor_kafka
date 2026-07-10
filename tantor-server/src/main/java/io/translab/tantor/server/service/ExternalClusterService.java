@@ -261,10 +261,10 @@ public class ExternalClusterService {
         savedCluster.setName(request.getName() != null ? request.getName().trim() : savedCluster.getName());
         savedCluster.setBootstrapServers(mergeBootstrapServers(savedCluster.getBootstrapServers(), bootstrap));
         savedCluster.setKafkaClusterId(clusterId);
-        savedCluster.setKafkaVersion(String.valueOf(inspection.get("kafkaVersion")));
+        savedCluster.setKafkaVersion(blankToDefault(firstString(inspection, "kafkaVersion", "kafka_version"), "Unknown"));
         savedCluster.setEnvironment(blankToDefault(request.getEnvironment(), "unknown"));
-        savedCluster.setKafkaMode(String.valueOf(inspection.get("mode")));
-        savedCluster.setSecurity(String.valueOf(inspection.get("security_protocol")));
+        savedCluster.setKafkaMode(blankToDefault(firstString(inspection, "mode", "kafkaMode", "kafka_mode"), "Unknown"));
+        savedCluster.setSecurity(blankToDefault(firstString(inspection, "security_protocol", "security"), "PLAINTEXT"));
         savedCluster.setSecurityProtocol(request.getSecurityProtocol());
         savedCluster.setSaslMechanism(request.getSaslMechanism());
         savedCluster.setSaslUsername(request.getSaslUsername());
@@ -344,6 +344,18 @@ public class ExternalClusterService {
                 );
             }
         }
+        auditService.record(
+                "CLUSTER_MANAGEMENT",
+                "EXTERNAL_CLUSTER_CONNECTED",
+                "CLUSTER",
+                savedCluster.getId().toString(),
+                savedCluster.getId(),
+                "SUCCESS",
+                null,
+                null,
+                null,
+                externalAuditDetails(savedCluster)
+        );
         
         return savedCluster;
     }
@@ -531,12 +543,7 @@ public class ExternalClusterService {
                 null,
                 null,
                 null,
-                Map.of(
-                    "name", saved.getName(),
-                    "bootstrapServers", saved.getBootstrapServers(),
-                    "kafkaVersion", saved.getKafkaVersion(),
-                    "environment", saved.getEnvironment()
-                )
+                externalAuditDetails(saved)
             );
         }
         
@@ -1017,6 +1024,8 @@ public class ExternalClusterService {
             r.setMemoryTotalMb(n.getMemoryTotalMb());
             r.setDiskUsedGb(n.getDiskUsedGb());
             r.setDiskTotalGb(n.getDiskTotalGb());
+            r.setInstallPath(n.getInstallDir());
+            r.setLogDirs(n.getLogDirs());
             records.add(r);
         }
         return records;
@@ -1161,7 +1170,43 @@ public class ExternalClusterService {
     }
 
     private String blankToDefault(String value, String defaultValue) {
-        return value == null || value.isBlank() ? defaultValue : value;
+        return value == null || value.isBlank() || "null".equalsIgnoreCase(value) ? defaultValue : value;
+    }
+
+    private String firstString(Map<String, Object> values, String... keys) {
+        if (values == null) return null;
+        for (String key : keys) {
+            Object value = values.get(key);
+            if (value != null && !String.valueOf(value).isBlank() && !"null".equalsIgnoreCase(String.valueOf(value))) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
+    private Map<String, Object> externalAuditDetails(ExternalCluster cluster) {
+        List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("name", cluster.getName());
+        details.put("bootstrapServers", cluster.getBootstrapServers());
+        details.put("kafkaVersion", blankToDefault(cluster.getKafkaVersion(), "Unknown"));
+        details.put("kafkaMode", blankToDefault(cluster.getKafkaMode(), "Unknown"));
+        details.put("environment", blankToDefault(cluster.getEnvironment(), "unknown"));
+        details.put("security", blankToDefault(cluster.getSecurity(), "PLAINTEXT"));
+        details.put("listeners", cluster.getListeners());
+        details.put("advertisedListeners", cluster.getAdvertisedListeners());
+        details.put("processRoles", cluster.getProcessRoles());
+        details.put("externalBrokerHosts", brokers.stream().map(ExternalBrokerRecord::getHostname).toList());
+        details.put("brokerCount", cluster.getBrokerCount());
+        details.put("installPath", cluster.getInstallPath());
+        details.put("logDirs", cluster.getLogDirs());
+        details.put("cpuUsagePct", cluster.getCpuUsagePct());
+        details.put("memoryUsedMb", cluster.getMemoryUsedMb());
+        details.put("memoryTotalMb", cluster.getMemoryTotalMb());
+        details.put("diskUsedGb", cluster.getDiskUsedGb());
+        details.put("diskTotalGb", cluster.getDiskTotalGb());
+        details.put("running", cluster.getIsRunning());
+        return details;
     }
 
     private boolean safeEquals(String left, String right) {

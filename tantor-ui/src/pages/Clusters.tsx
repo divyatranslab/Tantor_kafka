@@ -263,7 +263,7 @@ export function Clusters() {
                         {cluster.mode === 'EXTERNAL' ? (
                           <div className="env-cell">
                             <div>
-                              <span>Telemetry: {cluster.telemetry || 'None'}</span>
+                              <span>Management: {managementLabel(cluster)}</span>
                             </div>
                             <small>{cluster.managedHostsCount || 0} / {cluster.totalHostsCount || cluster.nodeCount || 0} hosts</small>
                           </div>

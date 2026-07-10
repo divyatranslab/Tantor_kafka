@@ -305,15 +305,6 @@ public class AgentService {
                                 Map.of("taskId", taskId.toString(), "result", dto.getStatus()));
                     }
                     if ("INSTALL_KAFKA".equals(task.getCommand())) {
-                        Map<String, Object> deploymentDetails = new java.util.LinkedHashMap<>();
-                        deploymentDetails.put("taskId", taskId.toString());
-                        deploymentDetails.put("hostId", task.getHostId());
-                        deploymentDetails.put("result", dto.getStatus());
-                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
-                                "DEPLOYMENT",
-                                "SUCCESS".equalsIgnoreCase(dto.getStatus()) ? "KAFKA_NODE_DEPLOYED" : "KAFKA_NODE_DEPLOYMENT_FAILED",
-                                "CLUSTER", task.getClusterId() == null ? null : task.getClusterId().toString(),
-                                task.getClusterId(), dto.getStatus(), null, null, null, deploymentDetails);
                         if ("SUCCESS".equalsIgnoreCase(dto.getStatus())) {
                             hostRepository.findById(task.getHostId()).ifPresent(host -> {
                                 host.setStatus("OCCUPIED");
