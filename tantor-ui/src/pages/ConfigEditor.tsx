@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
+import { InternalConfigEditor } from './InternalConfigEditor';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
+
+interface ClusterInfo {
+  id: string;
+  mode?: string;
+}
 
 interface ServiceTopologyItem {
   hostId: string;
@@ -51,6 +57,39 @@ interface StagedChange {
 }
 
 export function ConfigEditor() {
+  const { id } = useParams<{ id: string }>();
+  const [cluster, setCluster] = useState<ClusterInfo | null>(null);
+  const [loadingCluster, setLoadingCluster] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCluster(true);
+    fetch(`/api/v1/ui/clusters/${id}`)
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!cancelled) setCluster(data);
+      })
+      .catch(() => {
+        if (!cancelled) setCluster(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCluster(false);
+      });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loadingCluster) {
+    return <div className="state-center"><Loader2 className="spin" /> Loading cluster configuration...</div>;
+  }
+
+  if ((cluster?.mode || '').toUpperCase() !== 'EXTERNAL') {
+    return <InternalConfigEditor />;
+  }
+
+  return <ExternalConfigEditor />;
+}
+
+function ExternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   
@@ -273,7 +312,7 @@ export function ConfigEditor() {
           <p>Stage changes across multiple nodes and apply them safely with a rolling restart.</p>
         </div>
         <button onClick={fetchConfigs} disabled={loading} className="primary">
-          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Fetch Nodes
+          <RefreshCw size={14} className={loading ? 'spin' : ''} /> Fetch Roles
         </button>
       </header>
 
