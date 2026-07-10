@@ -355,6 +355,8 @@ public class HostController {
                 List<io.translab.tantor.server.domain.DiscoveryAgent> discAgents = discoveryAgentRepository.findByClusterId(extClusterId);
                 if (discAgents != null && !discAgents.isEmpty()) {
                     io.translab.tantor.server.domain.DiscoveryAgent discAgent = discAgents.get(0);
+                    summary.put("agentName", discAgent.getAgentName() == null || discAgent.getAgentName().isBlank()
+                            ? discAgent.getHostname() : discAgent.getAgentName());
                     summary.put("agentStatus", discAgent.getStatus());
                     summary.put("agentType", "KAFKA_DISCOVERY");
                     summary.put("agentVersion", discAgent.getVersion());

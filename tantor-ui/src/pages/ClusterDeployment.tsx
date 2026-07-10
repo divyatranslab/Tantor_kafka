@@ -9,6 +9,7 @@ import {
   FileText,
   Upload,
   Loader2,
+  MoreVertical,
   Network,
   Play,
   RefreshCw,
@@ -385,6 +386,7 @@ export function ClusterDeployment() {
   const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [openRoleMenuHostId, setOpenRoleMenuHostId] = useState<string | null>(null);
 
   useEffect(() => {
     loadHosts();
@@ -1396,45 +1398,56 @@ export function ClusterDeployment() {
                       <span>{displayIp(host)}</span>
                     </div>
                   </div>
-                  <div className="cd-role-buttons">
-                    {roleOptions.filter(r => r.id !== 'separate').map(role => {
-                      const currentRole = rolesByHost[host.id] || defaultRoleForMode;
-                      let isActive = currentRole === role.id;
+                  <div className="cd-role-menu-wrap">
+                    <button
+                      className="cd-secondary-btn compact cd-role-menu-trigger"
+                      onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                    >
+                      <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ')}</span>
+                      <MoreVertical size={14} />
+                    </button>
+                    {openRoleMenuHostId === host.id && (
+                      <div className="cd-role-menu">
+                        {roleOptions.filter(r => r.id !== 'separate').map(role => {
+                          const currentRole = rolesByHost[host.id] || defaultRoleForMode;
+                          let isActive = currentRole === role.id;
 
-                      if (deploymentMode === 'kraft') {
-                        if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
-                        if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
-                      }
+                          if (deploymentMode === 'kraft') {
+                            if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
+                            if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
+                          }
 
-                      return (
-                        <label
-                          key={role.id}
-                          className={`cd-role-label ${isActive ? 'active' : ''}`}
-                        >
-                          <input 
-                            type="checkbox" 
-                            checked={isActive}
-                            onChange={() => {
-                              let nextRole = role.id;
-                              
-                              if (deploymentMode === 'kraft') {
-                                if (role.id === 'broker') {
-                                  if (currentRole === 'controller') nextRole = 'separate';
-                                  else if (currentRole === 'separate') nextRole = 'controller';
-                                } else if (role.id === 'controller') {
-                                  if (currentRole === 'broker') nextRole = 'separate';
-                                  else if (currentRole === 'separate') nextRole = 'broker';
-                                }
-                              }
-                              
-                              setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
-                              setPrereqResults({});
-                            }}
-                          />
-                          <span>{role.label}</span>
-                        </label>
-                      );
-                    })}
+                          return (
+                            <label
+                              key={role.id}
+                              className={`cd-role-label ${isActive ? 'active' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isActive}
+                                onChange={() => {
+                                  let nextRole = role.id;
+
+                                  if (deploymentMode === 'kraft') {
+                                    if (role.id === 'broker') {
+                                      if (currentRole === 'controller') nextRole = 'separate';
+                                      else if (currentRole === 'separate') nextRole = 'controller';
+                                    } else if (role.id === 'controller') {
+                                      if (currentRole === 'broker') nextRole = 'separate';
+                                      else if (currentRole === 'separate') nextRole = 'broker';
+                                    }
+                                  }
+
+                                  setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
+                                  setPrereqResults({});
+                                }}
+                              />
+                              <span>{role.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
                     <FileText size={14} />

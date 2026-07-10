@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
 import './Hosts.css';
 
 export function Hosts() {
-  const navigate = useNavigate();
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
+  const [connectingAgents, setConnectingAgents] = useState(false);
 
   const fetchHosts = async () => {
     setLoading(true);
@@ -19,17 +19,6 @@ export function Hosts() {
       console.error(e);
     }
     setLoading(false);
-  };
-
-  const approveHost = async (id: string) => {
-    try {
-      const res = await fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' });
-      if (res.ok) {
-        const body = await res.json().catch(() => ({}));
-        if (body.jobId) navigate(`/jobs/${body.jobId}`);
-        else fetchHosts();
-      }
-    } catch (e) { console.error(e); }
   };
 
   const deleteHost = async (id: string) => {
@@ -116,6 +105,40 @@ export function Hosts() {
       }, new Map<string, any>())
       .values(),
   );
+  const selectedCount = pendingHosts.filter(host => selectedPendingIds[host.id]).length;
+  const allPendingSelected = pendingHosts.length > 0 && selectedCount === pendingHosts.length;
+
+  const togglePendingHost = (id: string) => {
+    setSelectedPendingIds(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleAllPendingHosts = () => {
+    if (allPendingSelected) {
+      setSelectedPendingIds({});
+      return;
+    }
+    setSelectedPendingIds(Object.fromEntries(pendingHosts.map(host => [host.id, true])));
+  };
+
+  const connectSelectedAgents = async () => {
+    const selectedIds = pendingHosts.filter(host => selectedPendingIds[host.id]).map(host => host.id);
+    if (selectedIds.length === 0) return;
+    setConnectingAgents(true);
+    try {
+      const results = await Promise.allSettled(
+        selectedIds.map(id => fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
+      );
+      const failed = results.filter(result => result.status === 'rejected'
+        || (result.status === 'fulfilled' && !result.value.ok)).length;
+      if (failed > 0) {
+        alert(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
+      }
+      setSelectedPendingIds({});
+      await fetchHosts();
+    } finally {
+      setConnectingAgents(false);
+    }
+  };
 
   return (
     <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
@@ -264,22 +287,40 @@ export function Hosts() {
               <div className="empty-pending">
                 No new nodes discovered. Run the agent script on a VM to discover it.
               </div>
-            ) : pendingHosts.map(host => (
-              <div key={host.id} className="pending-node">
-                <div className="pending-node-info">
-                  <p className="name">{host.hostname}</p>
-                  <p className="ip">{displayIp(host.ipAddresses)}</p>
-                </div>
-                <div className="pending-node-actions">
-                  <button className="btn btn-primary-action" onClick={() => approveHost(host.id)}>
-                    Connect
+            ) : (
+              <>
+                <label className="pending-select-all">
+                  <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
+                  <span>Select all discovered agents</span>
+                </label>
+                {pendingHosts.map(host => (
+                  <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
+                    <label className="pending-node-select" onClick={event => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={!!selectedPendingIds[host.id]}
+                        onChange={() => togglePendingHost(host.id)}
+                      />
+                    </label>
+                    <div className="pending-node-info">
+                      <p className="name">{host.agentName || host.hostname}</p>
+                      <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
+                    </div>
+                    <div className="pending-node-actions">
+                      <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="pending-connect-summary">
+                  <span>{selectedCount} selected</span>
+                  <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
+                    {connectingAgents ? 'Connecting...' : 'Connect selected'}
                   </button>
-                  <button className="btn icon-only danger" title="Reject & remove" onClick={() => deleteHost(host.id)}>
-                    <Trash2 size={14} />
-                  </button>
                 </div>
-              </div>
-            ))}
+              </>
+            )}
 
             <hr className="modal-divider" />
             <div className="modal-footer">

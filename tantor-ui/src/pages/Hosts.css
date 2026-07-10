@@ -317,6 +317,64 @@
   margin-bottom: 8px;
 }
 
+.pending-node.selectable {
+  cursor: pointer;
+  gap: 12px;
+}
+
+.pending-node.selectable.selected {
+  border-color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 9%, var(--bg-raised));
+}
+
+.pending-node-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pending-node-select input,
+.pending-select-all input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
+}
+
+.pending-select-all {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.pending-connect-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--border-subtle);
+}
+
+.pending-connect-summary span {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.pending-connect-summary button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 .pending-node-info .name {
   font-size: 0.875rem;
   font-weight: 500;

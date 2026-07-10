@@ -254,29 +254,18 @@ export function ExternalClusters() {
             </label>
             <label className="span-2">
               Bootstrap URL
-              <div className="discovery-select-row">
-                <input 
-                  type="text" 
-                  placeholder="e.g. 192.168.1.100:9092" 
-                  value={form.bootstrapServers}
-                  onChange={e => {
-                    setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
-                    setBootstrapResult(null);
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') testBootstrap();
-                  }}
-                />
-                <button 
-                  className="btn" 
-                  onClick={testBootstrap} 
-                  title="Test Connection"
-                  disabled={!form.bootstrapServers.trim() || testing}
-                >
-                  <RefreshCw size={14} className={testing ? 'spin' : ''} />
-                  Test Connection
-                </button>
-              </div>
+              <input
+                type="text"
+                placeholder="e.g. 192.168.1.100:9092"
+                value={form.bootstrapServers}
+                onChange={e => {
+                  setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
+                  setBootstrapResult(null);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') testBootstrap();
+                }}
+              />
             </label>
             
             <div className="span-2" style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
@@ -512,6 +501,15 @@ export function ExternalClusters() {
 
           <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
             <button className="btn" onClick={() => setBootstrapResult(null)}>Cancel</button>
+            <button
+              className="btn"
+              onClick={testBootstrap}
+              title="Test Connection"
+              disabled={!form.bootstrapServers.trim() || testing}
+            >
+              <RefreshCw size={14} className={testing ? 'spin' : ''} />
+              Test Connection
+            </button>
             <button 
               className="btn primary" 
               onClick={registerBootstrap} 

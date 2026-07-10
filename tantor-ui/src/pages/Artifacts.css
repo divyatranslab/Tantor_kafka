@@ -126,7 +126,62 @@
 .version-card-tools {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding-right: 12px;
+}
+
+.artifact-menu-anchor {
+  position: relative;
+}
+
+.artifact-menu-button {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.artifact-menu-button:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.artifact-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 35;
+  min-width: 150px;
+  padding: 6px;
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.artifact-action-menu button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 8px 9px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.artifact-action-menu button:hover {
+  background: var(--bg-raised);
 }
 
 .artifact-delete-button {
@@ -501,6 +556,54 @@
   width: 100%;
   max-width: 480px;
   position: relative;
+}
+
+.artifact-log-modal {
+  max-width: 680px;
+}
+
+.artifact-log-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.artifact-log-list {
+  display: grid;
+  gap: 8px;
+  max-height: 56vh;
+  overflow: auto;
+}
+
+.artifact-log-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.artifact-log-row div {
+  display: grid;
+  gap: 2px;
+}
+
+.artifact-log-row strong {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  text-transform: capitalize;
+}
+
+.artifact-log-row span,
+.artifact-log-row time {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
 }
 
 .modal-header {

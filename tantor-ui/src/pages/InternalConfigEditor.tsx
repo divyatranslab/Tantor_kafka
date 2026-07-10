@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   CheckCircle2, FileText, GitCompare, History, Loader2, Plus, RefreshCw,
-  RotateCcw, Save, Server, ShieldCheck, Trash2, UploadCloud,
+  RotateCcw, Save, Server, Trash2, UploadCloud,
 } from 'lucide-react';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
@@ -83,7 +83,7 @@ export function InternalConfigEditor() {
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
   const [restart, setRestart] = useState(true);
-  const [approvalRequired, setApprovalRequired] = useState(true);
+  const approvalRequired = false;
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [versions, setVersions] = useState<ConfigVersion[]>([]);
 
@@ -203,7 +203,7 @@ export function InternalConfigEditor() {
     }
   };
 
-  const versionAction = async (version: ConfigVersion, action: 'approve' | 'apply' | 'rollback') => {
+  const versionAction = async (version: ConfigVersion, action: 'apply' | 'rollback') => {
     if (action === 'apply') {
       const message = restart
         ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
@@ -247,7 +247,7 @@ export function InternalConfigEditor() {
 
       <div className="config-flow-strip">
         <span><GitCompare size={14} /> Diff</span><b>-</b><span><CheckCircle2 size={14} /> Validate</span><b>-</b>
-        <span><Save size={14} /> Save version</span><b>-</b><span><ShieldCheck size={14} /> Approve</span><b>-</b>
+        <span><Save size={14} /> Save version</span><b>-</b>
         <span><UploadCloud size={14} /> Backup &amp; apply</span>
       </div>
 
@@ -278,7 +278,6 @@ export function InternalConfigEditor() {
           <div className="node-config-editor-head">
             <div><h3>{selectedFile.label}</h3><p>{selectedFile.path}</p></div>
             <div className="config-options">
-              <label><input type="checkbox" checked={approvalRequired} onChange={event => setApprovalRequired(event.target.checked)} /> Require approval</label>
               <label><input type="checkbox" checked={restart} onChange={event => { setRestart(event.target.checked); setPreview(null); }} /> Restart after apply</label>
             </div>
           </div>
@@ -335,11 +334,9 @@ export function InternalConfigEditor() {
                 <strong>v{version.configVersion}</strong><span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
                 {version.rollbackVersion && <span className="rollback-tag">restores v{version.rollbackVersion}</span>}
                 <small>created by {version.createdBy || 'unknown'} - {new Date(version.createdAt).toLocaleString()}</small>
-                {version.approvedBy && <small>approved by {version.approvedBy}</small>}
               </div>
               <div className="version-actions">
-                {version.status === 'PENDING_APPROVAL' && <button onClick={() => versionAction(version, 'approve')} disabled={!!working}><ShieldCheck size={13} /> Approve</button>}
-                {editableVersionStatuses.has(version.status) && (!version.approvalRequired || !!version.approvedBy) && <button className="primary" onClick={() => versionAction(version, 'apply')} disabled={!!working}><UploadCloud size={13} /> Apply</button>}
+                {editableVersionStatuses.has(version.status) && <button className="primary" onClick={() => versionAction(version, 'apply')} disabled={!!working}><UploadCloud size={13} /> Apply</button>}
                 {version.jobId && <button onClick={() => navigate(`/jobs/${version.jobId}`)}>View job</button>}
                 {version.status !== 'APPLIED' && ['SUPERSEDED'].includes(version.status) && <button onClick={() => versionAction(version, 'rollback')} disabled={!!working}><RotateCcw size={13} /> Restore</button>}
               </div>

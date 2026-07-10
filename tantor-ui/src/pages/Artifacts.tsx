@@ -2,7 +2,7 @@
 import {
   Package, Upload, CheckCircle, XCircle, ChevronDown, ChevronUp,
   Loader2, HardDrive, X, RefreshCw, Server, DownloadCloud,
-  Power, PowerOff, Trash2, AlertTriangle
+  Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
 import './Artifacts.css';
 
@@ -45,6 +45,18 @@ interface HostParcel {
 
 type ParcelAction = 'distribute' | 'activate' | 'deactivate' | 'remove';
 
+interface ArtifactAuditEvent {
+  id: string;
+  userName?: string;
+  category?: string;
+  action: string;
+  resourceType?: string;
+  artifactId?: string;
+  status: string;
+  details?: unknown;
+  createdAt?: string;
+}
+
 export function Artifacts() {
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -65,6 +77,10 @@ export function Artifacts() {
   const [distributionDirs, setDistributionDirs] = useState<Record<string, string>>({});
   const [hostDistributionDirs, setHostDistributionDirs] = useState<Record<string, string>>({});
   const [selectedHosts, setSelectedHosts] = useState<Record<string, string[]>>({});
+  const [openArtifactMenuId, setOpenArtifactMenuId] = useState<string | null>(null);
+  const [auditModalArtifact, setAuditModalArtifact] = useState<ArtifactVersion | null>(null);
+  const [artifactAuditEvents, setArtifactAuditEvents] = useState<ArtifactAuditEvent[]>([]);
+  const [artifactAuditLoading, setArtifactAuditLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchVersions = async () => {
@@ -284,6 +300,7 @@ export function Artifacts() {
   };
 
   const deleteArtifactBinary = async (ver: ArtifactVersion) => {
+    setOpenArtifactMenuId(null);
     const inUse = hostParcels.some(p => p.artifactId === ver.id && p.status !== 'REMOVED');
     if (inUse) {
       setUploadMsg({
@@ -316,6 +333,23 @@ export function Artifacts() {
       setUploadMsg({ text: e.message || 'Delete failed.', ok: false });
     } finally {
       setActingKey(null);
+    }
+  };
+
+  const openArtifactLogs = async (ver: ArtifactVersion) => {
+    setOpenArtifactMenuId(null);
+    setAuditModalArtifact(ver);
+    setArtifactAuditEvents([]);
+    setArtifactAuditLoading(true);
+    try {
+      const res = await fetch(`/api/v1/artifacts/audit/${ver.id}`);
+      if (!res.ok) throw new Error('Unable to load artifact logs.');
+      const body = await res.json();
+      setArtifactAuditEvents(body.events || []);
+    } catch (e: any) {
+      setUploadMsg({ text: e.message || 'Unable to load artifact logs.', ok: false });
+    } finally {
+      setArtifactAuditLoading(false);
     }
   };
 
@@ -381,7 +415,7 @@ export function Artifacts() {
   };
 
   return (
-    <div className="artifacts-page animate-fade-in">
+    <div className="artifacts-page animate-fade-in" onClick={() => setOpenArtifactMenuId(null)}>
       <header className="page-header flex-between">
         <div>
           <h1>Parcels</h1>
@@ -457,6 +491,23 @@ export function Artifacts() {
                     <span className="chevron">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
                   </button>
                   <div className="version-card-tools">
+                    <div className="artifact-menu-anchor" onClick={event => event.stopPropagation()}>
+                      <button
+                        className="artifact-menu-button"
+                        onClick={() => setOpenArtifactMenuId(openArtifactMenuId === ver.id ? null : ver.id)}
+                        title="Artifact actions"
+                      >
+                        <MoreVertical size={15} />
+                      </button>
+                      {openArtifactMenuId === ver.id && (
+                        <div className="artifact-action-menu">
+                          <button onClick={() => openArtifactLogs(ver)}>
+                            <FileText size={14} />
+                            View Log
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     <button
                       className="artifact-delete-button"
                       disabled={!canDeleteBinary || actingKey !== null}
@@ -634,6 +685,41 @@ export function Artifacts() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {auditModalArtifact && (
+        <div className="modal-overlay" onClick={() => setAuditModalArtifact(null)}>
+          <div className="modal artifact-log-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Artifact audit log</h2>
+              <button className="modal-close" onClick={() => setAuditModalArtifact(null)}>
+                <X size={14} />
+              </button>
+            </div>
+            <p className="modal-subtitle">Kafka {auditModalArtifact.version} - {auditModalArtifact.filename}</p>
+
+            {artifactAuditLoading ? (
+              <div className="artifact-log-empty"><Loader2 size={18} className="spin" /> Loading audit log...</div>
+            ) : artifactAuditEvents.length === 0 ? (
+              <div className="artifact-log-empty">No audit log entries found for this artifact.</div>
+            ) : (
+              <div className="artifact-log-list">
+                {artifactAuditEvents.map(event => {
+                  const created = event.createdAt ? new Date(event.createdAt) : null;
+                  return (
+                    <article key={event.id} className="artifact-log-row">
+                      <div>
+                        <strong>{String(event.action || '').replaceAll('_', ' ')}</strong>
+                        <span>{event.category || 'ARTIFACT'} - {event.status}</span>
+                      </div>
+                      <time>{created && !Number.isNaN(created.getTime()) ? created.toLocaleString() : '-'}</time>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

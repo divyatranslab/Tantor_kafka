@@ -36,9 +36,41 @@ const parseJson = (value: unknown): unknown => {
 const title = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const actorOf = (event: AuditEvent) => event.actor || event.userName || 'system';
 const timeOf = (event: AuditEvent) => event.createdAt || event.createdTime || '';
-const resourceName = (event: AuditEvent) => event.resource || event.hostName || event.hostIp || event.artifactId || event.hostId || event.clusterId || 'platform';
+
+const normalized = (value?: string) => (value || '').toUpperCase();
+
+const isArtifactEvent = (event: AuditEvent) => {
+  const resourceType = normalized(event.resourceType);
+  return resourceType === 'ARTIFACT' || resourceType === 'HOST_PARCEL' || normalized(event.category) === 'PACKAGE';
+};
+
+const isHostOnboardingEvent = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  const category = normalized(event.category);
+  return action.includes('ONBOARDING') || action.includes('REGISTER') || category === 'AGENT';
+};
+
+const actionLabel = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  if (action.includes('ONBOARDING') && normalized(event.status) === 'SUCCESS') return 'Host Registered';
+  if (action.includes('ONBOARDING')) return 'Host Onboarding Requested';
+  if (action === 'REGISTER' || action === 'HOST_REGISTERED') return 'Host Registered';
+  return title(event.action || event.event || 'Captured');
+};
+
+const resourceTypeLabel = (event: AuditEvent) => {
+  if (isHostOnboardingEvent(event)) return 'Agent';
+  if (isArtifactEvent(event)) return 'Artifact';
+  return title(event.resourceType || 'SYSTEM');
+};
+
+const resourceName = (event: AuditEvent) => {
+  if (isHostOnboardingEvent(event) || isArtifactEvent(event)) return '';
+  return event.resource || event.hostName || event.hostId || event.clusterId || 'platform';
+};
 
 const detailLabel = (event: AuditEvent) => {
+  if (isArtifactEvent(event)) return '';
   const parsed = parseJson(event.details);
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
     const record = parsed as Record<string, unknown>;
@@ -102,7 +134,7 @@ export function AuditLogs() {
     if (actor !== 'ALL' && actorOf(event) !== actor) return false;
     if (resourceId.trim()) {
       const needle = resourceId.trim().toLowerCase();
-      const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostIp, event.hostName, event.artifactId, event.clusterId]
+    const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.artifactId, event.clusterId]
         .join(' ')
         .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;
@@ -110,7 +142,7 @@ export function AuditLogs() {
     const created = new Date(timeOf(event)).getTime();
     if (from && created < new Date(from).getTime()) return false;
     if (to && created > new Date(to).getTime()) return false;
-    const haystack = [event.action, actorOf(event), event.resourceType, event.resourceId, event.resource, event.hostIp, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
+    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
     return !search.trim() || haystack.includes(search.trim().toLowerCase());
   }), [events, category, status, actor, resourceId, from, to, search]);
 
@@ -162,11 +194,11 @@ function AuditRow({ event }: { event: AuditEvent }) {
   const details = detailLabel(event);
   return <tr>
       <td><div className="audit-time"><Clock3 size={12} /><span>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString() : '-'}</span><small>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleTimeString() : ''}</small></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{title(event.action)}</strong><small>{title(event.category)}</small></div></div></td>
+      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong><small>{title(event.category)}</small></div></div></td>
       <td><div className="audit-actor"><UserRound size={13} /><span>{actorOf(event)}</span></div></td>
-      <td><div className="audit-resource"><strong>{title(event.resourceType || 'SYSTEM')}</strong><small>{resourceName(event)}</small></div></td>
+      <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
       <td><div className="audit-resource"><small>{event.clusterId || '-'}</small></div></td>
-      <td><div className="audit-details-inline"><span title={details}>{details}</span></div></td>
+      <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
       <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status}</span></td>
     </tr>
 }

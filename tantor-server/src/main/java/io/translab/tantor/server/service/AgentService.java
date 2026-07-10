@@ -69,14 +69,20 @@ public class AgentService {
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize IPs for host {}", dto.getHostId(), e);
         }
+        String selectedHostIp = selectedIps.isEmpty() ? sourceIp : selectedIps.get(0);
+        String agentName = firstNonBlank(dto.getAgentName(), host.getAgentName(), dto.getHostname(), dto.getHostId());
+        String agentPath = firstNonBlank(dto.getAgentPath(), host.getAgentPath(), "/srv/tantor-agent/tantor-agent-linux");
+        String auditActor = selectedHostIp == null || selectedHostIp.isBlank()
+                ? agentName
+                : agentName + " (" + selectedHostIp + ")";
         host.setResourceType("HOST");
-        host.setUser("system");
+        host.setUser(auditActor);
         host.setRemoved(false);
         host.setAction(existing == null ? "HOST_REGISTERED" : "HOST_UPDATED");
         host.setOsDetails(dto.getOsDetails());
         host.setAgentVersion(dto.getAgentVersion());
-        host.setAgentName(dto.getAgentName());
-        host.setAgentPath(dto.getAgentPath());
+        host.setAgentName(agentName);
+        host.setAgentPath(agentPath);
         host.setAgentStatus("ONLINE");
         if (host.getStatus() == null) {
             host.setStatus("PENDING");
@@ -86,12 +92,6 @@ public class AgentService {
         host.setLastHeartbeat(OffsetDateTime.now());
         
         hostRepository.save(host);
-        auditService.recordAs("agent:" + dto.getHostId(), "AGENT", null,
-                "AGENT", existing == null ? "AGENT_REGISTERED" : "AGENT_RE_REGISTERED",
-                "HOST", dto.getHostId(), host.getClusterId(), "SUCCESS", oldValue,
-                Map.of("hostname", String.valueOf(host.getHostname()), "status", String.valueOf(host.getStatus()),
-                        "agentVersion", String.valueOf(host.getAgentVersion()), "ipAddresses", dto.getIpAddresses()),
-                null, Map.of("osDetails", String.valueOf(dto.getOsDetails())));
         log.info("Registered host: {}", dto.getHostId());
         activityAlertService.logAudit("INFO", "AGENT", existing != null ? "RECONNECT" : "REGISTER",
                 existing != null ? "Agent reconnected" : "Agent registered", "HOST", dto.getHostId(), host.getClusterId(),
@@ -459,5 +459,17 @@ public class AgentService {
                 }
             });
         }
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 }

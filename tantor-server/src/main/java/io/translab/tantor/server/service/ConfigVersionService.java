@@ -100,8 +100,7 @@ public class ConfigVersionService {
         if (!Boolean.TRUE.equals(validation.get("valid"))) {
             throw new IllegalArgumentException("Configuration validation failed: " + validation.get("errors"));
         }
-        boolean approvalRequired = approvalRequested || "UAT".equalsIgnoreCase(cluster.getEnvironment())
-                || "PROD".equalsIgnoreCase(cluster.getEnvironment()) || "PRODUCTION".equalsIgnoreCase(cluster.getEnvironment());
+        boolean approvalRequired = false;
 
         ConfigVersion version = new ConfigVersion();
         version.setClusterId(cluster.getId());
@@ -119,8 +118,7 @@ public class ConfigVersionService {
         version.setStatus(approvalRequired ? ConfigVersionStatus.PENDING_APPROVAL : ConfigVersionStatus.VALIDATED);
         ConfigVersion saved = configVersionRepository.saveAndFlush(version);
         auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_CREATED", "CONFIG_VERSION", saved.getId().toString(),
-                cluster.getId(), "SUCCESS", oldConfig, newConfig,
-                Map.of("required", approvalRequired),
+                cluster.getId(), "SUCCESS", oldConfig, newConfig, null,
                 Map.of("hostId", service.getHostId(), "component", service.getRole(),
                         "file", configFileName, "version", saved.getConfigVersion()));
         activityAlertService.logActivity("INFO", "Saved config version v" + saved.getConfigVersion()
