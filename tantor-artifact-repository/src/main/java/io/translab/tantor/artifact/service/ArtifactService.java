@@ -120,8 +120,8 @@ public class ArtifactService {
             artifact.setHostname(getRealHostName());
             artifact.setUserName(cmd.createdBy() != null ? cmd.createdBy() : "system");
         } catch (Exception e) {
-            artifact.setHostIp("127.0.0.1");
-            artifact.setHostname("localhost");
+            artifact.setHostIp(null);
+            artifact.setHostname(null);
         }
 
         try {
@@ -279,9 +279,10 @@ public class ArtifactService {
                     }
                 }
             }
-            return java.net.InetAddress.getLocalHost().getHostAddress();
+            String fallback = java.net.InetAddress.getLocalHost().getHostAddress();
+            return isUsableHostAddress(fallback) ? fallback : null;
         } catch (Exception e) {
-            return "127.0.0.1";
+            return null;
         }
     }
 
@@ -296,9 +297,28 @@ public class ArtifactService {
             }
         } catch (Exception ignored) {}
         try {
-            return java.net.InetAddress.getLocalHost().getHostName();
+            String hostName = java.net.InetAddress.getLocalHost().getHostName();
+            return isLoopbackName(hostName) ? null : hostName;
         } catch (Exception e) {
-            return "localhost";
+            return null;
         }
+    }
+
+    private boolean isUsableHostAddress(String value) {
+        return value != null
+                && !value.isBlank()
+                && !value.startsWith("127.")
+                && !value.equals("0:0:0:0:0:0:0:1")
+                && !value.equals("::1")
+                && !"localhost".equalsIgnoreCase(value);
+    }
+
+    private boolean isLoopbackName(String value) {
+        return value == null
+                || value.isBlank()
+                || "localhost".equalsIgnoreCase(value)
+                || "127.0.0.1".equals(value)
+                || "0:0:0:0:0:0:0:1".equals(value)
+                || "::1".equals(value);
     }
 }

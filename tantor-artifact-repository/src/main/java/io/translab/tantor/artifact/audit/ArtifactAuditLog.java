@@ -26,6 +26,7 @@ public class ArtifactAuditLog {
 
     @Column(name = "version_no", length = 80) private String version;
     @Column(name = "path_of_tar", length = 1024) private String pathOfTar;
+    @Column(name = "full_file_path", length = 2048) private String fullFilePath;
     @Column(name = "checksum", length = 64) private String checksum;
 
     public UUID getId() { return id; }
@@ -44,5 +45,6 @@ public class ArtifactAuditLog {
 
     public String getVersion() { return version; } public void setVersion(String v) { version = v; }
     public String getPathOfTar() { return pathOfTar; } public void setPathOfTar(String v) { pathOfTar = v; }
+    public String getFullFilePath() { return fullFilePath; } public void setFullFilePath(String v) { fullFilePath = v; }
     public String getChecksum() { return checksum; } public void setChecksum(String v) { checksum = v; }
 }

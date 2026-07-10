@@ -48,8 +48,10 @@ public class AuditService {
         event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
+        event.setEvent(event.getAction());
         event.setResourceType(text(resourceType, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setResourceId(resourceId);
+        event.setResource(resourceId);
         event.setClusterId(clusterId);
         event.setStatus(text(status, "SUCCESS").toUpperCase(Locale.ROOT));
         event.setApproval(json(approval));
@@ -57,6 +59,8 @@ public class AuditService {
         event.setIpAddress(ipOverride == null ? requestIp() : ipOverride);
         event.setRequestId(requestId());
         event.setCreatedTime(Instant.now());
+        event.setCreatedBy(event.getUserName());
+        event.setUserId(event.getUserName());
 
         if ("ARTIFACT".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
             try {
@@ -69,6 +73,45 @@ public class AuditService {
                 }
             } catch (Exception e) {
                 // Ignore invalid UUID or DB errors
+            }
+        } else if ("HOST".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
+            event.setHostId(event.getResourceId());
+            try {
+                java.util.List<Object[]> hostInfo = repository.findHostInfo(event.getResourceId());
+                if (hostInfo != null && !hostInfo.isEmpty()) {
+                    Object[] row = hostInfo.get(0);
+                    if (row[0] != null) event.setHostIp(row[0].toString());
+                    if (row[1] != null) {
+                        event.setHostName(row[1].toString());
+                        event.setResource(row[1].toString());
+                    }
+                }
+            } catch (Exception e) {
+                // Ignore lookup failures; audit recording must not block the action.
+            }
+        } else if ("CLUSTER".equalsIgnoreCase(event.getResourceType())) {
+            UUID lookupClusterId = clusterId;
+            if (lookupClusterId == null && event.getResourceId() != null) {
+                try {
+                    lookupClusterId = UUID.fromString(event.getResourceId());
+                    event.setClusterId(lookupClusterId);
+                } catch (Exception ignored) {
+                    // Keep the raw resource id if it is not a UUID.
+                }
+            }
+            if (lookupClusterId != null) {
+                try {
+                    java.util.List<Object[]> clusterInfo = repository.findClusterInfo(lookupClusterId.toString());
+                    if (clusterInfo != null && !clusterInfo.isEmpty()) {
+                        Object[] row = clusterInfo.get(0);
+                        if (row[0] != null) event.setResource(row[0].toString());
+                        if (row[1] != null && event.getHostIp() == null) {
+                            event.setHostIp(firstHost(row[1].toString()));
+                        }
+                    }
+                } catch (Exception e) {
+                    // Ignore lookup failures; audit recording must not block the action.
+                }
             }
         }
 
@@ -91,6 +134,9 @@ public class AuditService {
                 String like = "%" + search.toLowerCase(Locale.ROOT) + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("resourceId")), like),
+                        cb.like(cb.lower(root.get("resource")), like),
+                        cb.like(cb.lower(root.get("hostName")), like),
+                        cb.like(cb.lower(root.get("hostIp")), like),
                         cb.like(cb.lower(root.get("userName")), like),
                         cb.like(cb.lower(root.get("action")), like),
                         cb.like(cb.lower(root.get("resourceType")), like)));
@@ -170,4 +216,11 @@ public class AuditService {
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
+
+    private String firstHost(String bootstrapServers) {
+        if (bootstrapServers == null || bootstrapServers.isBlank()) return null;
+        String first = bootstrapServers.split(",")[0].trim();
+        int colon = first.indexOf(':');
+        return colon > 0 ? first.substring(0, colon) : first;
+    }
 }

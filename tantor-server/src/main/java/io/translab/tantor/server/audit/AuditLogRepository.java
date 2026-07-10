@@ -9,6 +9,12 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSp
     long countByStatus(String status);
     long countByCategory(String category);
 
-    @org.springframework.data.jpa.repository.Query(value = "SELECT host_ip, host_name FROM kf_artifact_audit_log WHERE artifact_id = CAST(:artifactId AS UUID) AND host_ip IS NOT NULL LIMIT 1", nativeQuery = true)
+    @org.springframework.data.jpa.repository.Query(value = "SELECT host_ip, host_name FROM kf_artifact_audit_log WHERE artifact_id::text = :artifactId AND host_ip IS NOT NULL LIMIT 1", nativeQuery = true)
     java.util.List<Object[]> findArtifactHostInfo(@org.springframework.data.repository.query.Param("artifactId") String artifactId);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT host_ip, hostname FROM kf_hosts WHERE id = :hostId LIMIT 1", nativeQuery = true)
+    java.util.List<Object[]> findHostInfo(@org.springframework.data.repository.query.Param("hostId") String hostId);
+
+    @org.springframework.data.jpa.repository.Query(value = "SELECT cluster_name, bootstrap_servers FROM kf_clusters WHERE id = CAST(:clusterId AS UUID) LIMIT 1", nativeQuery = true)
+    java.util.List<Object[]> findClusterInfo(@org.springframework.data.repository.query.Param("clusterId") String clusterId);
 }

@@ -35,7 +35,7 @@ public class ArtifactAuditService {
         event.setCategory("PACKAGE");
         event.setAction(action);
         event.setResourceType("ARTIFACT");
-        if (resourceId != null) event.setArtifactId(resourceId);
+        if (isUuid(resourceId)) event.setArtifactId(resourceId);
         event.setStatus(status);
         event.setDetails(json(details));
         event.setCreatedAt(OffsetDateTime.now());
@@ -52,6 +52,7 @@ public class ArtifactAuditService {
                     event.setHostName(a.getHostname());
                     event.setVersion(a.getVersion());
                     event.setPathOfTar(a.getRelativePath());
+                    event.setFullFilePath(a.getFullFilePath());
                     event.setChecksum(a.getChecksumSha256());
                 }
             } catch (Exception e) {
@@ -78,6 +79,16 @@ public class ArtifactAuditService {
         if (value == null) return null;
         try { return objectMapper.writeValueAsString(value); }
         catch (Exception e) { return "{\"captureError\":true}"; }
+    }
+
+    private boolean isUuid(String value) {
+        if (value == null || value.isBlank()) return false;
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
 }

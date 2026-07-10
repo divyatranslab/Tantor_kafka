@@ -21,6 +21,15 @@ public class ClusterAuditLog {
     @Column(name = "cluster_id", nullable = false)
     private UUID clusterId;
 
+    @Column(length = 50)
+    private String severity;
+
+    @Column(length = 255)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     @Column(nullable = false, length = 100)
     private String action;
 
@@ -45,6 +54,9 @@ public class ClusterAuditLog {
     @Column(name = "bootstrap_ip", length = 100)
     private String bootstrapIp;
 
+    @Column(name = "log_path", length = 1024)
+    private String logPath;
+
     @Column(length = 50)
     private String env;
 
@@ -59,6 +71,9 @@ public class ClusterAuditLog {
 
     @Column(name = "actor_user", length = 128)
     private String actorUser;
+
+    @Column(name = "user_name", length = 128)
+    private String userName;
 
     @Column(name = "created_by", length = 128)
     private String createdBy;

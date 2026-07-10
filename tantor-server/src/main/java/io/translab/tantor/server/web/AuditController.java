@@ -31,7 +31,7 @@ public class AuditController {
             @RequestParam(defaultValue = "100") int size) {
         Page<AuditLog> result = auditService.search(category, action, status, resourceType, actor, search, from, to, page, size);
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("events", result.getContent());
+        response.put("events", result.getContent().stream().map(this::eventView).toList());
         response.put("page", result.getNumber());
         response.put("size", result.getSize());
         response.put("total", result.getTotalElements());
@@ -43,5 +43,30 @@ public class AuditController {
     @GetMapping("/integrity")
     public ResponseEntity<Map<String, String>> integrity() {
         return ResponseEntity.ok(Map.of("status", auditService.verifyIntegrity(), "mode", "APPEND_ONLY"));
+    }
+
+    private Map<String, Object> eventView(AuditLog event) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("id", event.getId());
+        view.put("actor", event.getUserName());
+        view.put("userName", event.getUserName());
+        view.put("category", event.getCategory());
+        view.put("action", event.getAction());
+        view.put("event", event.getEvent() == null ? event.getAction() : event.getEvent());
+        view.put("resourceType", event.getResourceType());
+        view.put("resourceId", event.getResourceId());
+        view.put("resource", event.getResource());
+        view.put("clusterId", event.getClusterId());
+        view.put("hostId", event.getHostId());
+        view.put("hostIp", event.getHostIp());
+        view.put("hostName", event.getHostName());
+        view.put("artifactId", event.getArtifactId());
+        view.put("userId", event.getUserId());
+        view.put("status", event.getStatus());
+        view.put("details", event.getDetails());
+        view.put("createdAt", event.getCreatedTime());
+        view.put("createdTime", event.getCreatedTime());
+        view.put("origin", event.getOrigin());
+        return view;
     }
 }
