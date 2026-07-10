@@ -313,7 +313,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				log("Fresh deployment detected — formatting KRaft storage...")
 				storageScript := filepath.Join(activeInstallDir, "bin", "kafka-storage.sh")
 				configPath := configPathForTask(activeInstallDir, t)
-				formatArgs := []string{"format", "-t", clusterUUID, "-c", configPath}
+				formatArgs := []string{"format", "--cluster-id=" + clusterUUID, "-c", configPath}
 				if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
 					_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
 					if isController {

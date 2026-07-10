@@ -1325,11 +1325,16 @@ public class ClusterController {
     }
 
     private String generateKafkaClusterUuid() {
-        UUID uuid = UUID.randomUUID();
-        ByteBuffer buffer = ByteBuffer.allocate(16);
-        buffer.putLong(uuid.getMostSignificantBits());
-        buffer.putLong(uuid.getLeastSignificantBits());
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
+        while (true) {
+            UUID uuid = UUID.randomUUID();
+            ByteBuffer buffer = ByteBuffer.allocate(16);
+            buffer.putLong(uuid.getMostSignificantBits());
+            buffer.putLong(uuid.getLeastSignificantBits());
+            String id = Base64.getUrlEncoder().withoutPadding().encodeToString(buffer.array());
+            if (!id.isBlank() && Character.isLetterOrDigit(id.charAt(0))) {
+                return id;
+            }
+        }
     }
 
     private String buildBootstrapServers(List<ServiceAssignmentReq> services, int listenerPort) {
@@ -1446,7 +1451,7 @@ public class ClusterController {
         if (controllerPort < 1 || controllerPort > 65535) errors.add("Controller port must be between 1 and 65535.");
 
         String clusterId = String.valueOf(config.getOrDefault("cluster_uuid", ""));
-        if (!clusterId.matches("[A-Za-z0-9_-]{20,24}")) {
+        if (!clusterId.matches("[A-Za-z0-9][A-Za-z0-9_-]{19,23}")) {
             errors.add("Kafka storage cluster ID is missing or invalid.");
         }
 
