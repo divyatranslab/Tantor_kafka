@@ -24,9 +24,6 @@ public class Artifact {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "artifact_id")
-    private UUID artifactId;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "service_type", nullable = false, length = 40)
     private ServiceType serviceType;
@@ -95,9 +92,6 @@ public class Artifact {
     @Column(name = "user_name", length = 255)
     private String userName;
 
-    @Column(name = "resource_type", length = 80)
-    private String resourceType;
-
     @PrePersist
     void onCreate() {
         if (id == null) {
@@ -118,9 +112,6 @@ public class Artifact {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
-
-    public UUID getArtifactId() { return artifactId; }
-    public void setArtifactId(UUID artifactId) { this.artifactId = artifactId; }
 
     public ServiceType getServiceType() { return serviceType; }
     public void setServiceType(ServiceType serviceType) { this.serviceType = serviceType; }
@@ -177,8 +168,5 @@ public class Artifact {
 
     public String getUserName() { return userName; }
     public void setUserName(String userName) { this.userName = userName; }
-
-    public String getResourceType() { return resourceType; }
-    public void setResourceType(String resourceType) { this.resourceType = resourceType; }
 
 }

@@ -484,7 +484,6 @@ export function Artifacts() {
                       <div className="version-meta">
                         {ver.release_date && <span>Uploaded {ver.release_date}</span>}
                         <span>{ver.size_mb} MB</span>
-                        <span>{distributed} host state{distributed === 1 ? '' : 's'}</span>
                         {ver.filename && <span className="filename">{ver.filename}</span>}
                       </div>
                     </div>

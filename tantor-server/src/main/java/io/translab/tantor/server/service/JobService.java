@@ -37,11 +37,13 @@ public class JobService {
         }
         jobStepRepository.saveAll(steps);
         refreshProgress(saved.getId());
-        auditService.record(jobCategory(saved), saved.getType().name() + "_REQUESTED", "JOB",
-                saved.getId().toString(), clusterId(saved), "REQUESTED", null,
-                Map.of("type", saved.getType().name(), "resourceKey", String.valueOf(saved.getResourceKey()),
-                        "requestedBy", String.valueOf(saved.getRequestedBy()), "stepCount", steps.size()),
-                null, Map.of("jobStatus", saved.getStatus().name()));
+        if (saved.getType() != JobType.ONBOARDING) {
+            auditService.record(jobCategory(saved), saved.getType().name() + "_REQUESTED", "JOB",
+                    saved.getId().toString(), clusterId(saved), "REQUESTED", null,
+                    Map.of("type", saved.getType().name(), "resourceKey", String.valueOf(saved.getResourceKey()),
+                            "requestedBy", String.valueOf(saved.getRequestedBy()), "stepCount", steps.size()),
+                    null, Map.of("jobStatus", saved.getStatus().name()));
+        }
         return saved;
     }
 

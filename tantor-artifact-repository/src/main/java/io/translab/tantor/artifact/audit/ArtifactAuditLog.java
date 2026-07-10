@@ -24,9 +24,6 @@ public class ArtifactAuditLog {
     @Column(name = "created_by", length = 128) private String createdBy;
     @Column(name = "host_name", length = 255) private String hostName;
 
-    @Column(name = "version_no", length = 80) private String version;
-    @Column(name = "path_of_tar", length = 1024) private String pathOfTar;
-    @Column(name = "full_file_path", length = 2048) private String fullFilePath;
     @Column(name = "checksum", length = 64) private String checksum;
 
     public UUID getId() { return id; }
@@ -43,8 +40,5 @@ public class ArtifactAuditLog {
     public String getCreatedBy() { return createdBy; } public void setCreatedBy(String v) { createdBy = v; }
     public String getHostName() { return hostName; } public void setHostName(String v) { hostName = v; }
 
-    public String getVersion() { return version; } public void setVersion(String v) { version = v; }
-    public String getPathOfTar() { return pathOfTar; } public void setPathOfTar(String v) { pathOfTar = v; }
-    public String getFullFilePath() { return fullFilePath; } public void setFullFilePath(String v) { fullFilePath = v; }
     public String getChecksum() { return checksum; } public void setChecksum(String v) { checksum = v; }
 }

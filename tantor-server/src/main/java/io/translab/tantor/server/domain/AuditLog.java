@@ -49,18 +49,8 @@ public class AuditLog {
     @Column(columnDefinition = "jsonb")
     private String details;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private String approval;
-
-    @Column(name = "ip_address", length = 64)
-    private String ipAddress;
-
     @Column(name = "origin", nullable = false, length = 80)
     private String origin;
-
-    @Column(name = "request_id", length = 100)
-    private String requestId;
 
     @Column(name = "created_time", nullable = false, updatable = false)
     private Instant createdTime = Instant.now();

@@ -50,9 +50,6 @@ public class ArtifactAuditService {
                     Artifact a = opt.get();
                     event.setHostIp(a.getHostIp());
                     event.setHostName(a.getHostname());
-                    event.setVersion(a.getVersion());
-                    event.setPathOfTar(a.getRelativePath());
-                    event.setFullFilePath(a.getFullFilePath());
                     event.setChecksum(a.getChecksumSha256());
                 }
             } catch (Exception e) {

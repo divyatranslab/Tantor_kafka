@@ -63,6 +63,9 @@ public class JobExecutor {
     }
 
     private void auditCompletion(Job job, String action, String status) {
+        if (job.getType() == io.translab.tantor.server.domain.JobType.ONBOARDING) {
+            return;
+        }
         auditService.recordAs(job.getRequestedBy(), "MANAGEMENT_SERVER", null,
                 jobCategory(job), action, "JOB", job.getId().toString(), clusterId(job), status,
                 Map.of("status", JobStatus.IN_PROGRESS.name()),

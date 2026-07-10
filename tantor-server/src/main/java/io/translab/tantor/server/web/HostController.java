@@ -208,9 +208,6 @@ public class HostController {
         Job saved = jobService.createJob(job, List.of(step));
         activityAlertService.logAudit("INFO", "APPROVAL", "APPROVE", "Host onboarding approved", "HOST", id,
                 host.getClusterId(), "PENDING", "ONBOARDING_QUEUED", "SUCCESS", "APPROVED", "jobId=" + saved.getId());
-        auditService.record("APPROVAL", "HOST_ONBOARDING_APPROVED", "HOST", id, host.getClusterId(), "SUCCESS",
-                Map.of("status", host.getStatus()), Map.of("jobId", saved.getId(), "status", "ONBOARDING_REQUESTED"),
-                Map.of("approved", true), Map.of("hostname", String.valueOf(host.getHostname())));
         return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 

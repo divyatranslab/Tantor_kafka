@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.translab.tantor.server.domain.AuditLog;
 import jakarta.persistence.criteria.Predicate;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -15,8 +14,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.Instant;
 import java.util.*;
@@ -54,10 +51,7 @@ public class AuditService {
         event.setResource(resourceId);
         event.setClusterId(clusterId);
         event.setStatus(text(status, "SUCCESS").toUpperCase(Locale.ROOT));
-        event.setApproval(json(approval));
         event.setDetails(json(details));
-        event.setIpAddress(ipOverride == null ? requestIp() : ipOverride);
-        event.setRequestId(requestId());
         event.setCreatedTime(Instant.now());
         event.setCreatedBy(event.getUserName());
         event.setUserId(event.getUserName());
@@ -195,24 +189,6 @@ public class AuditService {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated() || auth.getName() == null || "anonymousUser".equals(auth.getName())) return "system";
         return auth.getName();
-    }
-
-    private HttpServletRequest request() {
-        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs ? attrs.getRequest() : null;
-    }
-
-    private String requestIp() {
-        HttpServletRequest request = request();
-        if (request == null) return null;
-        String forwarded = request.getHeader("X-Forwarded-For");
-        return forwarded == null || forwarded.isBlank() ? request.getRemoteAddr() : forwarded.split(",")[0].trim();
-    }
-
-    private String requestId() {
-        HttpServletRequest request = request();
-        if (request == null) return UUID.randomUUID().toString();
-        String supplied = request.getHeader("X-Request-ID");
-        return supplied == null || supplied.isBlank() ? UUID.randomUUID().toString() : supplied.substring(0, Math.min(100, supplied.length()));
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
