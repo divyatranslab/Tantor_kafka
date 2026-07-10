@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Hosts } from './pages/Hosts';
@@ -40,7 +40,8 @@ function App() {
           <main className="main-content">
             <TopNavbar />
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/hosts" element={<Hosts />} />
               <Route path="/clusters" element={<Clusters />} />
               <Route path="/cluster-deployment" element={<ClusterDeployment />} />

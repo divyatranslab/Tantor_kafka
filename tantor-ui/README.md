@@ -1,5 +1,48 @@
 # React + TypeScript + Vite
 
+## Keycloak SSO
+
+The UI uses Keycloak Authorization Code Flow with PKCE S256 through `keycloak-js`.
+Do not configure a client secret in the React application.
+
+Default client settings:
+
+```text
+Keycloak URL: https://keycloak.tantor.io
+Realm: Gatekeeper
+Client ID: apb-kafka
+Client type: Public
+```
+
+Required Keycloak client configuration:
+
+```text
+Client authentication: OFF
+Standard flow: ON
+Direct access grants: OFF
+Implicit flow: OFF
+
+Valid redirect URIs:
+<frontend-origin>/*
+
+Valid post logout redirect URIs:
+<frontend-origin>/*
+
+Web origins:
+<frontend-origin>
+```
+
+Optional Vite environment overrides:
+
+```text
+VITE_KEYCLOAK_URL=https://keycloak.tantor.io
+VITE_KEYCLOAK_REALM=Gatekeeper
+VITE_KEYCLOAK_CLIENT_ID=apb-kafka
+```
+
+Every protected backend request must include `Authorization: Bearer <access-token>`.
+The backend must validate token signature, issuer, expiry, and required roles or authorities.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

@@ -2,3 +2,20 @@
 #root {
   width: 100%;
 }
+
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #f8f7f4;
+  color: #1a1a18;
+}
+
+.auth-status {
+  padding: 14px 18px;
+  border: 1px solid #e8e6e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+  color: #6b6b66;
+}

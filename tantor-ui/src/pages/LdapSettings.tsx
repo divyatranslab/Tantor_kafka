@@ -60,17 +60,9 @@ export function LdapSettings() {
     fetchConfig();
   }, []);
 
-  const getAuthToken = () => {
-    return localStorage.getItem('token') || '';
-  };
-
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/v1/ldap/config', {
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`
-        }
-      });
+      const res = await fetch('/api/v1/ldap/config');
       if (res.ok) {
         const data = await res.json();
         if (data && Object.keys(data).length > 0) {
@@ -103,7 +95,6 @@ export function LdapSettings() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${getAuthToken()}`
         },
         body: JSON.stringify(payload)
       });
@@ -130,7 +121,6 @@ export function LdapSettings() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${getAuthToken()}`
         },
         body: JSON.stringify({ username: testUsername, password: testPassword })
       });
