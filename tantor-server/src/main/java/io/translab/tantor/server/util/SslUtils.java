@@ -5,7 +5,6 @@ import javax.net.ssl.TrustManagerFactory;
 import java.io.ByteArrayInputStream;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
-import java.security.cert.X509Certificate;
 import java.util.Base64;
 
 public class SslUtils {
@@ -15,21 +14,31 @@ public class SslUtils {
             return SSLContext.getDefault();
         }
 
-        // Clean up PEM format
-        String certStr = pemCertificate
-                .replace("-----BEGIN CERTIFICATE-----", "")
-                .replace("-----END CERTIFICATE-----", "")
-                .replaceAll("\\s", "");
-        
-        byte[] certBytes = Base64.getDecoder().decode(certStr);
-        
+        // CertificateFactory can parse a full PEM file directly (headers + base64 body)
+        byte[] pemBytes = pemCertificate.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        X509Certificate cert = (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certBytes));
-        
+
         KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
         trustStore.load(null, null); // Initialize empty keystore
-        trustStore.setCertificateEntry("custom-cert", cert);
-        
+
+        // Parse all certificates in the PEM (supports certificate chains)
+        int certIndex = 0;
+        java.io.InputStream pemStream = new ByteArrayInputStream(pemBytes);
+        while (pemStream.available() > 0) {
+            try {
+                java.security.cert.Certificate cert = cf.generateCertificate(pemStream);
+                trustStore.setCertificateEntry("custom-cert-" + certIndex, cert);
+                certIndex++;
+            } catch (Exception e) {
+                // Reached end of parseable certs
+                break;
+            }
+        }
+
+        if (certIndex == 0) {
+            throw new IllegalArgumentException("No valid X.509 certificates found in the provided PEM data.");
+        }
+
         return createSslContextFromTrustStore(trustStore);
     }
 

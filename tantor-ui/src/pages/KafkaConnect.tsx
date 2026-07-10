@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Pause, Play, Plug, Plus, RefreshCw, RotateCw, Trash2, X } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X } from 'lucide-react';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -29,6 +29,19 @@ interface ConnectSummary {
   plugins: ConnectorPlugin[];
 }
 
+interface SavedConnection {
+  id: string;
+  connectionName: string;
+  protocol: string;
+  host: string;
+  port: number;
+  status: string;
+  isDefault: boolean;
+  certificateConfigured: boolean;
+  truststoreConfigured: boolean;
+  certificateType?: string;
+}
+
 const connectorTemplate = `{
   "name": "file-source",
   "config": {
@@ -47,61 +60,178 @@ export function KafkaConnect() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
   const [showCreate, setShowCreate] = useState(false);
+  const [showConnection, setShowConnection] = useState(false);
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
+
+  // ── Multi-instance state ──────────────────────────────────────
+  const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+
+  // ── Connection form state ─────────────────────────────────────
+  const [formConnectionName, setFormConnectionName] = useState('');
   const [customIp, setCustomIp] = useState('');
   const [customPort, setCustomPort] = useState('');
   const [protocol, setProtocol] = useState('http');
-  const [certificate, setCertificate] = useState('');
   const [certType, setCertType] = useState('PEM');
   const [certFile, setCertFile] = useState<File | null>(null);
+  const [certFileName, setCertFileName] = useState('');
   const [certPassword, setCertPassword] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [formIsDefault, setFormIsDefault] = useState(false);
+  /** ID of the connection being edited — set when editing an existing connection. */
+  const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
 
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  const [connectSaving, setConnectSaving] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  // ── Derived: currently selected connection ────────────────────
+  const selectedConn = useMemo(
+    () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
+    [savedConnections, selectedConnectionId]
+  );
+
+  /**
+   * Safely appends ?connectionId=... to any URL using URLSearchParams.
+   * Works even when the base URL already contains query params.
+   */
+  const withConnId = (url: string, connId: string | null = selectedConnectionId): string => {
+    if (!connId) return url;
+    const [base, existing] = url.split('?');
+    const params = new URLSearchParams(existing || '');
+    params.set('connectionId', connId);
+    return base + '?' + params.toString();
   };
 
-  const buildHeaders = async (baseHeaders: Record<string, string> = {}) => {
-    const headers = { ...baseHeaders };
-    if (certType === 'PEM' && certificate.trim()) {
-      headers['X-Custom-Certificate'] = btoa(certificate.trim());
-      headers['X-Custom-Certificate-Type'] = 'PEM';
-    } else if (certType === 'PKCS12' && certFile) {
-      const base64 = await readFileAsBase64(certFile);
-      headers['X-Custom-Certificate'] = base64;
-      headers['X-Custom-Certificate-Type'] = 'PKCS12';
-      if (certPassword) {
-        headers['X-Custom-Certificate-Password'] = certPassword;
-      }
+  const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const buildCertData = async (): Promise<string | undefined> => {
+    if (certType === 'PEM' && certFile) {
+      const text = await new Promise<string>((res, rej) => {
+        const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = rej; r.readAsText(certFile);
+      });
+      return btoa(text.trim());
+    } else if (certType === 'PKCS12_JKS' && certFile) {
+      return await readFileAsBase64(certFile);
     }
-    return headers;
+    return undefined;
   };
 
-  const getQueryParams = () => {
-    const params = new URLSearchParams();
-    if (protocol) params.append('protocol', protocol);
-    if (customIp.trim()) params.append('ip', customIp.trim());
-    if (customPort.trim()) params.append('port', customPort.trim());
-    const qs = params.toString();
-    return qs ? `?${qs}` : '';
+  // ── Load all connections (for instance switcher) ──────────────
+  const loadConnections = async () => {
+    try {
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
+      if (!res.ok) return;
+      const data: SavedConnection[] = await res.json().catch(() => []);
+      setSavedConnections(data);
+      if (data.length > 0) {
+        const defaultConn = data.find(c => c.isDefault) ?? data[0];
+        setSelectedConnectionId(prev => prev ?? defaultConn.id);
+      }
+    } catch { /* non-fatal */ }
+  };
+
+  /**
+   * Open connection modal.
+   * If `conn` is provided, pre-fill for editing (uses PUT /connections/{id}).
+   * If omitted, blank form for a new connection.
+   */
+  const openConnectionModal = (conn?: SavedConnection) => {
+    if (conn) {
+      setEditingConnectionId(conn.id);
+      setFormConnectionName(conn.connectionName);
+      setProtocol(conn.protocol || 'http');
+      setCustomIp(conn.host || '');
+      setCustomPort(conn.port ? String(conn.port) : '');
+      setCertType(conn.certificateType || 'PEM');
+      setFormIsDefault(conn.isDefault);
+    } else {
+      setEditingConnectionId(null);
+      setFormConnectionName('');
+      setProtocol('http');
+      setCustomIp('');
+      setCustomPort('');
+      setCertType('PEM');
+      setFormIsDefault(false);
+    }
+    setCertFile(null);
+    setCertFileName('');
+    setCertPassword('');
+    setConnectError(null);
+    setShowConnection(true);
+  };
+
+  const handleSaveConnection = async () => {
+    setConnectSaving(true);
+    setConnectError(null);
+    try {
+      const certData = await buildCertData();
+      const body = {
+        connectionName: formConnectionName.trim() || 'Default connection',
+        protocol,
+        host: customIp.trim(),
+        port: parseInt(customPort.trim()) || 8083,
+        certificateType: certType,
+        certificateData: certData,
+        truststorePassword: certPassword || undefined,
+        isDefault: formIsDefault
+      };
+
+      // Use PUT /connections/{id} when editing existing, else PUT /connection (upsert-by-name)
+      const url = editingConnectionId
+        ? `/api/v1/clusters/${id}/data-services/kafka-connect/connections/${editingConnectionId}`
+        : `/api/v1/clusters/${id}/data-services/kafka-connect/connection`;
+
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to save connection.');
+
+      setCertPassword('');
+      setShowConnection(false);
+      await loadConnections();
+      if (data.id) setSelectedConnectionId(data.id);
+      await load();
+    } catch (e: any) {
+      setConnectError(e.message || 'Failed to save connection.');
+    } finally {
+      setConnectSaving(false);
+    }
+  };
+
+  const handleDeleteConnection = async () => {
+    if (!selectedConnectionId) return;
+    if (!window.confirm("Are you sure you want to delete this connection?")) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections/${selectedConnectionId}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to delete connection.');
+      }
+      setSelectedConnectionId(null);
+      await loadConnections();
+      await load();
+    } catch (e: any) {
+      setError(e.message || 'Failed to delete connection.');
+      setLoading(false);
+    }
   };
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const hdrs = await buildHeaders();
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/summary${getQueryParams()}`, {
-        headers: hdrs
-      });
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       setSummary(data);
@@ -112,20 +242,22 @@ export function KafkaConnect() {
     }
   };
 
+  // Initial load
   useEffect(() => {
-    if (id) {
-      load();
-    }
+    if (id) { loadConnections(); }
   }, [id]);
 
-  const clusters = useMemo(() => {
-    return [{
-      name: 'default-connect',
-      version: summary?.version || '-',
-      connectors: summary?.connectorCount ?? 0,
-      runningTasks: summary?.runningTasks ?? 0
-    }];
-  }, [summary]);
+  // Reload when selected connection changes
+  useEffect(() => {
+    if (id && selectedConnectionId !== undefined) { load(); }
+  }, [id, selectedConnectionId]);
+
+  const clusters = useMemo(() => [{
+    name: selectedConn?.connectionName || 'default-connect',
+    version: summary?.version || '-',
+    connectors: summary?.connectorCount ?? 0,
+    runningTasks: summary?.runningTasks ?? 0
+  }], [summary, selectedConn]);
 
   const createConnector = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,10 +265,9 @@ export function KafkaConnect() {
     setError(null);
     try {
       const body = JSON.parse(connectorJson);
-      const hdrs = await buildHeaders({ 'Content-Type': 'application/json' });
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors${getQueryParams()}`, {
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors`), {
         method: 'POST',
-        headers: hdrs,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       const data = await res.json().catch(() => ({}));
@@ -156,13 +287,11 @@ export function KafkaConnect() {
     setSaving(true);
     setError(null);
     try {
-      const url = action === 'delete'
-        ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}${getQueryParams()}`
-        : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}${getQueryParams()}`;
-      const hdrs = await buildHeaders();
-      const res = await fetch(url, { 
-        method: action === 'delete' ? 'DELETE' : 'PUT',
-        headers: hdrs
+      const baseUrl = action === 'delete'
+        ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}`
+        : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}`;
+      const res = await fetch(withConnId(baseUrl), {
+        method: action === 'delete' ? 'DELETE' : 'PUT'
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
@@ -174,77 +303,97 @@ export function KafkaConnect() {
     }
   };
 
+  const restartTask = async (connectorName: string, taskId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const url = `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(connectorName)}/tasks/${taskId}/restart`;
+      const res = await fetch(withConnId(url), { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Failed to restart task.');
+      await load();
+    } catch (e: any) {
+      setError(e.message || 'Failed to restart task.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const statusClass = (state: string) => {
     if (state === 'RUNNING') return 'ds-status';
     if (state === 'PAUSED') return 'ds-status warn';
     return 'ds-status error';
   };
 
+  const connStatusColor = (s: string) =>
+    s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
+
   return (
     <div className="data-services-page animate-fade-in">
       <div className="ds-header">
         <h2>Kafka Connect</h2>
         <div className="ds-actions">
-          <select value={protocol} onChange={e => setProtocol(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }}>
-            <option value="http">http://</option>
-            <option value="https">https://</option>
-          </select>
-          <input type="text" placeholder="Custom IP" value={customIp} onChange={e => setCustomIp(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '120px' }} />
-          <input type="number" placeholder="Port" value={customPort} onChange={e => setCustomPort(e.target.value)} style={{ padding: '6px', borderRadius: '4px', border: '1px solid #444', background: '#1e1e1e', color: '#fff', width: '80px' }} />
-          <button className="ds-button" onClick={() => setShowAdvanced(!showAdvanced)} title="TLS/Security Options">
-            Certificate
-          </button>
+          {/* ── Instance switcher ── */}
+          {savedConnections.length > 0 && (
+            <div className="ds-compat-control">
+              <span>Instance</span>
+              <select
+                value={selectedConnectionId ?? ''}
+                onChange={e => setSelectedConnectionId(e.target.value || null)}
+              >
+                {savedConnections.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.connectionName}{c.isDefault ? ' (default)' : ''}
+                  </option>
+                ))}
+              </select>
+              {selectedConn && (
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: connStatusColor(selectedConn.status),
+                    flexShrink: 0
+                  }}
+                  title={selectedConn.status}
+                />
+              )}
+            </div>
+          )}
+
           <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
           <button className="ds-button primary" onClick={() => setShowCreate(true)}>
             <Plus size={16} /> Create Connector
           </button>
+          {/* Edit selected connection */}
+          <button
+            className="ds-icon-button"
+            onClick={() => openConnectionModal(selectedConn ?? undefined)}
+            disabled={!selectedConn}
+            title="Edit selected connection"
+          >
+            <MoreVertical size={18} />
+          </button>
+          {/* Delete selected connection */}
+          <button
+            className="ds-icon-button"
+            onClick={handleDeleteConnection}
+            disabled={!selectedConn}
+            title="Delete connection"
+            style={{ color: 'var(--color-danger, #e88080)' }}
+          >
+            <Trash2 size={18} />
+          </button>
+          {/* Add new connection */}
+          <button className="ds-button" onClick={() => openConnectionModal()} title="Add new KC instance">
+            <Settings size={16} /> Add Connection
+          </button>
         </div>
       </div>
-
-      {showAdvanced && (
-        <div className="ds-form" style={{ padding: '0 0 10px 0' }}>
-          <div className="ds-field">
-            <label>Certificate Type</label>
-            <select value={certType} onChange={e => setCertType(e.target.value)}>
-              <option value="PEM">PEM (Text)</option>
-              <option value="PKCS12">PKCS12 / JKS (.p12, .jks)</option>
-            </select>
-          </div>
-          {certType === 'PEM' ? (
-            <div className="ds-field">
-              <label>Custom CA Certificate (PEM Format)</label>
-              <textarea 
-                value={certificate} 
-                onChange={e => setCertificate(e.target.value)} 
-                placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-                style={{ minHeight: '120px' }}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="ds-field">
-                <label>Truststore File (.p12)</label>
-                <input 
-                  type="file" 
-                  accept=".p12,.pfx,.jks"
-                  onChange={e => setCertFile(e.target.files ? e.target.files[0] : null)} 
-                />
-              </div>
-              <div className="ds-field">
-                <label>Truststore Password</label>
-                <input 
-                  type="password" 
-                  value={certPassword} 
-                  onChange={e => setCertPassword(e.target.value)} 
-                  placeholder="Password"
-                />
-              </div>
-            </>
-          )}
-        </div>
-      )}
 
       {error && <div className="ds-alert">{error}</div>}
 
@@ -270,7 +419,9 @@ export function KafkaConnect() {
       <div className="ds-panel">
         {activeTab === 'clusters' && (
           <table className="ds-table">
-            <thead><tr><th>Name</th><th>Version</th><th>Connectors</th><th>Running Tasks</th><th>REST Endpoint</th></tr></thead>
+            <thead>
+              <tr><th>Name</th><th>Version</th><th>Connectors</th><th>Running Tasks</th><th>REST Endpoint</th></tr>
+            </thead>
             <tbody>
               {clusters.map(cluster => (
                 <tr key={cluster.name}>
@@ -287,7 +438,9 @@ export function KafkaConnect() {
 
         {activeTab === 'connectors' && (
           <table className="ds-table">
-            <thead><tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th><th>Actions</th></tr></thead>
+            <thead>
+              <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th><th>Actions</th></tr>
+            </thead>
             <tbody>
               {loading && !summary ? (
                 <tr><td colSpan={5} className="ds-empty">Loading connectors...</td></tr>
@@ -325,7 +478,9 @@ export function KafkaConnect() {
 
         {activeTab === 'plugins' && (
           <table className="ds-table">
-            <thead><tr><th>Class</th><th>Type</th><th>Version</th></tr></thead>
+            <thead>
+              <tr><th>Class</th><th>Type</th><th>Version</th></tr>
+            </thead>
             <tbody>
               {summary && summary.plugins.length > 0 ? (
                 summary.plugins.map(plugin => (
@@ -343,14 +498,118 @@ export function KafkaConnect() {
         )}
       </div>
 
+      {/* ── Connection modal ── */}
+      {showConnection && (
+        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="ds-modal ds-connection-modal">
+            <div className="ds-modal-header">
+              <div>
+                <h3>{editingConnectionId ? 'Edit Connection' : 'Add Kafka Connect Connection'}</h3>
+                <span className="ds-muted-line">{formConnectionName || 'New connection'}</span>
+              </div>
+              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="ds-form ds-compact-form">
+              {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
+              {selectedConn?.status && editingConnectionId && (
+                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
+                  Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
+                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>✓ Cert Configured</span>}
+                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
+                </div>
+              )}
+              <div className="ds-field">
+                <label>Connection Name</label>
+                <input
+                  value={formConnectionName}
+                  onChange={e => setFormConnectionName(e.target.value)}
+                  placeholder="e.g. ETL Kafka Connect"
+                  required
+                />
+              </div>
+              <div className="ds-form-grid three">
+                <div className="ds-field">
+                  <label>Protocol</label>
+                  <select value={protocol} onChange={e => setProtocol(e.target.value)}>
+                    <option value="http">http://</option>
+                    <option value="https">https://</option>
+                  </select>
+                </div>
+                <div className="ds-field">
+                  <label>Host / IP</label>
+                  <input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.161" required />
+                </div>
+                <div className="ds-field">
+                  <label>Port</label>
+                  <input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8083" required />
+                </div>
+              </div>
+              <div className="ds-form-grid two">
+                <div className="ds-field">
+                  <label>Certificate Type</label>
+                  <select value={certType} onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}>
+                    <option value="PEM">PEM</option>
+                    <option value="PKCS12_JKS">PKCS12 / JKS</option>
+                  </select>
+                </div>
+                <div className="ds-field">
+                  <label>Certificate / Truststore</label>
+                  <label className="ds-upload-control">
+                    <Upload size={16} /> {certFileName || 'Upload file'}
+                    <input
+                      type="file"
+                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx,.jks'}
+                      onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }}
+                    />
+                  </label>
+                  {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> {certFileName}</span>}
+                </div>
+              </div>
+              {certType === 'PKCS12_JKS' && (
+                <div className="ds-field">
+                  <label>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
+                  <input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" />
+                </div>
+              )}
+              <div className="ds-default-toggle-row">
+                <label className="ds-toggle-switch" htmlFor="kc-is-default">
+                  <input
+                    type="checkbox"
+                    id="kc-is-default"
+                    checked={formIsDefault}
+                    onChange={e => setFormIsDefault(e.target.checked)}
+                  />
+                  <span className="ds-toggle-track">
+                    <span className="ds-toggle-thumb" />
+                  </span>
+                </label>
+                <label htmlFor="kc-is-default" className="ds-toggle-label">
+                  Set as default connection for this cluster
+                </label>
+              </div>
+            </div>
+            <div className="ds-modal-footer">
+              <button className="ds-button" onClick={() => setShowConnection(false)} disabled={connectSaving}>Cancel</button>
+              <button
+                className="ds-button primary"
+                onClick={handleSaveConnection}
+                disabled={connectSaving || !customIp.trim() || !customPort.trim()}
+              >
+                {connectSaving ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />} Save & Connect
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCreate && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <form className="ds-modal" onSubmit={createConnector}>
             <div className="ds-modal-header">
               <h3>Create Connector</h3>
-              <button type="button" className="ds-button" onClick={() => setShowCreate(false)} title="Close">
-                <X size={16} />
-              </button>
+              <button type="button" className="ds-icon-button" onClick={() => setShowCreate(false)} title="Close"><X size={16} /></button>
             </div>
             <div className="ds-form">
               <div className="ds-field">
