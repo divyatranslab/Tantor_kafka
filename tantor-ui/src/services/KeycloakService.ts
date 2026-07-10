@@ -12,7 +12,7 @@ let nativeFetch: typeof window.fetch | undefined;
 
 const dashboardRedirectUri = () => `${window.location.origin}/dashboard`;
 
-export const initKeycloak = () => {
+export const initKeycloak = (): Promise<boolean> => {
   if (!initializationPromise) {
     initializationPromise = keycloak.init({
       onLoad: 'login-required',

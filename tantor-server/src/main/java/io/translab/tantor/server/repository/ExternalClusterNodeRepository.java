@@ -15,6 +15,9 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
     List<ExternalClusterNode> findByClusterId(UUID clusterId);
 
     @Modifying
+    void deleteByClusterId(UUID clusterId);
+
+    @Modifying
     @Query(value = """
         INSERT INTO kf_external_cluster_nodes (
             id, cluster_id, host, node_id, is_broker, is_controller, port,

@@ -766,8 +766,7 @@ public class ClusterController {
         
         java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
         if (extClusterOpt.isPresent()) {
-            io.translab.tantor.server.domain.ExternalCluster extCluster = extClusterOpt.get();
-            externalClusterRepository.delete(extCluster);
+            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
             auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_DELETED", "CLUSTER", extCluster.getId().toString(),
                     extCluster.getId(), "SUCCESS", null, null, null,
                     Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
@@ -797,8 +796,7 @@ public class ClusterController {
 
         java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
         if (extClusterOpt.isPresent()) {
-            io.translab.tantor.server.domain.ExternalCluster extCluster = extClusterOpt.get();
-            externalClusterRepository.delete(extCluster);
+            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
             auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_FORCE_DELETED", "CLUSTER", extCluster.getId().toString(),
                     extCluster.getId(), "SUCCESS", null, null, null,
                     Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));

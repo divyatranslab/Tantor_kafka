@@ -483,6 +483,31 @@ public class ExternalClusterService {
     }
 
     @Transactional
+    public Optional<ExternalCluster> deleteExternalCluster(UUID id) {
+        Optional<ExternalCluster> clusterOpt = externalClusterRepository.findById(id);
+        if (clusterOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ExternalCluster cluster = clusterOpt.get();
+        cluster.setStatus("DELETED");
+        cluster.setIsRunning(false);
+        ExternalCluster saved = externalClusterRepository.save(cluster);
+
+        externalClusterNodeRepository.deleteByClusterId(id);
+
+        List<DiscoveryAgent> linkedAgents = discoveryAgentRepository.findByClusterId(id);
+        for (DiscoveryAgent agent : linkedAgents) {
+            agent.setClusterId(null);
+        }
+        discoveryAgentRepository.saveAll(linkedAgents);
+
+        pendingDiscoveries.entrySet().removeIf(entry -> matchesExternalCluster(entry.getValue(), saved));
+
+        return Optional.of(saved);
+    }
+
+    @Transactional
     public ExternalCluster upsertDiscoveryCluster(ExternalDiscoveryReport report) {
         validateDiscoveryReport(report);
 
@@ -1211,6 +1236,15 @@ public class ExternalClusterService {
 
     private boolean safeEquals(String left, String right) {
         return left != null && right != null && left.equals(right);
+    }
+
+    private boolean matchesExternalCluster(ExternalDiscoveryReport report, ExternalCluster cluster) {
+        if (report == null || cluster == null) {
+            return false;
+        }
+        return safeEquals(report.getKafkaClusterId(), cluster.getKafkaClusterId())
+                || safeEquals(report.getName(), cluster.getName())
+                || safeEquals(report.getBootstrapServers(), cluster.getBootstrapServers());
     }
 
     @Data
