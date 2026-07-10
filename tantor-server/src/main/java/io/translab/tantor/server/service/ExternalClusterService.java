@@ -257,7 +257,7 @@ public class ExternalClusterService {
 
         // Create the ExternalCluster entity based on AdminClient data (source of truth)
         String clusterId = String.valueOf(inspection.get("clusterId"));
-        savedCluster = findExternalCluster(clusterId, request.getName(), bootstrap).orElseGet(ExternalCluster::new);
+        savedCluster = findReusableExternalCluster(clusterId, request.getName(), bootstrap).orElseGet(ExternalCluster::new);
         savedCluster.setName(request.getName() != null ? request.getName().trim() : savedCluster.getName());
         savedCluster.setBootstrapServers(mergeBootstrapServers(savedCluster.getBootstrapServers(), bootstrap));
         savedCluster.setKafkaClusterId(clusterId);
@@ -843,6 +843,29 @@ public class ExternalClusterService {
         }
         if (name != null && !name.isBlank()) {
             return externalClusterRepository.findByNameAndStatusNot(name.trim(), "DELETED");
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ExternalCluster> findReusableExternalCluster(String kafkaClusterId, String name, String bootstrapServers) {
+        Optional<ExternalCluster> activeCluster = findExternalCluster(kafkaClusterId, name, bootstrapServers);
+        if (activeCluster.isPresent()) {
+            return activeCluster;
+        }
+        if (kafkaClusterId != null && !kafkaClusterId.isBlank()) {
+            Optional<ExternalCluster> byKafkaId = externalClusterRepository.findByKafkaClusterId(kafkaClusterId.trim());
+            if (byKafkaId.isPresent()) {
+                return byKafkaId;
+            }
+        }
+        if (bootstrapServers != null && !bootstrapServers.isBlank()) {
+            Optional<ExternalCluster> byBootstrap = externalClusterRepository.findByBootstrapServers(bootstrapServers.trim());
+            if (byBootstrap.isPresent()) {
+                return byBootstrap;
+            }
+        }
+        if (name != null && !name.isBlank()) {
+            return externalClusterRepository.findByName(name.trim());
         }
         return Optional.empty();
     }

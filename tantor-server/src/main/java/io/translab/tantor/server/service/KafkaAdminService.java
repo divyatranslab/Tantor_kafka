@@ -294,7 +294,9 @@ public class KafkaAdminService {
                 result.put("status", "CONNECTED");
                 result.put("bootstrapServers", cluster.getBootstrapServers().trim());
                 result.put("bootstrap_servers", cluster.getBootstrapServers().trim());
-                result.put("security_protocol", "PLAINTEXT");
+                result.put("security_protocol", cluster.getSecurityProtocol() == null || cluster.getSecurityProtocol().isBlank()
+                        ? "UNKNOWN"
+                        : cluster.getSecurityProtocol());
                 result.put("mode", "auto-detected by Kafka client");
                 result.put("clusterId", clusterId);
                 result.put("kafka_cluster_id", clusterId == null ? "" : clusterId);

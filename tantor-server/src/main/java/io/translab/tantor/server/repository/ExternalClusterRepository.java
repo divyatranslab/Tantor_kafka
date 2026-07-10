@@ -11,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface ExternalClusterRepository extends JpaRepository<ExternalCluster, UUID> {
     Optional<ExternalCluster> findByName(String name);
+    Optional<ExternalCluster> findByKafkaClusterId(String kafkaClusterId);
     Optional<ExternalCluster> findByBootstrapServers(String bootstrapServers);
     List<ExternalCluster> findByStatusNot(String status);
     Optional<ExternalCluster> findByNameAndStatusNot(String name, String status);

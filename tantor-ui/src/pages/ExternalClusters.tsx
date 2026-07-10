@@ -42,6 +42,12 @@ interface BootstrapResult {
   message?: string;
 }
 
+const TRUSTSTORE_FILE_RULES: Record<string, { accept: string; extensions: string[]; label: string }> = {
+  JKS: { accept: '.jks', extensions: ['.jks'], label: 'JKS truststore' },
+  PKCS12: { accept: '.p12,.pfx', extensions: ['.p12', '.pfx'], label: 'PKCS12 truststore' },
+  PEM: { accept: '.pem,.crt,.cer', extensions: ['.pem', '.crt', '.cer'], label: 'PEM certificate' },
+};
+
 export function ExternalClusters() {
   const navigate = useNavigate();
   const [banner, setBanner] = useState('');
@@ -72,6 +78,7 @@ export function ExternalClusters() {
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
+  const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.JKS;
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
@@ -126,9 +133,31 @@ export function ExternalClusters() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, fieldBase64: string, fieldFilename: string) => {
+  const handleFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    fieldBase64: string,
+    fieldFilename: string,
+    rule?: { extensions: string[]; label: string },
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (rule) {
+      const fileName = file.name.toLowerCase();
+      const isAllowed = rule.extensions.some(ext => fileName.endsWith(ext));
+      if (!isAllowed) {
+        e.target.value = '';
+        setForm(prev => ({
+          ...prev,
+          [fieldBase64]: '',
+          [fieldFilename]: ''
+        }));
+        setBootstrapResult(null);
+        setBanner('');
+        setError(`${rule.label} must use ${rule.extensions.join(' or ')} file format.`);
+        return;
+      }
+    }
+    setError('');
     const reader = new FileReader();
     reader.onload = (evt) => {
       const result = evt.target?.result;
@@ -155,7 +184,7 @@ export function ExternalClusters() {
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
         brokerCount: bootstrapResult?.brokerCount ?? bootstrapResult?.brokers?.length ?? 0,
         agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
-        security: bootstrapResult?.security || bootstrapResult?.security_protocol || 'PLAINTEXT',
+        security: form.securityProtocol,
         brokers: bootstrapResult?.brokers || [],
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
         kafkaVersion: bootstrapResult?.kafkaVersion || bootstrapResult?.kafka_version || 'Unknown',
@@ -353,7 +382,12 @@ export function ExternalClusters() {
                   <select 
                     value={form.truststoreType} 
                     onChange={e => {
-                      setForm(prev => ({ ...prev, truststoreType: e.target.value }));
+                      setForm(prev => ({
+                        ...prev,
+                        truststoreType: e.target.value,
+                        truststoreBase64: '',
+                        truststoreFilename: '',
+                      }));
                       setBootstrapResult(null);
                     }}
                   >
@@ -366,9 +400,11 @@ export function ExternalClusters() {
                   Truststore File (CA Certificate)
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '4px' }}>
                     <input 
+                      key={form.truststoreType}
                       type="file" 
+                      accept={truststoreFileRule.accept}
                       onChange={e => {
-                        handleFileUpload(e, 'truststoreBase64', 'truststoreFilename');
+                        handleFileUpload(e, 'truststoreBase64', 'truststoreFilename', truststoreFileRule);
                         setBootstrapResult(null);
                       }}
                       style={{ border: 'none', padding: 0 }}
@@ -419,16 +455,22 @@ export function ExternalClusters() {
                       Version {(() => {
                         const v = bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Unknown';
                         return v === 'auto-detected by Kafka client' ? 'Auto-detected' : v;
-                      })()} · {bootstrapResult.controllerId || bootstrapResult.controller_id || 'Unknown controller'}
+                      })()} - {bootstrapResult.controllerId || bootstrapResult.controller_id || 'Unknown controller'}
                    </span>
                 </div>
                 <div className="summary-item">
                    <Play size={14}/> 
                    <span>
-                      {(() => {
+                      Mode {(() => {
                         const m = bootstrapResult.mode || bootstrapResult.kafkaMode || 'KRaft';
                         return m === 'auto-detected by Kafka client' ? 'Auto-detected' : m;
-                      })()} Mode · {bootstrapResult.security_protocol || bootstrapResult.security || 'PLAINTEXT'}
+                      })()}
+                   </span>
+                </div>
+                <div className="summary-item">
+                   <CheckCircle2 size={14}/> 
+                   <span>
+                      Security {form.securityProtocol || bootstrapResult.security_protocol || bootstrapResult.security || 'Unknown'}
                    </span>
                 </div>
               </div>
