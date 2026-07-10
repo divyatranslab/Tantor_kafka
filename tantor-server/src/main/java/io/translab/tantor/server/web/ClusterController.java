@@ -747,6 +747,19 @@ public class ClusterController {
     @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteCluster(@PathVariable java.util.UUID id) {
+        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
+        if (extClusterOpt.isPresent()) {
+            clusterRepository.findById(id)
+                    .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
+                    .ifPresent(this::markClusterDeleted);
+            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
+            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_DELETED", "CLUSTER", extCluster.getId().toString(),
+                    extCluster.getId(), "SUCCESS", null, null, null,
+                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+            activityAlertService.logActivity("INFO", "Deleted external cluster", id);
+            return ResponseEntity.ok().build();
+        }
+
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isPresent()) {
             Cluster cluster = optionalCluster.get();
@@ -763,23 +776,26 @@ public class ClusterController {
             }
             return ResponseEntity.ok().build();
         } 
-        
-        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
-        if (extClusterOpt.isPresent()) {
-            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
-            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_DELETED", "CLUSTER", extCluster.getId().toString(),
-                    extCluster.getId(), "SUCCESS", null, null, null,
-                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
-            activityAlertService.logActivity("INFO", "Deleted external cluster", id);
-            return ResponseEntity.ok().build();
-        }
-        
+
         return ResponseEntity.notFound().build();
     }
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/force-delete/{id}")
     public ResponseEntity<Void> forceDeleteCluster(@PathVariable java.util.UUID id) {
+        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
+        if (extClusterOpt.isPresent()) {
+            clusterRepository.findById(id)
+                    .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
+                    .ifPresent(this::markClusterDeleted);
+            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
+            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_FORCE_DELETED", "CLUSTER", extCluster.getId().toString(),
+                    extCluster.getId(), "SUCCESS", null, null, null,
+                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+            activityAlertService.logActivity("INFO", "Force-deleted external cluster", id);
+            return ResponseEntity.ok().build();
+        }
+
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isPresent()) {
             Cluster cluster = optionalCluster.get();
@@ -793,16 +809,6 @@ public class ClusterController {
             }
             return ResponseEntity.ok().build();
         } 
-
-        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
-        if (extClusterOpt.isPresent()) {
-            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
-            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_FORCE_DELETED", "CLUSTER", extCluster.getId().toString(),
-                    extCluster.getId(), "SUCCESS", null, null, null,
-                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
-            activityAlertService.logActivity("INFO", "Force-deleted external cluster", id);
-            return ResponseEntity.ok().build();
-        }
 
         return ResponseEntity.notFound().build();
     }
