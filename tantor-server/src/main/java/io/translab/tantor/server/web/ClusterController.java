@@ -390,6 +390,10 @@ public class ClusterController {
             List<io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow> brokerRows = new ArrayList<>();
             List<io.translab.tantor.server.dto.ClusterOverviewDto.ControllerRow> controllerRows = new ArrayList<>();
             List<io.translab.tantor.server.dto.ClusterOverviewDto.NodePathRow> nodePathRows = new ArrayList<>();
+            String overviewInstallDir = null;
+            String overviewConfigDir = null;
+            String overviewDataDir = null;
+            String overviewLogDir = null;
 
             for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
                 boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
@@ -416,14 +420,22 @@ public class ClusterController {
                 }
                 
                 String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
+                String installDir = firstNonBlank(node.getInstallDir(), extCluster.getInstallPath(), firstExternalNodeValue(nodes, node.getHost(), "installDir"));
+                String configFile = firstNonBlank(node.getConfigFile(), inferredExternalConfigFile(role, extCluster.getKafkaMode(), extCluster.getKafkaVersion(), installDir));
+                String dataDir = firstNonBlank(node.getDataDirs(), node.getLogDirs());
+                String logDir = firstNonBlank(node.getLogDirs(), node.getDataDirs());
+                overviewInstallDir = firstNonBlank(overviewInstallDir, installDir);
+                overviewConfigDir = firstNonBlank(overviewConfigDir, parentPath(configFile));
+                overviewDataDir = firstNonBlank(overviewDataDir, dataDir);
+                overviewLogDir = firstNonBlank(overviewLogDir, logDir);
                 nodePathRows.add(io.translab.tantor.server.dto.ClusterOverviewDto.NodePathRow.builder()
                         .nodeId(node.getNodeId() != null ? node.getNodeId() : -1)
                         .host(node.getHost())
                         .role(role)
-                        .installDir(node.getInstallDir())
-                        .config(node.getConfigFile())
-                        .dataDir(node.getDataDirs())
-                        .logDir(node.getLogDirs())
+                        .installDir(installDir)
+                        .config(configFile)
+                        .dataDir(dataDir)
+                        .logDir(logDir)
                         .hasTelemetry(node.getLastSeen() != null)
                         .build());
             }
@@ -435,6 +447,10 @@ public class ClusterController {
                     .kafkaVersion(extCluster.getKafkaVersion())
                     .controllerType(extCluster.getKafkaMode())
                     .originType("EXTERNAL")
+                    .installDirectory(overviewInstallDir)
+                    .configDirectory(overviewConfigDir)
+                    .dataDirectory(overviewDataDir)
+                    .logDirectory(overviewLogDir)
                     .generatedAt(java.time.OffsetDateTime.now())
                     .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(extCluster.getBrokerCount() != null ? extCluster.getBrokerCount() : brokerCount)
@@ -1748,6 +1764,70 @@ public class ClusterController {
             return false;
         }
         return addresses.contains("\"" + host + "\"") || addresses.contains(host);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstExternalNodeValue(
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            String host,
+            String field
+    ) {
+        if (nodes == null || host == null || host.isBlank()) {
+            return null;
+        }
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            if (node == null || node.getHost() == null || !node.getHost().equalsIgnoreCase(host)) {
+                continue;
+            }
+            String value = switch (field) {
+                case "installDir" -> node.getInstallDir();
+                case "configFile" -> node.getConfigFile();
+                case "dataDirs" -> node.getDataDirs();
+                case "logDirs" -> node.getLogDirs();
+                default -> null;
+            };
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String inferredExternalConfigFile(String role, String kafkaMode, String kafkaVersion, String installDir) {
+        if (installDir == null || installDir.isBlank()) {
+            return null;
+        }
+        if (!"KRaft".equalsIgnoreCase(kafkaMode)) {
+            return installDir + "/config/server.properties";
+        }
+        boolean kafka4OrLater = parseKafkaVersion(kafkaVersion)[0] >= 4;
+        String configRoot = kafka4OrLater ? installDir + "/config" : installDir + "/config/kraft";
+        if ("controller".equalsIgnoreCase(role)) {
+            return configRoot + "/controller.properties";
+        }
+        if ("broker".equalsIgnoreCase(role)) {
+            return configRoot + "/broker.properties";
+        }
+        return configRoot + "/server.properties";
+    }
+
+    private String parentPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        int index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        return index > 0 ? path.substring(0, index) : null;
     }
 
     private List<Map<String, Object>> clusterHosts(Cluster cluster) {

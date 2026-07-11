@@ -8,6 +8,7 @@ import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
+import io.translab.tantor.server.security.TruststoreStorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.*;
@@ -32,6 +33,7 @@ public class KafkaAdminService {
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
     private final EncryptionService encryptionService;
+    private final TruststoreStorageService truststoreStorageService;
 
     private final Map<UUID, AdminClient> adminClients = new ConcurrentHashMap<>();
 
@@ -691,18 +693,26 @@ public class KafkaAdminService {
             if (Boolean.TRUE.equals(cluster.getDisableHostnameVerification())) {
                 props.put("ssl.endpoint.identification.algorithm", "");
             }
-            if (cluster.getTruststorePath() != null && !cluster.getTruststorePath().isBlank()) {
+            String truststorePath = ensureSecurityFile(
+                    cluster,
+                    cluster.getTruststoreType(),
+                    cluster.getTruststoreContentEncrypted(),
+                    cluster.getTruststorePath(),
+                    decryptPasswords,
+                    false
+            );
+            if (truststorePath != null && !truststorePath.isBlank()) {
                 if ("PEM".equalsIgnoreCase(cluster.getTruststoreType())) {
                     props.put("ssl.truststore.type", "PEM");
                     try {
-                        String pemContent = java.nio.file.Files.readString(java.nio.file.Paths.get(cluster.getTruststorePath()));
+                        String pemContent = java.nio.file.Files.readString(java.nio.file.Paths.get(truststorePath));
                         props.put("ssl.truststore.certificates", pemContent);
                     } catch (Exception e) {
-                        log.error("Failed to read PEM truststore from {}", cluster.getTruststorePath(), e);
+                        log.error("Failed to read PEM truststore from {}", truststorePath, e);
                         throw new RuntimeException("Failed to read PEM truststore", e);
                     }
                 } else {
-                    props.put("ssl.truststore.location", cluster.getTruststorePath());
+                    props.put("ssl.truststore.location", truststorePath);
                     if (cluster.getTruststorePasswordEncrypted() != null && !cluster.getTruststorePasswordEncrypted().isBlank()) {
                         String pw = decryptPasswords ? encryptionService.decrypt(cluster.getTruststorePasswordEncrypted()) : cluster.getTruststorePasswordEncrypted();
                         props.put("ssl.truststore.password", pw);
@@ -710,6 +720,29 @@ public class KafkaAdminService {
                     if (cluster.getTruststoreType() != null && !cluster.getTruststoreType().isBlank()) {
                         props.put("ssl.truststore.type", cluster.getTruststoreType().toUpperCase());
                     }
+                }
+            }
+
+            String keystorePath = ensureSecurityFile(
+                    cluster,
+                    "keystore_" + cluster.getKeystoreType(),
+                    cluster.getKeystoreContentEncrypted(),
+                    cluster.getKeystorePath(),
+                    decryptPasswords,
+                    true
+            );
+            if (keystorePath != null && !keystorePath.isBlank()) {
+                props.put("ssl.keystore.location", keystorePath);
+                if (cluster.getKeystorePasswordEncrypted() != null && !cluster.getKeystorePasswordEncrypted().isBlank()) {
+                    String pw = decryptPasswords ? encryptionService.decrypt(cluster.getKeystorePasswordEncrypted()) : cluster.getKeystorePasswordEncrypted();
+                    props.put("ssl.keystore.password", pw);
+                }
+                if (cluster.getKeyPasswordEncrypted() != null && !cluster.getKeyPasswordEncrypted().isBlank()) {
+                    String pw = decryptPasswords ? encryptionService.decrypt(cluster.getKeyPasswordEncrypted()) : cluster.getKeyPasswordEncrypted();
+                    props.put("ssl.key.password", pw);
+                }
+                if (cluster.getKeystoreType() != null && !cluster.getKeystoreType().isBlank()) {
+                    props.put("ssl.keystore.type", cluster.getKeystoreType().toUpperCase());
                 }
             }
         }
@@ -737,6 +770,57 @@ public class KafkaAdminService {
                 String jaas = String.format("%s required username=\"%s\" password=\"%s\";", module, escapedUsername, escapedPassword);
                 props.put("sasl.jaas.config", jaas);
             }
+        }
+    }
+
+    private String ensureSecurityFile(
+            ExternalCluster cluster,
+            String storeType,
+            String encryptedBase64,
+            String existingPath,
+            boolean decryptContent,
+            boolean keystore
+    ) {
+        if (existingPath != null && !existingPath.isBlank() && java.nio.file.Files.exists(java.nio.file.Paths.get(existingPath))) {
+            backfillSecurityContent(cluster, existingPath, encryptedBase64, keystore);
+            return existingPath;
+        }
+        if (encryptedBase64 == null || encryptedBase64.isBlank()) {
+            return existingPath;
+        }
+        String base64 = decryptContent ? encryptionService.decrypt(encryptedBase64) : encryptedBase64;
+        String restoredPath = truststoreStorageService.ensureTruststoreFile(
+                cluster.getId() == null ? UUID.randomUUID() : cluster.getId(),
+                storeType,
+                base64,
+                existingPath
+        );
+        if (cluster.getId() != null && restoredPath != null && !restoredPath.equals(existingPath)) {
+            if (keystore) {
+                cluster.setKeystorePath(restoredPath);
+            } else {
+                cluster.setTruststorePath(restoredPath);
+            }
+            externalClusterRepository.save(cluster);
+        }
+        return restoredPath;
+    }
+
+    private void backfillSecurityContent(ExternalCluster cluster, String existingPath, String encryptedBase64, boolean keystore) {
+        if (cluster.getId() == null || encryptedBase64 != null && !encryptedBase64.isBlank()) {
+            return;
+        }
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(java.nio.file.Paths.get(existingPath));
+            String encoded = Base64.getEncoder().encodeToString(bytes);
+            if (keystore) {
+                cluster.setKeystoreContentEncrypted(encryptionService.encrypt(encoded));
+            } else {
+                cluster.setTruststoreContentEncrypted(encryptionService.encrypt(encoded));
+            }
+            externalClusterRepository.save(cluster);
+        } catch (Exception e) {
+            log.warn("Could not backfill external cluster security material from {}", existingPath, e);
         }
     }
 }

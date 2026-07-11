@@ -47,6 +47,9 @@ public class ExternalCluster {
     @Column(name = "truststore_path")
     private String truststorePath;
 
+    @Column(name = "truststore_content_encrypted", columnDefinition = "TEXT")
+    private String truststoreContentEncrypted;
+
     @Column(name = "truststore_password_encrypted")
     private String truststorePasswordEncrypted;
 
@@ -55,6 +58,9 @@ public class ExternalCluster {
 
     @Column(name = "keystore_path")
     private String keystorePath;
+
+    @Column(name = "keystore_content_encrypted", columnDefinition = "TEXT")
+    private String keystoreContentEncrypted;
 
     @Column(name = "keystore_password_encrypted")
     private String keystorePasswordEncrypted;

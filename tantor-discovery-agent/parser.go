@@ -151,6 +151,7 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 		IsRunning:           isRunning,
 		InstallPath:         installPath,
 		PropsFile:           propsFile,
+		DataDirs:            logDirs,
 		LogDirs:             logDirs,
 		Environment:         defaultEnv,
 		Listeners:           props["listeners"],
