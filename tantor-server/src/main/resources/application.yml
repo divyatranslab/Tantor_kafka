@@ -54,3 +54,8 @@ tantor:
     health-timeout-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_TIMEOUT_SECONDS:300}
     health-poll-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_POLL_SECONDS:10}
     stable-samples: ${TANTOR_ROLLING_RESTART_STABLE_SAMPLES:2}
+  monitoring:
+    prometheus-url: ${TANTOR_PROMETHEUS_URL:http://loki-prometheus-server:80}
+    exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:192.168.3.191}
+    kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
+    jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:9404}

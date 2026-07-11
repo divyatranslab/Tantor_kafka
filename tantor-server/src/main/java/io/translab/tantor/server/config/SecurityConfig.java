@@ -44,6 +44,8 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1/agents/**").permitAll()
                     .requestMatchers("/api/v1/ui/**").permitAll()
                     .requestMatchers("/api/v1/clusters/**").permitAll()
+                    .requestMatchers("/api/v1/monitoring/**").permitAll()
+                    .requestMatchers("/internal/prometheus/**").permitAll()
                     .requestMatchers("/api/v1/ldap/**").permitAll()
                     .requestMatchers("/error").permitAll()
                     .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()

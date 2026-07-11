@@ -71,6 +71,164 @@
   max-width: 28rem;
 }
 
+.monitoring-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.monitoring-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid #facc15;
+  background: #fefce8;
+  color: #854d0e;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.monitoring-summary-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.monitoring-summary-band h2 {
+  margin: 0.125rem 0;
+  color: #111827;
+  font-size: 1.375rem;
+  font-weight: 700;
+}
+
+.monitoring-summary-band p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.monitoring-eyebrow {
+  color: #0369a1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.monitoring-status-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.pill.good {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.pill.neutral {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.monitoring-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.monitoring-metric-card {
+  display: flex;
+  gap: 0.875rem;
+  align-items: flex-start;
+  padding: 1rem;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+}
+
+.monitoring-metric-card span {
+  display: block;
+  color: #64748b;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.monitoring-metric-card strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: #111827;
+  font-size: 1.375rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.monitoring-metric-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: #e0f2fe;
+  color: #0369a1;
+  flex: 0 0 auto;
+}
+
+.monitoring-metric-card.good .monitoring-metric-icon {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.monitoring-metric-card.warn .monitoring-metric-icon {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.monitoring-metric-card.bad .monitoring-metric-icon {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.error-banner {
+  padding: 0.875rem 1rem;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+  border-radius: 0.5rem;
+}
+
+.error-banner p {
+  margin: 0;
+}
+
 .monitoring-modal-backdrop {
   position: fixed;
   inset: 0;
