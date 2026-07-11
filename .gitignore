@@ -37,3 +37,12 @@ server.err
 /repository/
 test.tgz
 go.zip
+maven.zip
+tantor-server.zip
+temp-jar/
+temp-jar-old/
+outputs/
+fake-bin/
+*.p12
+*.jks
+*.tgz
