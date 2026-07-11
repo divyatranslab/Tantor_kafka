@@ -6,6 +6,8 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
+export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
@@ -13,6 +15,10 @@ let nativeFetch: typeof window.fetch | undefined;
 const dashboardRedirectUri = () => `${window.location.origin}/dashboard`;
 
 export const initKeycloak = (): Promise<boolean> => {
+  if (!isAuthEnabled()) {
+    return Promise.resolve(true);
+  }
+
   if (!initializationPromise) {
     initializationPromise = keycloak.init({
       onLoad: 'login-required',
@@ -26,20 +32,28 @@ export const initKeycloak = (): Promise<boolean> => {
 };
 
 export const login = () =>
-  keycloak.login({
-    redirectUri: dashboardRedirectUri(),
-  });
+  isAuthEnabled()
+    ? keycloak.login({
+        redirectUri: dashboardRedirectUri(),
+      })
+    : Promise.resolve();
 
 export const logout = () =>
-  keycloak.logout({
-    redirectUri: window.location.origin,
-  });
+  isAuthEnabled()
+    ? keycloak.logout({
+        redirectUri: window.location.origin,
+      })
+    : Promise.resolve();
 
-export const getToken = () => keycloak.token;
+export const getToken = () => isAuthEnabled() ? keycloak.token : undefined;
 
 export const getKeycloak = () => keycloak;
 
 export const getValidToken = async () => {
+  if (!isAuthEnabled()) {
+    return undefined;
+  }
+
   if (!keycloak.authenticated) {
     await login();
     return undefined;
@@ -55,7 +69,7 @@ export const getValidToken = async () => {
 };
 
 export const installAuthenticatedFetch = () => {
-  if (authenticatedFetchInstalled) return;
+  if (!isAuthEnabled() || authenticatedFetchInstalled) return;
 
   nativeFetch = window.fetch.bind(window);
   authenticatedFetchInstalled = true;

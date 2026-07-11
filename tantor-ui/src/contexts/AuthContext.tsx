@@ -5,6 +5,7 @@ import {
   getToken,
   initKeycloak,
   installAuthenticatedFetch,
+  isAuthEnabled,
   login,
   logout as keycloakLogout,
 } from '../services/KeycloakService';
@@ -35,10 +36,15 @@ const sessionIdFromToken = (token?: DecodedToken) => {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const authEnabled = isAuthEnabled();
+  const [isInitializing, setIsInitializing] = useState(authEnabled);
+  const [isAuthenticated, setIsAuthenticated] = useState(!authEnabled);
   const [accessToken, setAccessToken] = useState<string | undefined>();
-  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>();
+  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>(
+    authEnabled
+      ? undefined
+      : { preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat' } as DecodedToken,
+  );
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>();
 
   const syncAuthState = useCallback(() => {
@@ -58,6 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshToken = useCallback(async () => {
+    if (!authEnabled) {
+      return true;
+    }
+
     const keycloak = getKeycloak();
     try {
       const refreshed = await keycloak.updateToken(30);
@@ -70,14 +80,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await login();
       return false;
     }
-  }, [clearAuthState, syncAuthState]);
+  }, [authEnabled, clearAuthState, syncAuthState]);
 
   const logout = useCallback(async () => {
+    if (!authEnabled) {
+      return;
+    }
+
     clearAuthState();
     await keycloakLogout();
-  }, [clearAuthState]);
+  }, [authEnabled, clearAuthState]);
 
   useEffect(() => {
+    if (!authEnabled) {
+      setIsInitializing(false);
+      setIsAuthenticated(true);
+      setDecodedToken({ preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat' } as DecodedToken);
+      return;
+    }
+
     let cancelled = false;
     let refreshTimer: number | undefined;
     const keycloak = getKeycloak();
@@ -119,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.clearInterval(refreshTimer);
       }
     };
-  }, [clearAuthState, refreshToken, syncAuthState]);
+  }, [authEnabled, clearAuthState, refreshToken, syncAuthState]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
