@@ -14,6 +14,10 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -43,8 +47,23 @@ public class PrometheusMonitoringService {
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = new RestTemplate();
 
+    @Value("${tantor.monitoring.mode:direct}")
+    private String monitoringMode;
+
     @Value("${tantor.monitoring.prometheus-url:}")
     private String prometheusUrl;
+
+    @Value("${tantor.monitoring.grafana-url:}")
+    private String grafanaUrl;
+
+    @Value("${tantor.monitoring.grafana-datasource-uid:}")
+    private String grafanaDatasourceUid;
+
+    @Value("${tantor.monitoring.grafana-username:}")
+    private String grafanaUsername;
+
+    @Value("${tantor.monitoring.grafana-password:}")
+    private String grafanaPassword;
 
     @Value("${tantor.monitoring.exporter-host:}")
     private String defaultExporterHost;
@@ -104,7 +123,7 @@ public class PrometheusMonitoringService {
         overview.setClusterId(cluster.getId());
         overview.setName(cluster.getName());
         overview.setOriginType(origin(cluster));
-        overview.setPrometheusUrl(prometheusUrl);
+        overview.setPrometheusUrl(monitoringSourceUrl());
         overview.setKafkaExporterTarget(exporterTarget(cluster).orElse(null));
         overview.setJmxAvailable(hasJmxTargets(cluster));
         overview.setWarnings(new ArrayList<>());
@@ -173,7 +192,7 @@ public class PrometheusMonitoringService {
 
     public boolean prometheusHealthy() {
         try {
-            JsonNode response = restTemplate.getForObject(prometheusUri("/api/v1/query", Map.of("query", "up")), JsonNode.class);
+            JsonNode response = prometheusGet("/api/v1/query", Map.of("query", "up"));
             return response != null && "success".equals(response.path("status").asText());
         } catch (Exception e) {
             log.warn("Prometheus health check failed: {}", e.getMessage());
@@ -344,7 +363,7 @@ public class PrometheusMonitoringService {
 
     private Double firstNumber(String promql) {
         try {
-            JsonNode response = restTemplate.getForObject(prometheusUri("/api/v1/query", Map.of("query", promql)), JsonNode.class);
+            JsonNode response = prometheusGet("/api/v1/query", Map.of("query", promql));
             JsonNode result = response == null ? null : response.path("data").path("result");
             if (result == null || !result.isArray() || result.isEmpty()) {
                 return null;
@@ -358,13 +377,61 @@ public class PrometheusMonitoringService {
         }
     }
 
+    private JsonNode prometheusGet(String path, Map<String, String> params) {
+        URI uri = prometheusUri(path, params);
+        if (!isGrafanaProxyMode()) {
+            return restTemplate.getForObject(uri, JsonNode.class);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        if (grafanaUsername != null && !grafanaUsername.isBlank()) {
+            headers.setBasicAuth(grafanaUsername, grafanaPassword == null ? "" : grafanaPassword);
+        }
+        ResponseEntity<JsonNode> response = restTemplate.exchange(
+                uri,
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                JsonNode.class
+        );
+        return response.getBody();
+    }
+
     private URI prometheusUri(String path, Map<String, String> params) {
-        if (prometheusUrl == null || prometheusUrl.isBlank()) {
+        String baseUrl;
+        String effectivePath = path;
+        if (isGrafanaProxyMode()) {
+            if (grafanaUrl == null || grafanaUrl.isBlank()) {
+                throw new IllegalStateException("Grafana URL is not configured");
+            }
+            if (grafanaDatasourceUid == null || grafanaDatasourceUid.isBlank()) {
+                throw new IllegalStateException("Grafana datasource UID is not configured");
+            }
+            baseUrl = grafanaUrl;
+            effectivePath = "/api/datasources/proxy/uid/" + grafanaDatasourceUid + path;
+        } else {
+            baseUrl = prometheusUrl;
+        }
+
+        if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalStateException("Prometheus URL is not configured");
         }
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(prometheusUrl).path(path);
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl).path(effectivePath);
         params.forEach(builder::queryParam);
         return builder.build().encode().toUri();
+    }
+
+    private boolean isGrafanaProxyMode() {
+        return "grafana-proxy".equalsIgnoreCase(monitoringMode);
+    }
+
+    private String monitoringSourceUrl() {
+        if (isGrafanaProxyMode()) {
+            return grafanaUrl + "/api/datasources/proxy/uid/" + grafanaDatasourceUid;
+        }
+        if (prometheusUrl == null || prometheusUrl.isBlank()) {
+            return null;
+        }
+        return prometheusUrl;
     }
 
     private String kafkaExporterArgs(String bootstrapServers) {
