@@ -239,6 +239,7 @@ public class ClusterController {
             List<Map<String, Object>> hosts = new ArrayList<>();
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
             List<io.translab.tantor.server.domain.DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(c.getId());
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents = discoveryAgentRepository.findAll();
             
             for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
                 Map<String, Object> hm = new HashMap<>();
@@ -256,11 +257,13 @@ public class ClusterController {
                 
                 hm.put("role", role);
                 
-                Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream().filter(a -> 
-                    "ONLINE".equalsIgnoreCase(a.getStatus()) && 
-                    ((a.getHostname() != null && a.getHostname().equalsIgnoreCase(n.getHost())) ||
-                     (a.getIpAddresses() != null && a.getIpAddresses().contains(n.getHost())))
-                ).findFirst();
+                Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream()
+                    .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) && matchesDiscoveryAgent(a, n.getHost()))
+                    .findFirst()
+                    .or(() -> allAgents.stream()
+                            .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) && matchesDiscoveryAgent(a, n.getHost()))
+                            .filter(a -> a.getClusterId() == null || a.getClusterId().equals(c.getId()))
+                            .findFirst());
 
                 boolean hasAgent = agentMatch.isPresent();
                 
@@ -272,11 +275,10 @@ public class ClusterController {
                 }
                 if (!hasAgent) {
                     OffsetDateTime now = OffsetDateTime.now();
-                    Optional<io.translab.tantor.server.domain.DiscoveryAgent> availableAgent = discoveryAgentRepository.findAll().stream()
+                    Optional<io.translab.tantor.server.domain.DiscoveryAgent> availableAgent = allAgents.stream()
                         .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) &&
                                      a.getLastHeartbeat() != null && java.time.Duration.between(a.getLastHeartbeat(), now).getSeconds() <= 120)
-                        .filter(a -> (a.getHostname() != null && a.getHostname().equalsIgnoreCase(n.getHost())) ||
-                                     (a.getIpAddresses() != null && a.getIpAddresses().contains(n.getHost())))
+                        .filter(a -> matchesDiscoveryAgent(a, n.getHost()))
                         .filter(a -> a.getClusterId() == null || !a.getClusterId().equals(c.getId()))
                         .findFirst();
                     if (availableAgent.isPresent()) {
@@ -1732,6 +1734,20 @@ public class ClusterController {
         return "AGENT_MANAGED".equalsIgnoreCase(managementLevel(cluster))
                 ? "Fully managed"
                 : "Metadata available";
+    }
+
+    private boolean matchesDiscoveryAgent(io.translab.tantor.server.domain.DiscoveryAgent agent, String host) {
+        if (agent == null || host == null || host.isBlank()) {
+            return false;
+        }
+        if (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(host)) {
+            return true;
+        }
+        String addresses = agent.getIpAddresses();
+        if (addresses == null || addresses.isBlank()) {
+            return false;
+        }
+        return addresses.contains("\"" + host + "\"") || addresses.contains(host);
     }
 
     private List<Map<String, Object>> clusterHosts(Cluster cluster) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Activity, Server, Database, HardDrive, RefreshCw } from 'lucide-react';
+import { Activity, Server, Database, HardDrive, RefreshCw, ExternalLink, X } from 'lucide-react';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import './Monitoring.css';
 
@@ -103,6 +103,10 @@ function LiveChart({ data, dataKey, color, label, unit = '%', max, id }: {
 }
 
 export function Monitoring() {
+  const [monitoringType, setMonitoringType] = useState<'internal' | 'external' | ''>('');
+  const [externalModalOpen, setExternalModalOpen] = useState(false);
+  const [externalUrl, setExternalUrl] = useState('');
+  const [externalUrlError, setExternalUrlError] = useState('');
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [selectedCluster, setSelectedCluster] = useState<string>('');
   const [metrics, setMetrics] = useState<ClusterMetrics | null>(null);
@@ -112,19 +116,21 @@ export function Monitoring() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   useEffect(() => {
+    if (monitoringType !== 'internal') return;
+
     fetch('/api/v1/ui/clusters')
       .then(res => res.json())
       .then(data => {
         setClusters(data);
-        if (data.length > 0) {
+        if (data.length > 0 && !selectedCluster) {
           setSelectedCluster(data[0].id);
         }
       })
       .catch(err => console.error("Failed to load clusters", err));
-  }, []);
+  }, [monitoringType, selectedCluster]);
 
   const fetchMetrics = useCallback(async (silent = false) => {
-    if (!selectedCluster) return;
+    if (monitoringType !== 'internal' || !selectedCluster) return;
     if (!silent) setLoading(true);
     setError(null);
     try {
@@ -159,22 +165,54 @@ export function Monitoring() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedCluster]);
+  }, [monitoringType, selectedCluster]);
 
   useEffect(() => {
-    if (selectedCluster) {
+    if (monitoringType === 'internal' && selectedCluster) {
       setHistory({});
       fetchMetrics();
     }
-  }, [selectedCluster, fetchMetrics]);
+  }, [monitoringType, selectedCluster, fetchMetrics]);
 
   useEffect(() => {
-    if (!autoRefresh || !selectedCluster) return;
+    if (monitoringType !== 'internal' || !autoRefresh || !selectedCluster) return;
     const interval = setInterval(() => {
       if (!document.hidden) fetchMetrics(true);
     }, 10000);
     return () => clearInterval(interval);
-  }, [autoRefresh, selectedCluster, fetchMetrics]);
+  }, [monitoringType, autoRefresh, selectedCluster, fetchMetrics]);
+
+  const handleMonitoringTypeChange = (value: string) => {
+    const nextType = value as 'internal' | 'external' | '';
+    setMonitoringType(nextType);
+    setError(null);
+    setMetrics(null);
+    setHistory({});
+
+    if (nextType === 'external') {
+      setExternalModalOpen(true);
+    }
+  };
+
+  const openExternalMonitoring = () => {
+    const trimmedUrl = externalUrl.trim();
+    if (!trimmedUrl) {
+      setExternalUrlError('Enter the external monitoring link.');
+      return;
+    }
+
+    const normalizedUrl = /^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`;
+    try {
+      new URL(normalizedUrl);
+    } catch {
+      setExternalUrlError('Enter a valid URL.');
+      return;
+    }
+
+    setExternalUrlError('');
+    setExternalModalOpen(false);
+    window.open(normalizedUrl, '_blank', 'noopener,noreferrer');
+  };
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
@@ -196,6 +234,18 @@ export function Monitoring() {
         </div>
 
         <div className="controls-area">
+          <select
+            className="tantor-select"
+            value={monitoringType}
+            onChange={e => handleMonitoringTypeChange(e.target.value)}
+          >
+            <option value="">Select monitoring type</option>
+            <option value="internal">Internal</option>
+            <option value="external">External</option>
+          </select>
+
+          {monitoringType === 'internal' && (
+            <>
           {clusters.length > 1 && (
             <select 
               className="tantor-select"
@@ -221,15 +271,80 @@ export function Monitoring() {
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
             Refresh
           </button>
+            </>
+          )}
         </div>
       </div>
 
-      {error && (
+      {!monitoringType && (
+        <div className="monitoring-choice-empty">
+          <Activity size={42} />
+          <h3>Select a monitoring source</h3>
+          <p>Choose Internal or External monitoring to continue.</p>
+        </div>
+      )}
+
+      {monitoringType === 'external' && (
+        <div className="monitoring-choice-empty">
+          <ExternalLink size={42} />
+          <h3>External monitoring</h3>
+          <p>Open your external dashboard from the redirect link.</p>
+          <button className="tantor-btn primary" onClick={() => setExternalModalOpen(true)}>
+            <ExternalLink size={16} />
+            Open redirect link
+          </button>
+        </div>
+      )}
+
+      {externalModalOpen && (
+        <div className="monitoring-modal-backdrop" role="presentation">
+          <div className="monitoring-modal" role="dialog" aria-modal="true" aria-labelledby="external-monitoring-title">
+            <div className="monitoring-modal-header">
+              <div>
+                <h2 id="external-monitoring-title">External monitoring link</h2>
+                <p>Enter the dashboard URL to open.</p>
+              </div>
+              <button className="monitoring-modal-close" type="button" onClick={() => setExternalModalOpen(false)} title="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <label className="monitoring-url-field">
+              Redirect URL
+              <input
+                type="url"
+                value={externalUrl}
+                onChange={e => {
+                  setExternalUrl(e.target.value);
+                  setExternalUrlError('');
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    openExternalMonitoring();
+                  }
+                }}
+                placeholder="https://grafana.example.local/d/..."
+                autoFocus
+              />
+            </label>
+            {externalUrlError && <div className="monitoring-url-error">{externalUrlError}</div>}
+            <div className="monitoring-modal-actions">
+              <button className="tantor-btn" type="button" onClick={() => setExternalModalOpen(false)}>Cancel</button>
+              <button className="tantor-btn primary" type="button" onClick={openExternalMonitoring}>
+                <ExternalLink size={16} />
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {monitoringType === 'internal' && error && (
         <div className="error-banner">
           <p>{error}</p>
         </div>
       )}
 
+      {monitoringType === 'internal' && (
       <div className="metrics-grid">
         {metrics?.nodes.map(node => {
           const nodeHistory = history[node.hostId] || [];
@@ -342,6 +457,7 @@ export function Monitoring() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -51,7 +51,7 @@ public class ConfigController {
     @GetMapping
     public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
-        if (cluster != null) {
+        if (cluster != null && !"EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
             Map<Integer, Map<String, Object>> dynamicConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
             
             Map<String, Object> response = new java.util.HashMap<>();
@@ -108,12 +108,14 @@ public class ConfigController {
             topoNode.put("isBroker", node.getIsBroker());
             topoNode.put("isController", node.getIsController());
             topoNode.put("serviceName", "kafka.service"); // fallback, actual restart uses agent's discovered service
-            topoNode.put("configFilePath", node.getConfigFile());
-            topoNode.put("configFileName", node.getConfigFile() != null ? new java.io.File(node.getConfigFile()).getName() : "server.properties");
+            String configPath = node.getConfigFile();
+            topoNode.put("configPath", configPath);
+            topoNode.put("configFilePath", configPath);
+            topoNode.put("configFileName", configPath != null ? new java.io.File(configPath).getName() : "server.properties");
             
             boolean canExecute = false;
             for (io.translab.tantor.server.domain.DiscoveryAgent agent : allAgents) {
-                if (agent.getIpAddresses() != null && agent.getIpAddresses().contains(node.getHost()) && "ONLINE".equals(agent.getStatus())) {
+                if (matchesDiscoveryAgent(agent, node.getHost()) && "ONLINE".equalsIgnoreCase(agent.getStatus())) {
                     canExecute = Boolean.TRUE.equals(agent.getCanExecuteTasks());
                     break;
                 }
@@ -126,7 +128,7 @@ public class ConfigController {
             staticFile.put("id", "ext_" + topoNode.get("nodeId"));
             staticFile.put("nodeId", topoNode.get("nodeId"));
             staticFile.put("label", role + " Properties (" + node.getHost() + ")");
-            staticFile.put("path", node.getConfigFile());
+            staticFile.put("path", configPath);
             staticFile.put("role", role);
             staticFile.put("properties", new HashMap<>());
             configFiles.add(staticFile);
@@ -140,6 +142,20 @@ public class ConfigController {
         return ResponseEntity.ok(response);
 
 
+    }
+
+    private boolean matchesDiscoveryAgent(io.translab.tantor.server.domain.DiscoveryAgent agent, String host) {
+        if (agent == null || host == null || host.isBlank()) {
+            return false;
+        }
+        if (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(host)) {
+            return true;
+        }
+        String addresses = agent.getIpAddresses();
+        if (addresses == null || addresses.isBlank()) {
+            return false;
+        }
+        return addresses.contains("\"" + host + "\"") || addresses.contains(host);
     }
 
     @PostMapping("/rolling-apply")

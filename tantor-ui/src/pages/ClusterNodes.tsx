@@ -65,7 +65,7 @@ export function ClusterNodes() {
   if (loading && nodes.length === 0) return <div className="state-center"><Loader2 className="spin" /> Loading nodes...</div>;
 
   const isExternalCluster = nodes.some(n => 
-    n.status?.includes('Managed') || n.status?.includes('Unmanaged') || n.agentAvailable
+    n.status?.includes('Managed') || n.status?.includes('Unmanaged') || n.status === 'Bootstrap connected' || n.agentAvailable
   );
 
   return (

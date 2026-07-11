@@ -1,5 +1,10 @@
 -- V49: Keep the global audit table action-only, reduce deployment noise, and mirror external clusters/nodes.
 
+ALTER TABLE kf_clusters
+    ADD COLUMN IF NOT EXISTS "user" VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS role VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS config_path VARCHAR(1024);
+
 DROP TRIGGER IF EXISTS trg_artifact_audit_to_global ON kf_artifact_audit_log;
 CREATE OR REPLACE FUNCTION sync_artifact_audit_to_global()
 RETURNS TRIGGER AS $$
@@ -206,7 +211,7 @@ INSERT INTO kf_clusters (
 )
 SELECT
     ec.id,
-    COALESCE(NULLIF(ec.cluster_name, ''), 'External cluster'),
+    COALESCE(NULLIF(ec.cluster_name, ''), 'External cluster ' || left(ec.id::text, 8)),
     'EXTERNAL',
     NULLIF(ec.kafka_cluster_id, ''),
     NULLIF(ec.install_path, ''),
@@ -345,7 +350,7 @@ BEGIN
     )
     VALUES (
         NEW.id,
-        COALESCE(NULLIF(NEW.cluster_name, ''), 'External cluster'),
+        COALESCE(NULLIF(NEW.cluster_name, ''), 'External cluster ' || left(NEW.id::text, 8)),
         'EXTERNAL',
         NULLIF(NEW.kafka_cluster_id, ''),
         NULLIF(NEW.install_path, ''),
