@@ -25,6 +25,8 @@ interface ConnectSummary {
   taskCount: number;
   runningTasks: number;
   runningConnectors: number;
+  pausedConnectors: number;
+  failedConnectors: number;
   connectors: ConnectorRow[];
   plugins: ConnectorPlugin[];
 }
@@ -55,13 +57,16 @@ const connectorTemplate = `{
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
   const [summary, setSummary] = useState<ConnectSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
   const [showCreate, setShowCreate] = useState(false);
   const [showConnection, setShowConnection] = useState(false);
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // ── Multi-instance state ──────────────────────────────────────
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
@@ -228,6 +233,7 @@ export function KafkaConnect() {
   };
 
   const load = async () => {
+    setHasFetched(true);
     setLoading(true);
     setError(null);
     try {
@@ -247,9 +253,11 @@ export function KafkaConnect() {
     if (id) { loadConnections(); }
   }, [id]);
 
-  // Reload when selected connection changes
+  // Live Connect data is fetched only after the user explicitly requests it.
   useEffect(() => {
-    if (id && selectedConnectionId !== undefined) { load(); }
+    setHasFetched(false);
+    setSummary(null);
+    setError(null);
   }, [id, selectedConnectionId]);
 
   const clusters = useMemo(() => [{
@@ -259,29 +267,45 @@ export function KafkaConnect() {
     runningTasks: summary?.runningTasks ?? 0
   }], [summary, selectedConn]);
 
-  const createConnector = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    try {
-      const body = JSON.parse(connectorJson);
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/connectors`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to create connector.');
-      setShowCreate(false);
-      setConnectorJson(connectorTemplate);
-      await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to create connector.');
-    } finally {
-      setSaving(false);
-    }
+  const connectorPayloads = (): Record<string, unknown>[] => {
+    const parsed = JSON.parse(connectorJson);
+    const payloads = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.connectors) ? parsed.connectors : [parsed]);
+    if (!payloads.length) throw new Error('No connector definitions found.');
+    return payloads;
   };
 
+  const handleConnectorFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setCreateError(null);
+    try {
+      const payloads: Record<string, unknown>[] = [];
+      for (const file of Array.from(files)) {
+        const parsed = JSON.parse(await file.text());
+        payloads.push(...(Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.connectors) ? parsed.connectors : [parsed])));
+      }
+      if (!payloads.length) throw new Error('No connector definitions found.');
+      setConnectorJson(JSON.stringify(payloads.length === 1 ? payloads[0] : payloads, null, 2));
+    } catch (e: any) { setCreateError(e.message || 'Unable to read connector JSON.'); }
+  };
+
+  const createConnector = async (e: React.FormEvent) => {
+    e.preventDefault(); setSaving(true); setError(null); setCreateError(null);
+    try {
+      const payloads = connectorPayloads();
+      let deployed = 0;
+      for (const body of payloads) {
+        const res = await fetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/connectors'), {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || ('Failed to deploy connector. ' + deployed + ' of ' + payloads.length + ' deployed.'));
+        deployed++;
+      }
+      setShowCreate(false); setConnectorJson(connectorTemplate); await load();
+      setSuccessMessage(deployed === 1 ? 'Connector deployed successfully.' : (deployed + ' connectors deployed successfully.'));
+    } catch (e: any) { setCreateError(e.message || 'Failed to deploy connector.'); }
+    finally { setSaving(false); }
+  };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
     if (action === 'delete' && !window.confirm(`Delete connector ${name}?`)) return;
     setSaving(true);
@@ -381,11 +405,19 @@ export function KafkaConnect() {
 
       {error && <div className="ds-alert">{error}</div>}
 
+      {!hasFetched ? (
+        <div className="ds-panel ds-fetch-prompt">
+          <p>Kafka Connect data is not loaded automatically.</p>
+          <button className="ds-button primary" onClick={load} disabled={loading}>
+            <RefreshCw size={16} /> Fetch Kafka Connect for this cluster
+          </button>
+        </div>
+      ) : <>
       <div className="ds-metrics">
-        <div className="ds-metric-card"><span>Clusters</span><strong>1</strong></div>
-        <div className="ds-metric-card"><span>Connectors</span><strong>{summary?.connectorCount ?? 0}</strong></div>
-        <div className="ds-metric-card"><span>Tasks</span><strong>{summary?.taskCount ?? 0}</strong></div>
-        <div className="ds-metric-card"><span>Running</span><strong>{summary?.runningTasks ?? 0}</strong></div>
+        <div className="ds-metric-card total"><span>Total Connectors</span><strong>{summary?.connectorCount ?? 0}</strong></div>
+        <div className="ds-metric-card running"><span>Running Connectors</span><strong>{summary?.runningConnectors ?? 0}</strong></div>
+        <div className="ds-metric-card paused"><span>Paused Connectors</span><strong>{summary?.pausedConnectors ?? 0}</strong></div>
+        <div className="ds-metric-card failed"><span>Failed Connectors</span><strong>{summary?.failedConnectors ?? 0}</strong></div>
       </div>
 
       <div className="ds-tabs">
@@ -481,6 +513,7 @@ export function KafkaConnect() {
           </table>
         )}
       </div>
+      </>}
 
       {/* ── Connection modal ── */}
       {showConnection && (
@@ -596,6 +629,12 @@ export function KafkaConnect() {
               <button type="button" className="ds-icon-button" onClick={() => setShowCreate(false)} title="Close"><X size={16} /></button>
             </div>
             <div className="ds-form">
+              {createError && <div className="ds-alert">{createError}</div>}
+              <div className="ds-upload-row">
+                <label className="ds-button" htmlFor="connector-json-upload"><Upload size={16} /> Upload JSON files</label>
+                <input id="connector-json-upload" type="file" accept="application/json,.json" multiple hidden onChange={e => { void handleConnectorFiles(e.target.files); e.target.value = ''; }} />
+                <span>Choose multiple files, or paste a JSON array for bulk deployment.</span>
+              </div>
               <div className="ds-field">
                 <label>Connector JSON</label>
                 <textarea value={connectorJson} onChange={e => setConnectorJson(e.target.value)} required />
@@ -604,12 +643,20 @@ export function KafkaConnect() {
             <div className="ds-modal-footer">
               <button type="button" className="ds-button" onClick={() => setShowCreate(false)}>Cancel</button>
               <button type="submit" className="ds-button primary" disabled={saving}>
-                {saving ? <RefreshCw size={16} className="spin" /> : <Plus size={16} />} Create
+                {saving ? <RefreshCw size={16} className="spin" /> : <Plus size={16} />} Deploy
               </button>
             </div>
           </form>
         </div>
+      )}      {successMessage && (
+        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="ds-modal ds-success-modal">
+            <CheckCircle size={48} /><h3>Deployment successful</h3><p>{successMessage}</p>
+            <button className="ds-button primary" onClick={() => setSuccessMessage(null)}>Done</button>
+          </div>
+        </div>
       )}
+
     </div>
   );
 }

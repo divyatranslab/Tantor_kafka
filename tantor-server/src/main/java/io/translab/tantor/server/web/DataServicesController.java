@@ -315,15 +315,23 @@ public class DataServicesController {
             } catch (RuntimeException ignored) {}
         }
 
-        String compatibility = "BACKWARD";
+        String compatibility = null;
         try {
             JsonNode compatNode = requestJson(baseUrl, "GET", "/config/" + seg,
                     null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
             if (compatNode != null) {
-                compatibility = compatNode.path("compatibilityLevel").asText(compatNode.path("compatibility").asText("BACKWARD"));
+                compatibility = compatNode.path("compatibilityLevel")
+                        .asText(compatNode.path("compatibility").asText(null));
             }
         } catch (RuntimeException ignored) {
-            // 404 means no subject-level compatibility is set (expected)
+            // A missing subject-level override is expected; inherit the global config below.
+        }
+
+        if (compatibility == null || compatibility.isBlank()) {
+            JsonNode globalCompatNode = requestJson(baseUrl, "GET", "/config",
+                    null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+            compatibility = globalCompatNode.path("compatibilityLevel")
+                    .asText(globalCompatNode.path("compatibility").asText("BACKWARD"));
         }
 
         return ResponseEntity.ok(Map.of(
@@ -438,7 +446,7 @@ public class DataServicesController {
                 encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
 
         List<Map<String, Object>> connectors = new ArrayList<>();
-        int runningTasks = 0, totalTasks = 0, runningConnectors = 0;
+        int runningTasks = 0, totalTasks = 0, runningConnectors = 0, pausedConnectors = 0, failedConnectors = 0;
 
         for (JsonNode connNode : connectorsNode) {
             String name = connNode.asText();
@@ -450,6 +458,8 @@ public class DataServicesController {
                     null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
             String state = status.path("connector").path("state").asText("UNKNOWN");
             if ("RUNNING".equalsIgnoreCase(state)) runningConnectors++;
+            else if ("PAUSED".equalsIgnoreCase(state)) pausedConnectors++;
+            else failedConnectors++;
 
             int cRunning = 0, cTotal = 0;
             for (JsonNode task : status.path("tasks")) {
@@ -466,12 +476,19 @@ public class DataServicesController {
 
         List<Map<String, Object>> plugins = objectMapper.convertValue(pluginsNode, new TypeReference<>() {});
 
-        return ResponseEntity.ok(Map.of(
-                "connection", baseUrl, "cluster", root,
-                "version", root.path("version").asText("Unknown"),
-                "connectors", connectors, "plugins", plugins,
-                "connectorCount", connectors.size(), "taskCount", totalTasks,
-                "runningTasks", runningTasks, "runningConnectors", runningConnectors));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("connection", baseUrl);
+        result.put("cluster", root);
+        result.put("version", root.path("version").asText("Unknown"));
+        result.put("connectors", connectors);
+        result.put("plugins", plugins);
+        result.put("connectorCount", connectors.size());
+        result.put("taskCount", totalTasks);
+        result.put("runningTasks", runningTasks);
+        result.put("runningConnectors", runningConnectors);
+        result.put("pausedConnectors", pausedConnectors);
+        result.put("failedConnectors", failedConnectors);
+        return ResponseEntity.ok(result);
     }
 
     /** Get connector plugins list. */
@@ -528,8 +545,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        String upstreamMethod = "restart".equals(action) ? "POST" : "PUT";
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
-                "PUT", "/connectors/" + pathSeg(name) + "/" + action,
+                upstreamMethod, "/connectors/" + pathSeg(name) + "/" + action,
                 null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
@@ -727,8 +745,9 @@ public class DataServicesController {
     private String subjectType(String subject) {
         String s = subject.toLowerCase();
         if (s.endsWith("-key")) return "KEY";
-        if (s.endsWith("-value")) return "VALUE";
-        return "OTHER";
+        // Schema Registry does not store key/value as subject metadata. This UI creates
+        // value schemas by default, so any subject not explicitly named as a key is VALUE.
+        return "VALUE";
     }
 
     private String pathSeg(String value) {

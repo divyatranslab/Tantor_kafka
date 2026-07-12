@@ -70,13 +70,17 @@ export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
   const [view, setView] = useState<View>('list');
   const [summary, setSummary] = useState<SchemaSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [selected, setSelected] = useState<SchemaSubject | null>(null);
   const [details, setDetails] = useState<SubjectDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareVersionA, setCompareVersionA] = useState<number | null>(null);
+  const [compareVersionB, setCompareVersionB] = useState<number | null>(null);
   const [expandedVersions, setExpandedVersions] = useState<Set<number>>(new Set());
 
   // Edit form state
@@ -280,6 +284,7 @@ export function SchemaRegistry() {
   };
 
   const load = async () => {
+    setHasFetched(true);
     setLoading(true);
     setError(null);
     try {
@@ -298,8 +303,12 @@ export function SchemaRegistry() {
   // Initial load
   useEffect(() => { if (id) { loadConnections(); } }, [id]);
 
-  // Reload when selected connection changes
-  useEffect(() => { if (id && selectedConnectionId !== undefined) { load(); } }, [id, selectedConnectionId]);
+  // Live registry data is fetched only after the user explicitly requests it.
+  useEffect(() => {
+    setHasFetched(false);
+    setSummary(null);
+    setError(null);
+  }, [id, selectedConnectionId]);
 
   const openSubject = async (item: SchemaSubject) => {
     setSelected(item);
@@ -313,15 +322,15 @@ export function SchemaRegistry() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
-      setSubjectCompatibility(data.compatibility || 'BACKWARD');
+      setSubjectCompatibility(data.compatibility || globalCompatibility);
     } catch (e: any) {
       setDetails({
         subject: item.subject,
         latest: { version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema },
         versions: [{ version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema }],
-        compatibility: 'BACKWARD'
+        compatibility: globalCompatibility
       });
-      setSubjectCompatibility('BACKWARD');
+      setSubjectCompatibility(globalCompatibility);
       setError(e.message || 'Failed to load subject details.');
     } finally {
       setLoadingDetails(false);
@@ -349,6 +358,20 @@ export function SchemaRegistry() {
     setView('detail');
     setError(null);
   };
+
+  const openCompare = () => {
+    const versions = [...(details?.versions || [])].sort((a, b) => b.version - a.version);
+    if (versions.length < 2) return;
+    setCompareVersionA(versions[0].version);
+    setCompareVersionB(versions[1].version);
+    setShowCompare(true);
+  };
+
+  const comparedSchemaA = details?.versions.find(v => v.version === compareVersionA);
+  const comparedSchemaB = details?.versions.find(v => v.version === compareVersionB);
+  const schemasAreIdentical = Boolean(
+    comparedSchemaA && comparedSchemaB && comparedSchemaA.schema === comparedSchemaB.schema
+  );
 
   const toggleVersion = (version: number) => {
     setExpandedVersions(prev => {
@@ -535,6 +558,14 @@ export function SchemaRegistry() {
 
           {error && <div className="ds-alert">{error}</div>}
 
+          {!hasFetched ? (
+            <div className="ds-panel ds-fetch-prompt">
+              <p>Schema Registry data is not loaded automatically.</p>
+              <button className="ds-button primary" onClick={load} disabled={loading}>
+                <RefreshCw size={16} /> Fetch Schema Registry for this cluster
+              </button>
+            </div>
+          ) : <>
           <div className="ds-metrics">
             <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
@@ -573,6 +604,7 @@ export function SchemaRegistry() {
               </tbody>
             </table>
           </div>
+          </>}
         </>
       )}
 
@@ -587,7 +619,7 @@ export function SchemaRegistry() {
               <span className="ds-breadcrumb-current">{selected.subject}</span>
             </div>
             <div className="ds-inline-actions">
-              <button className="ds-button" disabled={(details?.versions.length || 0) < 2} title="Compare versions">
+              <button className="ds-button" onClick={openCompare} disabled={(details?.versions.length || 0) < 2} title="Compare versions">
                 <GitCompare size={16} /> Compare Versions
               </button>
               <button className="ds-button" onClick={openEdit} disabled={!details?.latest}>
@@ -669,6 +701,59 @@ export function SchemaRegistry() {
             </table>
           </div>
         </>
+      )}
+      {showCompare && details && (
+        <div className="ds-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
+          <div className="ds-modal ds-compare-modal">
+            <div className="ds-modal-header">
+              <div>
+                <h3 id="compare-versions-title">Compare Versions</h3>
+                <span className="ds-muted-line">{details.subject}</span>
+              </div>
+              <button type="button" className="ds-icon-button" onClick={() => setShowCompare(false)} title="Close">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="ds-compare-selectors">
+              <label>
+                Version A
+                <select value={compareVersionA ?? ''} onChange={e => setCompareVersionA(Number(e.target.value))}>
+                  {details.versions.map(version => (
+                    <option key={version.version} value={version.version}>Version {version.version}</option>
+                  ))}
+                </select>
+              </label>
+              <GitCompare size={20} />
+              <label>
+                Version B
+                <select value={compareVersionB ?? ''} onChange={e => setCompareVersionB(Number(e.target.value))}>
+                  {details.versions.map(version => (
+                    <option key={version.version} value={version.version}>Version {version.version}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {compareVersionA === compareVersionB ? (
+              <div className="ds-alert">Select two different versions to compare.</div>
+            ) : (
+              <>
+                <div className={schemasAreIdentical ? 'ds-compare-result identical' : 'ds-compare-result different'}>
+                  {schemasAreIdentical ? 'The selected schema versions are identical.' : 'The selected schema versions are different.'}
+                </div>
+                <div className="ds-compare-grid">
+                  <section>
+                    <h4>Version {compareVersionA}</h4>
+                    <pre>{comparedSchemaA?.schema || 'Schema unavailable'}</pre>
+                  </section>
+                  <section>
+                    <h4>Version {compareVersionB}</h4>
+                    <pre>{comparedSchemaB?.schema || 'Schema unavailable'}</pre>
+                  </section>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── EDIT VIEW ─────────────────────────────────────────── */}
