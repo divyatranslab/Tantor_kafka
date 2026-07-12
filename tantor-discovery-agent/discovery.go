@@ -11,21 +11,22 @@ import (
 // =========================================================================
 
 type DiscoveredCluster struct {
-	Name             string
-	Hostname         string
-	BootstrapServers string
-	KafkaVersion     string
-	KafkaClusterID   string
-	KafkaMode        string // KRaft or ZooKeeper
-	Security         string // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
-	BrokerCount      int
-	NodeID           int
+	Name                string
+	Hostname            string
+	BootstrapServers    string
+	KafkaVersion        string
+	KafkaClusterID      string
+	KafkaMode           string // KRaft or ZooKeeper
+	Security            string // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
+	BrokerCount         int
+	NodeID              int
 	ProcessRoles        string // broker, controller, broker,controller
 	Listeners           string
 	AdvertisedListeners string
 	IsRunning           bool
 	InstallPath         string
 	PropsFile           string
+	DataDirs            string
 	LogDirs             string
 	Environment         string
 	SystemdService      string
@@ -80,7 +81,7 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 		isRunning := false
 		baseProps := filepath.Base(propsFile)
 		dirName := filepath.Base(filepath.Dir(propsFile)) // e.g. "config" or "kraft"
-		
+
 		systemdService := ""
 		for _, processInfo := range runningProps {
 			cmdline := processInfo.Cmdline
@@ -105,7 +106,7 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 		if dc == nil {
 			continue
 		}
-		
+
 		dc.SystemdService = systemdService
 
 		// deduplicate by bootstrap servers

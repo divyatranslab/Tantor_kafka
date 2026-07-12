@@ -1,22 +1,24 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
+  Activity,
+  Bell,
+  ChevronDown,
+  ChevronRight,
   LayoutDashboard,
-  Server,
+  LineChart,
+  LogOut,
   Network,
   Package,
   PlayCircle,
-  ShieldAlert,
-  Bell,
-  LineChart,
+  Server,
   Settings,
-  ChevronDown,
-  ChevronRight,
+  ShieldAlert,
   Users,
-  Activity,
 } from 'lucide-react';
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
+import { useAuth } from '../contexts/AuthContext';
 
 type NavItem = {
   icon?: any;
@@ -34,7 +36,7 @@ const navSections: NavSection[] = [
   {
     label: 'Overview',
     items: [
-      { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+      { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
       {
         icon: Network,
         label: 'Clusters',
@@ -67,10 +69,12 @@ const navSections: NavSection[] = [
 ];
 
 export function Sidebar() {
+  const { decodedToken, logout } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
-    'Clusters': true
+    Clusters: true,
   });
   const location = useLocation();
+  const displayName = decodedToken?.preferred_username || decodedToken?.name || 'Authenticated';
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({ ...prev, [label]: !prev[label] }));
@@ -105,7 +109,7 @@ export function Sidebar() {
       <NavLink
         key={item.label}
         to={item.path!}
-        end={item.path === '/'}
+        end={item.path === '/dashboard'}
         className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
         style={{ paddingLeft: `${18 + depth * 22}px` }}
       >
@@ -118,7 +122,6 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      {/* Logo */}
       <div className="sidebar-header">
         <img
           src={tantorLogo}
@@ -128,20 +131,23 @@ export function Sidebar() {
         <span className="sidebar-tagline">Stream Intelligence</span>
       </div>
 
-      {/* Nav */}
       <nav className="sidebar-nav">
-        {navSections.map((section) => (
+        {navSections.map(section => (
           <div key={section.label} className="nav-section">
             <span className="nav-section-label">{section.label}</span>
-            {section.items.map((item) => renderItem(item))}
+            {section.items.map(item => renderItem(item))}
           </div>
         ))}
       </nav>
 
-      {/* Footer */}
       <div className="sidebar-footer">
-        <span className="sidebar-version-dot" />
-        v1.0.0 · Air-Gapped
+        <div className="sidebar-user">
+          <span className="sidebar-version-dot" />
+          <span className="sidebar-user-name" title={displayName}>{displayName}</span>
+        </div>
+        <button className="sidebar-logout" type="button" onClick={() => void logout()} title="Logout">
+          <LogOut size={15} />
+        </button>
       </div>
     </aside>
   );

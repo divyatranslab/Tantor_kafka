@@ -31,6 +31,12 @@ public class ClusterServiceAssignment {
     @Column(name = "node_id")
     private Integer nodeId;
 
+    @Column(name = "jmx_exporter_port")
+    private Integer jmxExporterPort;
+
+    @Column(name = "node_exporter_port")
+    private Integer nodeExporterPort;
+
     @Column(name = "config_json", columnDefinition = "TEXT")
     private String configJson;
 }

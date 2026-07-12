@@ -50,6 +50,9 @@ public class ExternalClusterNode {
     @Column(name = "port")
     private Integer port;
 
+    @Column(name = "jmx_exporter_port")
+    private Integer jmxExporterPort;
+
     @Column(name = "install_dir")
     private String installDir;
 

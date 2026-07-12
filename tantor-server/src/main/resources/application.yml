@@ -54,3 +54,14 @@ tantor:
     health-timeout-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_TIMEOUT_SECONDS:300}
     health-poll-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_POLL_SECONDS:10}
     stable-samples: ${TANTOR_ROLLING_RESTART_STABLE_SAMPLES:2}
+  monitoring:
+    mode: ${TANTOR_MONITORING_MODE:direct}
+    prometheus-url: ${TANTOR_PROMETHEUS_URL:http://loki-prometheus-server:80}
+    grafana-url: ${TANTOR_GRAFANA_URL:https://monitoring.tantor.io}
+    grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:PBFA97CFB590B2093}
+    grafana-username: ${TANTOR_GRAFANA_USERNAME:}
+    grafana-password: ${TANTOR_GRAFANA_PASSWORD:}
+    grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:true}
+    exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:192.168.3.191}
+    kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
+    jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:9404}

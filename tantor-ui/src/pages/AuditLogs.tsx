@@ -7,15 +7,21 @@ import './AuditLogs.css';
 
 interface AuditEvent {
   id: string;
+  userName?: string;
   actor: string;
   category: string;
   action: string;
   resourceType: string;
   resourceId?: string;
+  resource?: string;
   clusterId?: string;
+  hostId?: string;
+  hostIp?: string;
+  hostName?: string;
   status: string;
   details?: unknown;
-  createdTime: string;
+  createdAt?: string;
+  createdTime?: string;
 }
 
 interface AuditResponse { events?: AuditEvent[] }
@@ -25,15 +31,84 @@ const parseJson = (value: unknown): unknown => {
   try { return JSON.parse(value); } catch { return value; }
 };
 
-const displayJson = (value: unknown) => {
-  const parsed = parseJson(value);
-  if (parsed === null || parsed === undefined || parsed === '') return 'No details captured';
-  return typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
+const title = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+const actorOf = (event: AuditEvent) => event.actor || event.userName || 'system';
+const timeOf = (event: AuditEvent) => event.createdAt || event.createdTime || '';
+
+const normalized = (value?: string) => (value || '').toUpperCase();
+
+const isArtifactEvent = (event: AuditEvent) => {
+  const resourceType = normalized(event.resourceType);
+  return resourceType === 'ARTIFACT' || resourceType === 'HOST_PARCEL' || normalized(event.category) === 'PACKAGE';
 };
 
-const displayInline = (value: unknown) => displayJson(value).replace(/\s+/g, ' ').trim();
+const isHostOnboardingEvent = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  const category = normalized(event.category);
+  return action.includes('ONBOARDING') || action.includes('REGISTER') || category === 'AGENT';
+};
 
-const title = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+const isNoisyAuditEvent = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  const resourceType = normalized(event.resourceType);
+  return resourceType === 'JOB'
+    || action === 'CLUSTER_CREATED'
+    || action === 'CLUSTER_STATUS_CHANGED'
+    || action === 'KAFKA_NODE_DEPLOYED'
+    || action === 'KAFKA_NODE_DEPLOYMENT_FAILED'
+    || action.endsWith('_REQUESTED');
+};
+
+const actionLabel = (event: AuditEvent) => {
+  const action = normalized(event.action);
+  if (action.includes('ONBOARDING') && normalized(event.status) === 'SUCCESS') return 'Host Registered';
+  if (action.includes('ONBOARDING')) return 'Host Onboarding Requested';
+  if (action === 'REGISTER' || action === 'HOST_REGISTERED') return 'Host Registered';
+  return title(event.action || 'Captured');
+};
+
+const resourceTypeLabel = (event: AuditEvent) => {
+  if (isHostOnboardingEvent(event)) return 'Agent';
+  if (isArtifactEvent(event)) return 'Artifact';
+  return title(event.resourceType || 'SYSTEM');
+};
+
+const resourceName = (event: AuditEvent) => {
+  if (isHostOnboardingEvent(event) || isArtifactEvent(event)) return '';
+  return event.resource || event.hostName || event.hostId || event.clusterId || 'platform';
+};
+
+const detailLabel = (event: AuditEvent) => {
+  const parsed = parseJson(event.details);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>;
+    if (isArtifactEvent(event)) {
+      const fileName = record.fileName || record.binaryFileName || record.name;
+      const version = record.version;
+      const validation = record.validationStatus || record.status || event.status;
+      return [fileName, version, validation].filter(Boolean).map(String).join(' / ');
+    }
+    if (normalized(event.resourceType) === 'CLUSTER') {
+      const version = record.kafkaVersion || record.version;
+      const mode = record.kafkaMode || record.mode;
+      const bootstrap = record.bootstrapServers || record.bootstrap;
+      const listeners = record.listeners || record.advertisedListeners || record.processRoles;
+      const status = record.status || event.status;
+      return [version, mode, bootstrap, listeners, status].filter(Boolean).map(String).join(' / ');
+    }
+    const availability = record.availability || record.available;
+    if (typeof availability === 'string') return title(availability);
+    if (typeof availability === 'boolean') return availability ? 'Available' : 'Unavailable';
+    const status = record.status || record.result || record.validationStatus;
+    if (typeof status === 'string') {
+      if (['AVAILABLE', 'ONLINE', 'SUCCESS'].includes(status.toUpperCase())) return 'Available';
+      if (['UNAVAILABLE', 'OCCUPIED', 'PENDING', 'OFFLINE', 'FAILED', 'REMOVED', 'DELETED'].includes(status.toUpperCase())) return 'Unavailable';
+    }
+  }
+  if (['AVAILABLE', 'ONLINE', 'SUCCESS'].includes(event.status.toUpperCase())) return 'Available';
+  if (['UNAVAILABLE', 'OCCUPIED', 'PENDING', 'OFFLINE', 'FAILED', 'REMOVED', 'DELETED'].includes(event.status.toUpperCase())) return 'Unavailable';
+  return title(event.status || 'Captured');
+};
 
 export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
@@ -58,7 +133,8 @@ export function AuditLogs() {
         }),
       ]);
       const combined = results.flatMap(result => result.status === 'fulfilled' ? result.value.events || [] : [])
-        .sort((left, right) => new Date(right.createdTime).getTime() - new Date(left.createdTime).getTime());
+        .filter(event => !isNoisyAuditEvent(event))
+        .sort((left, right) => new Date(timeOf(right)).getTime() - new Date(timeOf(left)).getTime());
       setEvents(combined);
       const failures = results.filter(result => result.status === 'rejected').length;
       if (failures === results.length) throw new Error('Audit services are unavailable.');
@@ -74,16 +150,22 @@ export function AuditLogs() {
   useEffect(() => { fetchLogs(); }, []);
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
-  const actors = useMemo(() => Array.from(new Set(events.map(event => event.actor).filter(Boolean))).sort(), [events]);
+  const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
   const filtered = useMemo(() => events.filter(event => {
     if (category !== 'ALL' && event.category !== category) return false;
     if (status !== 'ALL' && event.status !== status) return false;
-    if (actor !== 'ALL' && event.actor !== actor) return false;
-    if (resourceId.trim() && !(event.resourceId || '').toLowerCase().includes(resourceId.trim().toLowerCase())) return false;
-    const created = new Date(event.createdTime).getTime();
+    if (actor !== 'ALL' && actorOf(event) !== actor) return false;
+    if (resourceId.trim()) {
+      const needle = resourceId.trim().toLowerCase();
+    const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
+        .join(' ')
+        .toLowerCase();
+      if (!resourceHaystack.includes(needle)) return false;
+    }
+    const created = new Date(timeOf(event)).getTime();
     if (from && created < new Date(from).getTime()) return false;
     if (to && created > new Date(to).getTime()) return false;
-    const haystack = [event.action, event.actor, event.resourceType, event.resourceId, event.clusterId, displayJson(event.details)].join(' ').toLowerCase();
+    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
     return !search.trim() || haystack.includes(search.trim().toLowerCase());
   }), [events, category, status, actor, resourceId, from, to, search]);
 
@@ -109,7 +191,7 @@ export function AuditLogs() {
 
     <section className="audit-filters">
       <label className="audit-search"><Search size={14} /><input placeholder="Search actor, action, resource or details" value={search} onChange={event => setSearch(event.target.value)} /></label>
-      <label><input placeholder="Resource ID" value={resourceId} onChange={event => setResourceId(event.target.value)} /></label>
+      <label><input placeholder="Resource" value={resourceId} onChange={event => setResourceId(event.target.value)} /></label>
       <label><Filter size={13} /><select value={category} onChange={event => setCategory(event.target.value)}><option value="ALL">All events</option>{categories.map(item => <option key={item} value={item}>{title(item)}</option>)}</select></label>
       <label><select value={status} onChange={event => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>SUCCESS</option><option>FAILED</option><option>REQUESTED</option></select></label>
       <label><UserRound size={13} /><select value={actor} onChange={event => setActor(event.target.value)}><option value="ALL">All actors</option>{actors.map(item => <option key={item}>{item}</option>)}</select></label>
@@ -130,14 +212,16 @@ export function AuditLogs() {
 }
 
 function AuditRow({ event }: { event: AuditEvent }) {
-  const details = displayInline(event.details);
+  const created = timeOf(event);
+  const createdDate = created ? new Date(created) : null;
+  const details = detailLabel(event);
   return <tr>
-      <td><div className="audit-time"><Clock3 size={12} /><span>{new Date(event.createdTime).toLocaleDateString()}</span><small>{new Date(event.createdTime).toLocaleTimeString()}</small></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{title(event.action)}</strong><small>{title(event.category)}</small></div></div></td>
-      <td><div className="audit-actor"><UserRound size={13} /><span>{event.actor || 'system'}</span></div></td>
-      <td><div className="audit-resource"><strong>{title(event.resourceType || 'SYSTEM')}</strong><small>{event.resourceId || event.clusterId || 'platform'}</small></div></td>
+      <td><div className="audit-time"><Clock3 size={12} /><span>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString() : '-'}</span><small>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleTimeString() : ''}</small></div></td>
+      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong><small>{title(event.category)}</small></div></div></td>
+      <td><div className="audit-actor"><UserRound size={13} /><span>{actorOf(event)}</span></div></td>
+      <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
       <td><div className="audit-resource"><small>{event.clusterId || '-'}</small></div></td>
-      <td><div className="audit-details-inline"><span title={details}>{details}</span><small>Audit ID: {event.id}</small></div></td>
+      <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
       <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status}</span></td>
     </tr>
 }

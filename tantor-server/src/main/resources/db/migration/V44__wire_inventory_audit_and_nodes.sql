@@ -21,6 +21,9 @@ ALTER TABLE kf_artifact
 ALTER TABLE kf_hosts
     ADD COLUMN IF NOT EXISTS user_name VARCHAR(128);
 
+ALTER TABLE kf_clusters
+    ADD COLUMN IF NOT EXISTS config_path VARCHAR(1024);
+
 ALTER TABLE kf_artifact_audit_log
     ADD COLUMN IF NOT EXISTS full_file_path VARCHAR(2048),
     ADD COLUMN IF NOT EXISTS path_of_tar VARCHAR(1024),
@@ -31,6 +34,8 @@ ALTER TABLE kf_artifact_audit_log
 
 ALTER TABLE kf_artifact_audit_log
     ALTER COLUMN artifact_id TYPE VARCHAR(255) USING artifact_id::text;
+
+ALTER TABLE kf_artifact_audit_log DISABLE TRIGGER USER;
 
 UPDATE kf_artifact_audit_log aal
 SET
@@ -43,6 +48,8 @@ SET
     user_name = COALESCE(NULLIF(aal.user_name, ''), NULLIF(a.created_by, ''), aal.user_name)
 FROM kf_artifact a
 WHERE aal.artifact_id::text = a.id::text;
+
+ALTER TABLE kf_artifact_audit_log ENABLE TRIGGER USER;
 
 CREATE OR REPLACE FUNCTION sync_artifact_audit_to_global()
 RETURNS TRIGGER AS $$

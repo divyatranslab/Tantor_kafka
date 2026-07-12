@@ -67,6 +67,13 @@ public class TruststoreStorageService {
         }
     }
 
+    public String ensureTruststoreFile(UUID clusterId, String truststoreType, String base64Content, String existingPath) {
+        if (existingPath != null && !existingPath.isBlank() && Files.exists(Paths.get(existingPath))) {
+            return existingPath;
+        }
+        return saveTruststore(clusterId, truststoreType, base64Content);
+    }
+
     public void deleteTruststore(UUID clusterId, String truststoreType) {
         String ext = resolveExtension(truststoreType);
         Path targetFile = truststoreDir.resolve(clusterId.toString() + ext);
@@ -79,7 +86,11 @@ public class TruststoreStorageService {
 
     private String resolveExtension(String type) {
         if (type == null) return ".jks";
-        return switch (type.toUpperCase()) {
+        String normalized = type.toUpperCase();
+        if (normalized.startsWith("KEYSTORE_")) {
+            normalized = normalized.substring("KEYSTORE_".length());
+        }
+        return switch (normalized) {
             case "PKCS12" -> ".p12";
             case "PEM" -> ".pem";
             default -> ".jks";

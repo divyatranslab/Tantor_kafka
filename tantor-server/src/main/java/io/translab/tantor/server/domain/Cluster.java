@@ -69,6 +69,27 @@ public class Cluster {
     @Column(name = "external_broker_hosts_json", columnDefinition = "TEXT")
     private String externalBrokerHostsJson;
 
+    @Column(name = "monitoring_enabled")
+    private Boolean monitoringEnabled = true;
+
+    @Column(name = "kafka_exporter_host")
+    private String kafkaExporterHost;
+
+    @Column(name = "kafka_exporter_port")
+    private Integer kafkaExporterPort;
+
+    @Column(name = "jmx_enabled")
+    private Boolean jmxEnabled = true;
+
+    @Column(name = "jmx_exporter_port")
+    private Integer jmxExporterPort = 9404;
+
+    @Column(name = "node_exporter_enabled")
+    private Boolean nodeExporterEnabled = false;
+
+    @Column(name = "node_exporter_port")
+    private Integer nodeExporterPort = 9100;
+
     @Column(name = "config_json", columnDefinition = "TEXT")
     private String configJson;
 

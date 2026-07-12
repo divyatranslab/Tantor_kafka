@@ -108,6 +108,7 @@
 .sidebar-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   padding: 13px 18px;
   border-top: 0.5px solid #f0eeea;
@@ -117,12 +118,44 @@
   flex-shrink: 0;
 }
 
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sidebar-user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-version-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: #1D9E75;
   flex-shrink: 0;
+}
+
+.sidebar-logout {
+  width: 28px;
+  height: 28px;
+  border: 0.5px solid #e8e6e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #6b6b66;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.sidebar-logout:hover {
+  background: #f8f7f4;
+  color: #1a1a18;
 }
 
 /* ── Scrollbar ── */

@@ -257,7 +257,7 @@ public class ExternalClusterService {
 
         // Create the ExternalCluster entity based on AdminClient data (source of truth)
         String clusterId = String.valueOf(inspection.get("clusterId"));
-        savedCluster = findExternalCluster(clusterId, request.getName(), bootstrap).orElseGet(ExternalCluster::new);
+        savedCluster = findReusableExternalCluster(clusterId, request.getName(), bootstrap).orElseGet(ExternalCluster::new);
         savedCluster.setName(request.getName() != null ? request.getName().trim() : savedCluster.getName());
         savedCluster.setBootstrapServers(mergeBootstrapServers(savedCluster.getBootstrapServers(), bootstrap));
         savedCluster.setKafkaClusterId(clusterId);
@@ -268,14 +268,22 @@ public class ExternalClusterService {
         savedCluster.setSecurityProtocol(request.getSecurityProtocol());
         savedCluster.setSaslMechanism(request.getSaslMechanism());
         savedCluster.setSaslUsername(request.getSaslUsername());
-        savedCluster.setSaslPasswordEncrypted(encryptionService.encrypt(request.getSaslPassword()));
+        if (request.getSaslPassword() != null && !request.getSaslPassword().isBlank()) {
+            savedCluster.setSaslPasswordEncrypted(encryptionService.encrypt(request.getSaslPassword()));
+        }
         
         savedCluster.setDisableHostnameVerification(Boolean.TRUE.equals(request.getDisableHostnameVerification()));
         savedCluster.setTruststoreType(request.getTruststoreType());
-        savedCluster.setTruststorePasswordEncrypted(encryptionService.encrypt(request.getTruststorePassword()));
+        if (request.getTruststorePassword() != null && !request.getTruststorePassword().isBlank()) {
+            savedCluster.setTruststorePasswordEncrypted(encryptionService.encrypt(request.getTruststorePassword()));
+        }
         savedCluster.setKeystoreType(request.getKeystoreType());
-        savedCluster.setKeystorePasswordEncrypted(encryptionService.encrypt(request.getKeystorePassword()));
-        savedCluster.setKeyPasswordEncrypted(encryptionService.encrypt(request.getKeyPassword()));
+        if (request.getKeystorePassword() != null && !request.getKeystorePassword().isBlank()) {
+            savedCluster.setKeystorePasswordEncrypted(encryptionService.encrypt(request.getKeystorePassword()));
+        }
+        if (request.getKeyPassword() != null && !request.getKeyPassword().isBlank()) {
+            savedCluster.setKeyPasswordEncrypted(encryptionService.encrypt(request.getKeyPassword()));
+        }
         
         if (inspection.get("brokerCount") instanceof Number) {
             savedCluster.setBrokerCount(((Number) inspection.get("brokerCount")).intValue());
@@ -285,11 +293,13 @@ public class ExternalClusterService {
 
         // Save truststore/keystore files if provided
         if (request.getTruststoreBase64() != null && !request.getTruststoreBase64().isBlank()) {
+            savedCluster.setTruststoreContentEncrypted(encryptionService.encrypt(normalizeBase64(request.getTruststoreBase64())));
             String path = truststoreStorageService.saveTruststore(savedCluster.getId(), request.getTruststoreType(), request.getTruststoreBase64());
             savedCluster.setTruststorePath(path);
             savedCluster = externalClusterRepository.save(savedCluster);
         }
         if (request.getKeystoreBase64() != null && !request.getKeystoreBase64().isBlank()) {
+            savedCluster.setKeystoreContentEncrypted(encryptionService.encrypt(normalizeBase64(request.getKeystoreBase64())));
             String path = truststoreStorageService.saveTruststore(savedCluster.getId(), "keystore_" + request.getKeystoreType(), request.getKeystoreBase64());
             savedCluster.setKeystorePath(path);
             savedCluster = externalClusterRepository.save(savedCluster);
@@ -393,10 +403,10 @@ public class ExternalClusterService {
                     
                     // Always try to match by nodeId. (brokerId == nodeId in most cases).
                     if (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) {
-                        node.setInstallDir(report.getInstallPath());
-                        node.setLogDirs(report.getLogDirs());
-                        node.setConfigFile(report.getConfigFile());
-                        node.setDataDirs(report.getDataDirs());
+                        node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
+                        node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
+                        node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
+                        node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
                     }
                     externalClusterNodeRepository.save(node);
                 }
@@ -480,6 +490,31 @@ public class ExternalClusterService {
         ExternalCluster cluster = upsertDiscoveryCluster(report);
         pendingDiscoveries.remove(discoveryKey);
         return cluster;
+    }
+
+    @Transactional
+    public Optional<ExternalCluster> deleteExternalCluster(UUID id) {
+        Optional<ExternalCluster> clusterOpt = externalClusterRepository.findById(id);
+        if (clusterOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        ExternalCluster cluster = clusterOpt.get();
+        cluster.setStatus("DELETED");
+        cluster.setIsRunning(false);
+        ExternalCluster saved = externalClusterRepository.save(cluster);
+
+        externalClusterNodeRepository.deleteByClusterId(id);
+
+        List<DiscoveryAgent> linkedAgents = discoveryAgentRepository.findByClusterId(id);
+        for (DiscoveryAgent agent : linkedAgents) {
+            agent.setClusterId(null);
+        }
+        discoveryAgentRepository.saveAll(linkedAgents);
+
+        pendingDiscoveries.entrySet().removeIf(entry -> matchesExternalCluster(entry.getValue(), saved));
+
+        return Optional.of(saved);
     }
 
     @Transactional
@@ -818,6 +853,29 @@ public class ExternalClusterService {
         }
         if (name != null && !name.isBlank()) {
             return externalClusterRepository.findByNameAndStatusNot(name.trim(), "DELETED");
+        }
+        return Optional.empty();
+    }
+
+    private Optional<ExternalCluster> findReusableExternalCluster(String kafkaClusterId, String name, String bootstrapServers) {
+        Optional<ExternalCluster> activeCluster = findExternalCluster(kafkaClusterId, name, bootstrapServers);
+        if (activeCluster.isPresent()) {
+            return activeCluster;
+        }
+        if (kafkaClusterId != null && !kafkaClusterId.isBlank()) {
+            Optional<ExternalCluster> byKafkaId = externalClusterRepository.findByKafkaClusterId(kafkaClusterId.trim());
+            if (byKafkaId.isPresent()) {
+                return byKafkaId;
+            }
+        }
+        if (bootstrapServers != null && !bootstrapServers.isBlank()) {
+            Optional<ExternalCluster> byBootstrap = externalClusterRepository.findByBootstrapServers(bootstrapServers.trim());
+            if (byBootstrap.isPresent()) {
+                return byBootstrap;
+            }
+        }
+        if (name != null && !name.isBlank()) {
+            return externalClusterRepository.findByName(name.trim());
         }
         return Optional.empty();
     }
@@ -1173,6 +1231,10 @@ public class ExternalClusterService {
         return value == null || value.isBlank() || "null".equalsIgnoreCase(value) ? defaultValue : value;
     }
 
+    private String normalizeBase64(String value) {
+        return value == null ? null : value.replaceAll("\\s", "");
+    }
+
     private String firstString(Map<String, Object> values, String... keys) {
         if (values == null) return null;
         for (String key : keys) {
@@ -1211,6 +1273,15 @@ public class ExternalClusterService {
 
     private boolean safeEquals(String left, String right) {
         return left != null && right != null && left.equals(right);
+    }
+
+    private boolean matchesExternalCluster(ExternalDiscoveryReport report, ExternalCluster cluster) {
+        if (report == null || cluster == null) {
+            return false;
+        }
+        return safeEquals(report.getKafkaClusterId(), cluster.getKafkaClusterId())
+                || safeEquals(report.getName(), cluster.getName())
+                || safeEquals(report.getBootstrapServers(), cluster.getBootstrapServers());
     }
 
     @Data
