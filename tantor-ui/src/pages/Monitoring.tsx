@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Database, Gauge, HardDrive, RefreshCw, Server, ShieldCheck } from 'lucide-react';
+import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './Monitoring.css';
 
 interface MonitoringCluster {
@@ -33,6 +34,19 @@ interface MonitoringOverview {
   warnings?: string[];
 }
 
+interface MonitoringSample {
+  time: string;
+  brokers: number | null;
+  topics: number | null;
+  partitions: number | null;
+  underReplicated: number | null;
+  lag: number | null;
+  messagesIn: number | null;
+  bytesIn: number | null;
+  bytesOut: number | null;
+  heap: number | null;
+}
+
 const formatNumber = (value?: number | null, digits = 0) => {
   if (value === undefined || value === null || Number.isNaN(value)) return '-';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
@@ -49,6 +63,10 @@ const formatBytes = (value?: number | null) => {
   }
   return `${next.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}/s`;
 };
+
+const hasValue = (value?: number | null) => value !== undefined && value !== null && !Number.isNaN(value);
+
+const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
 function MetricCard({ icon: Icon, label, value, tone = 'neutral' }: {
   icon: typeof Activity;
@@ -67,6 +85,29 @@ function MetricCard({ icon: Icon, label, value, tone = 'neutral' }: {
   );
 }
 
+function GraphPanel({ title, value, source, children, emptyText }: {
+  title: string;
+  value: string;
+  source: string;
+  children: ReactNode;
+  emptyText: string;
+}) {
+  return (
+    <div className="monitoring-graph-card">
+      <div className="monitoring-graph-header">
+        <div>
+          <span>{source}</span>
+          <h3>{title}</h3>
+        </div>
+        <strong>{value}</strong>
+      </div>
+      <div className="monitoring-chart-body">
+        {children || <div className="monitoring-chart-empty">{emptyText}</div>}
+      </div>
+    </div>
+  );
+}
+
 export function Monitoring() {
   const [type, setType] = useState<'INTERNAL' | 'EXTERNAL' | ''>('');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
@@ -76,6 +117,7 @@ export function Monitoring() {
   const [loadingOverview, setLoadingOverview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [history, setHistory] = useState<MonitoringSample[]>([]);
 
   const selectedCluster = useMemo(
     () => clusters.find(cluster => cluster.id === selectedClusterId),
@@ -122,6 +164,7 @@ export function Monitoring() {
 
   useEffect(() => {
     setOverview(null);
+    setHistory([]);
     setClusters([]);
     setSelectedClusterId('');
     if (type) {
@@ -131,9 +174,29 @@ export function Monitoring() {
 
   useEffect(() => {
     if (selectedClusterId) {
+      setHistory([]);
       loadOverview();
     }
   }, [selectedClusterId, loadOverview]);
+
+  useEffect(() => {
+    if (!overview) return;
+    setHistory(current => {
+      const next: MonitoringSample = {
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        brokers: chartNumber(overview.brokerCount),
+        topics: chartNumber(overview.topicCount),
+        partitions: chartNumber(overview.partitionCount),
+        underReplicated: chartNumber(overview.underReplicatedPartitions),
+        lag: chartNumber(overview.consumerLag),
+        messagesIn: chartNumber(overview.messagesInPerSecond),
+        bytesIn: chartNumber(overview.bytesInPerSecond),
+        bytesOut: chartNumber(overview.bytesOutPerSecond),
+        heap: chartNumber(overview.jvmHeapUsedPercent),
+      };
+      return [...current, next].slice(-24);
+    });
+  }, [overview]);
 
   useEffect(() => {
     if (!autoRefresh || !selectedClusterId) return;
@@ -149,6 +212,12 @@ export function Monitoring() {
     ...(selectedCluster?.warning ? [selectedCluster.warning] : []),
     ...(overview?.warnings || []),
   ].filter((warning, index, all) => warning && all.indexOf(warning) === index);
+
+  const kafkaExporterReady = Boolean(overview?.kafkaExporterUp && overview.kafkaExporterUp > 0);
+  const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
+  const hasKafkaSeries = history.some(sample =>
+    hasValue(sample.brokers) || hasValue(sample.topics) || hasValue(sample.partitions) || hasValue(sample.lag) || hasValue(sample.messagesIn));
+  const hasJmxSeries = history.some(sample => hasValue(sample.bytesIn) || hasValue(sample.bytesOut) || hasValue(sample.heap));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -226,11 +295,11 @@ export function Monitoring() {
             <p>Exporter target: {overview?.kafkaExporterTarget || selectedCluster.kafkaExporterTarget || 'Not configured'}</p>
           </div>
           <div className="monitoring-status-pills">
-            <span className={overview?.kafkaExporterUp && overview.kafkaExporterUp > 0 ? 'pill good' : 'pill warn'}>
-              kafka_exporter {overview?.kafkaExporterUp && overview.kafkaExporterUp > 0 ? 'up' : 'pending'}
+            <span className={kafkaExporterReady ? 'pill good' : 'pill warn'}>
+              kafka_exporter {kafkaExporterReady ? 'up' : 'required'}
             </span>
-            <span className={overview?.jmxUp && overview.jmxUp > 0 ? 'pill good' : 'pill neutral'}>
-              JMX {overview?.jmxUp && overview.jmxUp > 0 ? 'up' : selectedCluster.jmxAvailable ? 'pending' : 'not attached'}
+            <span className={jmxReady ? 'pill good' : 'pill warn'}>
+              JMX {jmxReady ? 'up' : 'required'}
             </span>
           </div>
         </div>
@@ -246,7 +315,58 @@ export function Monitoring() {
           <MetricCard icon={Activity} label="Messages/sec" value={formatNumber(overview?.messagesInPerSecond, 1)} />
           <MetricCard icon={Activity} label="Bytes In/sec" value={formatBytes(overview?.bytesInPerSecond)} />
           <MetricCard icon={Activity} label="Bytes Out/sec" value={formatBytes(overview?.bytesOutPerSecond)} />
-          <MetricCard icon={HardDrive} label="JVM Heap" value={overview?.jvmHeapUsedPercent == null ? 'JMX required' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} tone={overview?.jvmHeapUsedPercent == null ? 'neutral' : 'good'} />
+          <MetricCard icon={HardDrive} label="JVM Heap" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} tone={overview?.jvmHeapUsedPercent == null ? 'neutral' : 'good'} />
+        </div>
+      )}
+
+      {type && selectedCluster && (
+        <div className="monitoring-graphs-grid">
+          <GraphPanel title="Traffic" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText="kafka_exporter required">
+            {hasKafkaSeries ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Area type="monotone" dataKey="messagesIn" name="Messages/sec" stroke="#2563eb" fill="#dbeafe" strokeWidth={2} connectNulls />
+                  <Area type="monotone" dataKey="lag" name="Consumer lag" stroke="#d97706" fill="#fef3c7" strokeWidth={2} connectNulls />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : null}
+          </GraphPanel>
+
+          <GraphPanel title="Cluster Objects" value={formatNumber(overview?.partitionCount)} source="kafka_exporter" emptyText="kafka_exporter required">
+            {hasKafkaSeries ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="topics" name="Topics" stroke="#0891b2" strokeWidth={2} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="partitions" name="Partitions" stroke="#4f46e5" strokeWidth={2} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="underReplicated" name="Under replicated" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : null}
+          </GraphPanel>
+
+          <GraphPanel title="Broker Runtime" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+            {hasJmxSeries ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="bytesIn" name="Bytes in/sec" stroke="#0284c7" strokeWidth={2} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="bytesOut" name="Bytes out/sec" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : null}
+          </GraphPanel>
         </div>
       )}
 

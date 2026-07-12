@@ -163,6 +163,72 @@
   gap: 1rem;
 }
 
+.monitoring-graphs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.monitoring-graph-card {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.monitoring-graph-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.monitoring-graph-header span {
+  display: block;
+  color: #64748b;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.monitoring-graph-header h3 {
+  margin: 0.25rem 0 0;
+  color: #111827;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.monitoring-graph-header strong {
+  color: #111827;
+  font-size: 1.25rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.monitoring-chart-body {
+  position: relative;
+  height: 210px;
+  padding: 0.75rem;
+}
+
+.monitoring-chart-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.5rem;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: center;
+}
+
 .monitoring-metric-card {
   display: flex;
   gap: 0.875rem;
