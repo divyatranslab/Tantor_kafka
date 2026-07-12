@@ -10,6 +10,7 @@ import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +25,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -32,6 +34,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+import java.security.cert.X509Certificate;
 
 @Service
 @RequiredArgsConstructor
@@ -65,6 +73,9 @@ public class PrometheusMonitoringService {
     @Value("${tantor.monitoring.grafana-password:}")
     private String grafanaPassword;
 
+    @Value("${tantor.monitoring.grafana-skip-tls-validation:false}")
+    private boolean grafanaSkipTlsValidation;
+
     @Value("${tantor.monitoring.exporter-host:}")
     private String defaultExporterHost;
 
@@ -73,6 +84,39 @@ public class PrometheusMonitoringService {
 
     @Value("${tantor.monitoring.jmx-exporter-port:9404}")
     private int defaultJmxExporterPort;
+
+    @PostConstruct
+    void configureGrafanaTls() {
+        if (!grafanaSkipTlsValidation) {
+            return;
+        }
+        try {
+            TrustManager[] trustAllManagers = new TrustManager[] {
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                        }
+
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+                    }
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAllManagers, new SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
+            HostnameVerifier trustAllHosts = (hostname, session) -> true;
+            HttpsURLConnection.setDefaultHostnameVerifier(trustAllHosts);
+            log.warn("Grafana TLS validation is disabled for monitoring proxy requests. Use only for test/self-signed environments.");
+        } catch (Exception e) {
+            log.warn("Could not disable Grafana TLS validation", e);
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {

@@ -61,6 +61,7 @@ tantor:
     grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:PBFA97CFB590B2093}
     grafana-username: ${TANTOR_GRAFANA_USERNAME:}
     grafana-password: ${TANTOR_GRAFANA_PASSWORD:}
+    grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:true}
     exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:192.168.3.191}
     kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
     jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:9404}
