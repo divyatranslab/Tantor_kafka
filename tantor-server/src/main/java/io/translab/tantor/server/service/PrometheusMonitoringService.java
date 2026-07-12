@@ -370,17 +370,27 @@ public class PrometheusMonitoringService {
     }
 
     private String origin(Cluster cluster) {
-        if (cluster.getMode() != null && !cluster.getMode().isBlank()) {
-            return cluster.getMode().toUpperCase(Locale.ROOT);
+        String originType = normalizeOrigin(cluster.getOriginType());
+        if (originType != null) {
+            return originType;
         }
-        if (cluster.getOriginType() != null && !cluster.getOriginType().isBlank()) {
-            return cluster.getOriginType().toUpperCase(Locale.ROOT);
-        }
-        return "INTERNAL";
+        String legacyModeOrigin = normalizeOrigin(cluster.getMode());
+        return legacyModeOrigin != null ? legacyModeOrigin : "INTERNAL";
     }
 
     private boolean isExternal(Cluster cluster) {
         return "EXTERNAL".equals(origin(cluster));
+    }
+
+    private String normalizeOrigin(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        if ("INTERNAL".equals(normalized) || "EXTERNAL".equals(normalized)) {
+            return normalized;
+        }
+        return null;
     }
 
     private String hostIp(Host host) {
