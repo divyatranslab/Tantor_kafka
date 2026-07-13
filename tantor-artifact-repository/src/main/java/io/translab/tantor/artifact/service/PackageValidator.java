@@ -19,15 +19,40 @@ public class PackageValidator {
     private static final Logger log = LoggerFactory.getLogger(PackageValidator.class);
 
     public void validate(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
-        validateExtension(fileName);
+        if (serviceType == ServiceType.JMX_EXPORTER) {
+            validateJar(archivePath, fileName);
+            malwareScan(archivePath);
+            return;
+        }
+
+        validateArchiveExtension(fileName);
         validateStructureAndVersion(archivePath, serviceType, expectedVersion);
         malwareScan(archivePath);
     }
 
-    private void validateExtension(String fileName) {
+    private void validateArchiveExtension(String fileName) {
         if (fileName == null || (!fileName.endsWith(".tgz") && !fileName.endsWith(".tar.gz"))) {
             throw new PackageValidationException("Invalid package extension. Only .tgz and .tar.gz are supported.");
         }
+    }
+
+    private void validateJar(Path jarPath, String fileName) {
+        if (fileName == null || !fileName.endsWith(".jar")) {
+            throw new PackageValidationException("Invalid JMX exporter extension. Only .jar is supported.");
+        }
+
+        try (InputStream in = Files.newInputStream(jarPath)) {
+            byte[] magic = in.readNBytes(2);
+            if (magic.length < 2 || magic[0] != 'P' || magic[1] != 'K') {
+                throw new PackageValidationException("Invalid JMX exporter jar. The file is not a valid Java archive.");
+            }
+        } catch (PackageValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new PackageValidationException("JMX exporter jar validation failed: " + e.getMessage(), e);
+        }
+
+        log.info("JMX exporter jar validation passed for {}", jarPath);
     }
 
     private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion) {

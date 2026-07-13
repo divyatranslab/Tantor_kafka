@@ -57,6 +57,27 @@ interface ArtifactAuditEvent {
   createdAt?: string;
 }
 
+const artifactServiceOptions = [
+  {
+    value: 'KAFKA',
+    label: 'Apache Kafka',
+    versionPlaceholder: 'e.g. 3.9.2',
+    directoryPlaceholder: 'custom/kafka (under configured repository root)',
+    fileLabel: 'Kafka parcel binary (.tgz or .tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Kafka binaries appear in the parcel list and can be distributed to hosts.',
+  },
+  {
+    value: 'JMX_EXPORTER',
+    label: 'JMX Exporter',
+    versionPlaceholder: 'e.g. 0.20.0',
+    directoryPlaceholder: 'custom/jmx-exporter (under configured repository root)',
+    fileLabel: 'JMX exporter jar (.jar)',
+    fileAccept: '.jar',
+    helper: 'JMX exporter jars are stored for Kafka monitoring deployments.',
+  },
+];
+
 export function Artifacts() {
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -82,6 +103,10 @@ export function Artifacts() {
   const [artifactAuditEvents, setArtifactAuditEvents] = useState<ArtifactAuditEvent[]>([]);
   const [artifactAuditLoading, setArtifactAuditLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const selectedServiceOption = artifactServiceOptions.find(option => option.value === serviceType) || artifactServiceOptions[0];
+  const fileMatchesServiceType = !file || selectedServiceOption.fileAccept
+    .split(',')
+    .some(extension => file.name.toLowerCase().endsWith(extension.trim().toLowerCase()));
 
   const fetchVersions = async () => {
     const res = await fetch('/api/v1/artifacts?serviceType=KAFKA&status=AVAILABLE');
@@ -135,7 +160,7 @@ export function Artifacts() {
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file || !versionInput) return;
+    if (!file || !versionInput || !fileMatchesServiceType) return;
     setUploading(true);
     setUploadMsg(null);
 
@@ -627,9 +652,20 @@ export function Artifacts() {
             <form onSubmit={handleUploadSubmit}>
               <div className="form-group">
                 <label>Service type</label>
-                <select className="form-control" value={serviceType} onChange={e => setServiceType(e.target.value)} disabled>
-                  <option value="KAFKA">Apache Kafka</option>
+                <select
+                  className="form-control"
+                  value={serviceType}
+                  onChange={e => {
+                    setServiceType(e.target.value);
+                    setFile(null);
+                    if (fileRef.current) fileRef.current.value = '';
+                  }}
+                >
+                  {artifactServiceOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
+                <small className="form-hint">{selectedServiceOption.helper}</small>
               </div>
 
               <div className="form-group">
@@ -639,7 +675,7 @@ export function Artifacts() {
                   className="form-control"
                   value={versionInput}
                   onChange={e => setVersionInput(e.target.value)}
-                  placeholder="e.g. 3.7.0"
+                  placeholder={selectedServiceOption.versionPlaceholder}
                   required
                 />
               </div>
@@ -651,12 +687,12 @@ export function Artifacts() {
                   className="form-control"
                   value={uploadDirectory}
                   onChange={e => setUploadDirectory(e.target.value)}
-                  placeholder="custom/kafka (under configured repository root)"
+                  placeholder={selectedServiceOption.directoryPlaceholder}
                 />
               </div>
 
               <div className="form-group">
-                <label>Binary file (.tgz or .jar)</label>
+                <label>{selectedServiceOption.fileLabel}</label>
                 <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
                   <HardDrive size={28} style={{ color: 'var(--accent-primary)' }} />
                   {file ? (
@@ -672,14 +708,17 @@ export function Artifacts() {
                     ref={fileRef}
                     style={{ display: 'none' }}
                     onChange={e => setFile(e.target.files?.[0] ?? null)}
-                    accept=".tgz,.tar.gz,.jar"
+                    accept={selectedServiceOption.fileAccept}
                   />
                 </div>
+                {!fileMatchesServiceType && (
+                  <small className="form-error">Selected file does not match {selectedServiceOption.label}.</small>
+                )}
               </div>
 
               <div className="modal-footer">
                 <button type="button" className="btn" onClick={() => setShowUploadModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary-action" disabled={uploading || !file || !versionInput}>
+                <button type="submit" className="btn btn-primary-action" disabled={uploading || !file || !versionInput || !fileMatchesServiceType}>
                   {uploading ? 'Uploading...' : 'Upload'}
                 </button>
               </div>

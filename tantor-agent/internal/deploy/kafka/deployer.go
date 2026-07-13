@@ -243,6 +243,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	log("Downloading JMX Exporter to %s", jmxJarPath)
 
 	jmxUrl := t.Parameters["jmx_artifact_url"]
+	jmxInstalled := false
 	if jmxUrl != "" {
 		log("Using JMX Artifact URL from Tantor Server: %s", jmxUrl)
 		tmpJmx := filepath.Join(artifactWorkDir, "jmx_tmp.jar")
@@ -250,24 +251,53 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		if err != nil {
 			log("Warning: Failed to download JMX agent from artifact repo: %v", err)
 			os.Remove(tmpJmx)
+		} else if !isUsableJar(tmpJmx) {
+			log("Warning: Downloaded JMX artifact is not a valid jar; keeping existing jar if present")
+			os.Remove(tmpJmx)
 		} else {
 			d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
 			d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
+			jmxInstalled = true
 		}
-	} else {
-		log("Warning: No jmx_artifact_url provided. Falling back to Maven repo1...")
+	}
+
+	if !jmxInstalled {
+		if isUsableJar(jmxJarPath) {
+			log("Using existing valid JMX exporter jar at %s", jmxJarPath)
+			jmxInstalled = true
+		} else {
+			log("Falling back to Maven Central for JMX exporter...")
+		}
+	}
+
+	if !jmxInstalled {
 		resp, err := http.Get("https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/0.20.0/jmx_prometheus_javaagent-0.20.0.jar")
-		if err == nil {
+		if err == nil && resp.StatusCode == http.StatusOK {
 			defer resp.Body.Close()
 			tmpJmx := filepath.Join(artifactWorkDir, "jmx_tmp.jar")
 			out, _ := os.Create(tmpJmx)
 			io.Copy(out, resp.Body)
 			out.Close()
-			d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
-			d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
+			if isUsableJar(tmpJmx) {
+				d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
+				d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
+				jmxInstalled = true
+			} else {
+				log("Warning: Maven Central JMX download did not produce a valid jar")
+				os.Remove(tmpJmx)
+			}
 		} else {
-			log("Warning: Failed to download JMX agent from maven: %v", err)
+			if err != nil {
+				log("Warning: Failed to download JMX agent from Maven Central: %v", err)
+			} else {
+				log("Warning: Failed to download JMX agent from Maven Central: status %d", resp.StatusCode)
+				resp.Body.Close()
+			}
 		}
+	}
+
+	if !jmxInstalled {
+		log("Warning: JMX exporter jar is unavailable. Kafka will start without JMX exporter instead of failing startup.")
 	}
 
 	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, filepath.Join(jmxDir, "jmx_config.yml")); err != nil {
@@ -980,18 +1010,18 @@ func (d *Deployer) generateKRaftConfigs(ctx context.Context, t *api.Task, instal
 
 	if customTemplate := customPropertiesTemplateForTask(t); strings.TrimSpace(customTemplate) != "" {
 		content := mergeCustomKafkaProperties(customTemplate, map[string]string{
-			"process.roles":                            role,
-			"node.id":                                  nodeId,
-			"broker.id":                                ternaryString(isBroker, nodeId, ""),
-			"controller.listener.names":                "CONTROLLER",
-			"listeners":                                listeners,
-			"advertised.listeners":                     advertisedListeners,
-			"listener.security.protocol.map":           "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
-			"inter.broker.listener.name":               ternaryString(isBroker, "PLAINTEXT", ""),
-			"controller.quorum.voters":                 ternaryString(quorumMode == "static", quorumVoters, ""),
-			"controller.quorum.bootstrap.servers":      ternaryString(quorumMode == "dynamic", quorumBootstrap, ""),
-			"log.dirs":                                 paths.LogDirs,
-			"metadata.log.dir":                         paths.MetadataLogDir,
+			"process.roles":                       role,
+			"node.id":                             nodeId,
+			"broker.id":                           ternaryString(isBroker, nodeId, ""),
+			"controller.listener.names":           "CONTROLLER",
+			"listeners":                           listeners,
+			"advertised.listeners":                advertisedListeners,
+			"listener.security.protocol.map":      "PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT",
+			"inter.broker.listener.name":          ternaryString(isBroker, "PLAINTEXT", ""),
+			"controller.quorum.voters":            ternaryString(quorumMode == "static", quorumVoters, ""),
+			"controller.quorum.bootstrap.servers": ternaryString(quorumMode == "dynamic", quorumBootstrap, ""),
+			"log.dirs":                            paths.LogDirs,
+			"metadata.log.dir":                    paths.MetadataLogDir,
 		})
 		return d.writeStringToSudoFile(ctx, content, configPathForTask(installDir, t))
 	}
@@ -1069,13 +1099,13 @@ func (d *Deployer) generateZooKeeperConfigs(ctx context.Context, t *api.Task, in
 	}
 	if customTemplate != "" {
 		content := mergeCustomKafkaProperties(customTemplate, map[string]string{
-			"broker.id":                                nodeID,
-			"listeners":                                fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort),
-			"advertised.listeners":                     fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort),
-			"listener.security.protocol.map":           "PLAINTEXT:PLAINTEXT",
-			"inter.broker.listener.name":               "PLAINTEXT",
-			"zookeeper.connect":                        zookeeperConnect,
-			"log.dirs":                                 paths.LogDirs,
+			"broker.id":                      nodeID,
+			"listeners":                      fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort),
+			"advertised.listeners":           fmt.Sprintf("PLAINTEXT://%s:%s", hostname, listenerPort),
+			"listener.security.protocol.map": "PLAINTEXT:PLAINTEXT",
+			"inter.broker.listener.name":     "PLAINTEXT",
+			"zookeeper.connect":              zookeeperConnect,
+			"log.dirs":                       paths.LogDirs,
 		})
 		return d.writeStringToSudoFile(ctx, content, configPathForTask(installDir, t))
 	}

@@ -9,6 +9,7 @@ import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +26,9 @@ public class DeploymentService {
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+
+    @Value("${tantor.artifact-repo.jmx-exporter-artifact-id:}")
+    private String jmxExporterArtifactId;
 
     @Transactional
     public UUID deployKafkaToHost(UUID clusterId, String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
@@ -55,10 +59,11 @@ public class DeploymentService {
             applyDefaultKafkaPaths(params);
             applyActiveParcelParams(params, hostId, version);
 
-            // Inject JMX Exporter artifact URL so Agent can pull it securely
-            if (artifactUrl != null && artifactUrl.contains("/api/v1/artifacts/")) {
+            // Inject a JMX exporter artifact only when an actual artifact ID is configured.
+            // The agent falls back to Maven Central or starts Kafka without JMX if unavailable.
+            if (hasText(jmxExporterArtifactId) && artifactUrl != null && artifactUrl.contains("/api/v1/artifacts/")) {
                 String baseUrl = artifactUrl.substring(0, artifactUrl.indexOf("/api/v1/artifacts/") + 18);
-                String jmxUrl = baseUrl + "4d646b0b-5b61-4b3b-9ed4-8f8910516677/download";
+                String jmxUrl = baseUrl + jmxExporterArtifactId.trim() + "/download";
                 params.put("jmx_artifact_url", jmxUrl);
             }
 
@@ -88,6 +93,10 @@ public class DeploymentService {
         } catch (Exception ignored) {
             return ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
         }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     @Transactional

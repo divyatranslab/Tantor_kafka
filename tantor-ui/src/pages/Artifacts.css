@@ -655,6 +655,20 @@
   color: var(--text-secondary);
 }
 
+.form-hint,
+.form-error {
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.form-hint {
+  color: var(--text-secondary);
+}
+
+.form-error {
+  color: var(--color-danger);
+}
+
 .form-control {
   padding: 8px 12px;
   background: var(--bg-surface);

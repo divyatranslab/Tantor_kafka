@@ -46,6 +46,7 @@ tantor:
       expiration-ms: 86400000 # 24 hours
   artifact-repo:
     url: ${TANTOR_REPO_URL:http://localhost:8081}
+    jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
   hosts:
     heartbeat-timeout-seconds: ${TANTOR_HOST_HEARTBEAT_TIMEOUT_SECONDS:90}
   rolling-restart:

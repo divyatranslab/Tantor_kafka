@@ -13,6 +13,7 @@ public enum ServiceType {
     SCHEMA_REGISTRY("schema-registry"),
     KSQLDB("ksqldb"),
     CRUISE_CONTROL("cruise-control"),
+    JMX_EXPORTER("jmx-exporter"),
     PROMETHEUS("prometheus"),
     GRAFANA("grafana");
 
