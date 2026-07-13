@@ -13,9 +13,11 @@ import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.domain.JobStatus;
 import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -58,6 +60,7 @@ public class ClusterController {
     private final JobService jobService;
     private final io.translab.tantor.server.audit.AuditService auditService;
     private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
@@ -471,7 +474,12 @@ public class ClusterController {
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/deploy")
-    public ResponseEntity<Map<String, String>> deployCluster(@RequestBody DeployClusterRequest request) {
+    public ResponseEntity<Map<String, String>> deployCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody DeployClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CREATE_CLUSTER)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         ResponseEntity<Map<String, String>> validationError = validateDeployRequest(request);
         if (validationError != null) {
             return validationError;
@@ -605,7 +613,13 @@ public class ClusterController {
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/nodes")
-    public ResponseEntity<Map<String, String>> addNodesToCluster(@PathVariable UUID id, @RequestBody DeployClusterRequest request) {
+    public ResponseEntity<Map<String, String>> addNodesToCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID id,
+            @RequestBody DeployClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ADD_NODE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -753,7 +767,12 @@ public class ClusterController {
     }
 
     @PostMapping("/external")
-    public ResponseEntity<?> addExternalCluster(@RequestBody ExternalClusterRequest request) {
+    public ResponseEntity<?> addExternalCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody ExternalClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CREATE_CLUSTER)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         io.translab.tantor.server.service.ExternalClusterService.ExternalDiscoveryReport report =
                 new io.translab.tantor.server.service.ExternalClusterService.ExternalDiscoveryReport();
         report.setName(request.getName());
@@ -774,7 +793,12 @@ public class ClusterController {
 
     @org.springframework.transaction.annotation.Transactional
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteCluster(@PathVariable java.util.UUID id) {
+    public ResponseEntity<Void> deleteCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable java.util.UUID id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
         if (extClusterOpt.isPresent()) {
             clusterRepository.findById(id)
@@ -810,7 +834,12 @@ public class ClusterController {
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/force-delete/{id}")
-    public ResponseEntity<Void> forceDeleteCluster(@PathVariable java.util.UUID id) {
+    public ResponseEntity<Void> forceDeleteCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable java.util.UUID id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
         if (extClusterOpt.isPresent()) {
             clusterRepository.findById(id)

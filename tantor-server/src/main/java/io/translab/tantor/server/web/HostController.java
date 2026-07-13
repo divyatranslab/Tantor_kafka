@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +56,11 @@ public class HostController {
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
-        List<Map<String, Object>> hosts = hostRepository.findAll().stream()
+        Map<String, Map<String, Object>> hostsByIdentity = new LinkedHashMap<>();
+        hostRepository.findAll().stream()
                 .map(this::hostSummary)
-                .toList();
-        return ResponseEntity.ok(hosts);
+                .forEach(host -> hostsByIdentity.merge(hostIdentity(host), host, this::preferredHostSummary));
+        return ResponseEntity.ok(List.copyOf(hostsByIdentity.values()));
     }
 
     @PostMapping("/{id}/check-prerequisites")
@@ -293,6 +295,7 @@ public class HostController {
 
     private Map<String, Object> hostSummary(Host host) {
         String effectiveStatus = hostStatusService.effectiveStatus(host);
+        String agentConnectivityStatus = hostStatusService.agentConnectivityStatus(host);
         host.setStatus(effectiveStatus);
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("id", host.getId());
@@ -302,7 +305,7 @@ public class HostController {
         summary.put("osDetails", host.getOsDetails());
         summary.put("agentVersion", host.getAgentVersion());
         summary.put("agentPath", host.getAgentPath());
-        summary.put("agentStatus", effectiveStatus);
+        summary.put("agentStatus", agentConnectivityStatus);
         boolean discoveryAgent = hostStatusService.isDiscoveryAgent(host);
         summary.put("agentType", discoveryAgent ? "KAFKA_DISCOVERY" : "HOST");
         summary.put("deployable", !discoveryAgent);
@@ -381,5 +384,64 @@ public class HostController {
             summary.put("kafkaClusterId", cluster.getKafkaClusterId());
         });
         return summary;
+    }
+
+    private String hostIdentity(Map<String, Object> host) {
+        String ipAddresses = String.valueOf(host.getOrDefault("ipAddresses", ""));
+        String ip = primaryIp(ipAddresses);
+        if (!ip.isBlank()) {
+            return "ip:" + ip;
+        }
+        String hostname = String.valueOf(host.getOrDefault("hostname", "")).trim().toLowerCase();
+        if (!hostname.isBlank() && !"null".equals(hostname)) {
+            return "host:" + hostname;
+        }
+        return "id:" + String.valueOf(host.get("id"));
+    }
+
+    private Map<String, Object> preferredHostSummary(Map<String, Object> existing, Map<String, Object> candidate) {
+        boolean candidateOnline = "ONLINE".equalsIgnoreCase(String.valueOf(candidate.get("agentStatus")));
+        boolean existingOnline = "ONLINE".equalsIgnoreCase(String.valueOf(existing.get("agentStatus")));
+        if (candidateOnline != existingOnline) {
+            return candidateOnline ? candidate : existing;
+        }
+        OffsetDateTime candidateHeartbeat = parseHeartbeat(candidate.get("lastHeartbeat"));
+        OffsetDateTime existingHeartbeat = parseHeartbeat(existing.get("lastHeartbeat"));
+        if (candidateHeartbeat != null && (existingHeartbeat == null || candidateHeartbeat.isAfter(existingHeartbeat))) {
+            return candidate;
+        }
+        return existing;
+    }
+
+    private OffsetDateTime parseHeartbeat(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String primaryIp(String raw) {
+        if (raw == null || raw.isBlank() || "null".equalsIgnoreCase(raw)) {
+            return "";
+        }
+        String cleaned = raw.replace("[", "").replace("]", "").replace("\"", "");
+        String[] parts = cleaned.split(",");
+        for (String part : parts) {
+            String ip = part.trim();
+            if (ip.startsWith("192.168.")) {
+                return ip;
+            }
+        }
+        for (String part : parts) {
+            String ip = part.trim();
+            if (!ip.isBlank() && !ip.startsWith("127.") && !ip.startsWith("172.")) {
+                return ip;
+            }
+        }
+        return parts.length == 0 ? "" : parts[0].trim();
     }
 }

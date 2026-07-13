@@ -45,6 +45,18 @@ public class HostStatusService {
         return "ONLINE".equalsIgnoreCase(effectiveStatus(host));
     }
 
+    public String agentConnectivityStatus(Host host) {
+        if (host == null || Boolean.TRUE.equals(host.getRemoved())) {
+            return "OFFLINE";
+        }
+        OffsetDateTime lastHeartbeat = host.getLastHeartbeat();
+        long timeoutSeconds = Math.max(heartbeatTimeoutSeconds, 1);
+        if (lastHeartbeat != null && lastHeartbeat.isAfter(OffsetDateTime.now().minusSeconds(timeoutSeconds))) {
+            return "ONLINE";
+        }
+        return "OFFLINE";
+    }
+
     public boolean isDiscoveryAgent(Host host) {
         if (host == null) {
             return false;

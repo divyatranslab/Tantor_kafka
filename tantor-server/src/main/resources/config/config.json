@@ -1,0 +1,7 @@
+{
+  "CREATE_CLUSTER": ["admin"],
+  "DELETE_CLUSTER": ["admin"],
+  "ROLLING_RESTART": ["admin"],
+  "ADD_NODE": ["admin", "monitor"],
+  "CONFIGURATION_CHANGE": ["admin"]
+}

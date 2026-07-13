@@ -5,8 +5,10 @@ import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.*;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,11 +25,16 @@ public class ClusterActionsController {
     private final JobService jobService;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @PostMapping("/rolling-restart")
     public ResponseEntity<Map<String, String>> startRollingRestart(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestBody(required = false) RollingRestartRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     Job job = new Job();

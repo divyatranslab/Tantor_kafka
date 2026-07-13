@@ -3,7 +3,9 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.service.ExternalClusterService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +18,7 @@ import java.util.UUID;
 public class ExternalClusterController {
 
     private final ExternalClusterService externalClusterService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @GetMapping("/api/v1/ui/external-clusters")
     public ResponseEntity<List<Map<String, Object>>> listExternalClusters() {
@@ -38,7 +41,12 @@ public class ExternalClusterController {
     }
 
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/register")
-    public ResponseEntity<Map<String, Object>> registerBootstrap(@RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
+    public ResponseEntity<Map<String, Object>> registerBootstrap(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CREATE_CLUSTER)) {
+            return unauthorized();
+        }
         ExternalCluster cluster = externalClusterService.registerBootstrapCluster(request);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName()));
     }
@@ -53,14 +61,29 @@ public class ExternalClusterController {
     }
 
     @PostMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/connect")
-    public ResponseEntity<Map<String, Object>> connectDiscovery(@PathVariable String discoveryKey) {
+    public ResponseEntity<Map<String, Object>> connectDiscovery(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String discoveryKey) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CREATE_CLUSTER)) {
+            return unauthorized();
+        }
         ExternalCluster cluster = externalClusterService.connectDiscovery(discoveryKey);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName(), "status", "connected"));
     }
 
     @PostMapping("/api/v1/ui/external-clusters/{clusterId}/restart")
-    public ResponseEntity<Map<String, Object>> restartExternalCluster(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<String, Object>> restartExternalCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
+            return unauthorized();
+        }
         return ResponseEntity.ok(externalClusterService.queueRestart(clusterId));
+    }
+
+    private ResponseEntity<Map<String, Object>> unauthorized() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.<String, Object>of("error", "Unauthorized"));
     }
 
     @GetMapping("/api/v1/ui/external-clusters/tasks/{taskId}")
