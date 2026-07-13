@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Cpu, Database, Gauge, HardDrive, RefreshCw, Server, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './Monitoring.css';
 
@@ -72,19 +72,36 @@ const hasValue = (value?: number | null) => value !== undefined && value !== nul
 
 const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
-function MetricCard({ icon: Icon, label, value, tone = 'neutral' }: {
-  icon: typeof Activity;
+const boundedPercent = (value?: number | null) => {
+  if (!hasValue(value)) return 0;
+  return Math.max(0, Math.min(100, Number(value)));
+};
+
+function ResourceBar({ label, value, detail, tone = 'blue' }: {
   label: string;
-  value: string;
-  tone?: 'neutral' | 'good' | 'warn' | 'bad';
+  value?: number | null;
+  detail?: string;
+  tone?: 'blue' | 'green' | 'purple';
 }) {
+  const percent = boundedPercent(value);
   return (
-    <div className={`monitoring-metric-card ${tone}`}>
-      <div className="monitoring-metric-icon"><Icon size={18} /></div>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
+    <div className="monitoring-resource-row">
+      <div className="monitoring-resource-row-header">
+        <span>{label}{detail ? ` (${detail})` : ''}</span>
+        <strong>{hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}</strong>
       </div>
+      <div className="monitoring-resource-track">
+        <div className={`monitoring-resource-fill ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function BrokerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="monitoring-broker-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -221,10 +238,9 @@ export function Monitoring() {
 
   const kafkaExporterReady = Boolean(overview?.kafkaExporterUp && overview.kafkaExporterUp > 0);
   const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
-  const hasKafkaSeries = history.some(sample =>
-    hasValue(sample.brokers) || hasValue(sample.topics) || hasValue(sample.partitions) || hasValue(sample.lag) || hasValue(sample.messagesIn));
-  const hasJmxSeries = history.some(sample =>
-    hasValue(sample.bytesIn) || hasValue(sample.bytesOut) || hasValue(sample.heap) || hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
+  const hasTrafficSeries = history.some(sample => hasValue(sample.messagesIn) || hasValue(sample.lag));
+  const hasCpuSeries = history.some(sample => hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
+  const hasHeapSeries = history.some(sample => hasValue(sample.heap));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -295,87 +311,106 @@ export function Monitoring() {
       )}
 
       {type && selectedCluster && (
-        <div className="monitoring-summary-band">
-          <div>
-            <span className="monitoring-eyebrow">{selectedCluster.originType}</span>
-            <h2>{selectedCluster.name}</h2>
-            <p>Exporter target: {overview?.kafkaExporterTarget || selectedCluster.kafkaExporterTarget || 'Not configured'}</p>
+        <div className="monitoring-node-card">
+          <div className="monitoring-node-header">
+            <div className="monitoring-node-title">
+              <Server size={22} />
+              <div>
+                <h2>{selectedCluster.name}</h2>
+                <p>Exporter target: {overview?.kafkaExporterTarget || selectedCluster.kafkaExporterTarget || 'Not configured'}</p>
+              </div>
+              <span className="monitoring-node-pill">{selectedCluster.originType}</span>
+            </div>
+            <div className="monitoring-status-pills">
+              <span className={kafkaExporterReady ? 'pill good' : 'pill warn'}>
+                kafka_exporter {kafkaExporterReady ? 'up' : 'required'}
+              </span>
+              <span className={jmxReady ? 'pill good' : 'pill warn'}>
+                JMX {jmxReady ? 'up' : 'required'}
+              </span>
+            </div>
           </div>
-          <div className="monitoring-status-pills">
-            <span className={kafkaExporterReady ? 'pill good' : 'pill warn'}>
-              kafka_exporter {kafkaExporterReady ? 'up' : 'required'}
-            </span>
-            <span className={jmxReady ? 'pill good' : 'pill warn'}>
-              JMX {jmxReady ? 'up' : 'required'}
-            </span>
+
+          <div className="monitoring-node-body">
+            <div className="monitoring-section-title">
+              <Activity size={16} />
+              <span>Real-time performance</span>
+            </div>
+
+            <div className="monitoring-performance-grid">
+              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+                {hasCpuSeries ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
+                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                      <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="brokerCpu" name="Broker CPU %" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                      <Line type="monotone" dataKey="systemCpu" name="System CPU %" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </GraphPanel>
+
+              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+                {hasHeapSeries ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
+                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                      <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </GraphPanel>
+
+              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText="kafka_exporter required">
+                {hasTrafficSeries ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
+                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey="messagesIn" name="Messages/sec" stroke="#ef4444" fill="#fee2e2" strokeWidth={2} connectNulls />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </GraphPanel>
+            </div>
+
+            <div className="monitoring-detail-grid">
+              <section className="monitoring-resource-panel">
+                <div className="monitoring-section-title">
+                  <HardDrive size={16} />
+                  <span>System resources</span>
+                </div>
+                <ResourceBar label="Broker CPU" value={overview?.brokerCpuPercent} tone="blue" />
+                <ResourceBar label="System CPU" value={overview?.systemCpuPercent} tone="green" />
+                <ResourceBar label="JVM Heap" value={overview?.jvmHeapUsedPercent} tone="purple" />
+              </section>
+
+              <section className="monitoring-broker-panel">
+                <div className="monitoring-section-title">
+                  <Database size={16} />
+                  <span>Kafka broker</span>
+                </div>
+                <div className="monitoring-broker-grid">
+                  <BrokerStat label="Msg in/sec" value={formatNumber(overview?.messagesInPerSecond, 2)} />
+                  <BrokerStat label="Bytes in/sec" value={formatBytes(overview?.bytesInPerSecond)} />
+                  <BrokerStat label="Bytes out/sec" value={formatBytes(overview?.bytesOutPerSecond)} />
+                  <BrokerStat label="Partitions" value={formatNumber(overview?.partitionCount)} />
+                  <BrokerStat label="Under-replicated" value={formatNumber(overview?.underReplicatedPartitions)} />
+                  <BrokerStat label="Consumer lag" value={formatNumber(overview?.consumerLag)} />
+                  <BrokerStat label="Brokers" value={formatNumber(overview?.brokerCount)} />
+                  <BrokerStat label="Topics" value={formatNumber(overview?.topicCount)} />
+                </div>
+              </section>
+            </div>
           </div>
-        </div>
-      )}
-
-      {type && selectedCluster && (
-        <div className="monitoring-metrics-grid">
-          <MetricCard icon={Server} label="Brokers" value={formatNumber(overview?.brokerCount)} tone={(overview?.brokerCount || 0) > 0 ? 'good' : 'warn'} />
-          <MetricCard icon={Database} label="Topics" value={formatNumber(overview?.topicCount)} />
-          <MetricCard icon={Database} label="Partitions" value={formatNumber(overview?.partitionCount)} />
-          <MetricCard icon={ShieldCheck} label="Under Replicated" value={formatNumber(overview?.underReplicatedPartitions)} tone={(overview?.underReplicatedPartitions || 0) > 0 ? 'bad' : 'good'} />
-          <MetricCard icon={Gauge} label="Consumer Lag" value={formatNumber(overview?.consumerLag)} tone={(overview?.consumerLag || 0) > 0 ? 'warn' : 'neutral'} />
-          <MetricCard icon={Activity} label="Messages/sec" value={formatNumber(overview?.messagesInPerSecond, 1)} />
-          <MetricCard icon={Activity} label="Bytes In/sec" value={formatBytes(overview?.bytesInPerSecond)} />
-          <MetricCard icon={Activity} label="Bytes Out/sec" value={formatBytes(overview?.bytesOutPerSecond)} />
-          <MetricCard icon={Cpu} label="Broker CPU" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} tone={overview?.brokerCpuPercent == null ? 'neutral' : overview.brokerCpuPercent > 80 ? 'warn' : 'good'} />
-          <MetricCard icon={Cpu} label="System CPU" value={overview?.systemCpuPercent == null ? '-' : `${formatNumber(overview.systemCpuPercent, 1)}%`} tone={overview?.systemCpuPercent == null ? 'neutral' : overview.systemCpuPercent > 80 ? 'warn' : 'good'} />
-          <MetricCard icon={HardDrive} label="JVM Heap" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} tone={overview?.jvmHeapUsedPercent == null ? 'neutral' : overview.jvmHeapUsedPercent > 85 ? 'warn' : 'good'} />
-        </div>
-      )}
-
-      {type && selectedCluster && (
-        <div className="monitoring-graphs-grid">
-          <GraphPanel title="Traffic" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText="kafka_exporter required">
-            {hasKafkaSeries ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="messagesIn" name="Messages/sec" stroke="#2563eb" fill="#dbeafe" strokeWidth={2} connectNulls />
-                  <Area type="monotone" dataKey="lag" name="Consumer lag" stroke="#d97706" fill="#fef3c7" strokeWidth={2} connectNulls />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : null}
-          </GraphPanel>
-
-          <GraphPanel title="Cluster Objects" value={formatNumber(overview?.partitionCount)} source="kafka_exporter" emptyText="kafka_exporter required">
-            {hasKafkaSeries ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="topics" name="Topics" stroke="#0891b2" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="partitions" name="Partitions" stroke="#4f46e5" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="underReplicated" name="Under replicated" stroke="#dc2626" strokeWidth={2} dot={false} connectNulls />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : null}
-          </GraphPanel>
-
-          <GraphPanel title="Broker Runtime" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}% CPU`} source="JMX exporter" emptyText="JMX exporter required">
-            {hasJmxSeries ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="brokerCpu" name="Broker CPU %" stroke="#ea580c" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="systemCpu" name="System CPU %" stroke="#9333ea" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : null}
-          </GraphPanel>
         </div>
       )}
 
