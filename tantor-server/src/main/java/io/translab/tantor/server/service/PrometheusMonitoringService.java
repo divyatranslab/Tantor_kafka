@@ -206,8 +206,18 @@ public class PrometheusMonitoringService {
         overview.setUnderReplicatedPartitions(firstNumber("sum(kafka_topic_partition_under_replicated_partition{" + selector + "})"));
         overview.setConsumerLag(firstNumber("sum(kafka_consumergroup_lag{" + selector + "})"));
         overview.setMessagesInPerSecond(firstNumber("sum(rate(kafka_topic_partition_current_offset{" + selector + "}[5m]))"));
-        overview.setBytesInPerSecond(firstNumber("sum(rate(kafka_server_brokertopicmetrics_bytesinpersec_count{" + selector + "}[5m]))"));
-        overview.setBytesOutPerSecond(firstNumber("sum(rate(kafka_server_brokertopicmetrics_bytesoutpersec_count{" + selector + "}[5m]))"));
+        overview.setBytesInPerSecond(firstPresentNumber(
+                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_OneMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_FiveMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_MeanRate{" + selector + "})",
+                "sum(rate(kafka_server_BrokerTopicMetrics_BytesInPerSec_Count{" + selector + "}[5m]))"
+        ));
+        overview.setBytesOutPerSecond(firstPresentNumber(
+                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_OneMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_FiveMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_MeanRate{" + selector + "})",
+                "sum(rate(kafka_server_BrokerTopicMetrics_BytesOutPerSec_Count{" + selector + "}[5m]))"
+        ));
         overview.setJvmHeapUsedPercent(firstNumber("(sum(jvm_memory_bytes_used{" + selector + ",area=\"heap\"}) / sum(jvm_memory_bytes_max{" + selector + ",area=\"heap\"})) * 100"));
         overview.setBrokerCpuPercent(firstPresentNumber(
                 "clamp_min(clamp_max(max(jvm_OperatingSystem_ProcessCpuLoad{" + selector + "}) * 100, 100), 0)",

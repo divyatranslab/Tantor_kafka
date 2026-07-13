@@ -1596,6 +1596,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	if serviceName == "zookeeper" {
 		serviceTemplate = ZooKeeperSystemdTemplate
 	}
+	d.exec.RunSudo(ctx, "rm", "-rf", filepath.Join("/etc/systemd/system", serviceName+".service.d"))
 	return d.writeTemplateToSudoFile(ctx, serviceTemplate, props, filepath.Join("/etc/systemd/system", serviceName+".service"))
 }
 

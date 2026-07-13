@@ -12,7 +12,6 @@ User={{.User}}
 Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
-{{if ne .JmxPort ""}}Environment="JMX_PORT={{.JmxPort}}"{{end}}
 {{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}={{.JmxPort}}:{{.JmxConfigPath}}"{{end}}
 {{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
