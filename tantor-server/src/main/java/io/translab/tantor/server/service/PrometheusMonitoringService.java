@@ -188,6 +188,14 @@ public class PrometheusMonitoringService {
         overview.setBytesInPerSecond(firstNumber("sum(rate(kafka_server_brokertopicmetrics_bytesinpersec_count{" + selector + "}[5m]))"));
         overview.setBytesOutPerSecond(firstNumber("sum(rate(kafka_server_brokertopicmetrics_bytesoutpersec_count{" + selector + "}[5m]))"));
         overview.setJvmHeapUsedPercent(firstNumber("(sum(jvm_memory_bytes_used{" + selector + ",area=\"heap\"}) / sum(jvm_memory_bytes_max{" + selector + ",area=\"heap\"})) * 100"));
+        overview.setBrokerCpuPercent(firstPresentNumber(
+                "clamp_min(clamp_max(max(jvm_OperatingSystem_ProcessCpuLoad{" + selector + "}) * 100, 100), 0)",
+                "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + selector + "}[5m])) * 100"
+        ));
+        overview.setSystemCpuPercent(firstPresentNumber(
+                "clamp_min(clamp_max(max(jvm_OperatingSystem_SystemCpuLoad{" + selector + "}) * 100, 100), 0)",
+                "clamp_min(clamp_max(max(jvm_OperatingSystem_CpuLoad{" + selector + "}) * 100, 100), 0)"
+        ));
 
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
@@ -431,6 +439,16 @@ public class PrometheusMonitoringService {
         }
     }
 
+    private Double firstPresentNumber(String... promqls) {
+        for (String promql : promqls) {
+            Double value = firstNumber(promql);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private JsonNode prometheusGet(String path, Map<String, String> params) {
         URI uri = prometheusUri(path, params);
         if (!isGrafanaProxyMode()) {
@@ -538,6 +556,8 @@ public class PrometheusMonitoringService {
         private Double bytesInPerSecond;
         private Double bytesOutPerSecond;
         private Double jvmHeapUsedPercent;
+        private Double brokerCpuPercent;
+        private Double systemCpuPercent;
         private List<String> warnings;
     }
 

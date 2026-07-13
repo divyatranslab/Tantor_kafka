@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, Gauge, HardDrive, RefreshCw, Server, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, Cpu, Database, Gauge, HardDrive, RefreshCw, Server, ShieldCheck } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './Monitoring.css';
 
@@ -31,6 +31,8 @@ interface MonitoringOverview {
   bytesInPerSecond?: number | null;
   bytesOutPerSecond?: number | null;
   jvmHeapUsedPercent?: number | null;
+  brokerCpuPercent?: number | null;
+  systemCpuPercent?: number | null;
   warnings?: string[];
 }
 
@@ -45,6 +47,8 @@ interface MonitoringSample {
   bytesIn: number | null;
   bytesOut: number | null;
   heap: number | null;
+  brokerCpu: number | null;
+  systemCpu: number | null;
 }
 
 const formatNumber = (value?: number | null, digits = 0) => {
@@ -193,6 +197,8 @@ export function Monitoring() {
         bytesIn: chartNumber(overview.bytesInPerSecond),
         bytesOut: chartNumber(overview.bytesOutPerSecond),
         heap: chartNumber(overview.jvmHeapUsedPercent),
+        brokerCpu: chartNumber(overview.brokerCpuPercent),
+        systemCpu: chartNumber(overview.systemCpuPercent),
       };
       return [...current, next].slice(-24);
     });
@@ -217,7 +223,8 @@ export function Monitoring() {
   const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
   const hasKafkaSeries = history.some(sample =>
     hasValue(sample.brokers) || hasValue(sample.topics) || hasValue(sample.partitions) || hasValue(sample.lag) || hasValue(sample.messagesIn));
-  const hasJmxSeries = history.some(sample => hasValue(sample.bytesIn) || hasValue(sample.bytesOut) || hasValue(sample.heap));
+  const hasJmxSeries = history.some(sample =>
+    hasValue(sample.bytesIn) || hasValue(sample.bytesOut) || hasValue(sample.heap) || hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -315,7 +322,9 @@ export function Monitoring() {
           <MetricCard icon={Activity} label="Messages/sec" value={formatNumber(overview?.messagesInPerSecond, 1)} />
           <MetricCard icon={Activity} label="Bytes In/sec" value={formatBytes(overview?.bytesInPerSecond)} />
           <MetricCard icon={Activity} label="Bytes Out/sec" value={formatBytes(overview?.bytesOutPerSecond)} />
-          <MetricCard icon={HardDrive} label="JVM Heap" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} tone={overview?.jvmHeapUsedPercent == null ? 'neutral' : 'good'} />
+          <MetricCard icon={Cpu} label="Broker CPU" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} tone={overview?.brokerCpuPercent == null ? 'neutral' : overview.brokerCpuPercent > 80 ? 'warn' : 'good'} />
+          <MetricCard icon={Cpu} label="System CPU" value={overview?.systemCpuPercent == null ? '-' : `${formatNumber(overview.systemCpuPercent, 1)}%`} tone={overview?.systemCpuPercent == null ? 'neutral' : overview.systemCpuPercent > 80 ? 'warn' : 'good'} />
+          <MetricCard icon={HardDrive} label="JVM Heap" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} tone={overview?.jvmHeapUsedPercent == null ? 'neutral' : overview.jvmHeapUsedPercent > 85 ? 'warn' : 'good'} />
         </div>
       )}
 
@@ -352,7 +361,7 @@ export function Monitoring() {
             ) : null}
           </GraphPanel>
 
-          <GraphPanel title="Broker Runtime" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+          <GraphPanel title="Broker Runtime" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}% CPU`} source="JMX exporter" emptyText="JMX exporter required">
             {hasJmxSeries ? (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={history} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
@@ -360,9 +369,9 @@ export function Monitoring() {
                   <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip />
+                  <Line type="monotone" dataKey="brokerCpu" name="Broker CPU %" stroke="#ea580c" strokeWidth={2} dot={false} connectNulls />
+                  <Line type="monotone" dataKey="systemCpu" name="System CPU %" stroke="#9333ea" strokeWidth={2} dot={false} connectNulls />
                   <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#16a34a" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="bytesIn" name="Bytes in/sec" stroke="#0284c7" strokeWidth={2} dot={false} connectNulls />
-                  <Line type="monotone" dataKey="bytesOut" name="Bytes out/sec" stroke="#7c3aed" strokeWidth={2} dot={false} connectNulls />
                 </LineChart>
               </ResponsiveContainer>
             ) : null}
