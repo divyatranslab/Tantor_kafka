@@ -1549,6 +1549,9 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 
 	jmxPort := t.Parameters["jmx_port"]
+	if jmxPort == "" {
+		jmxPort = "7071"
+	}
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
 		installPaths := resolveKafkaInstallPaths(t)

@@ -14,7 +14,9 @@ import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -24,7 +26,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -46,7 +53,7 @@ import java.security.cert.X509Certificate;
 @Slf4j
 public class PrometheusMonitoringService {
 
-    private static final int DEFAULT_JMX_PORT = 9404;
+    private static final int DEFAULT_JMX_PORT = 7071;
     private static final int DEFAULT_NODE_EXPORTER_PORT = 9100;
 
     private final ClusterRepository clusterRepository;
@@ -82,7 +89,7 @@ public class PrometheusMonitoringService {
     @Value("${tantor.monitoring.kafka-exporter-port-base:9308}")
     private int kafkaExporterPortBase;
 
-    @Value("${tantor.monitoring.jmx-exporter-port:9404}")
+    @Value("${tantor.monitoring.jmx-exporter-port:7071}")
     private int defaultJmxExporterPort;
 
     @PostConstruct
@@ -115,6 +122,20 @@ public class PrometheusMonitoringService {
             log.warn("Grafana TLS validation is disabled for monitoring proxy requests. Use only for test/self-signed environments.");
         } catch (Exception e) {
             log.warn("Could not disable Grafana TLS validation", e);
+        }
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void ensureKafkaExportersOnStartup() {
+        try {
+            for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
+                String status = cluster.getStatus() == null ? "" : cluster.getStatus().trim().toUpperCase(Locale.ROOT);
+                if ("SUCCESS".equals(status) || "RUNNING".equals(status)) {
+                    ensureKafkaExporter(cluster);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not reconcile kafka_exporter services on startup", e);
         }
     }
 
@@ -210,6 +231,45 @@ public class PrometheusMonitoringService {
     public ExporterPlan exporterPlan(UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
+        return buildExporterPlan(cluster);
+    }
+
+    @Transactional(readOnly = true)
+    public void ensureKafkaExporter(UUID clusterId) {
+        clusterRepository.findById(clusterId).ifPresent(this::ensureKafkaExporter);
+    }
+
+    public void ensureKafkaExporter(Cluster cluster) {
+        if (cluster == null || isExternal(cluster) || !Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
+            return;
+        }
+        if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
+            log.warn("Skipping kafka_exporter setup for cluster {} because bootstrap servers are empty", cluster.getId());
+            return;
+        }
+        Path exporterBinary = Path.of("/usr/local/bin/kafka_exporter");
+        if (!Files.isExecutable(exporterBinary)) {
+            log.warn("Skipping kafka_exporter setup for cluster {} because {} is missing or not executable",
+                    cluster.getId(), exporterBinary);
+            return;
+        }
+
+        ExporterPlan plan = buildExporterPlan(cluster);
+        Path unitPath = Path.of("/etc/systemd/system/" + plan.getServiceName() + ".service");
+        try {
+            Files.createDirectories(unitPath.getParent());
+            Files.writeString(unitPath, plan.getUnit(), StandardCharsets.UTF_8);
+            runSystemCommand("systemctl", "daemon-reload");
+            runSystemCommand("systemctl", "enable", plan.getServiceName());
+            runSystemCommand("systemctl", "restart", plan.getServiceName());
+            log.info("kafka_exporter service {} is running for cluster {}", plan.getServiceName(), cluster.getId());
+        } catch (Exception e) {
+            log.warn("Could not auto-start kafka_exporter for cluster {}. Use /api/v1/monitoring/clusters/{}/exporter-plan if manual setup is needed.",
+                    cluster.getId(), cluster.getId(), e);
+        }
+    }
+
+    private ExporterPlan buildExporterPlan(Cluster cluster) {
         int port = exporterPort(cluster);
         String serviceName = "tantor-kafka-exporter-" + cluster.getId();
         String bootstrap = cluster.getBootstrapServers() == null ? "" : cluster.getBootstrapServers();
@@ -242,6 +302,19 @@ public class PrometheusMonitoringService {
         return plan;
     }
 
+    private void runSystemCommand(String... command) throws IOException, InterruptedException {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        if (!finished) {
+            process.destroyForcibly();
+            throw new IllegalStateException(String.join(" ", command) + " timed out");
+        }
+        if (process.exitValue() != 0) {
+            throw new IllegalStateException(String.join(" ", command) + " failed: " + output);
+        }
+    }
+
     public boolean prometheusHealthy() {
         try {
             JsonNode response = prometheusGet("/api/v1/query", Map.of("query", "up"));
@@ -264,7 +337,7 @@ public class PrometheusMonitoringService {
             }
             String role = service.getRole();
             String nodeId = service.getNodeId() == null ? null : String.valueOf(service.getNodeId());
-            if (Boolean.TRUE.equals(cluster.getJmxEnabled())) {
+            if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isBrokerRole(role)) {
                 int port = service.getJmxExporterPort() != null ? service.getJmxExporterPort() : jmxPort(cluster);
                 targets.add(group(hostIp + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
             }
@@ -335,10 +408,22 @@ public class PrometheusMonitoringService {
                     .anyMatch(node -> node.getJmxExporterPort() != null);
         }
         return cluster.getServices() != null && cluster.getServices().stream()
+                .filter(service -> isBrokerRole(service.getRole()))
                 .map(ClusterServiceAssignment::getHostId)
                 .map(hostRepository::findById)
                 .map(optional -> optional.map(this::hostIp).orElse(null))
                 .anyMatch(ip -> ip != null && !ip.isBlank());
+    }
+
+    private boolean isBrokerRole(String role) {
+        if (role == null) {
+            return false;
+        }
+        String normalized = role.trim().toLowerCase(Locale.ROOT);
+        return "broker".equals(normalized)
+                || "broker_controller".equals(normalized)
+                || "broker+controller".equals(normalized)
+                || "broker_zookeeper".equals(normalized);
     }
 
     private String monitoringWarning(Cluster cluster) {

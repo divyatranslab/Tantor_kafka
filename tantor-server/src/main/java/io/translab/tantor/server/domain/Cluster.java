@@ -82,7 +82,7 @@ public class Cluster {
     private Boolean jmxEnabled = true;
 
     @Column(name = "jmx_exporter_port")
-    private Integer jmxExporterPort = 9404;
+    private Integer jmxExporterPort = 7071;
 
     @Column(name = "node_exporter_enabled")
     private Boolean nodeExporterEnabled = false;

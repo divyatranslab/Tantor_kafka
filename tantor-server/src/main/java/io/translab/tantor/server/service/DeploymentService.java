@@ -51,6 +51,7 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("jmx_port", "7071");
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -148,6 +149,7 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("jmx_port", "7071");
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }

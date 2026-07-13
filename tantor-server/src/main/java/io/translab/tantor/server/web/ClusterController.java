@@ -39,6 +39,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @lombok.extern.slf4j.Slf4j
 public class ClusterController {
+    private static final int DEFAULT_JMX_EXPORTER_PORT = 7071;
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
@@ -489,6 +490,9 @@ public class ClusterController {
         cluster.setEnvironment(request.getEnvironment());
         cluster.setBootstrapServers(bootstrapServers);
         cluster.setOriginType("INTERNAL");
+        cluster.setMonitoringEnabled(true);
+        cluster.setJmxEnabled(true);
+        cluster.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
         cluster.setKafkaClusterId(blankString(deploymentConfig.get("cluster_uuid")));
         cluster.setInstallDirectory(blankString(deploymentConfig.get("kafka_install_dir")));
         cluster.setConfigDirectory(activeKafkaInstallDir(deploymentConfig) + "/config");
@@ -518,6 +522,9 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
+            if (isBrokerRole(sa.getRole())) {
+                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
+            }
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             assignments.add(assign);
         }
@@ -670,6 +677,9 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
+            if (isBrokerRole(sa.getRole())) {
+                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
+            }
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             cluster.getServices().add(assign);
         }

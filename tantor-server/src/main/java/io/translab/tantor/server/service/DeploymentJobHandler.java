@@ -25,6 +25,7 @@ public class DeploymentJobHandler implements JobHandler {
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+    private final PrometheusMonitoringService prometheusMonitoringService;
 
     @Override
     public boolean supports(JobType type) {
@@ -68,6 +69,7 @@ public class DeploymentJobHandler implements JobHandler {
 
         cluster.setStatus("SUCCESS");
         clusterRepository.save(cluster);
+        prometheusMonitoringService.ensureKafkaExporter(cluster.getId());
     }
 
     @Override
