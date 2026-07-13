@@ -20,6 +20,7 @@ public interface ArtifactJpaRepository extends JpaRepository<Artifact, UUID> {
             where a.action = 'UPLOAD'
               and a.serviceType = :serviceType
               and a.version = :version
+              and a.status = 'AVAILABLE'
               and not exists (
                   select d.id from Artifact d
                   where d.rootArtifactId = a.rootArtifactId and d.action = 'DELETE'
@@ -32,6 +33,7 @@ public interface ArtifactJpaRepository extends JpaRepository<Artifact, UUID> {
             select count(a) from Artifact a
             where a.action = 'UPLOAD'
               and a.checksumSha256 = :checksumSha256
+              and a.status = 'AVAILABLE'
               and not exists (
                   select d.id from Artifact d
                   where d.rootArtifactId = a.rootArtifactId and d.action = 'DELETE'
