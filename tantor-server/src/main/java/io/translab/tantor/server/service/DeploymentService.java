@@ -10,10 +10,12 @@ import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -26,6 +28,7 @@ public class DeploymentService {
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+    private final JdbcTemplate jdbcTemplate;
 
     @Value("${tantor.artifact-repo.jmx-exporter-artifact-id:}")
     private String jmxExporterArtifactId;
@@ -59,13 +62,7 @@ public class DeploymentService {
             applyDefaultKafkaPaths(params);
             applyActiveParcelParams(params, hostId, version);
 
-            // Inject a JMX exporter artifact only when an actual artifact ID is configured.
-            // The agent falls back to Maven Central or starts Kafka without JMX if unavailable.
-            if (hasText(jmxExporterArtifactId) && artifactUrl != null && artifactUrl.contains("/api/v1/artifacts/")) {
-                String baseUrl = artifactUrl.substring(0, artifactUrl.indexOf("/api/v1/artifacts/") + 18);
-                String jmxUrl = baseUrl + jmxExporterArtifactId.trim() + "/download";
-                params.put("jmx_artifact_url", jmxUrl);
-            }
+            injectJmxArtifactUrl(params, artifactUrl);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -99,6 +96,41 @@ public class DeploymentService {
         return value != null && !value.isBlank();
     }
 
+    private void injectJmxArtifactUrl(Map<String, Object> params, String artifactUrl) {
+        if (!hasText(artifactUrl) || !artifactUrl.contains("/api/v1/artifacts/")) {
+            return;
+        }
+
+        Optional<String> artifactId = resolveJmxExporterArtifactId();
+        if (artifactId.isEmpty()) {
+            log.info("No available JMX exporter artifact found. Agent will use fallback behavior.");
+            return;
+        }
+
+        String baseUrl = artifactUrl.substring(0, artifactUrl.indexOf("/api/v1/artifacts/") + 18);
+        params.put("jmx_artifact_url", baseUrl + artifactId.get() + "/download");
+    }
+
+    private Optional<String> resolveJmxExporterArtifactId() {
+        if (hasText(jmxExporterArtifactId)) {
+            return Optional.of(jmxExporterArtifactId.trim());
+        }
+
+        try {
+            return jdbcTemplate.query("""
+                    SELECT id::text
+                    FROM kf_artifact
+                    WHERE service_type = 'JMX_EXPORTER'
+                      AND status = 'AVAILABLE'
+                    ORDER BY created_time DESC
+                    LIMIT 1
+                    """, rs -> rs.next() ? Optional.of(rs.getString(1)) : Optional.empty());
+        } catch (Exception e) {
+            log.warn("Could not auto-resolve JMX exporter artifact from kf_artifact", e);
+            return Optional.empty();
+        }
+    }
+
     @Transactional
     public void upgradeKafkaOnHost(UUID clusterId, String hostId, String currentVersion, String targetVersion, String nodeId, String role, String configJsonStr) {
         log.info("Scheduling Kafka upgrade on host {} from {} to {}", hostId, currentVersion, targetVersion);
@@ -126,6 +158,7 @@ public class DeploymentService {
             if (!applyActiveParcelParams(params, hostId, targetVersion)) {
                 throw new IllegalStateException("Kafka " + targetVersion + " is not active on host " + hostId + ".");
             }
+            injectJmxArtifactUrl(params, String.valueOf(params.get("artifact_url")));
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
