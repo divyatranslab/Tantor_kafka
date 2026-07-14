@@ -598,7 +598,7 @@ public class ExternalClusterService {
 
     @Transactional
     public void receiveMetrics(String clusterName, ExternalBrokerMetricsDto metrics) {
-        Optional<ExternalCluster> clusterOpt = externalClusterRepository.findByNameAndStatusNot(clusterName, "DELETED");
+        Optional<ExternalCluster> clusterOpt = findExternalCluster(null, clusterName, metrics.getBootstrap());
         if (clusterOpt.isEmpty()) {
             return;
         }
@@ -1138,7 +1138,7 @@ public class ExternalClusterService {
     }
 
     private String taskKey(String clusterName, String hostname, String bootstrap) {
-        return blankToDefault(clusterName, "") + "|" + blankToDefault(hostname, "") + "|" + blankToDefault(bootstrap, "");
+        return blankToDefault(hostname, "") + "|" + blankToDefault(bootstrap, "");
     }
 
     private String discoveryKey(ExternalDiscoveryReport report) {
