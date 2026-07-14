@@ -1,13 +1,19 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+func init() {
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+}
 
 func main() {
 	configPath := flag.String("config", "discovery.yaml", "Path to configuration YAML")

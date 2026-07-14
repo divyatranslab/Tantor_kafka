@@ -184,9 +184,7 @@ public class AuditService {
     }
 
     public String currentActor() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getName() == null || "anonymousUser".equals(auth.getName())) return "system";
-        return auth.getName();
+        return io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }

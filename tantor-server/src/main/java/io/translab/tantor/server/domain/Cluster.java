@@ -43,10 +43,10 @@ public class Cluster {
     private List<Integer> nodeIds = new ArrayList<>();
 
     @Column(name = "created_by", nullable = false)
-    private String createdBy = "system";
+    private String createdBy;
 
     @Column(name = "updated_by", nullable = false)
-    private String updatedBy = "system";
+    private String updatedBy;
 
     @Column(name = "\"user\"")
     private String user;
@@ -104,8 +104,8 @@ public class Cluster {
         Instant now = Instant.now();
         if (createdAt == null) createdAt = now;
         updatedAt = now;
-        if (createdBy == null || createdBy.isBlank()) createdBy = "system";
-        if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+        if (createdBy == null || createdBy.isBlank()) createdBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
         if (user == null || user.isBlank()) user = createdBy;
         if (nodeIds == null) nodeIds = new ArrayList<>();
     }
@@ -113,7 +113,7 @@ public class Cluster {
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();
-        if (updatedBy == null || updatedBy.isBlank()) updatedBy = "system";
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
         if (user == null || user.isBlank()) user = updatedBy;
     }
 

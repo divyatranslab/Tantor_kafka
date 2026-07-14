@@ -325,7 +325,8 @@ public class ClusterController {
         }
         cluster.setName(name);
         cluster.setEnvironment(environment);
-        cluster.setUpdatedBy("system");
+        String username = roleAuthenticationUtil.extractUsername(authorization);
+        cluster.setUpdatedBy(username);
         clusterRepository.save(cluster);
         auditService.record("CLUSTER_CHANGE", "CLUSTER_DETAILS_UPDATED", "CLUSTER", cluster.getId().toString(),
                 cluster.getId(), "SUCCESS", null, null, null,
@@ -564,11 +565,12 @@ public class ClusterController {
         cluster.setDataDirectory(blankString(deploymentConfig.get("kafka_data_dir")));
         cluster.setLogDirectory(blankString(deploymentConfig.get("kafka_app_log_dir")));
         String clusterRole = clusterRoleForServices(request.getServices());
-        cluster.setUser("system");
+        String username = roleAuthenticationUtil.extractUsername(authorization);
+        cluster.setUser(username);
         cluster.setRole(clusterRole);
         cluster.setConfigPath(configFileForRole(clusterRole, deploymentMode, request.getKafka_version(), activeKafkaInstallDir(deploymentConfig)));
-        cluster.setCreatedBy("system");
-        cluster.setUpdatedBy("system");
+        cluster.setCreatedBy(username);
+        cluster.setUpdatedBy(username);
         cluster.setNodeIds(request.getServices().stream()
                 .map(ServiceAssignmentReq::getNode_id)
                 .filter(java.util.Objects::nonNull)
@@ -755,7 +757,8 @@ public class ClusterController {
             cluster.getServices().add(assign);
         }
         cluster.setStatus("RUNNING");
-        cluster.setUpdatedBy("system");
+        String username = roleAuthenticationUtil.extractUsername(authorization);
+        cluster.setUpdatedBy(username);
         cluster.setNodeIds(allServices.stream()
                 .map(ServiceAssignmentReq::getNode_id)
                 .filter(java.util.Objects::nonNull)
