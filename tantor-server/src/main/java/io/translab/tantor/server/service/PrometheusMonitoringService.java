@@ -166,6 +166,9 @@ public class PrometheusMonitoringService {
                 addInternalTargets(targets, cluster);
             }
         }
+        for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+            addExternalJmxTargets(targets, cluster);
+        }
         return targets;
     }
 
@@ -185,6 +188,20 @@ public class PrometheusMonitoringService {
             summary.setKafkaExporterTarget(exporterTarget(cluster).orElse(null));
             summary.setJmxAvailable(hasJmxTargets(cluster));
             summary.setWarning(monitoringWarning(cluster));
+            result.add(summary);
+        }
+        for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+            if (!normalizedType.isBlank() && !normalizedType.equals("EXTERNAL")) {
+                continue;
+            }
+            MonitoringClusterSummary summary = new MonitoringClusterSummary();
+            summary.setId(cluster.getId());
+            summary.setName(cluster.getName());
+            summary.setOriginType("EXTERNAL");
+            summary.setMonitoringEnabled(true);
+            summary.setKafkaExporterTarget(null);
+            summary.setJmxAvailable(hasJmxTargets(cluster));
+            summary.setWarning(null);
             result.add(summary);
         }
         return result;
@@ -209,8 +226,8 @@ public class PrometheusMonitoringService {
         }
 
         String selector = labelSelector(cluster.getId());
-        overview.setKafkaExporterUp(firstNumber("max(up{job=\"kafka_exporter\"," + selector + "})"));
-        overview.setJmxUp(firstNumber("max(up{job=\"kafka_jmx\"," + selector + "})"));
+        overview.setKafkaExporterUp(firstNumber("max(max_over_time(up{job=\"kafka_exporter\"," + selector + "}[90s]))"));
+        overview.setJmxUp(firstNumber("max(max_over_time(up{job=\"kafka_jmx\"," + selector + "}[90s]))"));
         overview.setBrokerCount(firstNumber("max(kafka_brokers{" + selector + "})"));
         overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + selector + "}))"));
         overview.setPartitionCount(firstNumber("sum(kafka_topic_partitions{" + selector + "})"));
@@ -424,6 +441,19 @@ public class PrometheusMonitoringService {
         }
     }
 
+    private void addExternalJmxTargets(List<SdTargetGroup> targets, ExternalCluster cluster) {
+        for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            if (node.getJmxExporterPort() == null || node.getHost() == null || node.getHost().isBlank()) {
+                continue;
+            }
+            String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
+                    ? "controller"
+                    : "broker";
+            String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
+            targets.add(group(node.getHost() + ":" + node.getJmxExporterPort(), labels(cluster, "kafka_jmx", role, nodeId)));
+        }
+    }
+
     private Optional<String> exporterTarget(Cluster cluster) {
         return exporterHost(cluster).map(host -> host + ":" + exporterPort(cluster));
     }
@@ -479,6 +509,10 @@ public class PrometheusMonitoringService {
                 .anyMatch(ip -> ip != null && !ip.isBlank());
     }
 
+    private boolean hasJmxTargets(ExternalCluster cluster) {
+        return !externalClusterNodeRepository.findByClusterId(cluster.getId()).isEmpty();
+    }
+
     private boolean isBrokerRole(String role) {
         if (role == null) {
             return false;
@@ -516,6 +550,22 @@ public class PrometheusMonitoringService {
         labels.put("cluster", cluster.getName());
         labels.put("cluster_id", cluster.getId().toString());
         labels.put("origin", origin(cluster).toLowerCase(Locale.ROOT));
+        labels.put("env", cluster.getEnvironment() == null || cluster.getEnvironment().isBlank() ? "unknown" : cluster.getEnvironment());
+        if (role != null && !role.isBlank()) {
+            labels.put("role", role);
+        }
+        if (nodeId != null && !nodeId.isBlank()) {
+            labels.put("node_id", nodeId);
+        }
+        return labels;
+    }
+
+    private Map<String, String> labels(ExternalCluster cluster, String job, String role, String nodeId) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        labels.put("job", job);
+        labels.put("cluster", cluster.getName());
+        labels.put("cluster_id", cluster.getId().toString());
+        labels.put("origin", "external");
         labels.put("env", cluster.getEnvironment() == null || cluster.getEnvironment().isBlank() ? "unknown" : cluster.getEnvironment());
         if (role != null && !role.isBlank()) {
             labels.put("role", role);
