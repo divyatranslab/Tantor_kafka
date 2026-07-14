@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './Hosts.css';
 
 export function Hosts() {
+  const { canManage } = usePermissions();
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
@@ -23,6 +25,7 @@ export function Hosts() {
 
   const deleteHost = async (id: string) => {
     setOpenMenuHostId(null);
+    if (!canManage) return;
     if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
@@ -40,6 +43,7 @@ export function Hosts() {
 
   const setHostAvailability = async (host: any, available: boolean) => {
     setOpenMenuHostId(null);
+    if (!canManage) return;
     try {
       const action = available ? 'mark-available' : 'mark-unavailable';
       const res = await fetch(`/api/v1/ui/hosts/${host.id}/${action}`, { method: 'POST' });
@@ -109,10 +113,12 @@ export function Hosts() {
   const allPendingSelected = pendingHosts.length > 0 && selectedCount === pendingHosts.length;
 
   const togglePendingHost = (id: string) => {
+    if (!canManage) return;
     setSelectedPendingIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const toggleAllPendingHosts = () => {
+    if (!canManage) return;
     if (allPendingSelected) {
       setSelectedPendingIds({});
       return;
@@ -121,6 +127,7 @@ export function Hosts() {
   };
 
   const connectSelectedAgents = async () => {
+    if (!canManage) return;
     const selectedIds = pendingHosts.filter(host => selectedPendingIds[host.id]).map(host => host.id);
     if (selectedIds.length === 0) return;
     setConnectingAgents(true);
@@ -148,9 +155,11 @@ export function Hosts() {
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
-          <button className="btn" onClick={() => setShowEnrollModal(true)}>
-            + Agent Connectivity
-          </button>
+          {canManage && (
+            <button className="btn" onClick={() => setShowEnrollModal(true)}>
+              + Agent Connectivity
+            </button>
+          )}
           <button className="btn" onClick={fetchHosts}>
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Sync inventory
@@ -241,7 +250,7 @@ export function Hosts() {
                   <td>
                     {discoveryAgent ? (
                       <span className="discovery-managed-label">Managed from External Clusters</span>
-                    ) : (
+                    ) : canManage ? (
                     <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
                       <button
                         className="btn icon-only"
@@ -262,6 +271,8 @@ export function Hosts() {
                         </div>
                       )}
                     </div>
+                    ) : (
+                      <span className="discovery-managed-label">View only</span>
                     )}
                   </td>
                 </tr>
@@ -271,7 +282,7 @@ export function Hosts() {
         </table>
       </div>
 
-      {showEnrollModal && (
+      {canManage && showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">

@@ -15,6 +15,11 @@ type DecodedToken = KeycloakTokenParsed & {
   preferred_username?: string;
   email?: string;
   sid?: string;
+  role?: string;
+  roles?: string[];
+  realm_access?: { roles?: string[] };
+  resource_access?: Record<string, { roles?: string[] }>;
+  groups?: string[];
 };
 
 type AuthContextValue = {
@@ -35,6 +40,15 @@ const sessionIdFromToken = (token?: DecodedToken) => {
   return token?.sid;
 };
 
+const devDecodedToken = (): DecodedToken => {
+  const role = import.meta.env.VITE_DEV_ROLE || 'admin';
+  return {
+    preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat',
+    role,
+    roles: [role],
+  } as DecodedToken;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const authEnabled = isAuthEnabled();
   const [isInitializing, setIsInitializing] = useState(authEnabled);
@@ -43,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>(
     authEnabled
       ? undefined
-      : { preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat' } as DecodedToken,
+      : devDecodedToken(),
   );
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>();
 
@@ -95,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!authEnabled) {
       setIsInitializing(false);
       setIsAuthenticated(true);
-      setDecodedToken({ preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat' } as DecodedToken);
+      setDecodedToken(devDecodedToken());
       return;
     }
 

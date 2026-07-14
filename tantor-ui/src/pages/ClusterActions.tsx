@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface ClusterInfo {
   id: string;
@@ -23,6 +24,7 @@ interface HostParcel {
 export function ClusterActions() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const { canManage } = usePermissions();
   const [searchParams] = useSearchParams();
   const restartTaskFromUrl = searchParams.get('restartTask');
   const [taskId] = useState<string | null>(restartTaskFromUrl);
@@ -56,6 +58,7 @@ export function ClusterActions() {
   };
 
   const triggerRollingRestart = async () => {
+    if (!canManage) return;
     const nodeCount = cluster?.nodeCount || cluster?.hosts?.length || 0;
     const warning = nodeCount === 1
       ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
@@ -91,6 +94,7 @@ export function ClusterActions() {
   const externalCanRestart = !isExternal || cluster?.managementLevel === 'AGENT_MANAGED';
 
   const enableMonitoring = async () => {
+    if (!canManage) return;
     if (!monitoringHostId || !prometheusUrl.trim() || !grafanaUrl.trim()) {
       alert('Select a host and provide both Prometheus and Grafana artifact URLs.');
       return;
@@ -123,6 +127,7 @@ export function ClusterActions() {
   }, [activeUpgradeVersions, targetVersion]);
 
   const triggerUpgrade = async () => {
+    if (!canManage) return;
     if (!targetVersion) return;
     if (!window.confirm(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`)) return;
 
@@ -178,7 +183,7 @@ export function ClusterActions() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-        {!isExternal && (
+        {canManage && !isExternal && (
         <div className="table-card">
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -230,7 +235,7 @@ export function ClusterActions() {
         </div>
         )}
         
-        {!isExternal && (
+        {canManage && !isExternal && (
           <div className="table-card">
             <div style={{ padding: '1.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
@@ -252,7 +257,7 @@ export function ClusterActions() {
         )}
 
         {/* Rolling Restart Card */}
-        <div className="table-card">
+        {canManage && <div className="table-card">
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
               <div style={{ padding: '0.625rem', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '0.5rem' }}>
@@ -308,7 +313,7 @@ export function ClusterActions() {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
       </div>
     </div>

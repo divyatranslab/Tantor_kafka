@@ -4,6 +4,7 @@ import {
   AlertTriangle, ChevronLeft, ChevronRight, Copy, Database, Download,
   MoreVertical, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './Topics.css';
 
 interface TopicSummary {
@@ -52,6 +53,7 @@ async function apiError(response: Response) {
 export function Topics() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [data, setData] = useState<PaginatedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +103,7 @@ export function Topics() {
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
 
   const toggleAll = () => {
+    if (!canManage) return;
     setSelected(current => {
       const next = new Set(current);
       if (allVisibleSelected) visibleNames.forEach(name => next.delete(name));
@@ -110,6 +113,7 @@ export function Topics() {
   };
 
   const toggleTopic = (name: string) => {
+    if (!canManage) return;
     setSelected(current => {
       const next = new Set(current);
       if (next.has(name)) next.delete(name);
@@ -120,6 +124,7 @@ export function Topics() {
 
   const createTopic = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManage) return;
     if (!id || !newTopic.name.trim()) return;
     setCreating(true);
     setError(null);
@@ -147,6 +152,7 @@ export function Topics() {
   };
 
   const runAction = async () => {
+    if (!canManage) return;
     if (!id || !pendingAction) return;
     setActing(true);
     setError(null);
@@ -212,9 +218,11 @@ export function Topics() {
           <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>
-          <button className="topic-button primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Add a topic
-          </button>
+          {canManage && (
+            <button className="topic-button primary" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add a topic
+            </button>
+          )}
         </div>
       </div>
 
@@ -245,7 +253,7 @@ export function Topics() {
         </label>
       </div>
 
-      {selected.size > 0 && (
+      {canManage && selected.size > 0 && (
         <div className="bulk-actions">
           <strong>{selected.size} selected</strong>
           <button onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}>
@@ -269,20 +277,20 @@ export function Topics() {
         <table className="topics-table">
           <thead>
             <tr>
-              <th className="check-column"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} /></th>
+              {canManage && <th className="check-column"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} /></th>}
               <th>Topic name</th>
               <th>Partitions</th>
               <th>Out of sync replicas</th>
               <th>Replication factor</th>
               <th>Messages</th>
-              <th aria-label="Actions" />
+              {canManage && <th aria-label="Actions" />}
             </tr>
           </thead>
           <tbody>
             {loading && !data ? (
-              <tr><td colSpan={7}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
+              <tr><td colSpan={canManage ? 7 : 6}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
             ) : !data?.content.length ? (
-              <tr><td colSpan={7}>
+              <tr><td colSpan={canManage ? 7 : 6}>
                 <div className="topic-empty">
                   <Database size={34} />
                   <strong>No topics found</strong>
@@ -291,9 +299,11 @@ export function Topics() {
               </td></tr>
             ) : data.content.map(topic => (
               <tr key={topic.name} onClick={() => navigate('/clusters/' + id + '/topics/' + encodeURIComponent(topic.name))}>
-                <td className="check-column" onClick={event => event.stopPropagation()}>
-                  <input type="checkbox" checked={selected.has(topic.name)} onChange={() => toggleTopic(topic.name)} />
-                </td>
+                {canManage && (
+                  <td className="check-column" onClick={event => event.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(topic.name)} onChange={() => toggleTopic(topic.name)} />
+                  </td>
+                )}
                 <td>
                   <div className="topic-name-cell">
                     {topic.internal && <span className="internal-badge">IN</span>}
@@ -308,7 +318,7 @@ export function Topics() {
                 </td>
                 <td>{topic.replicationFactor ?? '-'}</td>
                 <td>{topic.messageCount?.toLocaleString() ?? '-'}</td>
-                <td className="action-column" onClick={event => event.stopPropagation()}>
+                {canManage && <td className="action-column" onClick={event => event.stopPropagation()}>
                   <button
                     className="icon-button"
                     aria-label={'Actions for ' + topic.name}
@@ -324,7 +334,7 @@ export function Topics() {
                       <button onClick={() => setPendingAction({ kind: 'remove', names: [topic.name] })}>Remove topic</button>
                     </div>
                   )}
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
@@ -349,7 +359,7 @@ export function Topics() {
         )}
       </div>
 
-      {showCreate && (
+      {canManage && showCreate && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
           <div className="topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header><div><span>Create resource</span><h3>Add a topic</h3></div><button onClick={() => setShowCreate(false)}><X size={18} /></button></header>
@@ -365,7 +375,7 @@ export function Topics() {
         </div>
       )}
 
-      {pendingAction && (
+      {canManage && pendingAction && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
           <div className="topic-modal danger-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header><div className="danger-icon"><AlertTriangle size={22} /></div><button onClick={() => setPendingAction(null)} disabled={acting}><X size={18} /></button></header>

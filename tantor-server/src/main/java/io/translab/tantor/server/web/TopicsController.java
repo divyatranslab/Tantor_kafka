@@ -4,8 +4,10 @@ import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.TopicOperationsService;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +25,7 @@ public class TopicsController {
     private final io.translab.tantor.server.service.PartitionCacheService partitionCacheService;
     private final ClusterRepository clusterRepository;
     private final AuditService auditService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @GetMapping("/topics")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
@@ -40,7 +43,13 @@ public class TopicsController {
     }
 
     @PostMapping("/topics")
-    public ResponseEntity<Void> createTopic(@PathVariable UUID clusterId, @RequestBody TopicCreateRequest request) {
+    public ResponseEntity<Void> createTopic(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @RequestBody TopicCreateRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         kafkaAdminService.createTopic(
             clusterId, 
             request.getName(), 
@@ -54,7 +63,13 @@ public class TopicsController {
     }
 
     @DeleteMapping("/topics/{topicName}")
-    public ResponseEntity<Void> deleteTopic(@PathVariable UUID clusterId, @PathVariable String topicName) {
+    public ResponseEntity<Void> deleteTopic(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable String topicName) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         kafkaAdminService.deleteTopic(clusterId, topicName);
         clusterChanged(clusterId, "TOPIC_DELETED", Map.of("topic", topicName));
         return ResponseEntity.ok().build();
@@ -79,21 +94,37 @@ public class TopicsController {
 
     @PostMapping("/topics/{topicName}/messages")
     public ResponseEntity<Map<String, Object>> produceMessage(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @RequestBody ProduceMessageRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.PRODUCE_MESSAGE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return ResponseEntity.ok(topicOperationsService.produceMessage(
                 clusterId, topicName, request.getPartition(), request.getKey(),
                 request.getValue(), request.getHeaders()));
     }
 
     @DeleteMapping("/topics/{topicName}/messages")
-    public ResponseEntity<Void> clearMessages(@PathVariable UUID clusterId, @PathVariable String topicName) {
+    public ResponseEntity<Void> clearMessages(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable String topicName) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         topicOperationsService.clearTopic(clusterId, topicName);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/topics/{topicName}/recreate")
-    public ResponseEntity<Void> recreateTopic(@PathVariable UUID clusterId, @PathVariable String topicName) {
+    public ResponseEntity<Void> recreateTopic(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable String topicName) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         topicOperationsService.recreateTopic(clusterId, topicName);
         clusterChanged(clusterId, "TOPIC_RECREATED", Map.of("topic", topicName));
         return ResponseEntity.noContent().build();
@@ -113,8 +144,12 @@ public class TopicsController {
 
     @PutMapping("/topics/{topicName}/configs/{key}")
     public ResponseEntity<Void> alterConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @PathVariable String key, @RequestBody ConfigValueRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         topicOperationsService.alterTopicConfig(clusterId, topicName, key, request.getValue());
         clusterChanged(clusterId, "TOPIC_CONFIG_CHANGED", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();
@@ -122,7 +157,11 @@ public class TopicsController {
 
     @DeleteMapping("/topics/{topicName}/configs/{key}")
     public ResponseEntity<Void> resetConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId, @PathVariable String topicName, @PathVariable String key) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         topicOperationsService.resetTopicConfig(clusterId, topicName, key);
         clusterChanged(clusterId, "TOPIC_CONFIG_RESET", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();

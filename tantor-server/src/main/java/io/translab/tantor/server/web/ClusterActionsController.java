@@ -94,7 +94,12 @@ public class ClusterActionsController {
     }
 
     @PostMapping("/normal-restart")
-    public ResponseEntity<Map<String, String>> startNormalRestart(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<String, String>> startNormalRestart(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         return clusterRepository.findById(clusterId)
                 .map(cluster -> {
                     int count = 0;
@@ -117,9 +122,13 @@ public class ClusterActionsController {
 
     @PostMapping("/enable-monitoring")
     public ResponseEntity<Map<String, String>> enableMonitoring(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestBody MonitoringRequest request
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.MONITORING_ENABLE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     String hostId = request.hostId;
@@ -167,22 +176,46 @@ public class ClusterActionsController {
     }
 
     @PostMapping("/tasks/{taskId}/retry")
-    public ResponseEntity<Void> retryTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+    public ResponseEntity<Void> retryTask(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID taskId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return deploymentService.retryTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
     @PostMapping("/tasks/{taskId}/resume")
-    public ResponseEntity<Void> resumeTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+    public ResponseEntity<Void> resumeTask(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID taskId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return deploymentService.resumeTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
     @PostMapping("/tasks/{taskId}/rollback")
-    public ResponseEntity<Void> rollbackTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+    public ResponseEntity<Void> rollbackTask(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID taskId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return deploymentService.rollbackTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
     @PostMapping("/tasks/{taskId}/cleanup")
-    public ResponseEntity<Void> cleanupTask(@PathVariable UUID clusterId, @PathVariable UUID taskId) {
+    public ResponseEntity<Void> cleanupTask(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID taskId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         return deploymentService.cleanupTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 

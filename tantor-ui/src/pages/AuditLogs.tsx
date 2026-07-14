@@ -190,11 +190,11 @@ export function AuditLogs() {
     <section className="audit-readonly-note"><LockKeyhole size={15} /><div><strong>Read-only audit history</strong><span>This screen has no edit or delete controls. Every application action creates a separate record.</span></div></section>
 
     <section className="audit-filters">
-      <label className="audit-search"><Search size={14} /><input placeholder="Search actor, action, resource or details" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      <label className="audit-search"><Search size={14} /><input placeholder="Search user, action, resource or details" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <label><input placeholder="Resource" value={resourceId} onChange={event => setResourceId(event.target.value)} /></label>
       <label><Filter size={13} /><select value={category} onChange={event => setCategory(event.target.value)}><option value="ALL">All events</option>{categories.map(item => <option key={item} value={item}>{title(item)}</option>)}</select></label>
       <label><select value={status} onChange={event => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>SUCCESS</option><option>FAILED</option><option>REQUESTED</option></select></label>
-      <label><UserRound size={13} /><select value={actor} onChange={event => setActor(event.target.value)}><option value="ALL">All actors</option>{actors.map(item => <option key={item}>{item}</option>)}</select></label>
+      <label><UserRound size={13} /><select value={actor} onChange={event => setActor(event.target.value)}><option value="ALL">All users</option>{actors.map(item => <option key={item}>{item}</option>)}</select></label>
       <label className="date-filter"><span>From</span><input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
       <label className="date-filter"><span>To</span><input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
     </section>
@@ -204,7 +204,7 @@ export function AuditLogs() {
       <div className="audit-ledger-head"><div><History size={15} /><strong>Event ledger</strong></div><span>{filtered.length} of {events.length} events</span></div>
       {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><LockKeyhole /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster ID</th><th>Details</th><th>Status</th></tr></thead>
+        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster ID</th><th>Details</th><th>Status</th></tr></thead>
           <tbody>{filtered.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
         </table></div>}
     </section>

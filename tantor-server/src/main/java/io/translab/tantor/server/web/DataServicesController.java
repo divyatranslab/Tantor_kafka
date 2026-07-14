@@ -14,8 +14,10 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.service.DataServiceConnectionService;
 import io.translab.tantor.server.dto.ConnectionResponse;
 import io.translab.tantor.server.dto.SaveConnectionRequest;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +51,7 @@ public class DataServicesController {
     private final ObjectMapper objectMapper;
     private final DataServiceConnectionService dataServiceConnectionService;
     private final EncryptionService encryptionService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
     private final HttpClient defaultHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
@@ -137,13 +140,25 @@ public class DataServicesController {
     }
 
     @DeleteMapping("/schema-registry/connections/{connectionId}")
-    public ResponseEntity<?> deleteSchemaRegistryConnection(@PathVariable UUID clusterId, @PathVariable UUID connectionId) {
+    public ResponseEntity<?> deleteSchemaRegistryConnection(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         dataServiceConnectionService.deleteConnection(clusterId, "SCHEMA_REGISTRY", connectionId, callerUsername());
         return ResponseEntity.ok(Map.of("message", "Connection deleted successfully"));
     }
 
     @DeleteMapping("/kafka-connect/connections/{connectionId}")
-    public ResponseEntity<?> deleteKafkaConnectConnection(@PathVariable UUID clusterId, @PathVariable UUID connectionId) {
+    public ResponseEntity<?> deleteKafkaConnectConnection(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         dataServiceConnectionService.deleteConnection(clusterId, "KAFKA_CONNECT", connectionId, callerUsername());
         return ResponseEntity.ok(Map.of("message", "Connection deleted successfully"));
     }
@@ -161,17 +176,25 @@ public class DataServicesController {
     /** Create new SR connection, or upsert by name. */
     @PutMapping("/schema-registry/connection")
     public ResponseEntity<?> saveSchemaRegistryConnection(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestBody SaveConnectionRequest req) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", req, callerUsername()));
     }
 
     /** Update existing SR connection by connectionId. Prevents rename creating duplicate rows. */
     @PutMapping("/schema-registry/connections/{connectionId}")
     public ResponseEntity<?> updateSchemaRegistryConnectionById(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable UUID connectionId,
             @RequestBody SaveConnectionRequest req) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         req.setId(connectionId); // inject path param into request so service resolves by id
         return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", req, callerUsername()));
     }
@@ -186,17 +209,25 @@ public class DataServicesController {
 
     @PutMapping("/kafka-connect/connection")
     public ResponseEntity<?> saveKafkaConnectConnection(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestBody SaveConnectionRequest req) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", req, callerUsername()));
     }
 
     /** Update existing KC connection by connectionId. */
     @PutMapping("/kafka-connect/connections/{connectionId}")
     public ResponseEntity<?> updateKafkaConnectConnectionById(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable UUID connectionId,
             @RequestBody SaveConnectionRequest req) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         req.setId(connectionId);
         return ResponseEntity.ok(dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", req, callerUsername()));
     }
@@ -272,6 +303,7 @@ public class DataServicesController {
     /** Update global compatibility. */
     @PutMapping("/schema-registry/config")
     public ResponseEntity<?> updateGlobalCompatibility(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
@@ -279,6 +311,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "PUT", "/config", body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
@@ -348,6 +383,7 @@ public class DataServicesController {
     /** Register a new schema version. */
     @PostMapping("/schema-registry/subjects/{subject}/versions")
     public ResponseEntity<?> createSchemaVersion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String subject,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
@@ -356,6 +392,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "POST", "/subjects/" + pathSeg(subject) + "/versions",
                 body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
@@ -364,6 +403,7 @@ public class DataServicesController {
     /** Delete a subject and all its versions. */
     @DeleteMapping("/schema-registry/subjects/{subject}")
     public ResponseEntity<?> deleteSubject(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String subject,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
@@ -371,6 +411,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "DELETE", "/subjects/" + pathSeg(subject),
                 null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
@@ -379,6 +422,7 @@ public class DataServicesController {
     /** Delete a specific schema version. */
     @DeleteMapping("/schema-registry/subjects/{subject}/versions/{version}")
     public ResponseEntity<?> deleteSchemaVersion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String subject,
             @PathVariable String version,
@@ -387,6 +431,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version,
                 null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
@@ -395,6 +442,7 @@ public class DataServicesController {
     /** Update subject-level compatibility. */
     @PutMapping("/schema-registry/subjects/{subject}/config")
     public ResponseEntity<?> updateSubjectCompatibility(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String subject,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
@@ -403,6 +451,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "PUT", "/config/" + pathSeg(subject),
                 body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
@@ -411,6 +462,7 @@ public class DataServicesController {
     /** Check schema compatibility against a subject. */
     @PostMapping("/schema-registry/subjects/{subject}/versions/{version}/compatibility")
     public ResponseEntity<?> checkCompatibility(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String subject,
             @PathVariable String version,
@@ -420,6 +472,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
                 "POST", "/compatibility/subjects/" + pathSeg(subject) + "/versions/" + version,
                 body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
@@ -507,6 +562,7 @@ public class DataServicesController {
     /** Create connector. */
     @PostMapping("/kafka-connect/connectors")
     public ResponseEntity<?> createConnector(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
             @RequestParam(required = false) String protocol,
@@ -514,6 +570,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 "POST", "/connectors", body, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
@@ -521,6 +580,7 @@ public class DataServicesController {
     /** Update connector config. */
     @PutMapping("/kafka-connect/connectors/{name}/config")
     public ResponseEntity<?> updateConnectorConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String name,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
@@ -529,6 +589,9 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 "PUT", "/connectors/" + pathSeg(name) + "/config",
                 body, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
@@ -537,6 +600,7 @@ public class DataServicesController {
     /** Pause / resume / restart a connector. */
     @PutMapping("/kafka-connect/connectors/{name}/{action:pause|resume|restart}")
     public ResponseEntity<?> connectorAction(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String name,
             @PathVariable String action,
@@ -545,6 +609,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         String upstreamMethod = "restart".equals(action) ? "POST" : "PUT";
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 upstreamMethod, "/connectors/" + pathSeg(name) + "/" + action,
@@ -554,6 +621,7 @@ public class DataServicesController {
     /** Delete a connector. */
     @DeleteMapping("/kafka-connect/connectors/{name}")
     public ResponseEntity<?> deleteConnector(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String name,
             @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
@@ -561,6 +629,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 "DELETE", "/connectors/" + pathSeg(name),
                 null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
@@ -584,6 +655,7 @@ public class DataServicesController {
     /** Restart a specific task. */
     @PostMapping("/kafka-connect/connectors/{name}/tasks/{taskId}/restart")
     public ResponseEntity<?> restartTask(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable String name,
             @PathVariable String taskId,
@@ -592,6 +664,9 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 "POST", "/connectors/" + pathSeg(name) + "/tasks/" + taskId + "/restart",
                 null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
@@ -752,6 +827,10 @@ public class DataServicesController {
 
     private String pathSeg(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private ResponseEntity<?> unauthorized() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
     }
 
     private enum ServiceKind {

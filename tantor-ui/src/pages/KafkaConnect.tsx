@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -56,6 +57,7 @@ const connectorTemplate = `{
 
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
+  const { canManage } = usePermissions();
   const [summary, setSummary] = useState<ConnectSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
@@ -145,6 +147,7 @@ export function KafkaConnect() {
    * If omitted, blank form for a new connection.
    */
   const openConnectionModal = (conn?: SavedConnection) => {
+    if (!canManage) return;
     if (conn) {
       setEditingConnectionId(conn.id);
       setFormConnectionName(conn.connectionName);
@@ -170,6 +173,7 @@ export function KafkaConnect() {
   };
 
   const handleSaveConnection = async () => {
+    if (!canManage) return;
     setConnectSaving(true);
     setConnectError(null);
     try {
@@ -211,6 +215,7 @@ export function KafkaConnect() {
   };
 
   const handleDeleteConnection = async () => {
+    if (!canManage) return;
     if (!selectedConnectionId) return;
     if (!window.confirm("Are you sure you want to delete this connection?")) return;
     
@@ -275,6 +280,7 @@ export function KafkaConnect() {
   };
 
   const handleConnectorFiles = async (files: FileList | null) => {
+    if (!canManage) return;
     if (!files?.length) return;
     setCreateError(null);
     try {
@@ -289,7 +295,9 @@ export function KafkaConnect() {
   };
 
   const createConnector = async (e: React.FormEvent) => {
-    e.preventDefault(); setSaving(true); setError(null); setCreateError(null);
+    e.preventDefault();
+    if (!canManage) return;
+    setSaving(true); setError(null); setCreateError(null);
     try {
       const payloads = connectorPayloads();
       let deployed = 0;
@@ -307,6 +315,7 @@ export function KafkaConnect() {
     finally { setSaving(false); }
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
+    if (!canManage) return;
     if (action === 'delete' && !window.confirm(`Delete connector ${name}?`)) return;
     setSaving(true);
     setError(null);
@@ -374,32 +383,36 @@ export function KafkaConnect() {
           <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
             <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
           </button>
-          <button className="ds-button primary" onClick={() => setShowCreate(true)}>
-            <Plus size={16} /> Create Connector
-          </button>
-          {/* Edit selected connection */}
-          <button
-            className="ds-icon-button"
-            onClick={() => openConnectionModal(selectedConn ?? undefined)}
-            disabled={!selectedConn}
-            title="Edit selected connection"
-          >
-            <MoreVertical size={18} />
-          </button>
-          {/* Delete selected connection */}
-          <button
-            className="ds-icon-button"
-            onClick={handleDeleteConnection}
-            disabled={!selectedConn}
-            title="Delete connection"
-            style={{ color: 'var(--color-danger, #e88080)' }}
-          >
-            <Trash2 size={18} />
-          </button>
-          {/* Add new connection */}
-          <button className="ds-button" onClick={() => openConnectionModal()} title="Add new KC instance">
-            <Settings size={16} /> Add Connection
-          </button>
+          {canManage && (
+            <>
+              <button className="ds-button primary" onClick={() => setShowCreate(true)}>
+                <Plus size={16} /> Create Connector
+              </button>
+              {/* Edit selected connection */}
+              <button
+                className="ds-icon-button"
+                onClick={() => openConnectionModal(selectedConn ?? undefined)}
+                disabled={!selectedConn}
+                title="Edit selected connection"
+              >
+                <MoreVertical size={18} />
+              </button>
+              {/* Delete selected connection */}
+              <button
+                className="ds-icon-button"
+                onClick={handleDeleteConnection}
+                disabled={!selectedConn}
+                title="Delete connection"
+                style={{ color: 'var(--color-danger, #e88080)' }}
+              >
+                <Trash2 size={18} />
+              </button>
+              {/* Add new connection */}
+              <button className="ds-button" onClick={() => openConnectionModal()} title="Add new KC instance">
+                <Settings size={16} /> Add Connection
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -455,11 +468,11 @@ export function KafkaConnect() {
         {activeTab === 'connectors' && (
           <table className="ds-table">
             <thead>
-              <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th><th>Actions</th></tr>
+              <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th>{canManage && <th>Actions</th>}</tr>
             </thead>
             <tbody>
               {loading && !summary ? (
-                <tr><td colSpan={5} className="ds-empty">Loading connectors...</td></tr>
+                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">Loading connectors...</td></tr>
               ) : summary && summary.connectors.length > 0 ? (
                 summary.connectors.map(connector => (
                   <tr key={connector.name}>
@@ -467,26 +480,28 @@ export function KafkaConnect() {
                     <td>{connector.class || '-'}</td>
                     <td><span className={statusClass(connector.state)}>{connector.state}</span></td>
                     <td>{connector.runningTasks} / {connector.tasks}</td>
-                    <td>
-                      <div className="ds-inline-actions">
-                        <button className="ds-button" onClick={() => connectorAction(connector.name, 'pause')} disabled={saving} title="Pause">
-                          <Pause size={15} />
-                        </button>
-                        <button className="ds-button" onClick={() => connectorAction(connector.name, 'resume')} disabled={saving} title="Resume">
-                          <Play size={15} />
-                        </button>
-                        <button className="ds-button" onClick={() => connectorAction(connector.name, 'restart')} disabled={saving} title="Restart">
-                          <RotateCw size={15} />
-                        </button>
-                        <button className="ds-button danger" onClick={() => connectorAction(connector.name, 'delete')} disabled={saving} title="Delete">
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
+                    {canManage && (
+                      <td>
+                        <div className="ds-inline-actions">
+                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'pause')} disabled={saving} title="Pause">
+                            <Pause size={15} />
+                          </button>
+                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'resume')} disabled={saving} title="Resume">
+                            <Play size={15} />
+                          </button>
+                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'restart')} disabled={saving} title="Restart">
+                            <RotateCw size={15} />
+                          </button>
+                          <button className="ds-button danger" onClick={() => connectorAction(connector.name, 'delete')} disabled={saving} title="Delete">
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={5} className="ds-empty">No connectors found.</td></tr>
+                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">No connectors found.</td></tr>
               )}
             </tbody>
           </table>
@@ -516,7 +531,7 @@ export function KafkaConnect() {
       </>}
 
       {/* ── Connection modal ── */}
-      {showConnection && (
+      {canManage && showConnection && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-connection-modal">
             <div className="ds-modal-header">
@@ -621,7 +636,7 @@ export function KafkaConnect() {
         </div>
       )}
 
-      {showCreate && (
+      {canManage && showCreate && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <form className="ds-modal" onSubmit={createConnector}>
             <div className="ds-modal-header">

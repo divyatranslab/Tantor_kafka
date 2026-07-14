@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -22,6 +23,7 @@ interface ClusterResponse {
 
 export function ClusterNodes() {
   const { id } = useParams<{ id: string }>();
+  const { canManage } = usePermissions();
   const [nodes, setNodes] = useState<ClusterNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgents, setSelectedAgents] = useState<{ [host: string]: string }>({});
@@ -41,6 +43,7 @@ export function ClusterNodes() {
   };
 
   const bindAgents = async () => {
+    if (!canManage) return;
     if (Object.keys(selectedAgents).length === 0) return;
     setBinding(true);
     try {
@@ -67,6 +70,7 @@ export function ClusterNodes() {
   const isExternalCluster = nodes.some(n => 
     n.status?.includes('Managed') || n.status?.includes('Unmanaged') || n.status === 'Bootstrap connected' || n.agentAvailable
   );
+  const canBindAgents = canManage && isExternalCluster;
 
   return (
     <div className="cluster-nodes-page animate-fade-in">
@@ -76,7 +80,7 @@ export function ClusterNodes() {
           <p>Every broker, controller, and ZooKeeper service assigned to this cluster.</p>
         </div>
         <div style={{ display: 'flex', gap: '12px' }}>
-          {Object.keys(selectedAgents).length > 0 && (
+          {canBindAgents && Object.keys(selectedAgents).length > 0 && (
             <button className="btn primary" onClick={bindAgents} disabled={binding}>
               {binding ? <RefreshCw size={14} className="spin" /> : 'Connect Agent'}
             </button>
@@ -87,7 +91,7 @@ export function ClusterNodes() {
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">
           <thead><tr>
-            {isExternalCluster && <th style={{ width: '40px', textAlign: 'center' }}></th>}
+            {canBindAgents && <th style={{ width: '40px', textAlign: 'center' }}></th>}
             <th>Node ID</th>
             <th>Host</th>
             <th>IP address</th>
@@ -100,7 +104,7 @@ export function ClusterNodes() {
               const hostKey = node.hostname || node.hostId || node.ipAddress;
               return (
               <tr key={`${node.hostId}-${node.role}-${node.nodeId ?? index}`}>
-                {isExternalCluster && (
+                {canBindAgents && (
                   <td style={{ textAlign: 'center' }}>
                     <input 
                       type="checkbox"

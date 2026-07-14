@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.ExternalClusterNode;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.security.EncryptionService;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -57,8 +60,10 @@ public class PrometheusMonitoringService {
     private static final int DEFAULT_NODE_EXPORTER_PORT = 9100;
 
     private final ClusterRepository clusterRepository;
+    private final ExternalClusterRepository externalClusterRepository;
     private final ExternalClusterNodeRepository externalClusterNodeRepository;
     private final HostRepository hostRepository;
+    private final EncryptionService encryptionService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = new RestTemplate();
 
@@ -241,7 +246,7 @@ public class PrometheusMonitoringService {
     public ExporterPlan exporterPlan(UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
-        return buildExporterPlan(cluster);
+        return buildExporterPlan(cluster, true);
     }
 
     @Transactional(readOnly = true)
@@ -250,7 +255,7 @@ public class PrometheusMonitoringService {
     }
 
     public void ensureKafkaExporter(Cluster cluster) {
-        if (cluster == null || isExternal(cluster) || !Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
+        if (cluster == null || !Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
             return;
         }
         if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
@@ -264,7 +269,7 @@ public class PrometheusMonitoringService {
             return;
         }
 
-        ExporterPlan plan = buildExporterPlan(cluster);
+        ExporterPlan plan = buildExporterPlan(cluster, false);
         Path unitPath = Path.of("/etc/systemd/system/" + plan.getServiceName() + ".service");
         try {
             Files.createDirectories(unitPath.getParent());
@@ -279,10 +284,10 @@ public class PrometheusMonitoringService {
         }
     }
 
-    private ExporterPlan buildExporterPlan(Cluster cluster) {
+    private ExporterPlan buildExporterPlan(Cluster cluster, boolean maskSecrets) {
         int port = exporterPort(cluster);
         String serviceName = "tantor-kafka-exporter-" + cluster.getId();
-        String bootstrap = cluster.getBootstrapServers() == null ? "" : cluster.getBootstrapServers();
+        String exporterArgs = kafkaExporterArgs(cluster, maskSecrets);
 
         ExporterPlan plan = new ExporterPlan();
         plan.setClusterId(cluster.getId());
@@ -302,7 +307,7 @@ public class PrometheusMonitoringService {
 
                 [Install]
                 WantedBy=multi-user.target
-                """.formatted(cluster.getName(), port, kafkaExporterArgs(bootstrap)));
+                """.formatted(cluster.getName(), port, exporterArgs));
         plan.setInstallCommands(List.of(
                 "sudo install -m 0755 kafka_exporter /usr/local/bin/kafka_exporter",
                 "sudo tee /etc/systemd/system/" + serviceName + ".service >/dev/null <<'EOF'\n" + plan.getUnit() + "EOF",
@@ -601,18 +606,115 @@ public class PrometheusMonitoringService {
         return prometheusUrl;
     }
 
-    private String kafkaExporterArgs(String bootstrapServers) {
+    private String kafkaExporterArgs(Cluster cluster, boolean maskSecrets) {
+        String bootstrapServers = cluster.getBootstrapServers();
         if (bootstrapServers == null || bootstrapServers.isBlank()) {
             return "--kafka.server=<bootstrap-server:9092>";
         }
-        StringBuilder args = new StringBuilder();
+        List<String> args = new ArrayList<>();
         for (String server : bootstrapServers.split(",")) {
             String trimmed = server.trim();
             if (!trimmed.isBlank()) {
-                args.append("--kafka.server=").append(trimmed).append(' ');
+                args.add("--kafka.server=" + systemdArg(trimmed));
             }
         }
-        return args.toString().trim();
+
+        if (isExternal(cluster)) {
+            externalCluster(cluster).ifPresent(external -> addExternalExporterSecurityArgs(args, external, maskSecrets));
+        }
+        return String.join(" ", args);
+    }
+
+    private Optional<ExternalCluster> externalCluster(Cluster cluster) {
+        if (cluster == null || !isExternal(cluster)) {
+            return Optional.empty();
+        }
+        Optional<ExternalCluster> byId = externalClusterRepository.findById(cluster.getId());
+        if (byId.isPresent()) {
+            return byId;
+        }
+        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
+            Optional<ExternalCluster> byKafkaId = externalClusterRepository.findByKafkaClusterId(cluster.getKafkaClusterId());
+            if (byKafkaId.isPresent()) {
+                return byKafkaId;
+            }
+        }
+        if (cluster.getName() != null && !cluster.getName().isBlank()) {
+            return externalClusterRepository.findByName(cluster.getName());
+        }
+        return Optional.empty();
+    }
+
+    private void addExternalExporterSecurityArgs(List<String> args, ExternalCluster external, boolean maskSecrets) {
+        String protocol = firstNonBlank(external.getSecurityProtocol(), external.getSecurity());
+        String normalizedProtocol = protocol == null ? "" : protocol.trim().toUpperCase(Locale.ROOT);
+        if (normalizedProtocol.contains("SSL")) {
+            args.add("--tls.enabled");
+            if (Boolean.TRUE.equals(external.getDisableHostnameVerification())) {
+                args.add("--tls.insecure-skip-tls-verify");
+            }
+            String truststoreType = external.getTruststoreType() == null ? "" : external.getTruststoreType().trim().toUpperCase(Locale.ROOT);
+            if (external.getTruststorePath() != null && !external.getTruststorePath().isBlank()
+                    && ("PEM".equals(truststoreType) || "CRT".equals(truststoreType) || "CERT".equals(truststoreType))) {
+                args.add("--tls.ca-file=" + systemdArg(external.getTruststorePath().trim()));
+            }
+            if (external.getKeystorePath() != null && !external.getKeystorePath().isBlank()
+                    && ("PEM".equals(truststoreType) || "CRT".equals(truststoreType) || "CERT".equals(truststoreType))) {
+                args.add("--tls.cert-file=" + systemdArg(external.getKeystorePath().trim()));
+            }
+        }
+        if (normalizedProtocol.contains("SASL")) {
+            args.add("--sasl.enabled");
+            if (external.getSaslUsername() != null && !external.getSaslUsername().isBlank()) {
+                args.add("--sasl.username=" + systemdArg(external.getSaslUsername().trim()));
+            }
+            String password = maskSecrets ? "********" : decryptOrBlank(external.getSaslPasswordEncrypted());
+            if (password != null && !password.isBlank()) {
+                args.add("--sasl.password=" + systemdArg(password));
+            }
+            String mechanism = kafkaExporterSaslMechanism(external.getSaslMechanism());
+            if (mechanism != null) {
+                args.add("--sasl.mechanism=" + systemdArg(mechanism));
+            }
+        }
+    }
+
+    private String decryptOrBlank(String encrypted) {
+        if (encrypted == null || encrypted.isBlank()) {
+            return null;
+        }
+        try {
+            return encryptionService.decrypt(encrypted);
+        } catch (Exception e) {
+            log.warn("Could not decrypt external kafka_exporter credential", e);
+            return null;
+        }
+    }
+
+    private String kafkaExporterSaslMechanism(String mechanism) {
+        if (mechanism == null || mechanism.isBlank()) {
+            return null;
+        }
+        return switch (mechanism.trim().toUpperCase(Locale.ROOT)) {
+            case "PLAIN" -> "plain";
+            case "SCRAM-SHA-256", "SCRAM_SHA_256", "SCRAMSHA256" -> "scram-sha256";
+            case "SCRAM-SHA-512", "SCRAM_SHA_512", "SCRAMSHA512" -> "scram-sha512";
+            default -> mechanism.trim().toLowerCase(Locale.ROOT);
+        };
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        if (second != null && !second.isBlank()) {
+            return second;
+        }
+        return null;
+    }
+
+    private String systemdArg(String value) {
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     @Data

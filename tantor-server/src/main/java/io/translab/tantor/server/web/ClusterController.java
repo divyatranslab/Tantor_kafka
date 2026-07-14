@@ -300,7 +300,13 @@ public class ClusterController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateCluster(@PathVariable UUID id, @RequestBody UpdateClusterRequest request) {
+    public ResponseEntity<?> updateCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID id,
+            @RequestBody UpdateClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         Cluster cluster = clusterRepository.findById(id).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         String name = request.getName() == null ? "" : request.getName().trim();
@@ -337,7 +343,13 @@ public class ClusterController {
     }
 
     @PostMapping("/{id}/bind-agent")
-    public ResponseEntity<?> bindAgent(@PathVariable java.util.UUID id, @RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> bindAgent(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable java.util.UUID id,
+            @RequestBody Map<String, Object> request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.BIND_AGENT)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         String agentIdStr = (String) request.get("agentId");
         if (agentIdStr == null || agentIdStr.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "Agent ID required"));
         
@@ -872,7 +884,13 @@ public class ClusterController {
 
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/upgrade")
-    public ResponseEntity<Map<String, String>> upgradeCluster(@PathVariable java.util.UUID id, @RequestBody UpgradeClusterRequest request) {
+    public ResponseEntity<Map<String, String>> upgradeCluster(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable java.util.UUID id,
+            @RequestBody UpgradeClusterRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isEmpty()) {
             return ResponseEntity.notFound().build();

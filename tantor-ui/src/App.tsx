@@ -29,9 +29,12 @@ import { ClusterNodes } from './pages/ClusterNodes';
 import { JobsList } from './pages/JobsList';
 import { JobStatusPage } from './pages/JobStatusPage';
 import { ClusterSecurity } from './pages/ClusterSecurity';
+import { usePermissions } from './hooks/usePermissions';
 import './App.css';
 
 function App() {
+  const { isAdmin } = usePermissions();
+
   return (
     <ClusterProvider>
       <Router>
@@ -69,7 +72,7 @@ function App() {
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/audit" element={<AuditLogs />} />
               <Route path="/ldap-settings" element={<LdapSettings />} />
-              <Route path="/user-management" element={<UserManagement />} />
+              <Route path="/user-management" element={isAdmin ? <UserManagement /> : <Navigate to="/dashboard" replace />} />
               {/* Fallback routes for pages not fully fleshed out yet */}
               <Route path="*" element={
                 <div className="animate-fade-in glass-panel" style={{ padding: '2rem', textAlign: 'center' }}>

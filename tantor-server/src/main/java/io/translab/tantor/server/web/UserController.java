@@ -4,6 +4,7 @@ import io.translab.tantor.server.domain.User;
 import io.translab.tantor.server.dto.UserDto;
 import io.translab.tantor.server.repository.UserRepository;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,16 +25,7 @@ public class UserController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
-
-    // Check if current user is admin
-    private boolean isAdmin() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) return false;
-        String username = auth.getName();
-        return userRepository.findByUsername(username)
-                .map(user -> "admin".equals(user.getRole()))
-                .orElse(false);
-    }
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     private UserDto.UserResponse mapToDto(User user) {
         UserDto.UserResponse dto = new UserDto.UserResponse();
@@ -49,8 +41,11 @@ public class UserController {
     }
 
     @GetMapping
-    public ResponseEntity<List<UserDto.UserResponse>> listUsers() {
-        if (!isAdmin()) return ResponseEntity.status(403).build();
+    public ResponseEntity<List<UserDto.UserResponse>> listUsers(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
+            return ResponseEntity.status(401).build();
+        }
         
         List<UserDto.UserResponse> users = userRepository.findAll().stream()
                 .map(this::mapToDto)
@@ -59,8 +54,12 @@ public class UserController {
     }
 
     @PostMapping
-    public ResponseEntity<?> createUser(@RequestBody UserDto.UserCreateRequest request) {
-        if (!isAdmin()) return ResponseEntity.status(403).build();
+    public ResponseEntity<?> createUser(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody UserDto.UserCreateRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
+            return ResponseEntity.status(401).build();
+        }
 
         if (userRepository.findByUsername(request.getUsername()).isPresent()) {
             return ResponseEntity.status(409).body("{\"detail\":\"Username already exists\"}");
@@ -86,16 +85,20 @@ public class UserController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateUser(@PathVariable UUID id, @RequestBody UserDto.UserUpdateRequest request) {
-        if (!isAdmin()) return ResponseEntity.status(403).build();
+    public ResponseEntity<?> updateUser(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID id,
+            @RequestBody UserDto.UserUpdateRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
+            return ResponseEntity.status(401).build();
+        }
 
         User user = userRepository.findById(id).orElse(null);
         if (user == null) {
             return ResponseEntity.status(404).body("{\"detail\":\"User not found\"}");
         }
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String currentUsername = auth.getName();
+        String currentUsername = currentUsername();
         boolean isSelf = currentUsername.equals(user.getUsername());
         Map<String, Object> oldValue = Map.of("role", String.valueOf(user.getRole()),
                 "active", user.isActive(), "authSource", String.valueOf(user.getAuthSource()));
@@ -135,16 +138,19 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteUser(@PathVariable UUID id) {
-        if (!isAdmin()) return ResponseEntity.status(403).build();
+    public ResponseEntity<?> deleteUser(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
+            return ResponseEntity.status(401).build();
+        }
 
         User user = userRepository.findById(id).orElse(null);
         if (user == null) {
             return ResponseEntity.status(404).body("{\"detail\":\"User not found\"}");
         }
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth.getName().equals(user.getUsername())) {
+        if (currentUsername().equals(user.getUsername())) {
             return ResponseEntity.status(400).body("{\"detail\":\"Cannot delete yourself\"}");
         }
 
@@ -154,5 +160,10 @@ public class UserController {
         auditService.record("PERMISSION", "USER_REMOVED", "USER", user.getId().toString(), null, "SUCCESS",
                 oldValue, Map.of("deleted", true), null, null);
         return ResponseEntity.ok("{\"deleted\": true, \"username\": \"" + user.getUsername() + "\"}");
+    }
+
+    private String currentUsername() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth == null ? "" : auth.getName();
     }
 }

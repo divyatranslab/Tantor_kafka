@@ -4,6 +4,7 @@ import {
   Loader2, HardDrive, X, RefreshCw, Server, DownloadCloud,
   Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './Artifacts.css';
 
 interface ArtifactVersion {
@@ -79,6 +80,7 @@ const artifactServiceOptions = [
 ];
 
 export function Artifacts() {
+  const { canManage } = usePermissions();
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   const [hosts, setHosts] = useState<Host[]>([]);
   const [hostParcels, setHostParcels] = useState<HostParcel[]>([]);
@@ -160,6 +162,7 @@ export function Artifacts() {
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (!file || !versionInput || !fileMatchesServiceType) return;
     setUploading(true);
     setUploadMsg(null);
@@ -202,6 +205,7 @@ export function Artifacts() {
   };
 
   const runParcelAction = async (action: ParcelAction, ver: ArtifactVersion, host: Host) => {
+    if (!canManage) return;
     const key = `${action}-${ver.id}-${host.id}`;
     setActingKey(key);
     setUploadMsg(null);
@@ -232,6 +236,7 @@ export function Artifacts() {
   };
 
   const distributeAll = async (ver: ArtifactVersion) => {
+    if (!canManage) return;
     const eligible = hosts.filter(host =>
       isHostOnline(host)
       && (() => {
@@ -276,6 +281,7 @@ export function Artifacts() {
   };
 
   const distributeSelected = async (ver: ArtifactVersion) => {
+    if (!canManage) return;
     const ids = selectedHosts[ver.id] || [];
     const targets = hosts.filter(host => ids.includes(host.id));
     if (!targets.length) {
@@ -316,6 +322,7 @@ export function Artifacts() {
   };
 
   const toggleHostSelection = (artifactId: string, hostId: string) => {
+    if (!canManage) return;
     setSelectedHosts(current => {
       const selected = current[artifactId] || [];
       return { ...current, [artifactId]: selected.includes(hostId)
@@ -325,6 +332,7 @@ export function Artifacts() {
   };
 
   const deleteArtifactBinary = async (ver: ArtifactVersion) => {
+    if (!canManage) return;
     setOpenArtifactMenuId(null);
     const inUse = hostParcels.some(p => p.artifactId === ver.id && p.status !== 'REMOVED');
     if (inUse) {
@@ -385,7 +393,7 @@ export function Artifacts() {
       <button
         key={action}
         className={`parcel-action ${action}`}
-        disabled={disabled || actingKey !== null}
+        disabled={disabled || actingKey !== null || !canManage}
         onClick={() => runParcelAction(action, ver, host)}
         title={actionLabel(action)}
       >
@@ -396,6 +404,9 @@ export function Artifacts() {
   };
 
   const renderActions = (ver: ArtifactVersion, host: Host, state?: HostParcel) => {
+    if (!canManage) {
+      return <span className="parcel-blocked">View only</span>;
+    }
     const hostOnline = isHostOnline(host);
     if (!hostOnline) {
       return (
@@ -456,10 +467,12 @@ export function Artifacts() {
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Sync
           </button>
-          <button className="btn btn-primary-action" onClick={() => setShowUploadModal(true)} disabled={uploading}>
-            {uploading ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
-            Upload binary
-          </button>
+          {canManage && (
+            <button className="btn btn-primary-action" onClick={() => setShowUploadModal(true)} disabled={uploading}>
+              {uploading ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
+              Upload binary
+            </button>
+          )}
         </div>
       </header>
 
@@ -470,6 +483,7 @@ export function Artifacts() {
           value={universalDistributionDir}
           onChange={event => setUniversalDistributionDir(event.target.value)}
           placeholder="/srv/apps/tantor/parcels"
+          disabled={!canManage}
         />
       </section>
 
@@ -532,38 +546,42 @@ export function Artifacts() {
                         </div>
                       )}
                     </div>
-                    <button
-                      className="artifact-delete-button"
-                      disabled={!canDeleteBinary || actingKey !== null}
-                      onClick={() => deleteArtifactBinary(ver)}
-                      title={canDeleteBinary ? 'Delete uploaded binary' : 'Remove from all hosts before deleting binary'}
-                    >
-                      {actingKey === deleteKey ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
-                    </button>
+                    {canManage && (
+                      <button
+                        className="artifact-delete-button"
+                        disabled={!canDeleteBinary || actingKey !== null}
+                        onClick={() => deleteArtifactBinary(ver)}
+                        title={canDeleteBinary ? 'Delete uploaded binary' : 'Remove from all hosts before deleting binary'}
+                      >
+                        {actingKey === deleteKey ? <Loader2 size={15} className="spin" /> : <Trash2 size={15} />}
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 {isOpen && (
                   <div className="version-card-body">
-                    <div className="parcel-distribution-controls">
-                      <label>
-                        Artifact directory override (optional)
-                        <input
-                          className="form-control"
-                          value={distributionDirs[ver.id] || ''}
-                          onChange={event => setDistributionDirs(current => ({ ...current, [ver.id]: event.target.value }))}
-                          placeholder={universalDistributionDir}
-                        />
-                      </label>
-                      <button className="btn btn-primary-action" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
-                        {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
-                        Distribute all
-                      </button>
-                      <button className="btn" onClick={() => distributeSelected(ver)} disabled={actingKey !== null || !(selectedHosts[ver.id]?.length)}>
-                        {actingKey === `distribute-selected-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
-                        Distribute selected ({selectedHosts[ver.id]?.length || 0})
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="parcel-distribution-controls">
+                        <label>
+                          Artifact directory override (optional)
+                          <input
+                            className="form-control"
+                            value={distributionDirs[ver.id] || ''}
+                            onChange={event => setDistributionDirs(current => ({ ...current, [ver.id]: event.target.value }))}
+                            placeholder={universalDistributionDir}
+                          />
+                        </label>
+                        <button className="btn btn-primary-action" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
+                          {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
+                          Distribute all
+                        </button>
+                        <button className="btn" onClick={() => distributeSelected(ver)} disabled={actingKey !== null || !(selectedHosts[ver.id]?.length)}>
+                          {actingKey === `distribute-selected-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
+                          Distribute selected ({selectedHosts[ver.id]?.length || 0})
+                        </button>
+                      </div>
+                    )}
                     {hosts.length === 0 ? (
                       <div className="parcel-empty-hosts">
                         <Server size={18} />
@@ -573,14 +591,16 @@ export function Artifacts() {
                       <div className="parcel-host-table">
                         <div className="parcel-host-row header">
                           <span>
-                            <input
-                              type="checkbox"
-                              checked={hosts.length > 0 && (selectedHosts[ver.id]?.length || 0) === hosts.length}
-                              onChange={event => setSelectedHosts(current => ({
-                                ...current,
-                                [ver.id]: event.target.checked ? hosts.map(host => host.id) : [],
-                              }))}
-                            /> Host
+                            {canManage && (
+                              <input
+                                type="checkbox"
+                                checked={hosts.length > 0 && (selectedHosts[ver.id]?.length || 0) === hosts.length}
+                                onChange={event => setSelectedHosts(current => ({
+                                  ...current,
+                                  [ver.id]: event.target.checked ? hosts.map(host => host.id) : [],
+                                }))}
+                              />
+                            )} Host
                           </span>
                           <span>State</span>
                           <span>Destination path / IP</span>
@@ -592,11 +612,13 @@ export function Artifacts() {
                           return (
                             <div key={host.id} className="parcel-host-row">
                               <div className="parcel-host">
-                                <input
-                                  type="checkbox"
-                                  checked={(selectedHosts[ver.id] || []).includes(host.id)}
-                                  onChange={() => toggleHostSelection(ver.id, host.id)}
-                                />
+                                {canManage && (
+                                  <input
+                                    type="checkbox"
+                                    checked={(selectedHosts[ver.id] || []).includes(host.id)}
+                                    onChange={() => toggleHostSelection(ver.id, host.id)}
+                                  />
+                                )}
                                 <Server size={14} />
                                 <div>
                                   <strong>{host.hostname || host.id}</strong>
@@ -619,6 +641,7 @@ export function Artifacts() {
                                     [`${ver.id}:${host.id}`]: event.target.value,
                                   }))}
                                   placeholder={distributionDirs[ver.id] || universalDistributionDir}
+                                  disabled={!canManage}
                                 />
                                 <small>{state?.hostIp || '-'}</small>
                               </div>
@@ -638,7 +661,7 @@ export function Artifacts() {
         </div>
       )}
 
-      {showUploadModal && (
+      {canManage && showUploadModal && (
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">

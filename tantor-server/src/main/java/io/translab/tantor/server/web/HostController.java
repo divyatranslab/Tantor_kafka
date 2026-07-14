@@ -14,6 +14,7 @@ import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -53,6 +54,7 @@ public class HostController {
     private final ObjectMapper objectMapper;
     private final JobService jobService;
     private final AuditService auditService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
@@ -65,9 +67,13 @@ public class HostController {
 
     @PostMapping("/{id}/check-prerequisites")
     public ResponseEntity<?> checkPrerequisites(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable String id,
             @RequestBody(required = false) Map<String, Object> options
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -104,7 +110,12 @@ public class HostController {
     }
 
     @PostMapping("/{id}/fix-prerequisites")
-    public ResponseEntity<?> fixPrerequisites(@PathVariable String id) {
+    public ResponseEntity<?> fixPrerequisites(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
@@ -123,7 +134,13 @@ public class HostController {
     }
 
     @PostMapping("/{id}/reboot")
-    public ResponseEntity<?> rebootHost(@PathVariable String id, @RequestBody Map<String, Object> request) {
+    public ResponseEntity<?> rebootHost(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_REBOOT)) {
+            return unauthorized();
+        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!Boolean.parseBoolean(String.valueOf(request.getOrDefault("confirmed", false)))) {
@@ -157,7 +174,12 @@ public class HostController {
     }
 
     @PostMapping("/{id}/mark-unavailable")
-    public ResponseEntity<?> markUnavailable(@PathVariable String id) {
+    public ResponseEntity<?> markUnavailable(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_AVAILABILITY)) {
+            return unauthorized();
+        }
         return hostRepository.findById(id).map(host -> {
             String previous = host.getStatus();
             host.setStatus("OCCUPIED");
@@ -171,7 +193,12 @@ public class HostController {
     }
 
     @PostMapping("/{id}/mark-available")
-    public ResponseEntity<?> markAvailable(@PathVariable String id) {
+    public ResponseEntity<?> markAvailable(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_AVAILABILITY)) {
+            return unauthorized();
+        }
         return hostRepository.findById(id).map(host -> {
             String previous = host.getStatus();
             host.setStatus("ONLINE");
@@ -184,7 +211,12 @@ public class HostController {
         }).orElse(ResponseEntity.notFound().build());
     }
     @PostMapping("/{id}/approve")
-    public ResponseEntity<?> approveHost(@PathVariable String id) {
+    public ResponseEntity<?> approveHost(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_ONBOARDING)) {
+            return unauthorized();
+        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
@@ -215,7 +247,12 @@ public class HostController {
 
     @Transactional
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteHost(@PathVariable String id) {
+    public ResponseEntity<?> deleteHost(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_REMOVE)) {
+            return unauthorized();
+        }
         return hostRepository.findById(id).map(host -> {
             Map<String, Object> oldValue = Map.of("status", String.valueOf(host.getStatus()),
                     "clusterId", String.valueOf(host.getClusterId()), "hostname", String.valueOf(host.getHostname()));
@@ -250,6 +287,10 @@ public class HostController {
                 "Host disconnected. It is now waiting in discovered nodes and can be connected again."
             ));
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    private ResponseEntity<?> unauthorized() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
     }
 
     @GetMapping("/{id}/check-port/{port}")

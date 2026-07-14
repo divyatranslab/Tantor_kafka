@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -39,6 +40,7 @@ interface ClusterInfo {
 
 export function Clusters() {
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -57,6 +59,7 @@ export function Clusters() {
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
+    if (!canManage) return;
     if (!window.confirm(`Delete cluster '${name}' and clean it from assigned VM(s)?`)) return;
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
@@ -79,6 +82,7 @@ export function Clusters() {
   };
 
   const triggerRollingRestart = async (cluster: ClusterInfo) => {
+    if (!canManage) return;
     const nodeCount = cluster.nodeCount || cluster.hosts?.length || 0;
     const warning = nodeCount === 1
       ? `WARNING: '${cluster.name}' has only one node. Three nodes are recommended for availability, and this restart will interrupt Kafka service. Do you want to continue?`
@@ -168,9 +172,11 @@ export function Clusters() {
           <p>Deploy and manage your Tantor Kafka environments</p>
         </div>
         <div className="header-actions">
-          <button className="btn btn-primary-action" onClick={() => navigate('/cluster-deployment')}>
-            <Network size={13} /> Deploy Cluster
-          </button>
+          {canManage && (
+            <button className="btn btn-primary-action" onClick={() => navigate('/cluster-deployment')}>
+              <Network size={13} /> Deploy Cluster
+            </button>
+          )}
           <button className="btn" onClick={fetchClusters}>
             <RefreshCw size={13} className={loading ? 'spin' : ''} />
             Refresh
@@ -304,35 +310,39 @@ export function Clusters() {
                         </div>
                       </td>
                       <td>
-                        <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
-                          <button
-                            className="btn icon-only"
-                            onClick={() => setOpenMenuId(openMenuId === cluster.id ? null : cluster.id)}
-                            title="Cluster actions"
-                          >
-                            <MoreVertical size={16} />
-                          </button>
-                          {openMenuId === cluster.id && (
-                            <div className="cluster-action-menu">
-                              <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster)}>
-                                <RotateCcw size={14} />
-                                Rolling restart
-                              </button>
-                              <button onClick={() => navigate(`/clusters/${cluster.id}/config`)} disabled={!isClickable(cluster)}>
-                                <Settings size={14} />
-                                Configuration change
-                              </button>
-                              <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster)}>
-                                <ServerCog size={14} />
-                                Add node
-                              </button>
-                              <button className="danger" onClick={e => deleteCluster(e, cluster.id, cluster.name)}>
-                                <Trash2 size={14} />
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        {canManage ? (
+                          <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
+                            <button
+                              className="btn icon-only"
+                              onClick={() => setOpenMenuId(openMenuId === cluster.id ? null : cluster.id)}
+                              title="Cluster actions"
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                            {openMenuId === cluster.id && (
+                              <div className="cluster-action-menu">
+                                <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster)}>
+                                  <RotateCcw size={14} />
+                                  Rolling restart
+                                </button>
+                                <button onClick={() => navigate(`/clusters/${cluster.id}/config`)} disabled={!isClickable(cluster)}>
+                                  <Settings size={14} />
+                                  Configuration change
+                                </button>
+                                <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster)}>
+                                  <ServerCog size={14} />
+                                  Add node
+                                </button>
+                                <button className="danger" onClick={e => deleteCluster(e, cluster.id, cluster.name)}>
+                                  <Trash2 size={14} />
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="heartbeat-text">View only</span>
+                        )}
                       </td>
                     </tr>
                   );

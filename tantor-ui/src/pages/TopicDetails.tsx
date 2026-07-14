@@ -6,6 +6,7 @@ import {
   MoreVertical, RefreshCw, RotateCcw, Save, Search, Send, Settings2,
   ShieldCheck, Trash2, Users, X
 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './TopicDetails.css';
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
@@ -145,6 +146,7 @@ export function TopicDetails() {
   const { id, topicName: rawTopicName } = useParams<{ id: string; topicName: string }>();
   const topicName = rawTopicName ? decodeURIComponent(rawTopicName) : '';
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab') as Tab | null;
   const activeTab: Tab = tabs.some(tab => tab.id === requestedTab) ? requestedTab as Tab : 'overview';
@@ -257,6 +259,7 @@ export function TopicDetails() {
   const changeTab = (tab: Tab) => setSearchParams(tab === 'overview' ? {} : { tab });
 
   const runAction = async () => {
+    if (!canManage) return;
     if (!confirmAction) return;
     setActing(true);
     setError(null);
@@ -287,6 +290,7 @@ export function TopicDetails() {
 
   const produceMessage = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canManage) return;
     setProducing(true);
     setError(null);
     try {
@@ -315,6 +319,7 @@ export function TopicDetails() {
   };
 
   const saveConfig = async () => {
+    if (!canManage) return;
     if (!editingConfig) return;
     setSavingConfig(true);
     try {
@@ -335,6 +340,7 @@ export function TopicDetails() {
   };
 
   const resetConfig = async (config: TopicConfig) => {
+    if (!canManage) return;
     try {
       const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(config.name), { method: 'DELETE' });
       if (!response.ok) throw new Error(await responseError(response));
@@ -369,7 +375,7 @@ export function TopicDetails() {
             {detail.internal && <span className="topic-type-badge">Internal</span>}
           </div>
         </div>
-        <div className="topic-heading-actions">
+        {canManage && <div className="topic-heading-actions">
           <button className="topic-detail-button primary" onClick={() => setShowProduce(true)}><Send size={16} /> Produce message</button>
           <div className="detail-menu-wrap">
             <button className="detail-icon-button" aria-label="Topic actions" onClick={() => setActionMenu(current => !current)}><MoreVertical size={19} /></button>
@@ -381,7 +387,7 @@ export function TopicDetails() {
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       <nav className="topic-detail-tabs" aria-label="Topic sections">
@@ -453,7 +459,7 @@ export function TopicDetails() {
           <div>
             <div className="tab-toolbar"><label><Search size={16} /><input value={configSearch} onChange={event => setConfigSearch(event.target.value)} placeholder="Search settings" /></label><span>{filteredConfigs.length} settings</span></div>
             <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default value</th><th>Source</th><th /></tr></thead>
-              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td><strong>{config.name}</strong></td><td>{config.sensitive ? '••••••' : config.value ?? '—'}</td><td>{config.defaultValue ?? '—'}</td><td><span className="source-pill">{config.source.replaceAll('_', ' ')}</span></td><td className="setting-actions">{!config.readOnly && !config.sensitive && <><button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={14} /></button>{config.source !== 'DEFAULT_CONFIG' && <button title="Reset to default" onClick={() => resetConfig(config)}><RotateCcw size={14} /></button>}</>}</td></tr>)}</tbody>
+              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td><strong>{config.name}</strong></td><td>{config.sensitive ? '••••••' : config.value ?? '—'}</td><td>{config.defaultValue ?? '—'}</td><td><span className="source-pill">{config.source.replaceAll('_', ' ')}</span></td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <><button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={14} /></button>{config.source !== 'DEFAULT_CONFIG' && <button title="Reset to default" onClick={() => resetConfig(config)}><RotateCcw size={14} /></button>}</>}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -475,7 +481,7 @@ export function TopicDetails() {
         )}
       </div>
 
-      {showProduce && (
+      {canManage && showProduce && (
         <div className="detail-modal-backdrop" onMouseDown={() => setShowProduce(false)}>
           <div className="detail-modal produce-modal" onMouseDown={event => event.stopPropagation()}>
             <header><div><span>Write to topic</span><h3>Produce message</h3></div><button onClick={() => setShowProduce(false)}><X size={18} /></button></header>
@@ -489,7 +495,7 @@ export function TopicDetails() {
         </div>
       )}
 
-      {confirmAction && (
+      {canManage && confirmAction && (
         <div className="detail-modal-backdrop" onMouseDown={() => !acting && setConfirmAction(null)}>
           <div className="detail-modal confirm-modal" onMouseDown={event => event.stopPropagation()}>
             <div className="confirm-warning"><AlertTriangle size={22} /></div>
@@ -501,7 +507,7 @@ export function TopicDetails() {
         </div>
       )}
 
-      {editingConfig && (
+      {canManage && editingConfig && (
         <div className="detail-modal-backdrop" onMouseDown={() => setEditingConfig(null)}>
           <div className="detail-modal config-modal" onMouseDown={event => event.stopPropagation()}>
             <header><div><span>Topic setting</span><h3>{editingConfig.name}</h3></div><button onClick={() => setEditingConfig(null)}><X size={18} /></button></header>

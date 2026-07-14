@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, ChevronRight, Edit3, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -68,6 +69,7 @@ type View = 'list' | 'detail' | 'edit';
 
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
+  const { canManage } = usePermissions();
   const [view, setView] = useState<View>('list');
   const [summary, setSummary] = useState<SchemaSummary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -189,6 +191,7 @@ export function SchemaRegistry() {
 
   /** Open connection modal, optionally pre-filling from an existing connection. */
   const openConnectionModal = (conn?: SavedConnection) => {
+    if (!canManage) return;
     if (conn) {
       setEditingConnectionId(conn.id);
       setFormConnectionName(conn.connectionName);
@@ -212,6 +215,7 @@ export function SchemaRegistry() {
   };
 
   const handleSaveConnection = async () => {
+    if (!canManage) return;
     setConnectSaving(true);
     setConnectError(null);
     try {
@@ -254,6 +258,7 @@ export function SchemaRegistry() {
   };
 
   const handleDeleteConnection = async () => {
+    if (!canManage) return;
     if (!selectedConnectionId) return;
     if (!window.confirm("Are you sure you want to delete this connection?")) return;
     
@@ -338,6 +343,7 @@ export function SchemaRegistry() {
   };
 
   const openEdit = () => {
+    if (!canManage) return;
     const latest = details?.latest;
     if (!selected || !latest) return;
     setEditSchemaType(latest.schemaType || 'AVRO');
@@ -384,6 +390,7 @@ export function SchemaRegistry() {
   // ── Actions ───────────────────────────────────────────────────
   const submitCreateSchema = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (!createSubject.trim() || !createSchema.trim()) return;
     setSaving(true);
     setError(null);
@@ -408,6 +415,7 @@ export function SchemaRegistry() {
 
   const submitEditSchema = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (!selected || !newSchema.trim()) return;
     setSaving(true);
     setError(null);
@@ -438,6 +446,7 @@ export function SchemaRegistry() {
   };
 
   const deleteSubject = async (name: string) => {
+    if (!canManage) return;
     if (!window.confirm(`Delete schema subject "${name}"?`)) return;
     setSaving(true);
     setError(null);
@@ -457,6 +466,7 @@ export function SchemaRegistry() {
   };
 
   const saveGlobalCompatibility = async () => {
+    if (!canManage) return;
     setSaving(true); setError(null);
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
@@ -471,6 +481,7 @@ export function SchemaRegistry() {
   };
 
   const saveSubjectCompatibility = async () => {
+    if (!canManage) return;
     if (!selected) return;
     setSaving(true); setError(null);
     try {
@@ -529,7 +540,7 @@ export function SchemaRegistry() {
                   )}
                 </div>
               )}
-              <div className="ds-compat-control">
+              {canManage && <div className="ds-compat-control">
                 <span>Global compatibility</span>
                 <select value={globalCompatibility} onChange={e => setGlobalCompatibility(e.target.value)}>
                   {compatibilityOptions.map(o => <option key={o} value={o}>{o}</option>)}
@@ -537,22 +548,26 @@ export function SchemaRegistry() {
                 <button className="ds-icon-button" onClick={saveGlobalCompatibility} disabled={saving} title="Save global compatibility">
                   <Save size={16} />
                 </button>
-              </div>
+              </div>}
               <button className="ds-button" onClick={load} disabled={loading}>
                 <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
               </button>
-              <button className="ds-button primary" onClick={() => setShowCreate(true)}>
-                <Plus size={16} /> Create Schema
-              </button>
-              <button className="ds-icon-button" onClick={() => openConnectionModal(selectedConn ?? undefined)} disabled={!selectedConn} title="Edit connection">
-                <MoreVertical size={18} />
-              </button>
-              <button className="ds-icon-button" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection" style={{ color: 'var(--color-danger, #e88080)' }}>
-                <Trash2 size={18} />
-              </button>
-              <button className="ds-button" onClick={() => openConnectionModal()} title="Add new SR instance">
-                <Settings size={16} /> Add Connection
-              </button>
+              {canManage && (
+                <>
+                  <button className="ds-button primary" onClick={() => setShowCreate(true)}>
+                    <Plus size={16} /> Create Schema
+                  </button>
+                  <button className="ds-icon-button" onClick={() => openConnectionModal(selectedConn ?? undefined)} disabled={!selectedConn} title="Edit connection">
+                    <MoreVertical size={18} />
+                  </button>
+                  <button className="ds-icon-button" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection" style={{ color: 'var(--color-danger, #e88080)' }}>
+                    <Trash2 size={18} />
+                  </button>
+                  <button className="ds-button" onClick={() => openConnectionModal()} title="Add new SR instance">
+                    <Settings size={16} /> Add Connection
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -576,11 +591,11 @@ export function SchemaRegistry() {
           <div className="ds-panel">
             <table className="ds-table">
               <thead>
-                <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Actions</th></tr>
+                <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
               </thead>
               <tbody>
                 {loading && !summary ? (
-                  <tr><td colSpan={6} className="ds-empty">Loading schemas...</td></tr>
+                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">Loading schemas...</td></tr>
                 ) : summary && summary.subjects.length > 0 ? (
                   summary.subjects.map(item => (
                     <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
@@ -589,17 +604,19 @@ export function SchemaRegistry() {
                       <td>{item.version || '-'}</td>
                       <td>{item.id || '-'}</td>
                       <td>{item.schemaType}</td>
-                      <td>
-                        <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
-                          <button className="ds-button danger" onClick={() => deleteSubject(item.subject)} disabled={saving}>
-                            <Trash2 size={15} /> Delete
-                          </button>
-                        </div>
-                      </td>
+                      {canManage && (
+                        <td>
+                          <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
+                            <button className="ds-button danger" onClick={() => deleteSubject(item.subject)} disabled={saving}>
+                              <Trash2 size={15} /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan={6} className="ds-empty">No schemas found in this registry.</td></tr>
+                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No schemas found in this registry.</td></tr>
                 )}
               </tbody>
             </table>
@@ -622,12 +639,16 @@ export function SchemaRegistry() {
               <button className="ds-button" onClick={openCompare} disabled={(details?.versions.length || 0) < 2} title="Compare versions">
                 <GitCompare size={16} /> Compare Versions
               </button>
-              <button className="ds-button" onClick={openEdit} disabled={!details?.latest}>
-                <Edit3 size={16} /> Edit Schema
-              </button>
-              <button className="ds-icon-button" onClick={() => deleteSubject(selected.subject)} disabled={saving} title="Delete subject">
-                <Trash2 size={16} />
-              </button>
+              {canManage && (
+                <>
+                  <button className="ds-button" onClick={openEdit} disabled={!details?.latest}>
+                    <Edit3 size={16} /> Edit Schema
+                  </button>
+                  <button className="ds-icon-button" onClick={() => deleteSubject(selected.subject)} disabled={saving} title="Delete subject">
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -649,12 +670,14 @@ export function SchemaRegistry() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
                 <span>Compatibility</span>
                 <div className="ds-compat-inline">
-                  <select value={subjectCompatibility} onChange={e => setSubjectCompatibility(e.target.value)}>
+                  <select value={subjectCompatibility} onChange={e => setSubjectCompatibility(e.target.value)} disabled={!canManage}>
                     {compatibilityOptions.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
-                  <button className="ds-icon-button" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
-                    <Save size={15} />
-                  </button>
+                  {canManage && (
+                    <button className="ds-icon-button" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
+                      <Save size={15} />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -757,7 +780,7 @@ export function SchemaRegistry() {
       )}
 
       {/* ── EDIT VIEW ─────────────────────────────────────────── */}
-      {view === 'edit' && selected && (
+      {canManage && view === 'edit' && selected && (
         <form onSubmit={submitEditSchema}>
           {/* Breadcrumb bar */}
           <div className="ds-page-bar">
@@ -816,7 +839,7 @@ export function SchemaRegistry() {
       )}
 
       {/* ── Connection modal ──────────────────────────────────── */}
-      {showConnection && (
+      {canManage && showConnection && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-connection-modal">
             <div className="ds-modal-header">
@@ -919,7 +942,7 @@ export function SchemaRegistry() {
       )}
 
       {/* ── Create Schema modal ───────────────────────────────── */}
-      {showCreate && (
+      {canManage && showCreate && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <form className="ds-modal" onSubmit={submitCreateSchema}>
             <div className="ds-modal-header">

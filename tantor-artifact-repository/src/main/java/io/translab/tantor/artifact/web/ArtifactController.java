@@ -12,6 +12,7 @@ import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
+import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +24,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -50,15 +53,18 @@ public class ArtifactController {
     private final ManifestService manifestService;
     private final ObjectMapper objectMapper;
     private final ArtifactAuditService auditService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
                               ObjectMapper objectMapper,
-                              ArtifactAuditService auditService) {
+                              ArtifactAuditService auditService,
+                              RoleAuthenticationUtil roleAuthenticationUtil) {
         this.artifactService = artifactService;
         this.manifestService = manifestService;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.roleAuthenticationUtil = roleAuthenticationUtil;
     }
 
     @Operation(summary = "Upload an artifact (multipart)")
@@ -75,8 +81,13 @@ public class ArtifactController {
             @RequestParam(required = false) String attributesJson,
             @RequestParam(defaultValue = "false") boolean overwrite,
             @RequestParam MultipartFile file,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             HttpServletRequest request) throws IOException {
 
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String actor = currentUser(authorization);
         String fileName = file.getOriginalFilename();
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
@@ -90,17 +101,17 @@ public class ArtifactController {
                 sha256,
                 parseAttributes(attributesJson),
                 overwrite,
-                currentUser());
+                actor);
 
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, file.getInputStream());
         } catch (RuntimeException | IOException e) {
-            safeAudit(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+            safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
             throw e;
         }
-        auditUpload(saved, request.getRemoteAddr());
+        auditUpload(saved, actor, request.getRemoteAddr());
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -121,8 +132,13 @@ public class ArtifactController {
             @RequestParam(required = false) String sha256,
             @RequestParam(required = false) String attributesJson,
             @RequestParam(defaultValue = "false") boolean overwrite,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             HttpServletRequest request) throws IOException {
 
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String actor = currentUser(authorization);
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
                 name != null ? name : fileName,
@@ -135,17 +151,17 @@ public class ArtifactController {
                 sha256,
                 parseAttributes(attributesJson),
                 overwrite,
-                currentUser());
+                actor);
 
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, request.getInputStream());
         } catch (RuntimeException | IOException e) {
-            safeAudit(currentUser(), "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
+            safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
             throw e;
         }
-        auditUpload(saved, request.getRemoteAddr());
+        auditUpload(saved, actor, request.getRemoteAddr());
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -202,24 +218,33 @@ public class ArtifactController {
 
     @Operation(summary = "Re-verify on-disk integrity against the recorded checksum")
     @PostMapping("/{id}/verify")
-    public Map<String, Object> verify(@PathVariable UUID id) {
+    public ResponseEntity<Map<String, Object>> verify(@PathVariable UUID id,
+                                                      @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
+        }
         boolean ok = artifactService.verifyIntegrity(id);
-        return Map.of("id", id, "verified", ok);
+        return ResponseEntity.ok(Map.of("id", id, "verified", ok));
     }
 
     @Operation(summary = "Soft-delete an artifact (removes binary, retains audit row)")
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_DELETE)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        String actor = currentUser(authorization);
         Artifact artifact = artifactService.get(id);
         artifactService.delete(id);
-        safeAudit(currentUser(), "PACKAGE_REMOVED", id.toString(), "SUCCESS",
+        safeAudit(actor, "PACKAGE_REMOVED", id.toString(), "SUCCESS",
                 Map.of("status", artifact.getStatus().name(), "fileName", artifact.getFileName()),
                 Map.of("status", "DELETED"), null, null);
         return ResponseEntity.noContent().build();
     }
 
-    private void auditUpload(Artifact saved, String ipAddress) {
-        safeAudit(currentUser(), "PACKAGE_UPLOADED", saved.getId().toString(),
+    private void auditUpload(Artifact saved, String actor, String ipAddress) {
+        safeAudit(actor, "PACKAGE_UPLOADED", saved.getId().toString(),
                 saved.getStatus() == ArtifactStatus.FAILED ? "FAILED" : "SUCCESS", null,
                 Map.of("serviceType", saved.getServiceType().name(), "version", saved.getVersion(),
                         "fileName", saved.getFileName(), "status", saved.getStatus().name(),
@@ -253,5 +278,9 @@ public class ArtifactController {
      */
     private String currentUser() {
         return "system";
+    }
+
+    private String currentUser(String authorization) {
+        return roleAuthenticationUtil.username(authorization);
     }
 }

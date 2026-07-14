@@ -57,6 +57,7 @@ public class ExternalClusterService {
     private final AuditService auditService;
     private final EncryptionService encryptionService;
     private final TruststoreStorageService truststoreStorageService;
+    private final PrometheusMonitoringService prometheusMonitoringService;
 
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
@@ -366,6 +367,7 @@ public class ExternalClusterService {
                 null,
                 externalAuditDetails(savedCluster)
         );
+        reconcileMonitoringExporter(savedCluster.getId());
         
         return savedCluster;
     }
@@ -489,6 +491,7 @@ public class ExternalClusterService {
         ExternalDiscoveryReport report = requiredPendingDiscovery(discoveryKey);
         ExternalCluster cluster = upsertDiscoveryCluster(report);
         pendingDiscoveries.remove(discoveryKey);
+        reconcileMonitoringExporter(cluster.getId());
         return cluster;
     }
 
@@ -583,6 +586,14 @@ public class ExternalClusterService {
         }
         
         return saved;
+    }
+
+    private void reconcileMonitoringExporter(UUID clusterId) {
+        try {
+            clusterRepository.findById(clusterId).ifPresent(prometheusMonitoringService::ensureKafkaExporter);
+        } catch (Exception e) {
+            log.warn("External cluster {} was saved, but kafka_exporter reconciliation failed", clusterId, e);
+        }
     }
 
     @Transactional

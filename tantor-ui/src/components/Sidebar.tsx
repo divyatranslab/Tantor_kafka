@@ -19,6 +19,7 @@ import {
 import './Sidebar.css';
 import tantorLogo from '../assets/tantor-logo.png';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 type NavItem = {
   icon?: any;
@@ -70,6 +71,7 @@ const navSections: NavSection[] = [
 
 export function Sidebar() {
   const { decodedToken, logout } = useAuth();
+  const { isAdmin } = usePermissions();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     Clusters: true,
   });
@@ -135,7 +137,9 @@ export function Sidebar() {
         {navSections.map(section => (
           <div key={section.label} className="nav-section">
             <span className="nav-section-label">{section.label}</span>
-            {section.items.map(item => renderItem(item))}
+            {section.items
+              .filter(item => isAdmin || item.path !== '/user-management')
+              .map(item => renderItem(item))}
           </div>
         ))}
       </nav>

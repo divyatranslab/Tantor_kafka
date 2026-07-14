@@ -4,6 +4,7 @@ import {
   CheckCircle2, FileText, GitCompare, History, Loader2, Plus, RefreshCw,
   RotateCcw, Save, Server, Trash2, UploadCloud,
 } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
 
@@ -73,6 +74,7 @@ const editableVersionStatuses = new Set(['VALIDATED', 'APPROVED', 'FAILED']);
 export function InternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState('');
@@ -149,11 +151,13 @@ export function InternalConfigEditor() {
   };
 
   const mutateDraft = (updater: (current: Record<string, string>) => Record<string, string>) => {
+    if (!canManage) return;
     setDraftProperties(current => updater(current));
     setPreview(null);
   };
 
   const addProperty = () => {
+    if (!canManage) return;
     const key = newKey.trim();
     if (!key || !/^[A-Za-z0-9._-]+$/.test(key)) {
       alert('Enter a valid Kafka property key.');
@@ -173,6 +177,7 @@ export function InternalConfigEditor() {
   };
 
   const reviewChange = async () => {
+    if (!canManage) return;
     if (!selectedFile?.serviceId) return;
     setWorking('preview');
     try {
@@ -188,6 +193,7 @@ export function InternalConfigEditor() {
   };
 
   const saveVersion = async () => {
+    if (!canManage) return;
     if (!selectedFile?.serviceId || !preview?.valid) return;
     setWorking('save');
     try {
@@ -204,6 +210,7 @@ export function InternalConfigEditor() {
   };
 
   const versionAction = async (version: ConfigVersion, action: 'apply' | 'rollback') => {
+    if (!canManage) return;
     if (action === 'apply') {
       const message = restart
         ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
@@ -278,7 +285,7 @@ export function InternalConfigEditor() {
           <div className="node-config-editor-head">
             <div><h3>{selectedFile.label}</h3><p>{selectedFile.path}</p></div>
             <div className="config-options">
-              <label><input type="checkbox" checked={restart} onChange={event => { setRestart(event.target.checked); setPreview(null); }} /> Restart after apply</label>
+              {canManage && <label><input type="checkbox" checked={restart} onChange={event => { setRestart(event.target.checked); setPreview(null); }} /> Restart after apply</label>}
             </div>
           </div>
 
@@ -290,23 +297,25 @@ export function InternalConfigEditor() {
                   const generated = generatedKeys.has(key);
                   return <tr key={key}>
                     <td><code>{key}</code>{generated && <small>Managed by Tantor</small>}</td>
-                    <td><input value={value} disabled={generated} onChange={event => mutateDraft(current => ({ ...current, [key]: event.target.value }))} /></td>
-                    <td><button title={`Remove ${key}`} disabled={generated} onClick={() => mutateDraft(current => { const next = { ...current }; delete next[key]; return next; })}><Trash2 size={14} /></button></td>
+                    <td><input value={value} disabled={generated || !canManage} onChange={event => mutateDraft(current => ({ ...current, [key]: event.target.value }))} /></td>
+                    <td>{canManage && <button title={`Remove ${key}`} disabled={generated} onClick={() => mutateDraft(current => { const next = { ...current }; delete next[key]; return next; })}><Trash2 size={14} /></button>}</td>
                   </tr>;
                 })}
               </tbody>
             </table>
           </div>
 
-          <div className="node-config-add">
-            <input placeholder="property.key" value={newKey} onChange={event => setNewKey(event.target.value)} />
-            <input placeholder="value" value={newValue} onChange={event => setNewValue(event.target.value)} />
-            <button onClick={addProperty}><Plus size={14} /> Add property</button>
-          </div>
+          {canManage && (
+            <div className="node-config-add">
+              <input placeholder="property.key" value={newKey} onChange={event => setNewKey(event.target.value)} />
+              <input placeholder="value" value={newValue} onChange={event => setNewValue(event.target.value)} />
+              <button onClick={addProperty}><Plus size={14} /> Add property</button>
+            </div>
+          )}
 
           <div className="node-config-footer">
             <span>Target: {selectedFile.hostId} - node {selectedFile.nodeId} - {selectedFile.role}</span>
-            <button onClick={reviewChange} disabled={!!working}>{working === 'preview' ? <Loader2 size={14} className="spin" /> : <GitCompare size={14} />} Review &amp; validate</button>
+            {canManage && <button onClick={reviewChange} disabled={!!working}>{working === 'preview' ? <Loader2 size={14} className="spin" /> : <GitCompare size={14} />} Review &amp; validate</button>}
           </div>
         </section>
 
@@ -322,7 +331,7 @@ export function InternalConfigEditor() {
           </div>
           <div className="config-review-footer">
             <span>{preview.valid ? 'Validation passed. Saving creates history only; it does not apply the file.' : 'Fix validation errors before saving.'}</span>
-            <button onClick={saveVersion} disabled={!preview.valid || !!working}>{working === 'save' ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Save as new version</button>
+            {canManage && <button onClick={saveVersion} disabled={!preview.valid || !!working}>{working === 'save' ? <Loader2 size={14} className="spin" /> : <Save size={14} />} Save as new version</button>}
           </div>
         </section>}
 
@@ -333,12 +342,12 @@ export function InternalConfigEditor() {
               <div className="version-main">
                 <strong>v{version.configVersion}</strong><span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
                 {version.rollbackVersion && <span className="rollback-tag">restores v{version.rollbackVersion}</span>}
-                <small>created by {version.createdBy || 'unknown'} - {new Date(version.createdAt).toLocaleString()}</small>
+                <small>user {version.createdBy || 'unknown'} - {new Date(version.createdAt).toLocaleString()}</small>
               </div>
               <div className="version-actions">
-                {editableVersionStatuses.has(version.status) && <button className="primary" onClick={() => versionAction(version, 'apply')} disabled={!!working}><UploadCloud size={13} /> Apply</button>}
+                {canManage && editableVersionStatuses.has(version.status) && <button className="primary" onClick={() => versionAction(version, 'apply')} disabled={!!working}><UploadCloud size={13} /> Apply</button>}
                 {version.jobId && <button onClick={() => navigate(`/jobs/${version.jobId}`)}>View job</button>}
-                {version.status !== 'APPLIED' && ['SUPERSEDED'].includes(version.status) && <button onClick={() => versionAction(version, 'rollback')} disabled={!!working}><RotateCcw size={13} /> Restore</button>}
+                {canManage && version.status !== 'APPLIED' && ['SUPERSEDED'].includes(version.status) && <button onClick={() => versionAction(version, 'rollback')} disabled={!!working}><RotateCcw size={13} /> Restore</button>}
               </div>
             </article>)}</div>}
         </section>

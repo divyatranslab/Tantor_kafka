@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
+import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
 
@@ -92,6 +93,7 @@ export function ConfigEditor() {
 function ExternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   
   const [loading, setLoading] = useState(false);
   const [topology, setTopology] = useState<ServiceTopologyItem[]>([]);
@@ -261,6 +263,7 @@ function ExternalConfigEditor() {
   }, [selectedFile, selectedNodeId]); // re-run when node changes
 
   const mutateDraft = (key: string, value: string | null) => {
+    if (!canManage) return;
     setDraftProperties(prev => {
       const next = { ...prev };
       if (value === null) delete next[key];
@@ -270,6 +273,7 @@ function ExternalConfigEditor() {
   };
 
   const applyChanges = async () => {
+    if (!canManage) return;
     // save current screen
     saveDraftToStaged();
     
@@ -384,10 +388,11 @@ function ExternalConfigEditor() {
                             <input
                               type="text"
                               value={String(value)}
+                              disabled={!canManage}
                               onChange={e => mutateDraft(key, e.target.value)}
                               placeholder={String(baseValue) || ''}
                             />
-                            {isModified && (
+                            {canManage && isModified && (
                               <button className="icon-btn revert" onClick={() => mutateDraft(key, String(baseValue))} title="Revert to current">
                                 <RefreshCw size={14} />
                               </button>
@@ -402,11 +407,13 @@ function ExternalConfigEditor() {
             </div>
           )}
           
-          <div className="node-config-footer">
-             <button onClick={saveDraftToStaged} disabled={readingConfig || !selectedNode.canExecuteTasks}>
-               <Save size={14}/> Stage Changes
-             </button>
-          </div>
+          {canManage && (
+            <div className="node-config-footer">
+               <button onClick={saveDraftToStaged} disabled={readingConfig || !selectedNode.canExecuteTasks}>
+                 <Save size={14}/> Stage Changes
+               </button>
+            </div>
+          )}
         </section>
       )}
 
@@ -432,13 +439,13 @@ function ExternalConfigEditor() {
           </div>
 
           <div className="config-review-footer">
-            <label>
+            {canManage && <label>
               <input type="checkbox" checked={rollingRestart} onChange={e => setRollingRestart(e.target.checked)} /> 
               Perform rolling restart to apply immediately
-            </label>
-            <button className="primary" onClick={applyChanges} disabled={applying}>
+            </label>}
+            {canManage && <button className="primary" onClick={applyChanges} disabled={applying}>
               {applying ? <Loader2 size={14} className="spin" /> : <Play size={14} />} Apply Changes
-            </button>
+            </button>}
           </div>
         </section>
       )}

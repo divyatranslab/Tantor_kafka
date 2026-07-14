@@ -6,8 +6,10 @@ import io.translab.tantor.server.domain.ConfigVersion;
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.ConfigVersionService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,13 +24,18 @@ public class ConfigVersionController {
 
     private final ClusterRepository clusterRepository;
     private final ConfigVersionService configVersionService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     @PostMapping("/services/{serviceId}/versions/preview")
     public ResponseEntity<?> preview(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable UUID serviceId,
             @RequestBody VersionedConfigRequest request
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIG_VERSION_CHANGE)) {
+            return unauthorized();
+        }
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         if (findService(cluster, serviceId) == null) {
@@ -40,10 +47,14 @@ public class ConfigVersionController {
 
     @PostMapping("/services/{serviceId}/versions")
     public ResponseEntity<?> create(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable UUID serviceId,
             @RequestBody VersionedConfigRequest request
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIG_VERSION_CHANGE)) {
+            return unauthorized();
+        }
         try {
             Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
             if (cluster == null) return ResponseEntity.notFound().build();
@@ -71,7 +82,13 @@ public class ConfigVersionController {
     }
 
     @PostMapping("/versions/{versionId}/approve")
-    public ResponseEntity<?> approve(@PathVariable UUID clusterId, @PathVariable UUID versionId) {
+    public ResponseEntity<?> approve(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID versionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIG_VERSION_CHANGE)) {
+            return unauthorized();
+        }
         try {
             return ResponseEntity.ok(configVersionService.approve(clusterId, versionId));
         } catch (IllegalArgumentException | IllegalStateException e) {
@@ -81,10 +98,14 @@ public class ConfigVersionController {
 
     @PostMapping("/versions/{versionId}/apply")
     public ResponseEntity<?> apply(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @PathVariable UUID versionId,
             @RequestBody(required = false) ApplyVersionRequest request
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIG_VERSION_CHANGE)) {
+            return unauthorized();
+        }
         try {
             Job job = configVersionService.apply(clusterId, versionId, request == null || request.isRestart());
             return ResponseEntity.ok(Map.of("jobId", job.getId().toString(), "status", job.getStatus().name()));
@@ -94,12 +115,22 @@ public class ConfigVersionController {
     }
 
     @PostMapping("/versions/{versionId}/rollback")
-    public ResponseEntity<?> rollback(@PathVariable UUID clusterId, @PathVariable UUID versionId) {
+    public ResponseEntity<?> rollback(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable UUID versionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIG_VERSION_CHANGE)) {
+            return unauthorized();
+        }
         try {
             return ResponseEntity.ok(configVersionService.createRollback(clusterId, versionId));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }
+    }
+
+    private ResponseEntity<?> unauthorized() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
     }
 
     private ClusterServiceAssignment findService(Cluster cluster, UUID serviceId) {

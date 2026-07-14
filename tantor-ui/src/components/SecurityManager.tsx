@@ -5,6 +5,7 @@ import {
 import {
   getAcls, createAcl, deleteAcl,
 } from '../lib/api';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface Props {
   clusterId: string;
@@ -24,6 +25,7 @@ const OPERATIONS = ['Read', 'Write', 'Create', 'Describe', 'Alter', 'Delete', 'A
 const RESOURCE_TYPES = ['topic', 'group', 'cluster', 'transactional-id'];
 
 export default function SecurityManager({ clusterId }: Props) {
+  const { canManage } = usePermissions();
   // ── ACLs state ──
   const [acls, setAcls] = useState<AclEntry[]>([]);
   const [aclsLoading, setAclsLoading] = useState(false);
@@ -61,6 +63,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
   const handleCreateAcl = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManage) return;
     if (aclOperations.length === 0) {
       alert("Please select at least one operation.");
       return;
@@ -91,6 +94,7 @@ export default function SecurityManager({ clusterId }: Props) {
   };
 
   const handleDeleteAcl = async (acl: AclEntry) => {
+    if (!canManage) return;
     if (!confirm(`Delete ACL for ${acl.principal} on ${acl.resourceType} ${acl.resourceName}?`)) return;
     try {
       await deleteAcl(clusterId, {
@@ -109,6 +113,7 @@ export default function SecurityManager({ clusterId }: Props) {
   };
 
   const toggleAclOperation = (op: string) => {
+    if (!canManage) return;
     if (op === 'All') {
       setAclOperations(prev => prev.includes('All') ? [] : ['All']);
     } else {
@@ -137,15 +142,17 @@ export default function SecurityManager({ clusterId }: Props) {
           <button onClick={fetchAcls} disabled={aclsLoading} className="btn-secondary">
             <RefreshCw size={16} className={aclsLoading ? 'spin' : ''} /> Refresh
           </button>
-          <button onClick={() => setShowCreateAcl(true)} className="btn-primary">
-            <Plus size={16} /> Add ACL
-          </button>
+          {canManage && (
+            <button onClick={() => setShowCreateAcl(true)} className="btn-primary">
+              <Plus size={16} /> Add ACL
+            </button>
+          )}
         </div>
       </div>
 
       {aclsError && <div className="error-banner">{aclsError}</div>}
 
-      {showCreateAcl && (
+      {canManage && showCreateAcl && (
         <div className="create-panel" style={{background:'#f9fafb',padding:'1.5rem',borderRadius:8,marginBottom:'1.5rem',border:'1px solid #e5e7eb'}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
             <h3 style={{margin:0,fontSize:'1.1rem'}}>Add New ACL Binding</h3>
@@ -273,14 +280,14 @@ export default function SecurityManager({ clusterId }: Props) {
               <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Resource</th>
               <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Operation</th>
               <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Permission</th>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Actions</th>
+              {canManage && <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {aclsLoading && acls.length === 0 ? (
-              <tr><td colSpan={6} style={{padding:'2rem',textAlign:'center'}}><Loader2 className="spin" size={24} style={{margin:'0 auto'}}/></td></tr>
+              <tr><td colSpan={canManage ? 6 : 5} style={{padding:'2rem',textAlign:'center'}}><Loader2 className="spin" size={24} style={{margin:'0 auto'}}/></td></tr>
             ) : filteredAcls.length === 0 ? (
-              <tr><td colSpan={6} style={{padding:'2rem',textAlign:'center',color:'#6b7280'}}>No ACLs found.</td></tr>
+              <tr><td colSpan={canManage ? 6 : 5} style={{padding:'2rem',textAlign:'center',color:'#6b7280'}}>No ACLs found.</td></tr>
             ) : (
               filteredAcls.map((acl, i) => (
                 <tr key={i} style={{borderBottom:'1px solid #e5e7eb'}}>
@@ -301,11 +308,13 @@ export default function SecurityManager({ clusterId }: Props) {
                       {acl.permissionType}
                     </span>
                   </td>
-                  <td style={{padding:'0.75rem'}}>
-                    <button onClick={() => handleDeleteAcl(acl)} style={{color:'#ef4444',background:'none',border:'none',cursor:'pointer',padding:4}} title="Delete ACL">
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
+                  {canManage && (
+                    <td style={{padding:'0.75rem'}}>
+                      <button onClick={() => handleDeleteAcl(acl)} style={{color:'#ef4444',background:'none',border:'none',cursor:'pointer',padding:4}} title="Delete ACL">
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}

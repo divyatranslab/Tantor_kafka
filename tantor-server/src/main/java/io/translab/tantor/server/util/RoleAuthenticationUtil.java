@@ -25,6 +25,25 @@ public class RoleAuthenticationUtil {
     public static final String ROLLING_RESTART = "ROLLING_RESTART";
     public static final String ADD_NODE = "ADD_NODE";
     public static final String CONFIGURATION_CHANGE = "CONFIGURATION_CHANGE";
+    public static final String CONFIG_VERSION_CHANGE = "CONFIG_VERSION_CHANGE";
+    public static final String BIND_AGENT = "BIND_AGENT";
+    public static final String HOST_ONBOARDING = "HOST_ONBOARDING";
+    public static final String HOST_REMOVE = "HOST_REMOVE";
+    public static final String HOST_AVAILABILITY = "HOST_AVAILABILITY";
+    public static final String HOST_REBOOT = "HOST_REBOOT";
+    public static final String HOST_PREREQUISITES = "HOST_PREREQUISITES";
+    public static final String TOPIC_MUTATION = "TOPIC_MUTATION";
+    public static final String PRODUCE_MESSAGE = "PRODUCE_MESSAGE";
+    public static final String SECURITY_CHANGE = "SECURITY_CHANGE";
+    public static final String SCHEMA_REGISTRY_CHANGE = "SCHEMA_REGISTRY_CHANGE";
+    public static final String KAFKA_CONNECT_CHANGE = "KAFKA_CONNECT_CHANGE";
+    public static final String PARCEL_ACTION = "PARCEL_ACTION";
+    public static final String ARTIFACT_UPLOAD = "ARTIFACT_UPLOAD";
+    public static final String ARTIFACT_DELETE = "ARTIFACT_DELETE";
+    public static final String BUNDLE_IMPORT = "BUNDLE_IMPORT";
+    public static final String MONITORING_ENABLE = "MONITORING_ENABLE";
+    public static final String JOB_CONTROL = "JOB_CONTROL";
+    public static final String USER_MANAGEMENT = "USER_MANAGEMENT";
 
     private final ObjectMapper objectMapper;
     private final Map<String, Set<String>> allowedRolesByAction;
