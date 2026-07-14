@@ -1,5 +1,6 @@
 import json
 
+
 with open('last_call.json', 'r', encoding='utf-8') as f:
     call = json.load(f)
 
