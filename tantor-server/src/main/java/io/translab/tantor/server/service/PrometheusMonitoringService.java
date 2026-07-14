@@ -354,12 +354,28 @@ public class PrometheusMonitoringService {
             String nodeId = service.getNodeId() == null ? null : String.valueOf(service.getNodeId());
             if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isBrokerRole(role)) {
                 int port = service.getJmxExporterPort() != null ? service.getJmxExporterPort() : jmxPort(cluster);
-                targets.add(group(hostIp + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
+                addJmxTarget(targets, cluster, hostIp, port, role, nodeId);
+                if (port != DEFAULT_JMX_PORT) {
+                    addJmxTarget(targets, cluster, hostIp, DEFAULT_JMX_PORT, role, nodeId);
+                }
             }
             if (Boolean.TRUE.equals(cluster.getNodeExporterEnabled())) {
                 int port = service.getNodeExporterPort() != null ? service.getNodeExporterPort() : nodeExporterPort(cluster);
                 targets.add(group(hostIp + ":" + port, labels(cluster, "node", role, nodeId)));
             }
+        }
+    }
+
+    private void addJmxTarget(List<SdTargetGroup> targets, Cluster cluster, String hostIp, int port, String role, String nodeId) {
+        if (port <= 0) {
+            return;
+        }
+        String target = hostIp + ":" + port;
+        boolean exists = targets.stream()
+                .filter(group -> group.getLabels() != null && "kafka_jmx".equals(group.getLabels().get("job")))
+                .anyMatch(group -> group.getTargets() != null && group.getTargets().contains(target));
+        if (!exists) {
+            targets.add(group(target, labels(cluster, "kafka_jmx", role, nodeId)));
         }
     }
 
@@ -650,26 +666,27 @@ public class PrometheusMonitoringService {
         String normalizedProtocol = protocol == null ? "" : protocol.trim().toUpperCase(Locale.ROOT);
         if (normalizedProtocol.contains("SSL")) {
             args.add("--tls.enabled");
-            if (Boolean.TRUE.equals(external.getDisableHostnameVerification())) {
+            String truststoreType = normalizeCertificateType(external.getTruststoreType());
+            boolean hasPemCaFile = hasText(external.getTruststorePath()) && isPemCertificateType(truststoreType);
+            if (Boolean.TRUE.equals(external.getDisableHostnameVerification()) || !hasPemCaFile) {
                 args.add("--tls.insecure-skip-tls-verify");
             }
-            String truststoreType = external.getTruststoreType() == null ? "" : external.getTruststoreType().trim().toUpperCase(Locale.ROOT);
-            if (external.getTruststorePath() != null && !external.getTruststorePath().isBlank()
-                    && ("PEM".equals(truststoreType) || "CRT".equals(truststoreType) || "CERT".equals(truststoreType))) {
+            if (hasPemCaFile) {
                 args.add("--tls.ca-file=" + systemdArg(external.getTruststorePath().trim()));
             }
-            if (external.getKeystorePath() != null && !external.getKeystorePath().isBlank()
-                    && ("PEM".equals(truststoreType) || "CRT".equals(truststoreType) || "CERT".equals(truststoreType))) {
+
+            String keystoreType = normalizeCertificateType(external.getKeystoreType());
+            if (hasText(external.getKeystorePath()) && isPemCertificateType(keystoreType)) {
                 args.add("--tls.cert-file=" + systemdArg(external.getKeystorePath().trim()));
             }
         }
         if (normalizedProtocol.contains("SASL")) {
             args.add("--sasl.enabled");
-            if (external.getSaslUsername() != null && !external.getSaslUsername().isBlank()) {
+            if (hasText(external.getSaslUsername())) {
                 args.add("--sasl.username=" + systemdArg(external.getSaslUsername().trim()));
             }
             String password = maskSecrets ? "********" : decryptOrBlank(external.getSaslPasswordEncrypted());
-            if (password != null && !password.isBlank()) {
+            if (hasText(password)) {
                 args.add("--sasl.password=" + systemdArg(password));
             }
             String mechanism = kafkaExporterSaslMechanism(external.getSaslMechanism());
@@ -677,6 +694,18 @@ public class PrometheusMonitoringService {
                 args.add("--sasl.mechanism=" + systemdArg(mechanism));
             }
         }
+    }
+
+    private String normalizeCertificateType(String certificateType) {
+        return certificateType == null ? "" : certificateType.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private boolean isPemCertificateType(String certificateType) {
+        return "PEM".equals(certificateType) || "CRT".equals(certificateType) || "CERT".equals(certificateType);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     private String decryptOrBlank(String encrypted) {
