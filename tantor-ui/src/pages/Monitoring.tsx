@@ -367,7 +367,7 @@ export function Monitoring() {
                 ) : null}
               </GraphPanel>
 
-              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText="kafka_exporter required">
+              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText={kafkaExporterReady ? "No traffic data available" : "kafka_exporter required"}>
                 {hasTrafficSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>

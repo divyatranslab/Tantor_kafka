@@ -358,7 +358,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				}
 
 				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-				formatOut, formatErr, err := d.exec.Run(ctx, storageScript, formatArgs...)
+				envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+				bashCmd := fmt.Sprintf("%s %s %s", envSetup, storageScript, strings.Join(formatArgs, " "))
+				formatOut, formatErr, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 				if err != nil {
 					technicalOutput := strings.TrimSpace(strings.TrimSpace(formatOut) + "\n" + strings.TrimSpace(formatErr))
 					if technicalOutput == "" {
@@ -442,7 +444,10 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		}
 		// Try to wait a bit before connecting
 		time.Sleep(5 * time.Second)
-		out, errOut, err := d.exec.Run(ctx, filepath.Join(activeInstallDir, "bin", "kafka-topics.sh"), "--list", "--bootstrap-server", "localhost:"+listenerPort)
+		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
+		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:"+listenerPort}, " "))
+		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 		if err != nil {
 			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
 		} else {
@@ -1504,7 +1509,9 @@ func (d *Deployer) stageUpgradeBinaries(ctx context.Context, t *api.Task, target
 
 func (d *Deployer) ensureKafkaBinaryVersion(ctx context.Context, installDir, expectedVersion string, log func(string, ...interface{})) error {
 	versionScript := filepath.Join(installDir, "bin", "kafka-topics.sh")
-	out, errOut, err := d.exec.Run(ctx, versionScript, "--version")
+	envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+	bashCmd := fmt.Sprintf("%s %s %s", envSetup, versionScript, "--version")
+	out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 	if err != nil {
 		return fmt.Errorf("failed to read Kafka binary version from %s: %w, err: %s", versionScript, err, errOut)
 	}
@@ -1548,7 +1555,8 @@ func isUsableJar(path string) bool {
 
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
-	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
+	findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname $(dirname $(readlink -f $(command -v $JAVA_CMD))); fi`
+	out, _, _ := d.exec.Run(ctx, "bash", "-c", findJavaCmd)
 	javaHome := strings.TrimSpace(out)
 	if javaHome == "" || javaHome == "." {
 		javaHome = "/usr" // fallback
