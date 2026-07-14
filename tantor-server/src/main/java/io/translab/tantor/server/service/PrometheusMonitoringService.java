@@ -256,6 +256,8 @@ public class PrometheusMonitoringService {
                 "clamp_min(clamp_max(max(jvm_OperatingSystem_CpuLoad{" + selector + "}) * 100, 100), 0)"
         ));
 
+        overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster));
+
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
         }
@@ -601,6 +603,28 @@ public class PrometheusMonitoringService {
         return null;
     }
 
+    private Double computeHostMemoryPercent(Cluster cluster) {
+        if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
+            return null;
+        }
+        long totalMb = 0;
+        long usedMb = 0;
+        int counted = 0;
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            Host host = hostRepository.findById(service.getHostId()).orElse(null);
+            if (host == null || host.getMemTotalMb() == null || host.getMemTotalMb() <= 0) {
+                continue;
+            }
+            totalMb += host.getMemTotalMb();
+            usedMb += host.getMemUsedMb() == null ? 0 : host.getMemUsedMb();
+            counted++;
+        }
+        if (counted == 0 || totalMb <= 0) {
+            return null;
+        }
+        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+    }
+
     private String hostIp(Host host) {
         if (host == null) {
             return null;
@@ -868,6 +892,7 @@ public class PrometheusMonitoringService {
         private Double jvmHeapUsedPercent;
         private Double brokerCpuPercent;
         private Double systemCpuPercent;
+        private Double hostMemoryUsedPercent;
         private List<String> warnings;
     }
 
