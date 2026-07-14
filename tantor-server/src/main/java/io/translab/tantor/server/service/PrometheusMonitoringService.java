@@ -443,14 +443,15 @@ public class PrometheusMonitoringService {
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, ExternalCluster cluster) {
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (node.getJmxExporterPort() == null || node.getHost() == null || node.getHost().isBlank()) {
+            if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
+            Integer port = node.getJmxExporterPort() != null ? node.getJmxExporterPort() : defaultJmxExporterPort;
             String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
                     ? "controller"
                     : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            targets.add(group(node.getHost() + ":" + node.getJmxExporterPort(), labels(cluster, "kafka_jmx", role, nodeId)));
+            targets.add(group(node.getHost() + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
         }
     }
 
