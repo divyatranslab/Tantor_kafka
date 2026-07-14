@@ -401,6 +401,15 @@ public class ClusterController {
 
         return externalClusterRepository.findById(id).map(extCluster -> {
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(id);
+            List<String> warnings = new ArrayList<>();
+            io.translab.tantor.server.dto.ClusterOverviewDto liveOverview = null;
+            try {
+                liveOverview = clusterOverviewService.getOverview(id);
+            } catch (Exception e) {
+                log.warn("Live external cluster overview failed for {}: {}", id, e.getMessage());
+                warnings.add("Live Kafka metadata is unavailable. Showing the last saved external cluster metadata.");
+            }
+
             int brokerCount = 0;
             int activeControllerCount = 0;
             List<io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow> brokerRows = new ArrayList<>();
@@ -410,6 +419,8 @@ public class ClusterController {
             String overviewConfigDir = null;
             String overviewDataDir = null;
             String overviewLogDir = null;
+            String displayVersion = externalKafkaVersion(extCluster, nodes);
+            String displayControllerType = externalControllerType(extCluster, nodes);
 
             for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
                 boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
@@ -437,9 +448,10 @@ public class ClusterController {
                 
                 String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
                 String installDir = firstNonBlank(node.getInstallDir(), extCluster.getInstallPath(), firstExternalNodeValue(nodes, node.getHost(), "installDir"));
-                String configFile = firstNonBlank(node.getConfigFile(), inferredExternalConfigFile(role, extCluster.getKafkaMode(), extCluster.getKafkaVersion(), installDir));
-                String dataDir = firstNonBlank(node.getDataDirs(), node.getLogDirs());
-                String logDir = firstNonBlank(node.getLogDirs(), node.getDataDirs());
+                String configFile = firstNonBlank(node.getConfigFile(), firstExternalNodeValue(nodes, node.getHost(), "configFile"),
+                        inferredExternalConfigFile(role, displayControllerType, displayVersion, installDir));
+                String dataDir = firstNonBlank(node.getDataDirs(), firstExternalNodeValue(nodes, node.getHost(), "dataDirs"));
+                String logDir = firstNonBlank(node.getLogDirs(), extCluster.getLogDirs(), firstExternalNodeValue(nodes, node.getHost(), "logDirs"));
                 overviewInstallDir = firstNonBlank(overviewInstallDir, installDir);
                 overviewConfigDir = firstNonBlank(overviewConfigDir, parentPath(configFile));
                 overviewDataDir = firstNonBlank(overviewDataDir, dataDir);
@@ -452,27 +464,60 @@ public class ClusterController {
                         .config(configFile)
                         .dataDir(dataDir)
                         .logDir(logDir)
-                        .hasTelemetry(node.getLastSeen() != null)
+                        .hasTelemetry(node.getLastSeen() != null || firstNonBlank(installDir, configFile, dataDir, logDir) != null)
                         .build());
+            }
+
+            if (liveOverview != null) {
+                liveOverview.setOriginType("EXTERNAL");
+                liveOverview.setKafkaVersion(firstNonBlank(cleanExternalValue(liveOverview.getKafkaVersion()), displayVersion));
+                liveOverview.setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getControllerType()), displayControllerType));
+                liveOverview.setInstallDirectory(firstNonBlank(liveOverview.getInstallDirectory(), overviewInstallDir));
+                liveOverview.setConfigDirectory(firstNonBlank(liveOverview.getConfigDirectory(), overviewConfigDir));
+                liveOverview.setDataDirectory(firstNonBlank(liveOverview.getDataDirectory(), overviewDataDir));
+                liveOverview.setLogDirectory(firstNonBlank(liveOverview.getLogDirectory(), overviewLogDir));
+                liveOverview.setControllers(controllerRows);
+                liveOverview.setNodePaths(nodePathRows);
+                if (liveOverview.getUptime() != null) {
+                    liveOverview.getUptime().setVersion(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getVersion()), displayVersion));
+                    liveOverview.getUptime().setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getControllerType()), displayControllerType));
+                    if (liveOverview.getUptime().getActiveController() == null && activeControllerCount > 0) {
+                        liveOverview.getUptime().setActiveController(1);
+                    }
+                }
+                if (!warnings.isEmpty()) {
+                    List<String> mergedWarnings = new ArrayList<>();
+                    if (liveOverview.getWarnings() != null) {
+                        mergedWarnings.addAll(liveOverview.getWarnings());
+                    }
+                    for (String warning : warnings) {
+                        if (!mergedWarnings.contains(warning)) {
+                            mergedWarnings.add(warning);
+                        }
+                    }
+                    liveOverview.setWarnings(mergedWarnings);
+                }
+                return ResponseEntity.ok(liveOverview);
             }
 
             io.translab.tantor.server.dto.ClusterOverviewDto dto = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
                     .clusterId(extCluster.getId())
                     .kafkaClusterId(extCluster.getKafkaClusterId())
                     .name(extCluster.getName())
-                    .kafkaVersion(extCluster.getKafkaVersion())
-                    .controllerType(extCluster.getKafkaMode())
+                    .kafkaVersion(displayVersion)
+                    .controllerType(displayControllerType)
                     .originType("EXTERNAL")
                     .installDirectory(overviewInstallDir)
                     .configDirectory(overviewConfigDir)
                     .dataDirectory(overviewDataDir)
                     .logDirectory(overviewLogDir)
                     .generatedAt(java.time.OffsetDateTime.now())
+                    .warnings(warnings)
                     .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(extCluster.getBrokerCount() != null ? extCluster.getBrokerCount() : brokerCount)
                             .activeController(activeControllerCount > 0 ? 1 : 0)
-                            .version(extCluster.getKafkaVersion())
-                            .controllerType(extCluster.getKafkaMode())
+                            .version(displayVersion)
+                            .controllerType(displayControllerType)
                             .build())
                     .partitions(io.translab.tantor.server.dto.ClusterOverviewDto.PartitionSummary.builder().build())
                     .brokers(brokerRows)
@@ -1856,6 +1901,73 @@ public class ClusterController {
             };
             if (value != null && !value.isBlank()) {
                 return value;
+            }
+        }
+        return null;
+    }
+
+    private String externalKafkaVersion(
+            io.translab.tantor.server.domain.ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+    ) {
+        String version = cleanExternalValue(cluster.getKafkaVersion());
+        if (version != null) {
+            return version;
+        }
+        version = versionFromKafkaPath(cleanExternalValue(cluster.getInstallPath()));
+        if (version != null) {
+            return version;
+        }
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            version = versionFromKafkaPath(cleanExternalValue(node.getInstallDir()));
+            if (version != null) {
+                return version;
+            }
+        }
+        return "Not reported";
+    }
+
+    private String externalControllerType(
+            io.translab.tantor.server.domain.ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+    ) {
+        String mode = cleanExternalValue(cluster.getKafkaMode());
+        if (mode != null) {
+            return "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
+        }
+        boolean hasController = nodes.stream().anyMatch(node -> Boolean.TRUE.equals(node.getIsController()));
+        return hasController ? "KRaft" : "Not reported";
+    }
+
+    private String cleanExternalValue(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if ("null".equalsIgnoreCase(trimmed)
+                || "unknown".equalsIgnoreCase(trimmed)
+                || "auto-detected".equalsIgnoreCase(trimmed)
+                || "auto-detected by Kafka client".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        return trimmed;
+    }
+
+    private String versionFromKafkaPath(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String normalized = path.replace('\\', '/');
+        String[] segments = normalized.split("/");
+        for (int i = segments.length - 1; i >= 0; i--) {
+            String segment = segments[i];
+            int index = segment.lastIndexOf('-');
+            if (index < 0 || index == segment.length() - 1) {
+                continue;
+            }
+            String candidate = segment.substring(index + 1);
+            if (candidate.matches("\\d+(\\.\\d+){1,3}")) {
+                return candidate;
             }
         }
         return null;

@@ -24,6 +24,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -132,15 +133,20 @@ public class PrometheusMonitoringService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void ensureKafkaExportersOnStartup() {
+        reconcileKafkaExporters();
+    }
+
+    @Scheduled(fixedDelayString = "${tantor.monitoring.exporter-reconcile-delay-ms:60000}")
+    public void reconcileKafkaExporters() {
         try {
             for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
                 String status = cluster.getStatus() == null ? "" : cluster.getStatus().trim().toUpperCase(Locale.ROOT);
-                if ("SUCCESS".equals(status) || "RUNNING".equals(status)) {
+                if ("SUCCESS".equals(status) || "RUNNING".equals(status) || "AVAILABLE".equals(status)) {
                     ensureKafkaExporter(cluster);
                 }
             }
         } catch (Exception e) {
-            log.warn("Could not reconcile kafka_exporter services on startup", e);
+            log.warn("Could not reconcile kafka_exporter services", e);
         }
     }
 
@@ -273,11 +279,20 @@ public class PrometheusMonitoringService {
         Path unitPath = Path.of("/etc/systemd/system/" + plan.getServiceName() + ".service");
         try {
             Files.createDirectories(unitPath.getParent());
-            Files.writeString(unitPath, plan.getUnit(), StandardCharsets.UTF_8);
-            runSystemCommand("systemctl", "daemon-reload");
+            boolean unitChanged = !Files.exists(unitPath) || !plan.getUnit().equals(Files.readString(unitPath, StandardCharsets.UTF_8));
+            if (unitChanged) {
+                Files.writeString(unitPath, plan.getUnit(), StandardCharsets.UTF_8);
+                runSystemCommand("systemctl", "daemon-reload");
+                runSystemCommand("systemctl", "enable", plan.getServiceName());
+                runSystemCommand("systemctl", "restart", plan.getServiceName());
+                log.info("kafka_exporter service {} was installed/restarted for cluster {}", plan.getServiceName(), cluster.getId());
+                return;
+            }
             runSystemCommand("systemctl", "enable", plan.getServiceName());
-            runSystemCommand("systemctl", "restart", plan.getServiceName());
-            log.info("kafka_exporter service {} is running for cluster {}", plan.getServiceName(), cluster.getId());
+            if (!systemCommandSucceeds("systemctl", "is-active", "--quiet", plan.getServiceName())) {
+                runSystemCommand("systemctl", "restart", plan.getServiceName());
+                log.info("kafka_exporter service {} was recovered for cluster {}", plan.getServiceName(), cluster.getId());
+            }
         } catch (Exception e) {
             log.warn("Could not auto-start kafka_exporter for cluster {}. Use /api/v1/monitoring/clusters/{}/exporter-plan if manual setup is needed.",
                     cluster.getId(), cluster.getId(), e);
@@ -327,6 +342,20 @@ public class PrometheusMonitoringService {
         }
         if (process.exitValue() != 0) {
             throw new IllegalStateException(String.join(" ", command) + " failed: " + output);
+        }
+    }
+
+    private boolean systemCommandSucceeds(String... command) {
+        try {
+            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (Exception e) {
+            return false;
         }
     }
 
