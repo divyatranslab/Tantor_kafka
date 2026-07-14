@@ -353,7 +353,7 @@ public class PrometheusMonitoringService {
             String role = service.getRole();
             String nodeId = service.getNodeId() == null ? null : String.valueOf(service.getNodeId());
             if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isBrokerRole(role)) {
-                int port = service.getJmxExporterPort() != null ? service.getJmxExporterPort() : jmxPort(cluster);
+                int port = validExporterPort(service.getJmxExporterPort()) ? service.getJmxExporterPort() : jmxPort(cluster);
                 addJmxTarget(targets, cluster, hostIp, port, role, nodeId);
                 if (port != DEFAULT_JMX_PORT) {
                     addJmxTarget(targets, cluster, hostIp, DEFAULT_JMX_PORT, role, nodeId);
@@ -417,10 +417,14 @@ public class PrometheusMonitoringService {
     }
 
     private int jmxPort(Cluster cluster) {
-        if (cluster.getJmxExporterPort() != null && cluster.getJmxExporterPort() > 0) {
+        if (validExporterPort(cluster.getJmxExporterPort())) {
             return cluster.getJmxExporterPort();
         }
         return defaultJmxExporterPort > 0 ? defaultJmxExporterPort : DEFAULT_JMX_PORT;
+    }
+
+    private boolean validExporterPort(Integer port) {
+        return port != null && port >= 1024 && port <= 65535;
     }
 
     private int nodeExporterPort(Cluster cluster) {
