@@ -208,7 +208,7 @@ export function AuditLogs() {
       <div className="audit-ledger-head"><div><History size={15} /><strong>Event ledger</strong></div><span>{filtered.length} of {events.length} events</span></div>
       {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><LockKeyhole /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster / Artifact / Force ID</th><th>Details</th><th>Status</th></tr></thead>
+        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
           <tbody>{filtered.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
         </table></div>}
     </section>
