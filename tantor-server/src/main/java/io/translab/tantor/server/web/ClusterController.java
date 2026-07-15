@@ -99,6 +99,7 @@ public class ClusterController {
             List<Map<String, Object>> hosts = clusterHosts(c);
             m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
             m.put("hosts", hosts);
+            m.putAll(internalRuntimeHealth(c));
             result.add(m);
         }
         for (ExternalCluster c : externalClusterRepository.findByStatusNot("DELETED")) {
@@ -163,6 +164,9 @@ public class ClusterController {
             m.put("managedHostsCount", managedHostsCount);
             m.put("totalHostsCount", totalHostsCount);
             m.put("lastAgentHeartbeat", maxHeartbeat != null ? maxHeartbeat.toString() : null);
+            m.put("runtimeHealth", externalRuntimeHealth(c.getStatus()));
+            m.put("runtimeStatusLabel", externalRuntimeStatusLabel(c.getStatus()));
+            m.put("runtimeStatusReason", "External health is reconciled from Kafka bootstrap reachability and discovery-agent heartbeat.");
             List<Map<String, Object>> hosts = externalClusterHosts(c, clusterNodes);
             m.put("nodeCount", hosts.isEmpty() ? clusterNodes.size() : hosts.size());
             m.put("hosts", hosts);
@@ -207,6 +211,7 @@ public class ClusterController {
             List<Map<String, Object>> hosts = clusterHosts(c);
             m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
             m.put("hosts", hosts);
+            m.putAll(internalRuntimeHealth(c));
             return ResponseEntity.ok(m);
         });
         
@@ -243,6 +248,9 @@ public class ClusterController {
             
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
             m.put("hosts", externalClusterHosts(c, nodes));
+            m.put("runtimeHealth", externalRuntimeHealth(c.getStatus()));
+            m.put("runtimeStatusLabel", externalRuntimeStatusLabel(c.getStatus()));
+            m.put("runtimeStatusReason", "External health is reconciled from Kafka bootstrap reachability and discovery-agent heartbeat.");
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -1807,6 +1815,73 @@ public class ClusterController {
         return "AGENT_MANAGED".equalsIgnoreCase(managementLevel(cluster))
                 ? "Fully managed"
                 : "Metadata available";
+    }
+
+    private Map<String, Object> internalRuntimeHealth(Cluster cluster) {
+        Map<String, Object> health = new LinkedHashMap<>();
+        String deploymentStatus = cluster.getStatus() == null ? "" : cluster.getStatus().trim();
+
+        if (!"SUCCESS".equalsIgnoreCase(deploymentStatus)) {
+            health.put("runtimeHealth", deploymentStatus.isBlank() ? "UNKNOWN" : deploymentStatus.toUpperCase());
+            health.put("runtimeStatusLabel", deploymentStatus.isBlank() ? "Unknown" : deploymentStatus);
+            health.put("runtimeStatusReason", "Deployment is not in SUCCESS state yet.");
+            return health;
+        }
+
+        try {
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+            long total = brokers.size();
+            long offline = brokers.stream().filter(b -> "OFFLINE".equalsIgnoreCase(b.getBrokerHealth())).count();
+            long degraded = brokers.stream().filter(b -> "DEGRADED".equalsIgnoreCase(b.getBrokerHealth())).count();
+            long healthy = brokers.stream().filter(b -> "HEALTHY".equalsIgnoreCase(b.getBrokerHealth())).count();
+
+            health.put("runtimeBrokerCount", total);
+            health.put("runtimeHealthyBrokers", healthy);
+            health.put("runtimeDegradedBrokers", degraded);
+            health.put("runtimeOfflineBrokers", offline);
+
+            if (total == 0) {
+                health.put("runtimeHealth", "UNKNOWN");
+                health.put("runtimeStatusLabel", "Unknown");
+                health.put("runtimeStatusReason", "No broker services are mapped for runtime verification.");
+            } else if (offline == total) {
+                health.put("runtimeHealth", "OFFLINE");
+                health.put("runtimeStatusLabel", "Kafka Offline");
+                health.put("runtimeStatusReason", "All broker agents or Kafka endpoints are unavailable.");
+            } else if (offline > 0) {
+                health.put("runtimeHealth", "DEGRADED");
+                health.put("runtimeStatusLabel", "Degraded");
+                health.put("runtimeStatusReason", offline + " of " + total + " broker node(s) are offline.");
+            } else if (degraded > 0) {
+                health.put("runtimeHealth", "DEGRADED");
+                health.put("runtimeStatusLabel", "Kafka Check Failed");
+                health.put("runtimeStatusReason", "Host agents are online, but Kafka/JMX verification failed for " + degraded + " broker node(s).");
+            } else {
+                health.put("runtimeHealth", "HEALTHY");
+                health.put("runtimeStatusLabel", "Active");
+                health.put("runtimeStatusReason", "Deployment succeeded and broker runtime checks are healthy.");
+            }
+        } catch (Exception e) {
+            health.put("runtimeHealth", "DEGRADED");
+            health.put("runtimeStatusLabel", "Kafka Check Failed");
+            health.put("runtimeStatusReason", "Runtime verification failed: " + e.getMessage());
+        }
+
+        return health;
+    }
+
+    private String externalRuntimeHealth(String status) {
+        if ("SUCCESS".equalsIgnoreCase(status)) return "HEALTHY";
+        if ("FAILED".equalsIgnoreCase(status)) return "OFFLINE";
+        if ("DEGRADED".equalsIgnoreCase(status)) return "DEGRADED";
+        return status == null || status.isBlank() ? "UNKNOWN" : status.toUpperCase();
+    }
+
+    private String externalRuntimeStatusLabel(String status) {
+        if ("SUCCESS".equalsIgnoreCase(status)) return "Connected";
+        if ("FAILED".equalsIgnoreCase(status)) return "Kafka Offline";
+        if ("DEGRADED".equalsIgnoreCase(status)) return "Degraded";
+        return status == null || status.isBlank() ? "Unknown" : status;
     }
 
     private boolean matchesDiscoveryAgent(io.translab.tantor.server.domain.DiscoveryAgent agent, String host) {

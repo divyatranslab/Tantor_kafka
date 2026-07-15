@@ -16,6 +16,9 @@ interface ClusterInfo {
   kafkaClusterId?: string;
   originType?: string;
   installDirectory?: string;
+  runtimeHealth?: string;
+  runtimeStatusLabel?: string;
+  runtimeStatusReason?: string;
 }
 
 export function ClusterDetails() {
@@ -67,6 +70,8 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
+  const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
+  const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
 
   if (isLogsView) {
     return (
@@ -83,9 +88,9 @@ export function ClusterDetails() {
               <h1>Deployment Logs</h1>
               <p>{cluster.name} · Kafka {cluster.kafkaVersion} · {cluster.mode}</p>
             </div>
-            <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
-              <div className="status-dot" /> {cluster.status}
-            </div>
+          <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
+            <div className="status-dot" /> {cluster.status}
+          </div>
           </div>
         </header>
         <div className="cluster-tabs cluster-logs-tabs">
@@ -138,8 +143,8 @@ export function ClusterDetails() {
               <p className="cluster-identity-line">Kafka Cluster ID: <code>{cluster.kafkaClusterId || 'Pending discovery'}</code> · Install directory: <code>{cluster.installDirectory || '-'}</code></p>
             </div>
           </div>
-          <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
-            <div className="status-dot"></div> {cluster.mode === 'EXTERNAL' ? 'External' : cluster.status}
+          <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+            <div className="status-dot"></div> {runtimeLabel}
           </div>
         </div>
       </header>
