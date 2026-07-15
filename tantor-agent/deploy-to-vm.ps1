@@ -9,12 +9,12 @@ Write-Host "  Tantor Agent Automated Deployment Script" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "[1/4] Compiling latest code for Linux..." -ForegroundColor Yellow
-$env:GOOS="linux"
-$env:GOARCH="amd64"
-go build -o tantor-agent-linux ./cmd/agent
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Build failed! Aborting deployment." -ForegroundColor Red
+Write-Host "[1/4] Skipping compilation (using pre-built Linux binary)..." -ForegroundColor Yellow
+# $env:GOOS="linux"
+# $env:GOARCH="amd64"
+# go build -o tantor-agent-linux ./cmd/agent
+if (-not (Test-Path .\tantor-agent-linux)) {
+    Write-Host "Pre-built Linux binary (tantor-agent-linux) not found!" -ForegroundColor Red
     exit 1
 }
 

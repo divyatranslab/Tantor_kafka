@@ -102,6 +102,84 @@
   box-shadow: var(--shadow-xs);
 }
 
+/* Choice selector card wraps */
+.cd-choice-card-wrapper {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 24px;
+  gap: 12px;
+  background: #FFFFFF;
+  border: 1.5px solid #F3F0F0;
+  border-radius: 12px;
+  transition: border-color 0.15s ease;
+  position: relative;
+}
+
+.cd-choice-card-wrapper.active-choice {
+  border-color: #8F55A8; /* Purple active border */
+  background: #FAF8FC;
+}
+
+.cd-choice-card-wrapper .choice-icon {
+  color: #3E1363;
+}
+
+.cd-choice-card-wrapper span {
+  font-family: 'Satoshi';
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 24px;
+  color: #282F49;
+}
+
+.cd-choice-card-wrapper small {
+  font-family: 'Satoshi';
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 20px;
+  color: #818181;
+  min-height: 40px;
+}
+
+.choice-action-btn {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 8px;
+  border-radius: 8px;
+  font-family: 'Satoshi';
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  height: 36px;
+}
+
+.choice-action-btn.fill {
+  background: #3E1363;
+  color: #FFFFFF;
+  border: none;
+}
+
+.choice-action-btn.fill:hover {
+  background: #2b0c47;
+}
+
+.choice-action-btn.outline {
+  background: #FFFFFF;
+  color: #8F55A8;
+  border: 1.5px solid #8F55A8;
+}
+
+.choice-action-btn.outline:hover {
+  background: #FAF8FC;
+}
+
 .cd-layout {
   display: flex;
   flex-direction: column;

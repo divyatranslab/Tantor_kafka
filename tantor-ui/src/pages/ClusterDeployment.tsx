@@ -339,7 +339,7 @@ function activeStatus(status: string): boolean {
   return ['PENDING', 'IN_PROGRESS', 'RUNNING', 'QUEUED'].includes(String(status || '').toUpperCase());
 }
 
-export function ClusterDeployment() {
+export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addClusterId = searchParams.get('mode') === 'add' ? searchParams.get('clusterId') : null;
@@ -1153,6 +1153,9 @@ export function ClusterDeployment() {
         alert(body.error || body.message || 'Deployment failed to start.');
         return;
       }
+      if (onClose) {
+        onClose();
+      }
       if (body.jobId) {
         navigate(`/jobs/${body.jobId}`);
       } else {
@@ -1171,22 +1174,31 @@ export function ClusterDeployment() {
       <div className="cluster-deploy-page animate-fade-in">
         <header className="cd-header">
           <div>
-            <h1>Cluster Deployment</h1>
-            <p>Create a managed Kafka cluster or connect an existing external cluster.</p>
+            <h1 style={{ fontFamily: 'Satoshi', fontWeight: 500, color: '#282F49', fontSize: '24px' }}>Cluster Development</h1>
+            <p style={{ color: '#818181', fontSize: '14px', marginTop: '4px' }}>Create a managed Kafka cluster or connect an exiting external cluster.</p>
           </div>
         </header>
 
-        <div className="cd-choice-grid">
-          <button className="cd-choice-card primary" onClick={() => setStage('details')}>
-            <Network size={26} />
-            <span>Create your cluster</span>
-            <small>Build a new KRaft or ZooKeeper cluster on selected Tantor hosts.</small>
-          </button>
-          <button className="cd-choice-card" onClick={() => navigate('/external-clusters')}>
-            <Database size={26} />
-            <span>External Cluster</span>
-            <small>Connect or discover an external Kafka cluster.</small>
-          </button>
+        <div className="cd-choice-grid" style={{ marginTop: '16px' }}>
+          <div className="cd-choice-card-wrapper active-choice">
+            <Network size={26} className="choice-icon" />
+            <span>Create your Cluster</span>
+            <small>Build a new Kraft or ZooKeeper cluster on selected Tantor host</small>
+            <button className="choice-action-btn fill" onClick={() => setStage('details')}>
+              Create
+            </button>
+          </div>
+          <div className="cd-choice-card-wrapper active-choice">
+            <Database size={26} className="choice-icon" />
+            <span>Existing Cluster</span>
+            <small>Connect or discover an external Kafka cluster</small>
+            <button className="choice-action-btn outline" onClick={() => {
+              if (onClose) onClose();
+              navigate('/external-clusters');
+            }}>
+              Explorer
+            </button>
+          </div>
         </div>
       </div>
     );
