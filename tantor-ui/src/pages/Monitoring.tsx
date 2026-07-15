@@ -34,6 +34,7 @@ interface MonitoringOverview {
   brokerCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
+  hostMemoryUsedPercent?: number | null;
 }
 
 interface MonitoringSample {
@@ -47,6 +48,7 @@ interface MonitoringSample {
   bytesIn: number | null;
   bytesOut: number | null;
   heap: number | null;
+  hostMemory: number | null;
   brokerCpu: number | null;
   systemCpu: number | null;
 }
@@ -214,6 +216,7 @@ export function Monitoring() {
         bytesIn: chartNumber(overview.bytesInPerSecond),
         bytesOut: chartNumber(overview.bytesOutPerSecond),
         heap: chartNumber(overview.jvmHeapUsedPercent),
+        hostMemory: chartNumber(overview.hostMemoryUsedPercent),
         brokerCpu: chartNumber(overview.brokerCpuPercent),
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
@@ -240,7 +243,7 @@ export function Monitoring() {
   const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
   const hasTrafficSeries = history.some(sample => hasValue(sample.messagesIn) || hasValue(sample.lag));
   const hasCpuSeries = history.some(sample => hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
-  const hasHeapSeries = history.some(sample => hasValue(sample.heap));
+  const hasHeapSeries = history.some(sample => hasValue(sample.heap) || hasValue(sample.hostMemory));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -362,6 +365,7 @@ export function Monitoring() {
                       <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
                       <Tooltip />
                       <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                      <Line type="monotone" dataKey="hostMemory" name="Host RAM %" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : null}
@@ -391,6 +395,7 @@ export function Monitoring() {
                 <ResourceBar label="Broker CPU" value={overview?.brokerCpuPercent} tone="blue" />
                 <ResourceBar label="System CPU" value={overview?.systemCpuPercent} tone="green" />
                 <ResourceBar label="JVM Heap" value={overview?.jvmHeapUsedPercent} tone="purple" />
+                <ResourceBar label="Host Memory" value={overview?.hostMemoryUsedPercent} detail="Agent heartbeat" tone="blue" />
               </section>
 
               <section className="monitoring-broker-panel">

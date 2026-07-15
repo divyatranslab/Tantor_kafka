@@ -1328,6 +1328,32 @@ export function ClusterDeployment() {
                 <span>Artifact/load directory</span>
                 <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
               </label>
+              <label className="cd-field">
+                <span>Broker Port</span>
+                <input type="number" value={listenerPort} onChange={e => setListenerPort(Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+              </label>
+              {deploymentMode === 'kraft' && (
+                <label className="cd-field">
+                  <span>Controller Port</span>
+                  <input type="number" value={controllerPort} onChange={e => setControllerPort(Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                </label>
+              )}
+              {deploymentMode === 'zookeeper' && (
+                <>
+                  <label className="cd-field">
+                    <span>ZooKeeper Client Port</span>
+                    <input type="number" value={controllerPort} onChange={e => setControllerPort(Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                  </label>
+                  <label className="cd-field">
+                    <span>ZooKeeper Peer Port</span>
+                    <input type="number" value={zookeeperPeerPort} onChange={e => setZookeeperPeerPort(Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                  </label>
+                  <label className="cd-field">
+                    <span>ZooKeeper Election Port</span>
+                    <input type="number" value={zookeeperElectionPort} onChange={e => setZookeeperElectionPort(Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                  </label>
+                </>
+              )}
             </div>
           </section>
 
