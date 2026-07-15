@@ -56,6 +56,8 @@ public class AuditController {
         view.put("resourceId", event.getResourceId());
         view.put("resource", event.getResource());
         view.put("clusterId", event.getClusterId());
+        view.put("kafkaClusterId", auditService.kafkaClusterId(event));
+        view.put("displayResourceId", auditService.displayResourceId(event));
         view.put("hostId", event.getHostId());
         view.put("hostIp", event.getHostIp());
         view.put("hostName", event.getHostName());

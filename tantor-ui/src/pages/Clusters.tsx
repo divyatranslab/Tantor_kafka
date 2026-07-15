@@ -230,7 +230,7 @@ export function Clusters() {
                       key={cluster.id}
                       className={!isClickable(cluster) ? 'disabled' : ''}
                       onClick={() => {
-                        if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/nodes`);
+                        if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/overview`);
                       }}
                     >
                       <td>

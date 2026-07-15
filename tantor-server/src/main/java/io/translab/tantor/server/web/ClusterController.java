@@ -163,8 +163,9 @@ public class ClusterController {
             m.put("managedHostsCount", managedHostsCount);
             m.put("totalHostsCount", totalHostsCount);
             m.put("lastAgentHeartbeat", maxHeartbeat != null ? maxHeartbeat.toString() : null);
-            m.put("nodeCount", clusterNodes.size());
-            m.put("hosts", new ArrayList<>());
+            List<Map<String, Object>> hosts = externalClusterHosts(c, clusterNodes);
+            m.put("nodeCount", hosts.isEmpty() ? clusterNodes.size() : hosts.size());
+            m.put("hosts", hosts);
             result.add(m);
         }
         return result;
@@ -240,61 +241,8 @@ public class ClusterController {
             m.put("accessLabel", "Bootstrap only");
             m.put("nodeCount", c.getBrokerCount() != null ? c.getBrokerCount() : 0);
             
-            List<Map<String, Object>> hosts = new ArrayList<>();
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            List<io.translab.tantor.server.domain.DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(c.getId());
-            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents = discoveryAgentRepository.findAll();
-            
-            for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
-                Map<String, Object> hm = new HashMap<>();
-                hm.put("id", n.getId().toString());
-                hm.put("nodeId", n.getNodeId());
-                hm.put("hostname", n.getHost());
-                hm.put("ipAddress", n.getHost());
-                
-                boolean isBroker = Boolean.TRUE.equals(n.getIsBroker());
-                boolean isController = Boolean.TRUE.equals(n.getIsController());
-                String role = "unknown";
-                if (isBroker && isController) role = "broker_controller";
-                else if (isBroker) role = "broker";
-                else if (isController) role = "controller";
-                
-                hm.put("role", role);
-                
-                Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream()
-                    .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) && matchesDiscoveryAgent(a, n.getHost()))
-                    .findFirst()
-                    .or(() -> allAgents.stream()
-                            .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) && matchesDiscoveryAgent(a, n.getHost()))
-                            .filter(a -> a.getClusterId() == null || a.getClusterId().equals(c.getId()))
-                            .findFirst());
-
-                boolean hasAgent = agentMatch.isPresent();
-                
-                hm.put("status", hasAgent ? "Managed" : "Bootstrap connected");
-                if (hasAgent && agentMatch.get().getLastHeartbeat() != null) {
-                    hm.put("lastHeartbeat", agentMatch.get().getLastHeartbeat().toString());
-                } else if (n.getLastSeen() != null) {
-                    hm.put("lastHeartbeat", n.getLastSeen().toString());
-                }
-                if (!hasAgent) {
-                    OffsetDateTime now = OffsetDateTime.now();
-                    Optional<io.translab.tantor.server.domain.DiscoveryAgent> availableAgent = allAgents.stream()
-                        .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) &&
-                                     a.getLastHeartbeat() != null && java.time.Duration.between(a.getLastHeartbeat(), now).getSeconds() <= 120)
-                        .filter(a -> matchesDiscoveryAgent(a, n.getHost()))
-                        .filter(a -> a.getClusterId() == null || !a.getClusterId().equals(c.getId()))
-                        .findFirst();
-                    if (availableAgent.isPresent()) {
-                        hm.put("agentAvailable", true);
-                        hm.put("availableAgentId", availableAgent.get().getId().toString());
-                    }
-                }
-                
-                hosts.add(hm);
-            }
-            
-            m.put("hosts", hosts);
+            m.put("hosts", externalClusterHosts(c, nodes));
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -1199,6 +1147,10 @@ public class ClusterController {
         private String configuration_mode;
         private String properties_template;
         private String heap_size;
+        private Integer listener_port;
+        private Integer controller_port;
+        private Integer zookeeper_peer_port;
+        private Integer zookeeper_election_port;
     }
 
     private String buildServiceConfigJson(Map<String, Object> deploymentConfig, ServiceAssignmentReq svc) {
@@ -1467,7 +1419,7 @@ public class ClusterController {
     private String buildBootstrapServers(List<ServiceAssignmentReq> services, int listenerPort) {
         return services.stream()
                 .filter(service -> isBrokerRole(service.getRole()))
-                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + listenerPort)
+                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + (service.getListener_port() != null ? service.getListener_port() : listenerPort))
                 .collect(Collectors.joining(","));
     }
 
@@ -1488,8 +1440,8 @@ public class ClusterController {
             item.put("serviceName", systemdServiceName(role));
             item.put("configFile", configFileForRole(role, deploymentMode,
                     String.valueOf(config.getOrDefault("version", config.getOrDefault("kafka_version", "0"))), installDir));
-            item.put("listenerPort", isBrokerRole(role) ? listenerPort : "");
-            item.put("controllerPort", isControllerRole(role) || isZooKeeperRole(role) ? controllerPort : "");
+            item.put("listenerPort", isBrokerRole(role) ? (service.getListener_port() != null ? String.valueOf(service.getListener_port()) : listenerPort) : "");
+            item.put("controllerPort", isControllerRole(role) || isZooKeeperRole(role) ? (service.getController_port() != null ? String.valueOf(service.getController_port()) : controllerPort) : "");
             item.put("logDirs", isBrokerRole(role) ? brokerLogDirs(config, dataDir) : "");
             item.put("metadataLogDir", metadataLogDirForRole(role, config, dataDir));
             topology.add(item);
@@ -1510,7 +1462,7 @@ public class ClusterController {
                     .append("@")
                     .append(resolveHostAddress(controller.getHost_id()))
                     .append(":")
-                    .append(controllerPort);
+                    .append(controller.getController_port() != null ? controller.getController_port() : controllerPort);
         }
         return quorumVoters.toString();
     }
@@ -1518,7 +1470,7 @@ public class ClusterController {
     private String buildControllerBootstrapServers(List<ServiceAssignmentReq> services, int controllerPort) {
         return services.stream()
                 .filter(service -> isControllerRole(service.getRole()))
-                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + controllerPort)
+                .map(service -> resolveHostAddress(service.getHost_id()) + ":" + (service.getController_port() != null ? service.getController_port() : controllerPort))
                 .collect(Collectors.joining(","));
     }
 
@@ -1526,7 +1478,7 @@ public class ClusterController {
         return services.stream()
                 .filter(service -> isControllerRole(service.getRole()))
                 .map(service -> service.getNode_id() + "@" + resolveHostAddress(service.getHost_id()) + ":"
-                        + controllerPort + ":" + generateKafkaClusterUuid())
+                        + (service.getController_port() != null ? service.getController_port() : controllerPort) + ":" + generateKafkaClusterUuid())
                 .collect(Collectors.joining(","));
     }
 
@@ -1559,7 +1511,7 @@ public class ClusterController {
             }
             if (isControllerRole(role)) {
                 controllerCount++;
-                String endpoint = address + ":" + controllerPort;
+                String endpoint = address + ":" + (service.getController_port() != null ? service.getController_port() : controllerPort);
                 if (!controllerEndpoints.add(endpoint)) {
                     errors.add("Controller endpoint " + endpoint + " is assigned more than once.");
                 }
@@ -2030,6 +1982,68 @@ public class ClusterController {
         summary.put("diskTotalGb", host.getDiskTotalGb());
         summary.put("bootstrap", "");
         return summary;
+    }
+
+    private List<Map<String, Object>> externalClusterHosts(
+            ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+    ) {
+        List<Map<String, Object>> hosts = new ArrayList<>();
+        List<io.translab.tantor.server.domain.DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
+        List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents = discoveryAgentRepository.findAll();
+        OffsetDateTime now = OffsetDateTime.now();
+
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream()
+                    .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) && matchesDiscoveryAgent(agent, node.getHost()))
+                    .findFirst()
+                    .or(() -> allAgents.stream()
+                            .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) && matchesDiscoveryAgent(agent, node.getHost()))
+                            .filter(agent -> agent.getClusterId() == null || agent.getClusterId().equals(cluster.getId()))
+                            .findFirst());
+
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("id", node.getId().toString());
+            summary.put("hostId", "");
+            summary.put("nodeId", node.getNodeId());
+            summary.put("hostname", agentMatch.map(io.translab.tantor.server.domain.DiscoveryAgent::getHostname)
+                    .filter(value -> value != null && !value.isBlank())
+                    .orElse(node.getHost()));
+            summary.put("ipAddress", node.getHost());
+            summary.put("role", externalNodeRole(node));
+            summary.put("status", agentMatch.isPresent() ? "Managed" : "Bootstrap connected");
+            summary.put("lastHeartbeat", agentMatch
+                    .map(io.translab.tantor.server.domain.DiscoveryAgent::getLastHeartbeat)
+                    .orElse(node.getLastSeen()));
+            summary.put("diskUsedGb", node.getDiskUsedGb());
+            summary.put("diskTotalGb", node.getDiskTotalGb());
+            summary.put("bootstrap", cluster.getBootstrapServers());
+
+            if (agentMatch.isEmpty()) {
+                allAgents.stream()
+                        .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()))
+                        .filter(agent -> agent.getLastHeartbeat() != null && java.time.Duration.between(agent.getLastHeartbeat(), now).getSeconds() <= 120)
+                        .filter(agent -> matchesDiscoveryAgent(agent, node.getHost()))
+                        .filter(agent -> agent.getClusterId() == null || !agent.getClusterId().equals(cluster.getId()))
+                        .findFirst()
+                        .ifPresent(agent -> {
+                            summary.put("agentAvailable", true);
+                            summary.put("availableAgentId", agent.getId().toString());
+                        });
+            }
+
+            hosts.add(summary);
+        }
+        return hosts;
+    }
+
+    private String externalNodeRole(io.translab.tantor.server.domain.ExternalClusterNode node) {
+        boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
+        boolean isController = Boolean.TRUE.equals(node.getIsController());
+        if (isBroker && isController) return "broker_controller";
+        if (isBroker) return "broker";
+        if (isController) return "controller";
+        return "unknown";
     }
 
     private Map<String, Object> externalBrokerSummary(io.translab.tantor.server.service.ExternalClusterService.ExternalBrokerRecord broker) {
