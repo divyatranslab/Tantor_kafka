@@ -448,6 +448,50 @@ public class ExternalClusterService {
                 .toList();
     }
 
+    @Transactional
+    public Map<String, Object> recordDiscoveryAgentHeartbeat(ExternalDiscoveryReport report) {
+        report.setLastSeen(OffsetDateTime.now().toString());
+        if (report.getHostname() == null || report.getHostname().isBlank()) {
+            report.setHostname(extractHostFromBootstrap(report.getBootstrapServers()));
+        }
+        upsertDiscoveryAgent(report, null);
+        return Map.of(
+                "status", "online",
+                "agentId", report.getHostId() == null || report.getHostId().isBlank() ? discoveryHostId(report) : report.getHostId(),
+                "lastHeartbeat", report.getLastSeen()
+        );
+    }
+
+    public List<Map<String, Object>> listDiscoveryAgents() {
+        OffsetDateTime now = OffsetDateTime.now();
+        return discoveryAgentRepository.findAll().stream()
+                .sorted(Comparator.comparing(
+                        DiscoveryAgent::getLastHeartbeat,
+                        Comparator.nullsLast(Comparator.reverseOrder())
+                ))
+                .map(agent -> {
+                    boolean fresh = agent.getLastHeartbeat() != null
+                            && agent.getLastHeartbeat().isAfter(now.minusSeconds(AGENT_STALE_SECONDS));
+                    Map<String, Object> summary = new LinkedHashMap<>();
+                    summary.put("id", agent.getId());
+                    summary.put("agentName", blankToDefault(agent.getAgentName(), agent.getId()));
+                    summary.put("hostname", blankToDefault(agent.getHostname(), ""));
+                    summary.put("ipAddresses", blankToDefault(agent.getIpAddresses(), "[]"));
+                    summary.put("version", blankToDefault(agent.getVersion(), "tantor-discovery-agent"));
+                    summary.put("canExecuteTasks", Boolean.TRUE.equals(agent.getCanExecuteTasks()));
+                    summary.put("clusterId", agent.getClusterId());
+                    summary.put("lastHeartbeat", agent.getLastHeartbeat());
+                    summary.put("fresh", fresh);
+                    summary.put("status", fresh ? "ONLINE" : "STALE");
+                    summary.put("health", fresh ? "green" : "orange");
+                    summary.put("stateLabel", agent.getClusterId() == null
+                            ? (fresh ? "Online - no cluster connected" : "Stale - no recent polling")
+                            : (fresh ? "Online - cluster connected" : "Stale - cluster connection needs attention"));
+                    return summary;
+                })
+                .toList();
+    }
+
     public Map<String, Object> inspectDiscovery(String discoveryKey) {
         ExternalDiscoveryReport report = requiredPendingDiscovery(discoveryKey);
         Map<String, Object> inspection = new LinkedHashMap<>();
