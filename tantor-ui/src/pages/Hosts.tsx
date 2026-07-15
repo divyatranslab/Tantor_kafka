@@ -151,44 +151,67 @@ export function Hosts() {
     <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
       <header className="page-header flex-between">
         <div>
-          <h1>Infrastructure fleet</h1>
+          <h1>Hosts</h1>
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
+          <button className="btn icon-only round" onClick={fetchHosts} title="Sync inventory">
+            <RefreshCw size={16} className={loading ? 'spin' : ''} />
+          </button>
           {canManage && (
-            <button className="btn" onClick={() => setShowEnrollModal(true)}>
+            <button className="btn btn-primary-action" style={{ background: '#3E1363', borderColor: '#3E1363' }} onClick={() => setShowEnrollModal(true)}>
               + Agent Connectivity
             </button>
           )}
-          <button className="btn" onClick={fetchHosts}>
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            Sync inventory
-          </button>
         </div>
       </header>
 
+      {activeHosts.length === 0 && !loading ? (
+        <div className="hosts-empty-state">
+          <div className="empty-illustration">
+            <svg width="102" height="74" viewBox="0 0 102 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="60" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="34" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="34" width="14" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="60" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
+            </svg>
+          </div>
+          <h3>No hosts at this moment</h3>
+          <p>Run the agent script on a node to discover and connect it here.</p>
+        </div>
+      ) : (
       <div className="table-container">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Status</th>
-              <th>Availability</th>
-              <th>Agent Name</th>
-              <th>Hostname</th>
-              <th>IP address</th>
-              <th>Agent</th>
-              <th>CPU</th>
-              <th>Memory</th>
-              <th>Actions</th>
+              <th style={{ width: '100px' }}>Status</th>
+              <th style={{ width: '110px' }}>Availability</th>
+              <th style={{ width: '160px' }}>Agent name</th>
+              <th style={{ width: '160px' }}>Host name</th>
+              <th style={{ width: '120px' }}>IP address</th>
+              <th style={{ width: '160px' }}>Agent</th>
+              <th style={{ width: '140px' }}>CPU</th>
+              <th style={{ width: '140px' }}>Memory</th>
+              <th></th>
+              <th style={{ width: '50px', textAlign: 'center', position: 'sticky', right: 0, background: '#F9F9F9', zIndex: 2 }}></th>
             </tr>
           </thead>
           <tbody>
-            {activeHosts.length === 0 ? (
+            {loading && activeHosts.length === 0 ? (
               <tr>
                 <td colSpan={9}>
-                  <div className="empty-state">
-                    {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
-                  </div>
+                  <div className="empty-state">Loading connected agents...</div>
                 </td>
               </tr>
             ) : activeHosts.map(host => {
@@ -202,62 +225,61 @@ export function Hosts() {
               return (
                 <tr key={host.id}>
                   <td>
-                    <span className={`status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
-                      {host.agentStatus ?? 'OFFLINE'}
+                    <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
+                      {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
                     </span>
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : 'occupied'}`}>
-                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' :
-                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' :
-                         host.status === 'OFFLINE' ? 'Unavailable - Offline' :
+                      <span className={`availability-badge ${host.status === 'OFFLINE' ? 'unavailable' : 'available'}`}>
+                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
+                         host.status === 'OFFLINE' ? 'Unavailable' :
                          host.status === 'REMOVED' ? 'Removed' : 'Available'}
                       </span>
-                      {host.status !== 'AVAILABLE' && (
-                        <div className="cluster-lock">
-                          <span>{host.clusterName || 'Assigned cluster'}</span>
-                          <code>{host.kafkaClusterId || host.clusterId}</code>
-                        </div>
-                      )}
                     </div>
                   </td>
-                  <td className="text-secondary">{host.agentName ?? '-'}</td>
-                  <td className="font-medium">{host.hostname}</td>
-                  <td className="text-secondary">{ip}</td>
-                  <td className="text-secondary">
+                  <td>{host.agentName ?? '-'}</td>
+                  <td>{host.hostname}</td>
+                  <td>{ip}</td>
+                  <td>
                     <div className="agent-kind-cell">
-                      <span>v{host.agentVersion || 'N/A'}</span>
-                      <small>{host.agentPath || 'Path unavailable'} · {host.agentStatus || 'OFFLINE'}</small>
+                      <span>V{host.agentVersion || 'N/A'}</span>
+                      <small>{host.agentPath || 'Path unavailable'}</small>
                     </div>
                   </td>
                   <td>
-                    <div className="metric-bar">
-                      <div className="bar-track">
-                        <div className={`bar-fill ${cpu > 80 ? 'danger' : 'normal'}`} style={{ width: `${cpu}%` }} />
-                      </div>
+                    <div className="metric-bar-stacked">
                       <span>{cpu}%</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="metric-bar">
                       <div className="bar-track">
-                        <div className={`bar-fill ${mem > 85 ? 'warning' : 'normal'}`} style={{ width: `${mem}%` }} />
+                        <div className="bar-fill normal" style={{ width: `${cpu}%` }} />
                       </div>
-                      <span>{mem}%</span>
                     </div>
                   </td>
                   <td>
+                    <div className="metric-bar-stacked">
+                      <span>{mem}%</span>
+                      <div className="bar-track">
+                        <div className="bar-fill normal" style={{ width: `${mem}%` }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td></td>
+                  <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: '#FFFFFF', zIndex: 1 }}>
                     {discoveryAgent ? (
                       <span className="discovery-managed-label">Managed from External Clusters</span>
                     ) : canManage ? (
-                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
+                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()} style={{ display: 'inline-block' }}>
                       <button
-                        className="btn icon-only"
+                        style={{ border: 'none', background: 'transparent', padding: '8px', cursor: 'pointer', color: '#818181', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                         title="Node actions"
                         onClick={() => setOpenMenuHostId(openMenuHostId === host.id ? null : host.id)}
                       >
-                        <MoreVertical size={16} />
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="12" cy="6" r="1.5" fill="#818181"/>
+                          <circle cx="12" cy="12" r="1.5" fill="#818181"/>
+                          <circle cx="12" cy="18" r="1.5" fill="#818181"/>
+                        </svg>
                       </button>
                       {openMenuHostId === host.id && (
                         <div className="host-action-menu">
@@ -281,6 +303,7 @@ export function Hosts() {
           </tbody>
         </table>
       </div>
+      )}
 
       {canManage && showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
@@ -292,18 +315,26 @@ export function Hosts() {
               </button>
             </div>
 
-            <p className="modal-section-title">Discovered nodes waiting to connect</p>
-
             {pendingHosts.length === 0 ? (
-              <div className="empty-pending">
-                No new nodes discovered. Run the agent script on a VM to discover it.
-              </div>
+              <>
+                <div className="empty-pending">
+                  <h3>No new nodes discovered</h3>
+                  <p>Run the agent script on a VM to discover it.</p>
+                </div>
+                <hr className="modal-divider" />
+                <div className="modal-footer right">
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
+                </div>
+              </>
             ) : (
               <>
-                <label className="pending-select-all">
-                  <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
-                  <span>Select all discovered agents</span>
-                </label>
+                <div className="modal-section-header">
+                  <p className="modal-section-title">Discovered Nodes</p>
+                  <label className="pending-select-all">
+                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
+                    <span>Select all</span>
+                  </label>
+                </div>
                 {pendingHosts.map(host => (
                   <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
                     <label className="pending-node-select" onClick={event => event.stopPropagation()}>
@@ -324,19 +355,15 @@ export function Hosts() {
                     </div>
                   </div>
                 ))}
-                <div className="pending-connect-summary">
-                  <span>{selectedCount} selected</span>
+                <hr className="modal-divider" />
+                <div className="modal-footer right">
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
                   <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
-                    {connectingAgents ? 'Connecting...' : 'Connect selected'}
+                    {connectingAgents ? 'Connecting...' : 'Connect'}
                   </button>
                 </div>
               </>
             )}
-
-            <hr className="modal-divider" />
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowEnrollModal(false)}>Close</button>
-            </div>
           </div>
         </div>
       )}
