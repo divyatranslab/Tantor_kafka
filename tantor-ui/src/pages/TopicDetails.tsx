@@ -7,6 +7,7 @@ import {
   ShieldCheck, Trash2, Users, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { CustomSelect } from '../components/CustomSelect';
 import './TopicDetails.css';
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
@@ -179,6 +180,34 @@ export function TopicDetails() {
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [acls, setAcls] = useState<AclRow[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
+
+  const [keyDeserializer, setKeyDeserializer] = useState('string');
+  const [valueDeserializer, setValueDeserializer] = useState('string');
+
+  const orderOptions = [
+    { value: 'newest', label: 'Newest first' },
+    { value: 'oldest', label: 'Oldest first' }
+  ];
+
+  const partitionOptions = useMemo(() => {
+    const opts = [{ value: '', label: 'All partitions' }];
+    if (detail?.partitions) {
+      detail.partitions.forEach(p => {
+        opts.push({ value: String(p.partition), label: `Partition ${p.partition}` });
+      });
+    }
+    return opts;
+  }, [detail]);
+
+  const keyDeserializerOptions = [
+    { value: 'string', label: 'Key: String' },
+    { value: 'raw', label: 'Key: Raw UTF-8' }
+  ];
+
+  const valueDeserializerOptions = [
+    { value: 'string', label: 'Value: String' },
+    { value: 'raw', label: 'Value: Raw UTF-8' }
+  ];
 
   const baseUrl = '/api/v1/clusters/' + id + '/topics/' + encodeURIComponent(topicName);
 
@@ -406,16 +435,26 @@ export function TopicDetails() {
         {activeTab === 'messages' && (
           <div className="messages-tab">
             <div className="message-toolbar">
-              <select value={messageOrder} onChange={event => setMessageOrder(event.target.value)}>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </select>
-              <select value={messagePartition} onChange={event => setMessagePartition(event.target.value)}>
-                <option value="">All partitions</option>
-                {detail.partitions.map(partition => <option key={partition.partition} value={partition.partition}>Partition {partition.partition}</option>)}
-              </select>
-              <select aria-label="Key deserializer" defaultValue="string"><option value="string">Key: String</option><option value="raw">Key: Raw UTF-8</option></select>
-              <select aria-label="Value deserializer" defaultValue="string"><option value="string">Value: String</option><option value="raw">Value: Raw UTF-8</option></select>
+              <CustomSelect
+                value={messageOrder}
+                onChange={setMessageOrder}
+                options={orderOptions}
+              />
+              <CustomSelect
+                value={messagePartition}
+                onChange={setMessagePartition}
+                options={partitionOptions}
+              />
+              <CustomSelect
+                value={keyDeserializer}
+                onChange={setKeyDeserializer}
+                options={keyDeserializerOptions}
+              />
+              <CustomSelect
+                value={valueDeserializer}
+                onChange={setValueDeserializer}
+                options={valueDeserializerOptions}
+              />
               <button onClick={loadMessages} disabled={messagesLoading}><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /> Refresh</button>
               <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMessages()} placeholder="Search key or value" /></label>
             </div>
