@@ -59,7 +59,8 @@ const formatNumber = (value?: number | null, digits = 0) => {
 };
 
 const formatBytes = (value?: number | null) => {
-  if (!value || value <= 0) return '-';
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  if (value <= 0) return '0 B/s';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let next = value;
   let unit = 0;
@@ -241,6 +242,8 @@ export function Monitoring() {
 
   const kafkaExporterReady = Boolean(overview?.kafkaExporterUp && overview.kafkaExporterUp > 0);
   const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
+  const jmxMetricEmptyText = jmxReady ? 'No JMX samples for this metric' : 'JMX exporter required';
+  const trafficEmptyText = kafkaExporterReady || jmxReady ? 'No traffic samples available' : 'JMX or kafka_exporter required';
   const hasTrafficSeries = history.some(sample => hasValue(sample.messagesIn) || hasValue(sample.lag));
   const hasCpuSeries = history.some(sample => hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
   const hasHeapSeries = history.some(sample => hasValue(sample.heap) || hasValue(sample.hostMemory));
@@ -341,7 +344,7 @@ export function Monitoring() {
             </div>
 
             <div className="monitoring-performance-grid">
-              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
                 {hasCpuSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -356,7 +359,7 @@ export function Monitoring() {
                 ) : null}
               </GraphPanel>
 
-              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
                 {hasHeapSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -371,7 +374,7 @@ export function Monitoring() {
                 ) : null}
               </GraphPanel>
 
-              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText={kafkaExporterReady ? "No traffic data available" : "kafka_exporter required"}>
+              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="JMX / kafka_exporter" emptyText={trafficEmptyText}>
                 {hasTrafficSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>

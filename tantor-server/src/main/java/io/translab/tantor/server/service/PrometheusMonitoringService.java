@@ -231,29 +231,34 @@ public class PrometheusMonitoringService {
         overview.setBrokerCount(firstNumber("max(kafka_brokers{" + selector + "})"));
         overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + selector + "}))"));
         overview.setPartitionCount(firstNumber("sum(kafka_topic_partitions{" + selector + "})"));
-        overview.setUnderReplicatedPartitions(firstNumber("sum(kafka_topic_partition_under_replicated_partition{" + selector + "})"));
-        overview.setConsumerLag(firstNumber("sum(kafka_consumergroup_lag{" + selector + "})"));
-        overview.setMessagesInPerSecond(firstNumber("sum(rate(kafka_topic_partition_current_offset{" + selector + "}[5m]))"));
-        overview.setBytesInPerSecond(firstPresentNumber(
-                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_OneMinuteRate{" + selector + "})",
-                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_FiveMinuteRate{" + selector + "})",
-                "sum(kafka_server_BrokerTopicMetrics_BytesInPerSec_MeanRate{" + selector + "})",
-                "sum(rate(kafka_server_BrokerTopicMetrics_BytesInPerSec_Count{" + selector + "}[5m]))"
+        overview.setUnderReplicatedPartitions(firstOrZero("sum(kafka_topic_partition_under_replicated_partition{" + selector + "})"));
+        overview.setConsumerLag(firstOrZero("sum(kafka_consumergroup_lag{" + selector + "})"));
+        overview.setMessagesInPerSecond(firstPresentNumber(
+                append(brokerTopicRate(selector, "MessagesInPerSec"),
+                        "sum(rate(kafka_topic_partition_current_offset{" + selector + "}[5m]))")
         ));
-        overview.setBytesOutPerSecond(firstPresentNumber(
-                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_OneMinuteRate{" + selector + "})",
-                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_FiveMinuteRate{" + selector + "})",
-                "sum(kafka_server_BrokerTopicMetrics_BytesOutPerSec_MeanRate{" + selector + "})",
-                "sum(rate(kafka_server_BrokerTopicMetrics_BytesOutPerSec_Count{" + selector + "}[5m]))"
+        overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(selector, "BytesInPerSec")));
+        overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(selector, "BytesOutPerSec")));
+        overview.setJvmHeapUsedPercent(firstPresentNumber(
+                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
         ));
-        overview.setJvmHeapUsedPercent(firstNumber("(sum(jvm_memory_bytes_used{" + selector + ",area=\"heap\"}) / sum(jvm_memory_bytes_max{" + selector + ",area=\"heap\"})) * 100"));
         overview.setBrokerCpuPercent(firstPresentNumber(
-                "clamp_min(clamp_max(max(jvm_OperatingSystem_ProcessCpuLoad{" + selector + "}) * 100, 100), 0)",
+                cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", selector),
+                cpuPercent("jvm_operatingsystem_processcpuload", selector),
                 "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + selector + "}[5m])) * 100"
         ));
         overview.setSystemCpuPercent(firstPresentNumber(
-                "clamp_min(clamp_max(max(jvm_OperatingSystem_SystemCpuLoad{" + selector + "}) * 100, 100), 0)",
-                "clamp_min(clamp_max(max(jvm_OperatingSystem_CpuLoad{" + selector + "}) * 100, 100), 0)"
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", selector),
+                cpuPercent("jvm_OperatingSystem_CpuLoad", selector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", selector),
+                cpuPercent("jvm_operatingsystem_cpuload", selector)
         ));
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster));
@@ -263,6 +268,8 @@ public class PrometheusMonitoringService {
         }
         if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
             overview.getWarnings().add("JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
+        } else if (overview.getJmxUp() == null || overview.getJmxUp() <= 0) {
+            overview.getWarnings().add("JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
         }
         return overview;
     }
@@ -502,7 +509,7 @@ public class PrometheusMonitoringService {
         }
         if (isExternal(cluster)) {
             return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
-                    .anyMatch(node -> node.getJmxExporterPort() != null);
+                    .anyMatch(node -> node.getHost() != null && !node.getHost().isBlank());
         }
         return cluster.getServices() != null && cluster.getServices().stream()
                 .filter(service -> isBrokerRole(service.getRole()))
@@ -663,6 +670,11 @@ public class PrometheusMonitoringService {
         }
     }
 
+    private Double firstOrZero(String promql) {
+        Double value = firstNumber(promql);
+        return value == null ? 0.0 : value;
+    }
+
     private Double firstPresentNumber(String... promqls) {
         for (String promql : promqls) {
             Double value = firstNumber(promql);
@@ -671,6 +683,39 @@ public class PrometheusMonitoringService {
             }
         }
         return null;
+    }
+
+    private String[] append(String[] values, String value) {
+        String[] result = new String[values.length + 1];
+        System.arraycopy(values, 0, result, 0, values.length);
+        result[values.length] = value;
+        return result;
+    }
+
+    private String[] brokerTopicRate(String selector, String metric) {
+        String lower = metric.toLowerCase(Locale.ROOT);
+        return new String[] {
+                "sum(kafka_server_BrokerTopicMetrics_" + metric + "_OneMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_" + metric + "_FiveMinuteRate{" + selector + "})",
+                "sum(kafka_server_BrokerTopicMetrics_" + metric + "_MeanRate{" + selector + "})",
+                "sum(rate(kafka_server_BrokerTopicMetrics_" + metric + "_Count{" + selector + "}[5m]))",
+                "sum(kafka_server_brokertopicmetrics_" + lower + "_oneminuterate{" + selector + "})",
+                "sum(kafka_server_brokertopicmetrics_" + lower + "_fiveminuterate{" + selector + "})",
+                "sum(kafka_server_brokertopicmetrics_" + lower + "_meanrate{" + selector + "})",
+                "sum(rate(kafka_server_brokertopicmetrics_" + lower + "_count{" + selector + "}[5m]))",
+                "sum(kafka_server_brokertopicmetrics_oneminuterate{" + selector + ",name=\"" + metric + "\"})",
+                "sum(kafka_server_brokertopicmetrics_fiveminuterate{" + selector + ",name=\"" + metric + "\"})",
+                "sum(kafka_server_brokertopicmetrics_meanrate{" + selector + ",name=\"" + metric + "\"})",
+                "sum(rate(kafka_server_brokertopicmetrics_count{" + selector + ",name=\"" + metric + "\"}[5m]))"
+        };
+    }
+
+    private String heapPercent(String selector, String usedMetric, String limitMetric, String area) {
+        return "(sum(" + usedMetric + "{" + selector + ",area=\"" + area + "\"}) / sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"})) * 100";
+    }
+
+    private String cpuPercent(String metric, String selector) {
+        return "clamp_min(clamp_max(max(" + metric + "{" + selector + "}) * 100, 100), 0)";
     }
 
     private JsonNode prometheusGet(String path, Map<String, String> params) {

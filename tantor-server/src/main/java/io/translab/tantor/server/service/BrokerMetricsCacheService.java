@@ -10,6 +10,7 @@ import io.translab.tantor.server.dto.BrokerSummaryDto;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -37,6 +38,9 @@ public class BrokerMetricsCacheService {
 
     private final Map<UUID, CachedBrokers> cache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 10000;
+
+    @Value("${tantor.monitoring.jmx-exporter-port:7071}")
+    private int jmxExporterPort;
 
     public List<BrokerSummaryDto> getBrokerSummaries(Cluster cluster) {
         CachedBrokers cached = cache.get(cluster.getId());
@@ -115,20 +119,15 @@ public class BrokerMetricsCacheService {
 
         if (targetIp != null) {
             try {
-                String url = "http://" + targetIp + ":7071/metrics";
+                String url = "http://" + targetIp + ":" + jmxExporterPort + "/metrics";
                 String metricsText = restTemplate.getForObject(url, String.class);
                 if (metricsText != null) {
                     jmxReachable = true;
                     parsePrometheusText(metricsText, builder);
                 }
             } catch (Exception e) {
-                log.warn("Failed to fetch JMX metrics from {}:7071: {}", targetIp, e.getMessage());
+                log.warn("Failed to fetch JMX metrics from {}:{}: {}", targetIp, jmxExporterPort, e.getMessage());
             }
-        }
-
-        if (!jmxReachable) {
-            // Simulate for UI
-            simulateMetrics(builder);
         }
 
         builder.isJmxReachable(jmxReachable);
@@ -161,23 +160,8 @@ public class BrokerMetricsCacheService {
                         .memoryUsedMb(record.getMemoryUsedMb() != null ? record.getMemoryUsedMb() : 0L)
                         .diskTotalGb(record.getDiskTotalGb() != null ? record.getDiskTotalGb() : 0L)
                         .diskUsedGb(record.getDiskUsedGb() != null ? record.getDiskUsedGb() : 0L)
-                        .messagesInPerSec(0.0)
-                        .bytesInPerSec(0.0)
-                        .bytesOutPerSec(0.0)
                         .build())
                 .collect(Collectors.toList());
-    }
-
-    private void simulateMetrics(BrokerSummaryDto.BrokerSummaryDtoBuilder builder) {
-        Random rand = new Random();
-        double msgIn = 180 + (rand.nextDouble() * 150);
-        builder.messagesInPerSec(msgIn);
-        
-        double bytesIn = msgIn * 1024 * (8 + rand.nextDouble() * 4); 
-        builder.bytesInPerSec(bytesIn);
-        builder.bytesOutPerSec(bytesIn * (1.2 + rand.nextDouble() * 0.8));
-        
-        builder.isController(false); // Simulate false
     }
 
     private void parsePrometheusText(String text, BrokerSummaryDto.BrokerSummaryDtoBuilder builder) {
@@ -190,11 +174,14 @@ public class BrokerMetricsCacheService {
             String metric = parts[0].toLowerCase();
             try {
                 double val = Double.parseDouble(parts[1]);
-                if (metric.startsWith("kafka_server_brokertopicmetrics_messagesinpersec_count")) {
+                if (metric.startsWith("kafka_server_brokertopicmetrics_messagesinpersec_oneminuterate")
+                        || namedOneMinuteRate(metric, "messagesinpersec")) {
                     builder.messagesInPerSec(val);
-                } else if (metric.startsWith("kafka_server_brokertopicmetrics_bytesinpersec_count")) {
+                } else if (metric.startsWith("kafka_server_brokertopicmetrics_bytesinpersec_oneminuterate")
+                        || namedOneMinuteRate(metric, "bytesinpersec")) {
                     builder.bytesInPerSec(val);
-                } else if (metric.startsWith("kafka_server_brokertopicmetrics_bytesoutpersec_count")) {
+                } else if (metric.startsWith("kafka_server_brokertopicmetrics_bytesoutpersec_oneminuterate")
+                        || namedOneMinuteRate(metric, "bytesoutpersec")) {
                     builder.bytesOutPerSec(val);
                 } else if (metric.startsWith("kafka_controller_kafkacontroller_activecontrollercount_value")) {
                     builder.isController(val > 0);
@@ -203,6 +190,11 @@ public class BrokerMetricsCacheService {
                 // ignore unparseable
             }
         }
+    }
+
+    private boolean namedOneMinuteRate(String metric, String name) {
+        return metric.startsWith("kafka_server_brokertopicmetrics_oneminuterate")
+                && metric.contains("name=\"" + name + "\"");
     }
 
     private static class CachedBrokers {
