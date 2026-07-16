@@ -8,7 +8,7 @@
   margin: 0 auto;
   background: #FFFFFF;
   border-radius: 8px;
-  padding: 24px;
+  padding: 16px 24px;
 }
 
 .cd-header {
@@ -27,8 +27,14 @@
 }
 
 .cd-header h1 {
-  font-size: 1.55rem;
-  margin-bottom: 0.25rem;
+  font-size: 24px;
+  font-weight: 700;
+  color: #282F49;
+  font-family: 'Satoshi', sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
 }
 
 .cd-header p,
@@ -87,11 +93,13 @@
 .cd-stage-tabs {
   display: inline-flex;
   align-items: center;
-  padding: 2px;
+  padding: 0;
   background: #FFFFFF;
   border: 1px solid #CCCCCC;
   border-radius: 8px;
   height: 40px;
+  width: 170px;
+  box-sizing: border-box;
 }
 
 .cd-stage-tabs span {
@@ -104,7 +112,10 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   height: 100%;
+  width: 50%;
+  box-sizing: border-box;
 }
 
 .cd-stage-tabs span.active {
@@ -115,7 +126,7 @@
 .cd-layout {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
 }
 
 .cd-panel {
@@ -310,26 +321,30 @@ input:checked + .cd-toggle-slider:before {
 .cd-field {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 6px;
 }
 
 .cd-field span {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  font-weight: 650;
+  color: #332849;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: 'Satoshi', sans-serif;
 }
 
 .cd-field input,
 .cd-field select,
 .cd-search input {
   width: 100%;
-  min-height: 38px;
+  height: 40px;
+  box-sizing: border-box;
   border: 1px solid #CCCCCC;
   border-radius: 8px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  padding: 0.55rem 0.7rem;
-  font: inherit;
+  background: #FFFFFF;
+  color: #23252D;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: 'Satoshi', sans-serif;
   outline: none;
 }
 
@@ -516,6 +531,7 @@ input:checked + .cd-toggle-slider:before {
 }
 
 .cd-refresh-icon {
+  box-sizing: border-box;
   width: 28px;
   height: 28px;
   background: #FFFFFF;
@@ -526,7 +542,8 @@ input:checked + .cd-toggle-slider:before {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  padding: 0;
+  padding: 6px;
+  opacity: 1;
 }
 
 .cd-ghost-btn {
@@ -718,7 +735,11 @@ input:checked + .cd-toggle-slider:before {
 
 .cd-node-main strong,
 .cd-role-copy strong {
-  font-size: 0.86rem;
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 19px;
+  color: #332849;
 }
 
 .cd-node-main span,
@@ -778,7 +799,7 @@ input:checked + .cd-toggle-slider:before {
 .cd-footer-actions {
   display: flex;
   justify-content: flex-start;
-  gap: 0.75rem;
+  gap: 16px;
 }
 
 .cd-secondary-btn {
@@ -808,6 +829,7 @@ input:checked + .cd-toggle-slider:before {
   gap: 6px;
   width: 75px;
   height: 28px;
+  min-height: 28px;
   background: #FFFFFF;
   border: 1px solid #3E1363;
   border-radius: 6px;

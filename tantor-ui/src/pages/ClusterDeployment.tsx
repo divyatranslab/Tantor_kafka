@@ -1182,8 +1182,8 @@ export function ClusterDeployment() {
     <div className="cluster-deploy-page animate-fade-in">
       <header className="cd-header">
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#282F49', fontSize: '24px', fontWeight: 700 }}>
-            <ChevronLeft size={24} color="#818181" style={{ cursor: 'pointer' }} onClick={() => window.history.back()} />
+          <h1>
+            <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => window.history.back()} />
             {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
           </h1>
           <p>{stage === 'details'

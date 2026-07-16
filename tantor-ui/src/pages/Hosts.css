@@ -152,6 +152,10 @@
   gap: 2px;
 }
 
+.agent-kind-cell span {
+  font-weight: 400;
+}
+
 .agent-kind-cell small {
   display: block;
   font-family: 'Satoshi', sans-serif;
@@ -181,7 +185,7 @@
   padding: 4px 12px;
   border-radius: 999px;
   font-size: 0.72rem;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .host-status-badge.online,
@@ -511,7 +515,7 @@
   padding: 3px 9px;
   border-radius: 999px;
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .availability-badge.available,

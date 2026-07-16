@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, CheckCircle2, Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, CheckCircle2, Maximize2, Minimize2, Check } from 'lucide-react';
 import './JobStatusPage.css';
 
 type Job = {
@@ -356,20 +356,36 @@ export function JobStatusPage() {
       <div className={`job-main-layout ${isLogsExpanded ? 'logs-expanded' : ''}`}>
         {!isLogsExpanded && (
           <div className="job-sidebar">
-            <h3 className="panel-title" style={{ textAlign: 'center', marginBottom: '4px', color: '#332849' }}>Deployment Steps</h3>
+            <h3 className="panel-title" style={{ textAlign: 'left', marginBottom: '8px', color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
             {totalSteps > 0 && (
               <>
-                <div style={{ textAlign: 'center', fontSize: '12px', color: '#818181', marginBottom: '16px' }}>
+                <div style={{ textAlign: 'left', fontSize: '14px', color: '#332849', marginBottom: '16px' }}>
                   {completedStepsCount} of {totalSteps} steps
                 </div>
-                <div className="global-progress" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '24px' }}>
-                  <div style={{ fontSize: '12px', color: '#818181', fontWeight: 400 }}>
-                    {progressPercentage}% Complete
+                <div className="global-progress" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '24px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#3E1363', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Check size={12} color="#FFFFFF" strokeWidth={3} />
+                      </div>
+                      <span style={{ fontSize: '14px', color: '#818181', fontWeight: 600 }}>
+                        {displaySteps.length > 0 ? getBusinessStepName(displaySteps[displaySteps.length - 1].name) : 'Initializing...'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#818181' }}>
+                      {progressPercentage}% Complete
+                    </div>
                   </div>
-                  <div className="step-progress-track" style={{ height: '8px', background: '#F1F1F1' }}>
+                  <div className="step-progress-track" style={{ height: '8px', background: '#F1F1F1', borderRadius: '4px' }}>
                     <div 
-                      className={`step-progress-fill ${isFinished && job.status === 'FAILED' ? 'bar-failed' : isFinished ? 'bar-success' : 'bar-in-progress'}`}
-                      style={{ width: `${progressPercentage}%`, background: isFinished && job.status !== 'FAILED' ? '#30B094' : undefined }} 
+                      className="step-progress-fill"
+                      style={{ 
+                        width: `${progressPercentage}%`, 
+                        background: '#818181', 
+                        height: '100%', 
+                        borderRadius: '4px',
+                        transition: 'width 0.5s ease'
+                      }} 
                     />
                   </div>
                 </div>
@@ -377,9 +393,11 @@ export function JobStatusPage() {
             )}
             <div className="steps-list">
               {displaySteps.map((step, idx) => (
-                <div className="step-card" key={step.id}>
+                <div className="step-card" key={step.id} style={{ padding: '12px 16px', border: '1px solid #CCCCCC', borderRadius: '4px', background: '#FFFFFF', marginBottom: '8px' }}>
                   <div className="step-card-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-                    <span className="step-name" style={{ color: '#332849' }}>{idx + 1}. {getBusinessStepName(step.name)}</span>
+                    <span className="step-name" style={{ color: '#332849', fontSize: '14px', fontWeight: 500 }}>
+                      {idx + 1}. {getBusinessStepName(step.name)}
+                    </span>
                     {getStepIcon(step.status, 20)}
                   </div>
                 </div>
