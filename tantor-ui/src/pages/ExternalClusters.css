@@ -383,6 +383,130 @@
   margin-top: 12px;
 }
 
+.agent-connectivity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #e8e6e1;
+  border-radius: 8px;
+  background: #fbfaf8;
+}
+
+.agent-connectivity-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #1a1a18;
+  letter-spacing: 0;
+}
+
+.agent-connectivity-header p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #6f6d67;
+}
+
+.agent-empty-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed #d8d4ca;
+  background: #fffdf8;
+  color: #6f6d67;
+}
+
+.agent-empty-state svg {
+  color: #7a5407;
+}
+
+.agent-empty-state div {
+  display: grid;
+  gap: 3px;
+}
+
+.agent-empty-state strong {
+  color: #1a1a18;
+  font-size: 13px;
+}
+
+.agent-empty-state span {
+  font-size: 12px;
+}
+
+.agent-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.agent-status-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e0db;
+  background: #ffffff;
+}
+
+.agent-status-card.green {
+  border-color: #bde6c8;
+  background: #f4fbf6;
+}
+
+.agent-status-card.orange {
+  border-color: #f0d796;
+  background: #fffaf0;
+}
+
+.agent-status-card.red {
+  border-color: #e8b4b4;
+  background: #fff6f6;
+}
+
+.agent-status-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agent-status-top strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1a1a18;
+  font-size: 13px;
+}
+
+.agent-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #d99a12;
+  flex: 0 0 auto;
+}
+
+.agent-status-card.green .agent-status-dot {
+  background: #24a148;
+}
+
+.agent-status-card.red .agent-status-dot {
+  background: #c62828;
+}
+
+.agent-status-meta {
+  display: grid;
+  gap: 4px;
+  color: #5f5e5a;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

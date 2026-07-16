@@ -78,6 +78,10 @@ type ServiceAssignment = {
   configuration_mode: ConfigMode;
   properties_template: string;
   heap_size: string;
+  listener_port?: number;
+  controller_port?: number;
+  zookeeper_peer_port?: number;
+  zookeeper_election_port?: number;
 };
 
 type PropertyRow = {
@@ -366,6 +370,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [controllerPort, setControllerPort] = useState(9093);
   const [zookeeperPeerPort, setZookeeperPeerPort] = useState(2888);
   const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
+  const [hostPorts, setHostPorts] = useState<Record<string, { listenerPort: number, controllerPort: number, zookeeperPeerPort: number, zookeeperElectionPort: number }>>({});
+  const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
   const [numPartitions, setNumPartitions] = useState(1);
 
   const [nodeSearch, setNodeSearch] = useState('');
@@ -816,32 +822,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     };
     const services: ServiceAssignment[] = [];
 
+    const getHp = (hostId: string) => hostPorts[hostId] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+
     selectedHosts.forEach(host => {
       const role = rolesByHost[host.id] || defaultRoleForMode;
+      const hp = getHp(host.id);
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort });
       } else if (role === 'broker_zookeeper') {
         const brokerCfg = configFor('server');
         const zookeeperCfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), heap_size: brokerCfg.heapSize });
-        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: zookeeperCfg.mode, properties_template: serviceTemplate('zookeeper', zookeeperCfg), heap_size: zookeeperCfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort });
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: zookeeperCfg.mode, properties_template: serviceTemplate('zookeeper', zookeeperCfg), heap_size: zookeeperCfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else if (role === 'separate') {
         const brokerCfg = configFor('broker');
         const controllerCfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize });
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize, controller_port: hp.controllerPort });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort });
       } else if (role === 'zookeeper') {
         const cfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else {
         const kind: ConfigKind = deploymentMode === 'zookeeper' ? 'server' : 'broker';
         const cfg = configFor(kind);
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), heap_size: cfg.heapSize });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort });
       }
     });
 
@@ -968,23 +977,71 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const getHostPorts = (hostId: string) => hostPorts[hostId] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+
+  const updateHostPort = (hostId: string, key: string, value: number) => {
+    setHostPorts(prev => ({
+      ...prev,
+      [hostId]: { ...getHostPorts(hostId), [key]: value }
+    }));
+  };
+
   const prerequisitePortsForHost = (hostId: string): number[] => {
     const role = rolesByHost[hostId] || defaultRoleForMode;
     const ports = new Set<number>();
+    const hp = getHostPorts(hostId);
     const hasBroker = ['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role);
     if (hasBroker) {
-      ports.add(listenerPort);
+      ports.add(hp.listenerPort);
       ports.add(7071);
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
-      ports.add(controllerPort);
+      ports.add(hp.controllerPort);
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
-      ports.add(controllerPort);
-      ports.add(zookeeperPeerPort);
-      ports.add(zookeeperElectionPort);
+      ports.add(hp.controllerPort);
+      ports.add(hp.zookeeperPeerPort);
+      ports.add(hp.zookeeperElectionPort);
     }
     return Array.from(ports);
+  };
+
+  const checkHostPorts = async (hostId: string) => {
+    setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: deploymentMode,
+          required_ports: prerequisitePortsForHost(hostId).join(','),
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Failed to check ports.');
+      
+      for (let i = 0; i < 30; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const pollRes = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${body.taskId}`);
+        if (!pollRes.ok) continue;
+        const pollBody = await pollRes.json();
+        const status = String(pollBody.status || 'RUNNING').toUpperCase();
+        if (!activeStatus(status)) {
+          setPortCheckResults(prev => ({
+            ...prev,
+            [hostId]: {
+              status: status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+              logOutput: pollBody.logOutput || '',
+              errorMsg: pollBody.errorMsg || (status === 'SUCCESS' ? '' : 'Ports may be in use.'),
+            }
+          }));
+          return;
+        }
+      }
+      throw new Error('Timed out waiting for port check.');
+    } catch (e) {
+      setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'FAILED', logOutput: '', errorMsg: e instanceof Error ? e.message : 'Error checking ports.' } }));
+    }
   };
 
   const checkPrerequisites = async () => {
@@ -1410,56 +1467,104 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <span>{displayIp(host)}</span>
                     </div>
                   </div>
-                  <div className="cd-role-menu-wrap">
-                    <button
-                      className="cd-secondary-btn compact cd-role-menu-trigger"
-                      onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
-                    >
-                      <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ')}</span>
-                      <MoreVertical size={14} />
-                    </button>
-                    {openRoleMenuHostId === host.id && (
-                      <div className="cd-role-menu">
-                        {roleOptions.filter(r => r.id !== 'separate').map(role => {
-                          const currentRole = rolesByHost[host.id] || defaultRoleForMode;
-                          let isActive = currentRole === role.id;
+                  <div className="cd-role-menu-wrap" style={{ flexGrow: 1, display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        className="cd-secondary-btn compact cd-role-menu-trigger"
+                        onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                      >
+                        <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ')}</span>
+                        <MoreVertical size={14} />
+                      </button>
+                      {openRoleMenuHostId === host.id && (
+                        <div className="cd-role-menu">
+                          {roleOptions.filter(r => r.id !== 'separate').map(role => {
+                            const currentRole = rolesByHost[host.id] || defaultRoleForMode;
+                            let isActive = currentRole === role.id;
 
-                          if (deploymentMode === 'kraft') {
-                            if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
-                            if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
-                          }
+                            if (deploymentMode === 'kraft') {
+                              if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
+                              if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
+                            }
 
-                          return (
-                            <label
-                              key={role.id}
-                              className={`cd-role-label ${isActive ? 'active' : ''}`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isActive}
-                                onChange={() => {
-                                  let nextRole = role.id;
+                            return (
+                              <label
+                                key={role.id}
+                                className={`cd-role-label ${isActive ? 'active' : ''}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isActive}
+                                  onChange={() => {
+                                    let nextRole = role.id;
 
-                                  if (deploymentMode === 'kraft') {
-                                    if (role.id === 'broker') {
-                                      if (currentRole === 'controller') nextRole = 'separate';
-                                      else if (currentRole === 'separate') nextRole = 'controller';
-                                    } else if (role.id === 'controller') {
-                                      if (currentRole === 'broker') nextRole = 'separate';
-                                      else if (currentRole === 'separate') nextRole = 'broker';
+                                    if (deploymentMode === 'kraft') {
+                                      if (role.id === 'broker') {
+                                        if (currentRole === 'controller') nextRole = 'separate';
+                                        else if (currentRole === 'separate') nextRole = 'controller';
+                                      } else if (role.id === 'controller') {
+                                        if (currentRole === 'broker') nextRole = 'separate';
+                                        else if (currentRole === 'separate') nextRole = 'broker';
+                                      }
                                     }
-                                  }
 
-                                  setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
-                                  setPrereqResults({});
-                                }}
-                              />
-                              <span>{role.label}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
+                                    setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
+                                    setPrereqResults({});
+                                    setPortCheckResults({});
+                                  }}
+                                />
+                                <span>{role.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
+                        <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
+                          <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Broker Port</span>
+                          <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).listenerPort} onChange={e => updateHostPort(host.id, 'listenerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                        </label>
+                      )}
+                      
+                      {deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
+                        <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
+                          <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Controller Port</span>
+                          <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).controllerPort} onChange={e => updateHostPort(host.id, 'controllerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                        </label>
+                      )}
+                      
+                      {deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
+                        <>
+                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
+                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Client Port</span>
+                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).controllerPort} onChange={e => updateHostPort(host.id, 'controllerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                          </label>
+                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
+                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Peer Port</span>
+                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).zookeeperPeerPort} onChange={e => updateHostPort(host.id, 'zookeeperPeerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                          </label>
+                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
+                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Election Port</span>
+                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).zookeeperElectionPort} onChange={e => updateHostPort(host.id, 'zookeeperElectionPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
+                          </label>
+                        </>
+                      )}
+                      
+                      <button className="cd-secondary-btn compact" onClick={() => checkHostPorts(host.id)} disabled={portCheckResults[host.id]?.status === 'RUNNING'} title="Check if assigned ports are available">
+                        {portCheckResults[host.id]?.status === 'RUNNING' ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
+                        Check Ports
+                      </button>
+                      
+                      {portCheckResults[host.id] && portCheckResults[host.id].status !== 'IDLE' && portCheckResults[host.id].status !== 'QUEUED' && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: portCheckResults[host.id].status === 'SUCCESS' ? 'var(--success-color)' : portCheckResults[host.id].status === 'RUNNING' ? 'var(--text-color)' : 'var(--danger-color)' }}>
+                          {portCheckResults[host.id].status === 'SUCCESS' ? <CheckCircle2 size={14} /> : portCheckResults[host.id].status === 'RUNNING' ? '' : <XCircle size={14} />}
+                          {portCheckResults[host.id].status === 'SUCCESS' ? 'Available' : portCheckResults[host.id].status === 'RUNNING' ? 'Checking...' : portCheckResults[host.id].errorMsg || 'In Use'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
                     <FileText size={14} />

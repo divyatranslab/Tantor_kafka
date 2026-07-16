@@ -36,6 +36,9 @@ interface ClusterInfo {
   totalHostsCount?: number;
   telemetry?: string;
   lastAgentHeartbeat?: string;
+  runtimeHealth?: string;
+  runtimeStatusLabel?: string;
+  runtimeStatusReason?: string;
 }
 
 export function Clusters() {
@@ -109,6 +112,7 @@ export function Clusters() {
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
   const statusLabel = (c: ClusterInfo) => {
+    if (c.runtimeStatusLabel) return c.runtimeStatusLabel;
     if (c.mode === 'EXTERNAL') {
       if (c.status === 'SUCCESS') return 'Connected';
       if (c.status === 'DEGRADED') return 'Degraded';
@@ -119,6 +123,8 @@ export function Clusters() {
   };
 
   const statusClass = (c: ClusterInfo) => {
+    const runtime = (c.runtimeHealth || '').toLowerCase();
+    if (runtime) return runtime;
     if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'external' : (c.status || 'external').toLowerCase();
     return (c.status || 'pending').toLowerCase();
   };
@@ -251,7 +257,7 @@ export function Clusters() {
                         key={cluster.id}
                         className={!isClickable(cluster) ? 'disabled' : ''}
                         onClick={() => {
-                          if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/nodes`);
+                          if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/overview`);
                         }}
                       >
                         <td>
@@ -321,7 +327,7 @@ export function Clusters() {
                             </span>
                             <span
                               className={`cluster-status-badge ${statusClass(cluster)}`}
-                              title={cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined}
+                              title={cluster.runtimeStatusReason || (cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined)}
                             >
                               {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
                                 <RefreshCw size={11} className="spin" />

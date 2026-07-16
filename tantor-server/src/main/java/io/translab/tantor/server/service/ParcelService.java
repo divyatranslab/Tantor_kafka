@@ -305,8 +305,8 @@ public class ParcelService {
         copy.setLastTaskId(source.getLastTaskId());
         copy.setErrorMsg(source.getErrorMsg());
         copy.setAction(action);
-        copy.setCreatedBy("system");
-        copy.setUpdatedBy("system");
+        copy.setCreatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
+        copy.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
         return copy;
     }
 

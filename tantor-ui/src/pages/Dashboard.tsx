@@ -8,6 +8,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
+import { usePermissions } from '../hooks/usePermissions';
 import './Dashboard.css';
 
 interface DashboardSummary {
@@ -149,6 +150,7 @@ import { ClusterDeployment } from './ClusterDeployment';
 export function Dashboard() {
   const navigate = useNavigate();
   const { decodedToken } = useAuth();
+  const { canManage } = usePermissions();
   const [dashboard, setDashboard] = useState<DashboardPayload>(emptyDashboard);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -247,10 +249,12 @@ export function Dashboard() {
             <button className="db-btn ghost" onClick={fetchDashboard}>
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
             </button>
-            <button className="db-btn primary" onClick={() => setShowDeploymentModal(true)}>
-              <Plus size={14} />
-              New Cluster
-            </button>
+            {canManage && (
+              <button className="db-btn primary" onClick={() => setShowDeploymentModal(true)}>
+                <Plus size={14} />
+                New Cluster
+              </button>
+            )}
           </div>
         </div>
 

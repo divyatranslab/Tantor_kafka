@@ -690,7 +690,8 @@
 }
 
 .cluster-status-badge.success,
-.cluster-status-badge.active {
+.cluster-status-badge.active,
+.cluster-status-badge.healthy {
   background: #eaf3de;
   color: #27500A;
   border: 0.5px solid #c0dd97;
@@ -712,13 +713,15 @@
   display: none;
 }
 
-.cluster-status-badge.failed {
+.cluster-status-badge.failed,
+.cluster-status-badge.offline {
   background: #fcebeb;
   color: #791F1F;
   border: 0.5px solid #e8b4b4;
 }
 
-.cluster-status-badge.degraded {
+.cluster-status-badge.degraded,
+.cluster-status-badge.unknown {
   background: #fff6df;
   color: #7a5407;
   border: 0.5px solid #f0d796;

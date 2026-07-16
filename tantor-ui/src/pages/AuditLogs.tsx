@@ -15,6 +15,8 @@ interface AuditEvent {
   resourceId?: string;
   resource?: string;
   clusterId?: string;
+  kafkaClusterId?: string;
+  displayResourceId?: string;
   hostId?: string;
   hostIp?: string;
   hostName?: string;
@@ -75,8 +77,10 @@ const resourceTypeLabel = (event: AuditEvent) => {
 
 const resourceName = (event: AuditEvent) => {
   if (isHostOnboardingEvent(event) || isArtifactEvent(event)) return '';
-  return event.resource || event.hostName || event.hostId || event.clusterId || 'platform';
+  return event.resource || event.hostName || event.hostId || event.displayResourceId || event.kafkaClusterId || 'platform';
 };
+
+const scopeId = (event: AuditEvent) => event.displayResourceId || event.kafkaClusterId || event.resourceId || event.hostId || '-';
 
 const detailLabel = (event: AuditEvent) => {
   const parsed = parseJson(event.details);
@@ -157,7 +161,7 @@ export function AuditLogs() {
     if (actor !== 'ALL' && actorOf(event) !== actor) return false;
     if (resourceId.trim()) {
       const needle = resourceId.trim().toLowerCase();
-    const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
+    const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
         .join(' ')
         .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;
@@ -165,7 +169,7 @@ export function AuditLogs() {
     const created = new Date(timeOf(event)).getTime();
     if (from && created < new Date(from).getTime()) return false;
     if (to && created > new Date(to).getTime()) return false;
-    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
+    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
     return !search.trim() || haystack.includes(search.trim().toLowerCase());
   }), [events, category, status, actor, resourceId, from, to, search]);
 
@@ -204,7 +208,7 @@ export function AuditLogs() {
       <div className="audit-ledger-head"><div><History size={15} /><strong>Event ledger</strong></div><span>{filtered.length} of {events.length} events</span></div>
       {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><LockKeyhole /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster ID</th><th>Details</th><th>Status</th></tr></thead>
+        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
           <tbody>{filtered.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
         </table></div>}
     </section>
@@ -220,7 +224,7 @@ function AuditRow({ event }: { event: AuditEvent }) {
       <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong><small>{title(event.category)}</small></div></div></td>
       <td><div className="audit-actor"><UserRound size={13} /><span>{actorOf(event)}</span></div></td>
       <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
-      <td><div className="audit-resource"><small>{event.clusterId || '-'}</small></div></td>
+      <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
       <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
       <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status}</span></td>
     </tr>

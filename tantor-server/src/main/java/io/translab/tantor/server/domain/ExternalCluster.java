@@ -119,10 +119,10 @@ public class ExternalCluster {
     private String status = "PENDING";
 
     @Column(name = "created_by", nullable = false)
-    private String createdBy = "system";
+    private String createdBy;
 
     @Column(name = "updated_by", nullable = false)
-    private String updatedBy = "system";
+    private String updatedBy;
 
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
@@ -135,10 +135,13 @@ public class ExternalCluster {
         Instant now = Instant.now();
         if (createdAt == null) createdAt = now;
         updatedAt = now;
+        if (createdBy == null || createdBy.isBlank()) createdBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 }

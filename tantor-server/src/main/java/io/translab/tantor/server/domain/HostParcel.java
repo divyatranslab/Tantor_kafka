@@ -64,10 +64,10 @@ public class HostParcel {
     private OffsetDateTime updatedAt;
 
     @Column(name = "created_by", nullable = false)
-    private String createdBy = "system";
+    private String createdBy;
 
     @Column(name = "updated_by", nullable = false)
-    private String updatedBy = "system";
+    private String updatedBy;
 
     @PrePersist
     void onCreate() {
@@ -76,10 +76,13 @@ public class HostParcel {
             createdAt = now;
         }
         updatedAt = now;
+        if (createdBy == null || createdBy.isBlank()) createdBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     @PreUpdate
     void onUpdate() {
         updatedAt = OffsetDateTime.now();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 }

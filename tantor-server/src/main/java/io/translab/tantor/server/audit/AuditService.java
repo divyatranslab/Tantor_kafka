@@ -147,6 +147,20 @@ public class AuditService {
         );
     }
 
+    public String kafkaClusterId(AuditLog event) {
+        String fromCluster = kafkaClusterIdFromClusterReference(event);
+        if (fromCluster != null) return fromCluster;
+        return kafkaClusterIdFromDetails(event);
+    }
+
+    public String displayResourceId(AuditLog event) {
+        String kafkaClusterId = kafkaClusterId(event);
+        if (kafkaClusterId != null) return kafkaClusterId;
+        if (isType(event, "ARTIFACT")) return blankToNull(event.getResourceId());
+        if (isType(event, "HOST")) return blankToNull(event.getHostId());
+        return firstNonBlank(event.getResourceId(), event.getResource(), event.getHostId());
+    }
+
     public String verifyIntegrity() {
         return "NOT_ENABLED";
     }
@@ -184,9 +198,7 @@ public class AuditService {
     }
 
     public String currentActor() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getName() == null || "anonymousUser".equals(auth.getName())) return "system";
-        return auth.getName();
+        return io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     private String text(String value, String fallback) { return value == null || value.isBlank() ? fallback : value; }
@@ -219,5 +231,63 @@ public class AuditService {
         String first = bootstrapServers.split(",")[0].trim();
         int colon = first.indexOf(':');
         return colon > 0 ? first.substring(0, colon) : first;
+    }
+
+    private String kafkaClusterIdFromClusterReference(AuditLog event) {
+        UUID lookupClusterId = event.getClusterId();
+        if (lookupClusterId == null && isType(event, "CLUSTER") && event.getResourceId() != null) {
+            try {
+                lookupClusterId = UUID.fromString(event.getResourceId());
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        if (lookupClusterId == null) return null;
+        try {
+            java.util.List<Object[]> clusterInfo = repository.findClusterInfo(lookupClusterId.toString());
+            if (clusterInfo != null && !clusterInfo.isEmpty()) {
+                Object[] row = clusterInfo.get(0);
+                if (row.length > 2) return blankToNull(row[2] == null ? null : row[2].toString());
+            }
+        } catch (Exception ignored) {
+            // Audit display must not fail because a referenced cluster was deleted.
+        }
+        return null;
+    }
+
+    private String kafkaClusterIdFromDetails(AuditLog event) {
+        if (event.getDetails() == null || event.getDetails().isBlank()) return null;
+        try {
+            JsonNode node = objectMapper.readTree(event.getDetails());
+            return firstNonBlank(
+                    textField(node, "kafkaClusterId"),
+                    textField(node, "kafka_cluster_id"),
+                    textField(node, "cluster_uuid"),
+                    textField(node, "clusterUniqueId")
+            );
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String textField(JsonNode node, String field) {
+        JsonNode value = node == null ? null : node.get(field);
+        return value == null || value.isNull() ? null : blankToNull(value.asText());
+    }
+
+    private boolean isType(AuditLog event, String type) {
+        return event.getResourceType() != null && event.getResourceType().equalsIgnoreCase(type);
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            String normalized = blankToNull(value);
+            if (normalized != null) return normalized;
+        }
+        return null;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

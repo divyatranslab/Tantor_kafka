@@ -34,6 +34,7 @@ interface MonitoringOverview {
   brokerCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
+  hostMemoryUsedPercent?: number | null;
 }
 
 interface MonitoringSample {
@@ -47,6 +48,7 @@ interface MonitoringSample {
   bytesIn: number | null;
   bytesOut: number | null;
   heap: number | null;
+  hostMemory: number | null;
   brokerCpu: number | null;
   systemCpu: number | null;
 }
@@ -57,7 +59,8 @@ const formatNumber = (value?: number | null, digits = 0) => {
 };
 
 const formatBytes = (value?: number | null) => {
-  if (!value || value <= 0) return '-';
+  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  if (value <= 0) return '0 B/s';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let next = value;
   let unit = 0;
@@ -214,6 +217,7 @@ export function Monitoring() {
         bytesIn: chartNumber(overview.bytesInPerSecond),
         bytesOut: chartNumber(overview.bytesOutPerSecond),
         heap: chartNumber(overview.jvmHeapUsedPercent),
+        hostMemory: chartNumber(overview.hostMemoryUsedPercent),
         brokerCpu: chartNumber(overview.brokerCpuPercent),
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
@@ -238,9 +242,11 @@ export function Monitoring() {
 
   const kafkaExporterReady = Boolean(overview?.kafkaExporterUp && overview.kafkaExporterUp > 0);
   const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
+  const jmxMetricEmptyText = jmxReady ? 'No JMX samples for this metric' : 'JMX exporter required';
+  const trafficEmptyText = kafkaExporterReady || jmxReady ? 'No traffic samples available' : 'JMX or kafka_exporter required';
   const hasTrafficSeries = history.some(sample => hasValue(sample.messagesIn) || hasValue(sample.lag));
   const hasCpuSeries = history.some(sample => hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
-  const hasHeapSeries = history.some(sample => hasValue(sample.heap));
+  const hasHeapSeries = history.some(sample => hasValue(sample.heap) || hasValue(sample.hostMemory));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -338,7 +344,7 @@ export function Monitoring() {
             </div>
 
             <div className="monitoring-performance-grid">
-              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
                 {hasCpuSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -353,7 +359,7 @@ export function Monitoring() {
                 ) : null}
               </GraphPanel>
 
-              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText="JMX exporter required">
+              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
                 {hasHeapSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -362,12 +368,13 @@ export function Monitoring() {
                       <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
                       <Tooltip />
                       <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                      <Line type="monotone" dataKey="hostMemory" name="Host RAM %" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : null}
               </GraphPanel>
 
-              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="kafka_exporter" emptyText="kafka_exporter required">
+              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="JMX / kafka_exporter" emptyText={trafficEmptyText}>
                 {hasTrafficSeries ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -391,6 +398,7 @@ export function Monitoring() {
                 <ResourceBar label="Broker CPU" value={overview?.brokerCpuPercent} tone="blue" />
                 <ResourceBar label="System CPU" value={overview?.systemCpuPercent} tone="green" />
                 <ResourceBar label="JVM Heap" value={overview?.jvmHeapUsedPercent} tone="purple" />
+                <ResourceBar label="Host Memory" value={overview?.hostMemoryUsedPercent} detail="Agent heartbeat" tone="blue" />
               </section>
 
               <section className="monitoring-broker-panel">

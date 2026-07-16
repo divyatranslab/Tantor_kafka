@@ -17,6 +17,7 @@ Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
 Restart=on-failure
+RestartSec=15
 LimitNOFILE=100000
 
 [Install]
@@ -38,6 +39,7 @@ Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 ExecStart={{.InstallDir}}/bin/zookeeper-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/zookeeper-server-stop.sh
 Restart=on-failure
+RestartSec=15
 LimitNOFILE=100000
 
 [Install]

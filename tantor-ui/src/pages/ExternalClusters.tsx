@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -14,6 +14,7 @@ import {
   Network,
   FileText,
   X,
+  Wifi,
 } from 'lucide-react';
 import './ExternalClusters.css';
 
@@ -46,6 +47,19 @@ interface BootstrapResult {
   message?: string;
 }
 
+interface DiscoveryAgentStatus {
+  id: string;
+  agentName?: string;
+  hostname?: string;
+  ipAddresses?: string;
+  status?: string;
+  health?: 'green' | 'orange' | 'red' | string;
+  stateLabel?: string;
+  lastHeartbeat?: string;
+  canExecuteTasks?: boolean;
+  clusterId?: string | null;
+}
+
 const TRUSTSTORE_FILE_RULES: Record<string, { accept: string; extensions: string[]; label: string }> = {
   JKS: { accept: '.jks', extensions: ['.jks'], label: 'JKS truststore' },
   PKCS12: { accept: '.p12,.pfx', extensions: ['.p12', '.pfx'], label: 'PKCS12 truststore' },
@@ -59,6 +73,8 @@ export function ExternalClusters() {
   const [testing, setTesting] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [openPanel, setOpenPanel] = useState<'bootstrap' | 'agent'>('bootstrap');
+  const [agents, setAgents] = useState<DiscoveryAgentStatus[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -86,20 +102,75 @@ export function ExternalClusters() {
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
-    return `http://${host}:8443`;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://<tantor-server-ip-or-dns>:8443';
+    }
+    return `${window.location.protocol}//${host}:8443`;
   }, []);
 
   const agentConfig = useMemo(() => (
     `discovery:
   server_url: "${serverHint}"
+  host_id: "discovery-<vm-hostname-or-ip>"
+  agent_name: "tantor-discovery-<vm-hostname-or-ip>"
   scan_paths:
-    - "/srv/apps"
-    - "/data/apps"
     - "/opt"
+    - "/srv"
+    - "/data"
+    - "/usr/local"
+    - "/var/lib"
   interval: "15s"
+  task_poll_interval: "5s"
   node_name: ""
-  restart_command: "systemctl restart kafka"`
+  restart_command: "systemctl restart kafka.service"
+  systemd_use_sudo: false
+  metrics_url: "http://localhost:7071/metrics"
+  disable_metrics: false
+  skip_precheck: false
+  tls_insecure_skip_verify: true`
   ), [serverHint]);
+
+  const loadAgents = async () => {
+    setAgentsLoading(true);
+    try {
+      const res = await fetch('/api/v1/ui/external-clusters/agents');
+      if (res.ok) setAgents(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAgents();
+    const timer = window.setInterval(loadAgents, 10000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const formatHeartbeat = (value?: string) => {
+    if (!value) return 'Never';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Unknown';
+    return date.toLocaleString([], {
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const displayIp = (value?: string) => {
+    if (!value) return '-';
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.join(', ') || '-';
+    } catch {
+      // fall through to raw value
+    }
+    return value;
+  };
 
   const testBootstrap = async () => {
     if (!form.bootstrapServers.trim()) return;
@@ -606,6 +677,47 @@ export function ExternalClusters() {
                 <h3>Discovery Agent</h3>
                 <p className="card-header-subtitle">Full management path for restart, host metrics, and config persistence.</p>
               </div>
+              <hr className="agent-divider" />
+
+              <div className="agent-connectivity-header">
+                <div>
+                  <h3>Agent connectivity</h3>
+                  <p>Shows discovery agents that are polling this Tantor server, even before Kafka is detected.</p>
+                </div>
+                <button className="btn" onClick={loadAgents} disabled={agentsLoading}>
+                  <RefreshCw size={14} className={agentsLoading ? 'spin' : ''} />
+                  Refresh
+                </button>
+              </div>
+
+              {agents.length === 0 ? (
+                <div className="agent-empty-state">
+                  <Wifi size={18} />
+                  <div>
+                    <strong>No discovery agent polling yet</strong>
+                    <span>Start the agent on a client VM and this area will show the connection heartbeat.</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="agent-status-grid">
+                  {agents.map(agent => (
+                    <div className={`agent-status-card ${agent.health || 'orange'}`} key={agent.id}>
+                      <div className="agent-status-top">
+                        <span className="agent-status-dot" />
+                        <strong>{agent.agentName || agent.id}</strong>
+                      </div>
+                      <div className="agent-status-meta">
+                        <span>{agent.stateLabel || agent.status || 'Unknown'}</span>
+                        <span>Host: {agent.hostname || '-'}</span>
+                        <span>IP: {displayIp(agent.ipAddresses)}</span>
+                        <span>Last poll: {formatHeartbeat(agent.lastHeartbeat)}</span>
+                        <span>{agent.canExecuteTasks ? 'Task control enabled' : 'Read-only heartbeat'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <hr className="agent-divider" />
 
               <div className="agent-flow">
