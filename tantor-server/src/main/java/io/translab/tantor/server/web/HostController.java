@@ -274,7 +274,7 @@ public class HostController {
             String previousStatus = host.getStatus();
             host.setClusterId(null);
             host.setStatus("PENDING");
-            host.setAgentStatus("OFFLINE");
+
             host.setRemoved(true);
             host.setLastHeartbeat(null);
             host.setAction("HOST_REMOVED");

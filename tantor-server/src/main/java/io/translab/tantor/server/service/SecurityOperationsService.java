@@ -5,6 +5,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.common.acl.*;
+import org.apache.kafka.common.errors.AuthorizationException;
+import org.apache.kafka.common.errors.SecurityDisabledException;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.resource.PatternType;
 import org.apache.kafka.common.resource.ResourcePattern;
 import org.apache.kafka.common.resource.ResourcePatternFilter;
@@ -59,9 +62,13 @@ public class SecurityOperationsService {
             }).collect(Collectors.toList());
             
             return new AclListResponse(entries);
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             log.error("Error fetching ACLs for cluster {}", clusterId, e);
-            throw new RuntimeException("Failed to fetch ACLs", e);
+            throw new RuntimeException("Failed to fetch ACLs: the request was interrupted.", e);
+        } catch (ExecutionException e) {
+            log.error("Error fetching ACLs for cluster {}", clusterId, e);
+            throw kafkaFailure("fetch ACLs", e);
         }
     }
 
@@ -85,9 +92,13 @@ public class SecurityOperationsService {
         try {
             adminClient.createAcls(List.of(binding)).all().get();
             return new AclCreateResponse(1);
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             log.error("Error creating ACL for cluster {}", clusterId, e);
-            throw new RuntimeException("Failed to create ACL", e);
+            throw new RuntimeException("Failed to create ACL: the request was interrupted.", e);
+        } catch (ExecutionException e) {
+            log.error("Error creating ACL for cluster {}", clusterId, e);
+            throw kafkaFailure("create ACL", e);
         }
     }
 
@@ -124,10 +135,31 @@ public class SecurityOperationsService {
             }).collect(Collectors.toList());
             
             return new AclDeleteResponse(entries);
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             log.error("Error deleting ACL for cluster {}", clusterId, e);
-            throw new RuntimeException("Failed to delete ACL", e);
+            throw new RuntimeException("Failed to delete ACL: the request was interrupted.", e);
+        } catch (ExecutionException e) {
+            log.error("Error deleting ACL for cluster {}", clusterId, e);
+            throw kafkaFailure("delete ACL", e);
         }
+    }
+
+    private RuntimeException kafkaFailure(String operation, ExecutionException exception) {
+        Throwable cause = exception.getCause() != null ? exception.getCause() : exception;
+        String reason;
+        if (cause instanceof SecurityDisabledException) {
+            reason = "Kafka ACLs are disabled because no authorizer is configured on the cluster.";
+        } else if (cause instanceof AuthorizationException) {
+            reason = "the Kafka user used by Tantor is not authorized to manage ACLs.";
+        } else if (cause instanceof TimeoutException) {
+            reason = "Kafka did not respond before the request timed out. Check broker connectivity.";
+        } else if (cause.getMessage() != null && !cause.getMessage().isBlank()) {
+            reason = cause.getMessage();
+        } else {
+            reason = cause.getClass().getSimpleName();
+        }
+        return new RuntimeException("Failed to " + operation + ": " + reason, cause);
     }
 
     private ResourceType parseResourceType(String type, ResourceType defaultType) {

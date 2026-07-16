@@ -89,6 +89,7 @@ public class Artifact {
     @Column(name = "hostname", length = 255)
     private String hostname;
 
+    /** Who uploaded/triggered the artifact action. Stored in kf_artifact.user_name. */
     @Column(name = "user_name", length = 255)
     private String userName;
 

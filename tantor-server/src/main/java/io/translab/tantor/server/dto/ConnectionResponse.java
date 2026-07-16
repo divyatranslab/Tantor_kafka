@@ -24,10 +24,10 @@ public class ConnectionResponse {
     private String certificateType;
     /** True when certificate data has been stored (content is not returned). */
     private boolean certificateConfigured;
-    private String truststorePath;
+
     /** True when a truststore password has been stored (value is not returned). */
     private boolean truststoreConfigured;
-    private String securityProtocol;
+
     private String status;
     private String lastError;
     private Instant lastCheckedAt;

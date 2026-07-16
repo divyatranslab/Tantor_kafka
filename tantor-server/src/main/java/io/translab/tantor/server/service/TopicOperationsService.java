@@ -1,6 +1,7 @@
 package io.translab.tantor.server.service;
 
 import lombok.RequiredArgsConstructor;
+import io.translab.tantor.server.audit.AuditService;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -31,6 +32,7 @@ public class TopicOperationsService {
 
     private static final int MAX_MESSAGES = 10_000;
     private final KafkaAdminService kafkaAdminService;
+    private final AuditService auditService;
 
     public Map<String, Object> getTopicDetails(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
@@ -189,6 +191,14 @@ public class TopicOperationsService {
             result.put("partition", metadata.partition());
             result.put("offset", metadata.offset());
             result.put("timestamp", metadata.timestamp());
+
+            String details = String.format("Partition: %d, Key size: %d bytes, Value size: %d bytes", 
+                    partition != null ? partition : -1,
+                    keyBytes != null ? keyBytes.length : 0,
+                    valueBytes != null ? valueBytes.length : 0);
+            auditService.record("DATA_SERVICES", "PRODUCE_MESSAGE", "TOPIC", topicName, clusterId, 
+                    "SUCCESS", null, null, null, details);
+
             return result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -215,6 +225,9 @@ public class TopicOperationsService {
             Map<TopicPartition, RecordsToDelete> deletion = latest.entrySet().stream()
                     .collect(Collectors.toMap(Map.Entry::getKey, entry -> RecordsToDelete.beforeOffset(entry.getValue())));
             admin.deleteRecords(deletion).all().get();
+            
+            auditService.record("DATA_SERVICES", "CLEAR_TOPIC", "TOPIC", topicName, clusterId, 
+                    "SUCCESS", null, null, null, "Messages cleared from all partitions");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while clearing topic");

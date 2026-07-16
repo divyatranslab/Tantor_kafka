@@ -41,7 +41,7 @@ public class AuditService {
                          UUID clusterId, String status, Object oldValue, Object newValue,
                          Object approval, Object details) {
         AuditLog event = new AuditLog();
-        event.setUserName(resolveActor(actorOverride));
+        event.setCreatedBy(resolveActor(actorOverride));
         event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
@@ -52,8 +52,7 @@ public class AuditService {
         event.setStatus(text(status, "SUCCESS").toUpperCase(Locale.ROOT));
         event.setDetails(json(details));
         event.setCreatedTime(Instant.now());
-        event.setCreatedBy(event.getUserName());
-        event.setUserId(event.getUserName());
+
 
         if ("ARTIFACT".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
             try {
