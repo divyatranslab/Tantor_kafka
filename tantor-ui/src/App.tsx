@@ -38,14 +38,15 @@ function App() {
   return (
     <ClusterProvider>
       <Router>
-        <div className="app-container">
-          <Sidebar />
-          <main className="main-content">
-            <TopNavbar />
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/hosts" element={<Hosts />} />
+        <div className="app-container flex-col">
+          <TopNavbar />
+          <div className="app-body">
+            <Sidebar />
+            <main className="main-content">
+              <Routes>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/hosts" element={<Hosts />} />
               <Route path="/clusters" element={<Clusters />} />
               <Route path="/cluster-deployment" element={<ClusterDeployment />} />
               <Route path="/external-clusters" element={<ExternalClusters />} />
@@ -85,7 +86,8 @@ function App() {
             </Routes>
           </main>
         </div>
-      </Router>
+      </div>
+    </Router>
     </ClusterProvider>
   );
 }

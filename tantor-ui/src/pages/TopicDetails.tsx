@@ -489,7 +489,7 @@ export function TopicDetails() {
               <label>Partition<select value={produceForm.partition} onChange={event => setProduceForm(current => ({ ...current, partition: event.target.value }))}><option value="">Automatic</option>{detail.partitions.map(partition => <option key={partition.partition} value={partition.partition}>Partition {partition.partition}</option>)}</select></label>
               <label>Key <span className="optional">optional</span><textarea rows={3} value={produceForm.key} onChange={event => setProduceForm(current => ({ ...current, key: event.target.value }))} placeholder="Message key" /></label>
               <label>Value<textarea rows={7} required value={produceForm.value} onChange={event => setProduceForm(current => ({ ...current, value: event.target.value }))} placeholder="Message value" /></label>
-              <footer><button type="button" onClick={() => setShowProduce(false)}>Cancel</button><button className="primary" disabled={producing}><Send size={15} /> {producing ? 'Producing…' : 'Produce message'}</button></footer>
+              <footer><button className="primary" disabled={producing}><Send size={15} /> {producing ? 'Producing…' : 'Produce message'}</button><button type="button" onClick={() => setShowProduce(false)}>Cancel</button></footer>
             </form>
           </div>
         </div>

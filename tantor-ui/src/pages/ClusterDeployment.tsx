@@ -352,7 +352,7 @@ const CustomRefreshIcon = ({ size = 20, color = '#818181', className = '' }: { s
   </svg>
 );
 
-export function ClusterDeployment() {
+export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addClusterId = searchParams.get('mode') === 'add' ? searchParams.get('clusterId') : null;
@@ -1219,6 +1219,9 @@ export function ClusterDeployment() {
         alert(body.error || body.message || 'Deployment failed to start.');
         return;
       }
+      if (onClose) {
+        onClose();
+      }
       if (body.jobId) {
         navigate(`/jobs/${body.jobId}`);
       } else {
@@ -1231,7 +1234,6 @@ export function ClusterDeployment() {
       setDeploying(false);
     }
   };
-
 
 
   return (

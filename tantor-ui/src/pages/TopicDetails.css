@@ -525,7 +525,8 @@
 .detail-modal textarea:focus,
 .detail-modal select:focus,
 .config-edit-body input:focus { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-light); }
-.detail-modal footer { justify-content: flex-end; gap: 0.55rem; padding: 0.9rem 1.25rem 1.1rem; border-top: 1px solid var(--border-subtle); background: #fbfaf7; }
+.detail-modal footer { display: flex; justify-content: flex-end; gap: 0.55rem; padding: 0.9rem 1.25rem 1.1rem; border-top: 1px solid var(--border-subtle); background: #fbfaf7; }
+.produce-modal footer { flex-direction: column; }
 .detail-modal form footer { margin: 1rem -1.25rem -1.1rem; }
 .detail-modal footer button {
   justify-content: center;
