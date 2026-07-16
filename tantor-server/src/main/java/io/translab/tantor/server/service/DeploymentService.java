@@ -159,8 +159,9 @@ public class DeploymentService {
             return;
         }
 
-        String baseUrl = artifactUrl.substring(0, artifactUrl.indexOf("/api/v1/artifacts/") + 18);
-        params.put("jmx_artifact_url", baseUrl + artifact.get().get("id") + "/download");
+        String artifactId = artifact.get().get("id");
+        params.put("jmx_artifact_id", artifactId);
+        params.put("jmx_artifact_url", joinArtifactRepoBase("/api/v1/artifacts/" + artifactId + "/download"));
         if (hasText(artifact.get().get("checksum"))) {
             params.put("jmx_checksum", artifact.get().get("checksum"));
         }
@@ -676,6 +677,9 @@ public class DeploymentService {
         putParam(params, "controller_port", controllerPort);
         putParam(params, "jmx_enabled", firstNonBlank(firstParam(params, "jmx_enabled"), "true"));
         putParam(params, "jmx_port", firstNonBlank(firstParam(params, "jmx_port"), "7071"));
+        if (isBrokerRole(role) && !"false".equalsIgnoreCase(firstParam(params, "jmx_enabled"))) {
+            putParam(params, "jmx_required", "true");
+        }
         putParam(params, "heap_xms", heapXms);
         putParam(params, "heap_xmx", heapXmx);
         putParam(params, "limit_nofile", firstNonBlank(firstParam(params, "limit_nofile"), defaultLimitNoFile));
@@ -706,6 +710,11 @@ public class DeploymentService {
         if (!"dynamic".equalsIgnoreCase(quorumMode)) return "";
         if ((role.contains("controller")) && hasText(initialControllers)) return "initial_controllers";
         return "existing_cluster";
+    }
+
+    private boolean isBrokerRole(String role) {
+        String normalized = role == null ? "" : role.toLowerCase();
+        return normalized.contains("broker");
     }
 
     private String activeSymlinkPath(String installBasePath) {
