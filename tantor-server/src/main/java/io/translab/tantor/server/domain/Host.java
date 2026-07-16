@@ -76,7 +76,7 @@ public class Host {
     @Column(name = "resource_type")
     private String resourceType;
 
-    @Column(name = "user_name")
+    @Transient // user_name column was dropped in V58 migration — kept for API compatibility only
     private String user;
 
     @Column(name = "cluster_id")
