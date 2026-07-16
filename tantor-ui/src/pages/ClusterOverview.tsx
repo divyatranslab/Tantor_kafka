@@ -145,161 +145,174 @@ export function ClusterOverview() {
 
   return (
     <div className="overview-dashboard animate-fade-in">
-      <div className="overview-toolbar">
-        <button className="overview-export" type="button" onClick={exportCsv}>
-          <Download size={16} />
-          Export CSV
-        </button>
-      </div>
-
       {error && <Notice kind="error" text={error} />}
       {overview.warnings?.map(warning => <Notice key={warning} kind="warning" text={warning} />)}
 
-      <section className="overview-band">
-        <h2>Cluster Identity</h2>
-        <div className="overview-grid uptime">
-          <OverviewTile label="Kafka Cluster ID" value={overview.kafkaClusterId || '-'} />
-          <OverviewTile label="Cluster type" value={overview.originType || '-'} />
-          {overview.originType !== 'EXTERNAL' && (
-            <>
-              <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
-              <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
-              <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
-              <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
-            </>
-          )}
+      <section className="overview-section">
+        <div className="section-header-row">
+          <h2>Cluster Identity</h2>
+          <button className="overview-export" type="button" onClick={exportCsv}>
+            <Download size={16} />
+            Export CSV
+          </button>
+        </div>
+        <div className="overview-band">
+          <div className="overview-grid uptime">
+            <OverviewTile label="Kafka Cluster ID" value={overview.kafkaClusterId || '-'} />
+            <OverviewTile label="Cluster type" value={overview.originType || '-'} />
+            {overview.originType !== 'EXTERNAL' && (
+              <>
+                <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
+                <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
+                <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
+                <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
+              </>
+            )}
+          </div>
         </div>
       </section>
 
-      <section className="overview-band">
+      <section className="overview-section">
         <h2>Uptime</h2>
-        <div className="overview-grid uptime">
-          <OverviewTile icon={<Server size={18} />} label="Broker Count" value={uptime.brokerCount} />
-          <OverviewTile icon={<ShieldCheck size={18} />} label="Active Controller" value={uptime.activeController ?? '-'} />
-          <OverviewTile icon={<Database size={18} />} label="Version" value={uptime.version || '-'} />
+        <div className="overview-band">
+          <div className="overview-grid uptime">
+            <OverviewTile icon={<Server size={18} />} label="Broker Count" value={uptime.brokerCount} />
+            <OverviewTile icon={<ShieldCheck size={18} />} label="Active Controller" value={uptime.activeController ?? '-'} />
+            <OverviewTile icon={<Database size={18} />} label="Version" value={uptime.version || '-'} />
+          </div>
         </div>
       </section>
 
-      <section className="overview-band">
+      <section className="overview-section">
         <h2>Partitions</h2>
-        <div className="overview-grid partitions">
-          <OverviewTile healthy={partitions.online === partitions.total} label="Online" value={`${partitions.online} of ${partitions.total}`} />
-          <OverviewTile healthy={partitions.underReplicated === 0} label="URP" value={partitions.underReplicated} />
-          <OverviewTile healthy={partitions.inSyncReplicas === partitions.totalReplicas} label="In Sync Replicas" value={`${partitions.inSyncReplicas} of ${partitions.totalReplicas}`} />
-          <OverviewTile healthy={partitions.outOfSyncReplicas === 0} label="Out Of Sync Replicas" value={partitions.outOfSyncReplicas} />
-          <OverviewTile label="Controller Type" value={uptime.controllerType || '-'} />
+        <div className="overview-band">
+          <div className="overview-grid partitions">
+            <OverviewTile healthy={partitions.online === partitions.total} label="Online" value={`${partitions.online} of ${partitions.total}`} />
+            <OverviewTile healthy={partitions.underReplicated === 0} label="URP" value={partitions.underReplicated} />
+            <OverviewTile healthy={partitions.inSyncReplicas === partitions.totalReplicas} label="In Sync Replicas" value={`${partitions.inSyncReplicas} of ${partitions.totalReplicas}`} />
+            <OverviewTile healthy={partitions.outOfSyncReplicas === 0} label="Out Of Sync Replicas" value={partitions.outOfSyncReplicas} />
+            <OverviewTile label="Controller Type" value={uptime.controllerType || '-'} />
+          </div>
+
+          <div className="overview-table-wrap">
+            <table className="data-table overview-table">
+              <thead>
+                <tr>
+                  <th>Broker ID</th>
+                  <th>Disk usage</th>
+                  <th>In Sync Replicas</th>
+                  <th>Replicas</th>
+                  <th>Replicas skew</th>
+                  <th>Leaders</th>
+                  <th>Leaders skew</th>
+                  <th>Port</th>
+                  <th>Host</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overview.brokers.map(broker => (
+                  <tr key={broker.brokerId}>
+                    <td>
+                      <div className="overview-broker-id">
+                        <CheckCircle2 size={15} />
+                        <span>{broker.brokerId}</span>
+                        {broker.controller && <span className="controller-badge" title="Controller">C</span>}
+                      </div>
+                    </td>
+                    <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
+                    <td>{broker.inSyncReplicas}</td>
+                    <td>{broker.replicas}</td>
+                    <td>{formatSkew(broker.replicaSkewPct)}</td>
+                    <td>{broker.leaders}</td>
+                    <td>{formatSkew(broker.leaderSkewPct)}</td>
+                    <td>{broker.port ? broker.port : '-'}</td>
+                    <td className="font-mono">{broker.host}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
-
-      <div className="overview-table-wrap">
-        <table className="data-table overview-table">
-          <thead>
-            <tr>
-              <th>Broker ID</th>
-              <th>Disk usage</th>
-              <th>In Sync Replicas</th>
-              <th>Replicas</th>
-              <th>Replicas skew</th>
-              <th>Leaders</th>
-              <th>Leaders skew</th>
-              <th>Port</th>
-              <th>Host</th>
-            </tr>
-          </thead>
-          <tbody>
-            {overview.brokers.map(broker => (
-              <tr key={broker.brokerId}>
-                <td>
-                  <div className="overview-broker-id">
-                    <CheckCircle2 size={15} />
-                    <span>{broker.brokerId}</span>
-                    {broker.controller && <span className="controller-badge" title="Controller">C</span>}
-                  </div>
-                </td>
-                <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
-                <td>{broker.inSyncReplicas}</td>
-                <td>{broker.replicas}</td>
-                <td>{formatSkew(broker.replicaSkewPct)}</td>
-                <td>{broker.leaders}</td>
-                <td>{formatSkew(broker.leaderSkewPct)}</td>
-                <td>{broker.port ? broker.port : '-'}</td>
-                <td className="font-mono">{broker.host}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
 
       {overview.controllers && overview.controllers.length > 0 && (
-        <div className="overview-table-wrap" style={{ marginTop: '2rem' }}>
+        <section className="overview-section">
           <h2>Controller Voters</h2>
-          <table className="data-table overview-table">
-            <thead>
-              <tr>
-                <th>Node ID</th>
-                <th>Host</th>
-                <th>Port</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.controllers.map(c => (
-                <tr key={c.nodeId}>
-                  <td>
-                    <div className="overview-broker-id">
-                      <CheckCircle2 size={15} />
-                      <span>{c.nodeId}</span>
-                    </div>
-                  </td>
-                  <td className="font-mono">{c.host}</td>
-                  <td>{c.port ? c.port : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <div className="overview-band">
+            <div className="overview-table-wrap">
+              <table className="data-table overview-table">
+                <thead>
+                  <tr>
+                    <th>Node ID</th>
+                    <th>Host</th>
+                    <th>Port</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.controllers.map(c => (
+                    <tr key={c.nodeId}>
+                      <td>
+                        <div className="overview-broker-id">
+                          <CheckCircle2 size={15} />
+                          <span>{c.nodeId}</span>
+                        </div>
+                      </td>
+                      <td className="font-mono">{c.host}</td>
+                      <td>{c.port ? c.port : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       )}
 
       {overview.originType === 'EXTERNAL' && overview.nodePaths && (
-        <div className="overview-table-wrap" style={{ marginTop: '2rem' }}>
+        <section className="overview-section">
           <h2>Paths & Directories</h2>
-          <div className="text-muted text-sm mb-2" style={{ marginBottom: '12px' }}>
-            Path details available for {overview.nodePaths.filter(p => p.hasTelemetry).length} of {overview.nodePaths.length} nodes
+          <div className="overview-band">
+            <div className="text-muted text-sm mb-2" style={{ marginBottom: '12px', fontFamily: 'Satoshi, sans-serif', color: '#818181' }}>
+              Path details available for {overview.nodePaths.filter(p => p.hasTelemetry).length} of {overview.nodePaths.length} nodes
+            </div>
+            <div className="overview-table-wrap">
+              <table className="data-table overview-table">
+                <thead>
+                  <tr>
+                    <th>Node ID</th>
+                    <th>Host</th>
+                    <th>Role</th>
+                    <th>Install Dir</th>
+                    <th>Config</th>
+                    <th>Data Dir</th>
+                    <th>Log Dir</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.nodePaths.map(p => (
+                    <tr key={p.nodeId}>
+                      <td>{p.nodeId}</td>
+                      <td className="font-mono">{p.host}</td>
+                      <td><span className="role-badge">{p.role}</span></td>
+                      <td>{p.installDir || <span className="text-muted">Not reported</span>}</td>
+                      <td>{p.config || <span className="text-muted">Not reported</span>}</td>
+                      <td>{p.dataDir || <span className="text-muted">Not reported</span>}</td>
+                      <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
+                      <td>
+                        {p.hasTelemetry ? (
+                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
+                        ) : (
+                          <span className="text-muted text-sm">Bootstrap metadata</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <table className="data-table overview-table">
-            <thead>
-              <tr>
-                <th>Node ID</th>
-                <th>Host</th>
-                <th>Role</th>
-                <th>Install Dir</th>
-                <th>Config</th>
-                <th>Data Dir</th>
-                <th>Log Dir</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.nodePaths.map(p => (
-                <tr key={p.nodeId}>
-                  <td>{p.nodeId}</td>
-                  <td className="font-mono">{p.host}</td>
-                  <td><span className="role-badge">{p.role}</span></td>
-                  <td>{p.installDir || <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.config || <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.dataDir || <span className="text-muted">Not reported</span>}</td>
-                  <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
-                  <td>
-                    {p.hasTelemetry ? (
-                      <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
-                    ) : (
-                      <span className="text-muted text-sm">Bootstrap metadata</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </section>
       )}
     </div>
   );

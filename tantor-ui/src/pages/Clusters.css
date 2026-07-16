@@ -272,6 +272,7 @@
   max-width: 100%;
   overflow: auto;
   scrollbar-gutter: stable both-edges;
+  min-height: 280px;
 }
 
 .clusters-table {
@@ -1175,6 +1176,7 @@
   max-width: 100%;
   overflow: auto;
   scrollbar-gutter: stable both-edges;
+  min-height: 280px;
 }
 
 .clusters-table {
@@ -2183,4 +2185,3 @@
   border: none;
   color: #FFFFFF;
 }
-
