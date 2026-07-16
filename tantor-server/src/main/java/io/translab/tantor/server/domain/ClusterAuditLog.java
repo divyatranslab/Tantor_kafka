@@ -66,14 +66,6 @@ public class ClusterAuditLog {
     @Column(length = 100)
     private String mode;
 
-    @Column(name = "user_id", length = 255)
-    private String userId;
-
-    @Column(name = "actor_user", length = 128)
-    private String actorUser;
-
-    @Column(name = "user_name", length = 128)
-    private String userName;
 
     @Column(name = "created_by", length = 128)
     private String createdBy;

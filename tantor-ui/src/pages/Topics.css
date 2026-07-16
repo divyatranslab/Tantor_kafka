@@ -506,3 +506,206 @@
   .topics-table td:nth-child(3) { display: none; }
   .topics-pagination { align-items: flex-start; flex-direction: column; gap: 0.6rem; }
 }
+
+/* Expanded topic creation form */
+.topic-create-modal {
+  width: min(760px, 100%);
+  max-height: min(880px, calc(100vh - 3rem));
+  display: flex;
+  flex-direction: column;
+}
+
+.topic-create-modal header {
+  flex: 0 0 auto;
+}
+
+.topic-create-modal header p {
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.topic-create-modal form {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.topic-create-modal form > label,
+.topic-create-modal .topic-form-grid label,
+.topic-create-modal .custom-config-row label {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.topic-create-modal input,
+.topic-create-modal select {
+  width: 100%;
+  height: 42px;
+  margin-top: 0.42rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  font: inherit;
+}
+
+.topic-create-modal select {
+  cursor: pointer;
+}
+
+.topic-create-modal input:focus,
+.topic-create-modal select:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.topic-create-modal .required-mark {
+  color: #b42318;
+}
+
+.topic-create-modal .topic-form-grid {
+  gap: 1rem;
+}
+
+.topic-retention-field,
+.topic-size-grid {
+  margin-top: 1rem;
+}
+
+.retention-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.55rem;
+}
+
+.retention-presets button,
+.add-config-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 32px;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-raised);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.retention-presets button:hover,
+.add-config-button:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.retention-presets button.selected {
+  color: var(--accent-primary);
+  border-color: var(--accent-border);
+  background: var(--accent-light);
+}
+
+.custom-topic-configs {
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.custom-topic-configs h4 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.custom-topic-configs > div:first-child p {
+  margin: 0.25rem 0 0.8rem;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.custom-config-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 34px;
+  align-items: end;
+  gap: 0.65rem;
+  margin-bottom: 0.7rem;
+}
+
+.custom-config-row > button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 42px;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.custom-config-row > button:hover {
+  color: #b42318;
+  border-color: #f0b4ae;
+  background: var(--color-danger-light);
+}
+
+.topic-form-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.8rem;
+  color: #9c2f25;
+  background: var(--color-danger-light);
+  border: 1px solid #f2c7c2;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.topic-form-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.topic-create-modal form footer {
+  position: sticky;
+  z-index: 1;
+  bottom: -1.25rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 -8px 18px rgba(28, 28, 26, 0.04);
+}
+
+@media (max-width: 620px) {
+  .topic-modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .topic-create-modal {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .topic-create-modal .topic-form-grid,
+  .custom-config-row {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-config-row > button {
+    width: 100%;
+    height: 34px;
+  }
+}

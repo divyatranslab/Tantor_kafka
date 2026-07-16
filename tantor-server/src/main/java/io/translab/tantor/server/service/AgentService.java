@@ -64,11 +64,7 @@ public class AgentService {
         if (!selectedIps.isEmpty()) {
             host.setHostIp(selectedIps.get(0));
         }
-        try {
-            host.setIpAddresses(objectMapper.writeValueAsString(selectedIps));
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize IPs for host {}", dto.getHostId(), e);
-        }
+
         String selectedHostIp = selectedIps.isEmpty() ? sourceIp : selectedIps.get(0);
         String agentName = firstNonBlank(dto.getAgentName(), host.getAgentName(), dto.getHostname(), dto.getHostId());
         String agentPath = firstNonBlank(dto.getAgentPath(), host.getAgentPath(), "/srv/tantor-agent/tantor-agent-linux");
@@ -83,7 +79,7 @@ public class AgentService {
         host.setAgentVersion(dto.getAgentVersion());
         host.setAgentName(agentName);
         host.setAgentPath(agentPath);
-        host.setAgentStatus("ONLINE");
+
         if (host.getStatus() == null) {
             host.setStatus("PENDING");
         } else if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
@@ -124,7 +120,7 @@ public class AgentService {
             host.setDiskUsedGb(dto.getDiskUsedGb());
             host.setJavaVersion(dto.getJavaVersion());
             host.setLastHeartbeat(OffsetDateTime.now());
-            host.setAgentStatus("ONLINE");
+
             host.setRemoved(false);
             if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
                 host.setStatus("ONLINE");
@@ -260,7 +256,7 @@ public class AgentService {
                         task.setLogOutput(dto.getLogOutput());
                     }
                     task.setErrorMsg(dto.getErrorMsg());
-                    task.setFailedReason(dto.getFailedReason());
+                    task.setErrorMsg(dto.getFailedReason());
                     task.setCurrentStep(dto.getCurrentStep());
                     try {
                         if (dto.getCurrentStep() != null && dto.getLogOutput() != null && !dto.getLogOutput().isEmpty()) {

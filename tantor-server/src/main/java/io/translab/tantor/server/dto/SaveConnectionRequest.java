@@ -32,12 +32,10 @@ public class SaveConnectionRequest {
     private String protocol;
     private String host;
     private Integer port;
-    /** 'PEM' or 'PKCS12_JKS'. Null = no certificate. */
+    /** 'PEM' or 'PKCS12'. Null = no certificate. */
     private String certificateType;
     /** Base64-encoded certificate content (PEM text or PKCS12 binary). */
     private String certificateData;
-    /** Optional filesystem path to truststore. */
-    private String truststorePath;
     /** Plaintext password — encrypted before persistence. Null = keep existing. */
     private String truststorePassword;
     /**

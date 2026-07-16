@@ -387,7 +387,7 @@ public class DeploymentService {
             if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
                 task.setStatus("PENDING");
                 task.setErrorMsg(null);
-                task.setFailedReason(null);
+
                 task.setLogOutput(null);
                 task.setStepLogs(null);
                 task.setCurrentStep(null);
@@ -412,7 +412,7 @@ public class DeploymentService {
             if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
                 task.setStatus("PENDING");
                 task.setErrorMsg(null);
-                task.setFailedReason(null);
+
                 try {
                     Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
                     if (task.getCurrentStep() != null) {
