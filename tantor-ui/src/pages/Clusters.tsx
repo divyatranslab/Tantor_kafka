@@ -392,7 +392,7 @@ export function Clusters() {
                     <h3>Create your Cluster</h3>
                     <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => navigate('/cluster-deployment')}>Create</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
                 </div>
                 
                 <div className="cd-deployment-card">
@@ -403,7 +403,7 @@ export function Clusters() {
                     <h3>Existing Cluster</h3>
                     <p>Connect or discover an external Kafka cluster</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => navigate('/external-clusters')}>Explorer</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/external-clusters'); }}>Explorer</button>
                 </div>
               </div>
             </div>

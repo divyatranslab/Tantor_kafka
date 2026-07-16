@@ -58,11 +58,28 @@
   background: #111715;
 }
 
-.ds-compare-grid h4 {
-  margin: 0;
-  padding: 12px 16px;
-  color: #9fd8d0;
+.ds-compare-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 0 16px;
   border-bottom: 1px solid #343c3a;
+}
+
+.ds-compare-panel-heading h4 {
+  margin: 0;
+  color: #9fd8d0;
+}
+
+.ds-compare-panel-heading span {
+  color: #8fafb4;
+  font-size: 13px;
+}
+
+.ds-compare-panel-heading strong {
+  color: #ffffff;
 }
 
 .ds-compare-grid pre {

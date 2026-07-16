@@ -42,30 +42,24 @@ public class DataServiceConnection {
     @Column(name = "port", nullable = false)
     private Integer port;
 
-    /** 'PEM' or 'PKCS12_JKS'. Null when no certificate is configured. */
+    /** 'PEM' or 'PKCS12'. Null when no certificate is configured. */
     @Column(name = "certificate_type")
     private String certificateType;
 
     /**
      * Base64-encoded certificate content.
      * For PEM: base64(UTF-8 text of the PEM).
-     * For PKCS12_JKS: base64 of the binary truststore file.
+     * For PKCS12: base64 of the binary truststore file.
      * Never returned in API responses.
      */
     @Column(name = "certificate_data", columnDefinition = "TEXT")
     private String certificateData;
 
-    /** Filesystem path to truststore file (optional alternative to inline cert). */
-    @Column(name = "truststore_path")
-    private String truststorePath;
 
     /** AES-256/GCM encrypted truststore password. Never returned in API responses. */
     @Column(name = "truststore_password_encrypted")
     private String truststorePasswordEncrypted;
 
-    /** e.g. 'PLAINTEXT', 'SSL', 'SASL_SSL'. */
-    @Column(name = "security_protocol")
-    private String securityProtocol;
 
     /** Computed server-side from protocol + host + port. */
     @Column(name = "rest_endpoint")

@@ -92,5 +92,47 @@ h1, h2, h3, h4, h5, h6 {
 ::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
 
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  color: #282F49;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 36px 10px 16px;
+  height: 40px;
+  line-height: 1.2;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2371717A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 16px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+select:focus {
+  border-color: #8E77BB;
+  box-shadow: 0 0 0 2px rgba(142, 119, 187, 0.15);
+}
+
+select:disabled {
+  background-color: #F4F4F5;
+  color: #A1A1AA;
+  cursor: not-allowed;
+}
+
+option {
+  font-family: var(--font-sans);
+  color: #282F49;
+  background-color: #FFFFFF;
+  padding: 12px;
+}
+
+
 
 

@@ -5,6 +5,7 @@ import {
   MoreVertical, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { CustomSelect } from '../components/CustomSelect';
 import './Topics.css';
 
 interface TopicSummary {
@@ -67,8 +68,35 @@ export function Topics() {
   const [pendingAction, setPendingAction] = useState<{ kind: ActionKind; names: string[] } | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [newTopic, setNewTopic] = useState({ name: '', partitions: 1, replicationFactor: 1 });
+  const [newTopic, setNewTopic] = useState({
+    name: '',
+    partitions: 1,
+    replicationFactor: 1,
+    cleanupPolicy: 'delete',
+    minInsyncReplicas: '',
+    retentionMs: '',
+    maxPartitionSize: '',
+    maxMessageBytes: '',
+    customConfigs: false
+  });
   const [creating, setCreating] = useState(false);
+
+  const quickOptions = [
+    { label: '1 hour', ms: '3600000' },
+    { label: '3 hours', ms: '10800000' },
+    { label: '6 hours', ms: '21600000' },
+    { label: '12 hours', ms: '43200000' },
+    { label: '1 day', ms: '86400000' },
+    { label: '2 days', ms: '172800000' },
+    { label: '7 days', ms: '604800000' },
+    { label: '4 weeks', ms: '2419200000' }
+  ];
+
+  const cleanupPolicyOptions = [
+    { value: 'delete', label: 'Delete' },
+    { value: 'compact', label: 'Compact' }
+  ];
+
 
   const fetchTopics = useCallback(async () => {
     if (!id) return;
@@ -129,6 +157,13 @@ export function Topics() {
     setCreating(true);
     setError(null);
     try {
+      const configs: Record<string, string> = {};
+      if (newTopic.cleanupPolicy) configs['cleanup.policy'] = newTopic.cleanupPolicy;
+      if (newTopic.minInsyncReplicas.trim()) configs['min.insync.replicas'] = newTopic.minInsyncReplicas.trim();
+      if (newTopic.retentionMs.trim()) configs['retention.ms'] = newTopic.retentionMs.trim();
+      if (newTopic.maxPartitionSize.trim()) configs['retention.bytes'] = newTopic.maxPartitionSize.trim();
+      if (newTopic.maxMessageBytes.trim()) configs['max.message.bytes'] = newTopic.maxMessageBytes.trim();
+
       const response = await fetch('/api/v1/clusters/' + id + '/topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,12 +171,22 @@ export function Topics() {
           name: newTopic.name.trim(),
           partitions: newTopic.partitions,
           replicationFactor: newTopic.replicationFactor,
-          configs: {}
+          configs
         })
       });
       if (!response.ok) throw new Error(await apiError(response));
       setShowCreate(false);
-      setNewTopic({ name: '', partitions: 1, replicationFactor: 1 });
+      setNewTopic({
+        name: '',
+        partitions: 1,
+        replicationFactor: 1,
+        cleanupPolicy: 'delete',
+        minInsyncReplicas: '',
+        retentionMs: '',
+        maxPartitionSize: '',
+        maxMessageBytes: '',
+        customConfigs: false
+      });
       setNotice('Topic created successfully.');
       await fetchTopics();
     } catch (requestError) {
@@ -361,15 +406,151 @@ export function Topics() {
 
       {canManage && showCreate && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
-          <div className="topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
-            <header><div><span>Create resource</span><h3>Add a topic</h3></div><button onClick={() => setShowCreate(false)}><X size={18} /></button></header>
-            <form onSubmit={createTopic}>
-              <label>Topic name<input autoFocus required value={newTopic.name} onChange={event => setNewTopic(current => ({ ...current, name: event.target.value }))} placeholder="orders.created" /></label>
-              <div className="topic-form-grid">
-                <label>Partitions<input type="number" min={1} required value={newTopic.partitions} onChange={event => setNewTopic(current => ({ ...current, partitions: Number(event.target.value) }))} /></label>
-                <label>Replication factor<input type="number" min={1} required value={newTopic.replicationFactor} onChange={event => setNewTopic(current => ({ ...current, replicationFactor: Number(event.target.value) }))} /></label>
+          <div className="topic-modal create-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+            <header className="create-topic-header">
+              <div className="create-topic-header-text">
+                <h2>Create Resource</h2>
+                <h3>Add a topic</h3>
+                <p>Configure the topic and its Kafka-level retention and delivery settings.</p>
               </div>
-              <footer><button type="button" className="topic-button secondary" onClick={() => setShowCreate(false)}>Cancel</button><button className="topic-button primary" disabled={creating}>{creating ? 'Creating…' : 'Create topic'}</button></footer>
+              <button className="create-topic-close" onClick={() => setShowCreate(false)} aria-label="Close modal">
+                <X size={20} />
+              </button>
+            </header>
+
+            <form onSubmit={createTopic} className="create-topic-form">
+              <div className="create-topic-section">
+                <div className="section-header-row">
+                  <h4>Cluster Details</h4>
+                  <div className="custom-toggle-wrap">
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={newTopic.customConfigs}
+                        onChange={e => setNewTopic(curr => ({ ...curr, customConfigs: e.target.checked }))}
+                      />
+                      <span className="slider round"></span>
+                    </label>
+                    <span className="custom-toggle-label">Custom</span>
+                  </div>
+                </div>
+
+                <div className="form-field-full">
+                  <label>Topic name *</label>
+                  <input
+                    autoFocus
+                    required
+                    value={newTopic.name}
+                    onChange={e => setNewTopic(curr => ({ ...curr, name: e.target.value }))}
+                    placeholder="orders.created"
+                  />
+                </div>
+              </div>
+
+              <div className="create-topic-section">
+                <div className="form-fields-grid">
+                  <div className="form-field">
+                    <label>Number of partitions *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      value={newTopic.partitions}
+                      onChange={e => setNewTopic(curr => ({ ...curr, partitions: Number(e.target.value) }))}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label>Cleanup policy</label>
+                    <CustomSelect
+                      value={newTopic.cleanupPolicy}
+                      onChange={val => setNewTopic(curr => ({ ...curr, cleanupPolicy: val }))}
+                      options={cleanupPolicyOptions}
+                      width="100%"
+                    />
+                  </div>
+                </div>
+
+                <div className="form-fields-grid">
+                  <div className="form-field">
+                    <label>Minimum in-sync replicas</label>
+                    <input
+                      type="text"
+                      placeholder="Use broker default"
+                      value={newTopic.minInsyncReplicas}
+                      onChange={e => setNewTopic(curr => ({ ...curr, minInsyncReplicas: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label>Replication factor *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      required
+                      value={newTopic.replicationFactor}
+                      onChange={e => setNewTopic(curr => ({ ...curr, replicationFactor: Number(e.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-field-full">
+                  <label>Time to retain data (milliseconds)</label>
+                  <input
+                    type="text"
+                    placeholder="Use broker default"
+                    value={newTopic.retentionMs}
+                    onChange={e => setNewTopic(curr => ({ ...curr, retentionMs: e.target.value }))}
+                  />
+                </div>
+
+                <div className="quick-options-container">
+                  <span className="quick-options-title">Quick options:</span>
+                  <div className="quick-options-pills">
+                    {quickOptions.map(opt => (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        className={`quick-option-pill ${newTopic.retentionMs === opt.ms ? 'active' : ''}`}
+                        onClick={() => setNewTopic(curr => ({ ...curr, retentionMs: opt.ms }))}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-fields-grid">
+                  <div className="form-field">
+                    <label>Max partition size</label>
+                    <input
+                      type="text"
+                      placeholder="Not set"
+                      value={newTopic.maxPartitionSize}
+                      onChange={e => setNewTopic(curr => ({ ...curr, maxPartitionSize: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label>Maximum message size (bytes)</label>
+                    <input
+                      type="text"
+                      placeholder="Use broker default"
+                      value={newTopic.maxMessageBytes}
+                      onChange={e => setNewTopic(curr => ({ ...curr, maxMessageBytes: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <footer className="create-topic-footer">
+                <button type="button" className="topic-button secondary cancel-btn" onClick={() => setShowCreate(false)}>
+                  Cancel
+                </button>
+                <button className="topic-button primary create-btn" disabled={creating}>
+                  {creating ? 'Creating…' : 'Create topic'}
+                </button>
+              </footer>
             </form>
           </div>
         </div>

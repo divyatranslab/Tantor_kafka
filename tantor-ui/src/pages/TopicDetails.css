@@ -270,23 +270,24 @@
 .replicas-warning { color: var(--color-danger) !important; }
 
 .message-toolbar {
-  display: grid;
-  grid-template-columns: 140px 150px 150px 150px auto minmax(190px, 1fr);
-  gap: 0.55rem;
-  margin-bottom: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  width: 100%;
 }
 
 .message-toolbar select,
 .message-toolbar > button,
 .message-toolbar label,
 .tab-toolbar label {
-  height: 38px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  background: var(--bg-surface);
+  height: 40px;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  color: #282F49;
+  background: #FFFFFF;
   font: inherit;
-  font-size: 0.76rem;
+  font-size: 14px;
 }
 
 .message-toolbar select { padding: 0 0.6rem; }
@@ -294,18 +295,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0 0.7rem;
-  font-weight: 600;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  padding: 0;
   cursor: pointer;
+  box-sizing: border-box;
 }
 
 .message-toolbar label {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-  padding: 0 0.65rem;
+  gap: 8px;
+  flex-grow: 1;
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
 .message-toolbar input,

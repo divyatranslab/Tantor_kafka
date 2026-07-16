@@ -21,5 +21,17 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    preview: {
+      proxy: {
+        '/api/v1/artifacts': {
+          target: artifactTarget,
+          secure: false,
+        },
+        '/api': {
+          target: apiTarget,
+          secure: false,
+        },
+      },
+    },
   }
 })

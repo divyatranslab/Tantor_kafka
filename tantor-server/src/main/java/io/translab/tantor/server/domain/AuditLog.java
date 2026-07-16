@@ -33,8 +33,6 @@ public class AuditLog {
     @Column(name = "cluster_id")
     private UUID clusterId;
 
-    @Column(name = "user_name", nullable = false)
-    private String userName;
 
     @Column(name = "event_category", nullable = false, length = 80)
     private String category;
@@ -60,9 +58,6 @@ public class AuditLog {
 
     @Column(name = "host_id", length = 255)
     private String hostId;
-
-    @Column(name = "user_id", length = 255)
-    private String userId;
 
     @Column(name = "created_by", length = 128)
     private String createdBy;

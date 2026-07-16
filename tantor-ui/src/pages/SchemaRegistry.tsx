@@ -8,14 +8,14 @@ interface SchemaSubject {
   subject: string;
   type: string;
   version: number;
-  id: number;
+  id: number | null;
   schemaType: string;
   schema: string;
 }
 
 interface SchemaVersion {
   version: number;
-  id: number;
+  id: number | null;
   schemaType: string;
   schema: string;
 }
@@ -35,6 +35,8 @@ interface SchemaSummary {
   valueSubjects: number;
 }
 
+type CertificateType = 'PEM' | 'PKCS12';
+
 interface SavedConnection {
   id: string;
   connectionName: string;
@@ -45,7 +47,7 @@ interface SavedConnection {
   isDefault: boolean;
   certificateConfigured: boolean;
   truststoreConfigured: boolean;
-  certificateType?: string;
+  certificateType?: CertificateType;
 }
 
 const emptySchema = `{
@@ -64,6 +66,33 @@ const compatibilityOptions = [
   'FULL',
   'FULL_TRANSITIVE'
 ];
+
+/**
+ * Schema Registry returns JSON-based schemas as an escaped string. Format those
+ * schemas for display while leaving formats such as Protobuf untouched.
+ */
+const formatSchema = (schema: unknown, fallback = '{}'): string => {
+  if (schema === null || schema === undefined || schema === '') return fallback;
+
+  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+
+  try {
+    const parsed = JSON.parse(source);
+
+    // Some responses contain a JSON document encoded inside another JSON string.
+    if (typeof parsed === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(parsed), null, 2);
+      } catch {
+        return parsed;
+      }
+    }
+
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return source;
+  }
+};
 
 type View = 'list' | 'detail' | 'edit';
 
@@ -105,7 +134,7 @@ export function SchemaRegistry() {
   const [customIp, setCustomIp] = useState('');
   const [customPort, setCustomPort] = useState('');
   const [protocol, setProtocol] = useState('http');
-  const [certType, setCertType] = useState('PEM');
+  const [certType, setCertType] = useState<CertificateType>('PEM');
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certFileName, setCertFileName] = useState('');
   const [certPassword, setCertPassword] = useState('');
@@ -167,7 +196,7 @@ export function SchemaRegistry() {
     if (certType === 'PEM') {
       if (certPasteMode && certPasteText.trim()) return safeBase64Encode(certPasteText.trim());
       if (!certPasteMode && certFile) return safeBase64Encode(await readFileAsText(certFile));
-    } else if (certType === 'PKCS12_JKS' && certFile) {
+    } else if (certType === 'PKCS12' && certFile) {
       return await readFileAsBase64(certFile);
     }
     return undefined;
@@ -659,7 +688,7 @@ export function SchemaRegistry() {
             <div className="ds-schema-code-card">
               <h4>Actual version</h4>
               <pre className="ds-schema-code">
-                {loadingDetails ? 'Loading schema...' : (details?.latest?.schema || selected.schema || '{}')}
+                {loadingDetails ? 'Loading schema...' : formatSchema(details?.latest?.schema || selected.schema)}
               </pre>
             </div>
             <div className="ds-schema-meta-card">
@@ -711,7 +740,7 @@ export function SchemaRegistry() {
                     {expandedVersions.has(version.version) && (
                       <tr key={`${version.version}-schema`} className="ds-version-expand-row">
                         <td colSpan={4} style={{ padding: 0 }}>
-                          <pre className="ds-version-schema-code">{version.schema}</pre>
+                          <pre className="ds-version-schema-code">{formatSchema(version.schema)}</pre>
                         </td>
                       </tr>
                     )}
@@ -742,7 +771,7 @@ export function SchemaRegistry() {
                 Version A
                 <select value={compareVersionA ?? ''} onChange={e => setCompareVersionA(Number(e.target.value))}>
                   {details.versions.map(version => (
-                    <option key={version.version} value={version.version}>Version {version.version}</option>
+                    <option key={version.version} value={version.version}>Version {version.version} (ID {version.id ?? 'Unavailable'})</option>
                   ))}
                 </select>
               </label>
@@ -751,7 +780,7 @@ export function SchemaRegistry() {
                 Version B
                 <select value={compareVersionB ?? ''} onChange={e => setCompareVersionB(Number(e.target.value))}>
                   {details.versions.map(version => (
-                    <option key={version.version} value={version.version}>Version {version.version}</option>
+                    <option key={version.version} value={version.version}>Version {version.version} (ID {version.id ?? 'Unavailable'})</option>
                   ))}
                 </select>
               </label>
@@ -765,12 +794,18 @@ export function SchemaRegistry() {
                 </div>
                 <div className="ds-compare-grid">
                   <section>
-                    <h4>Version {compareVersionA}</h4>
-                    <pre>{comparedSchemaA?.schema || 'Schema unavailable'}</pre>
+                    <div className="ds-compare-panel-heading">
+                      <h4>Version {compareVersionA}</h4>
+                      <span>Schema ID: <strong>{comparedSchemaA?.id ?? '-'}</strong></span>
+                    </div>
+                    <pre>{formatSchema(comparedSchemaA?.schema, 'Schema unavailable')}</pre>
                   </section>
                   <section>
-                    <h4>Version {compareVersionB}</h4>
-                    <pre>{comparedSchemaB?.schema || 'Schema unavailable'}</pre>
+                    <div className="ds-compare-panel-heading">
+                      <h4>Version {compareVersionB}</h4>
+                      <span>Schema ID: <strong>{comparedSchemaB?.id ?? '-'}</strong></span>
+                    </div>
+                    <pre>{formatSchema(comparedSchemaB?.schema, 'Schema unavailable')}</pre>
                   </section>
                 </div>
               </>
@@ -875,9 +910,9 @@ export function SchemaRegistry() {
               <div className="ds-form-grid two">
                 <div className="ds-field">
                   <label>Certificate Type</label>
-                  <select value={certType} onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
+                  <select value={certType} onChange={e => { setCertType(e.target.value as CertificateType); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
                     <option value="PEM">PEM (.pem / .crt)</option>
-                    <option value="PKCS12_JKS">PKCS12 / JKS (.p12, .jks)</option>
+                    <option value="PKCS12">PKCS12 (.p12 / .pfx)</option>
                   </select>
                 </div>
                 {certType === 'PEM' ? (
@@ -904,16 +939,16 @@ export function SchemaRegistry() {
                   </div>
                 ) : (
                   <div className="ds-field">
-                    <label>Truststore File (.p12 / .jks)</label>
+                    <label>Truststore File (.p12 / .pfx)</label>
                     <label className="ds-upload-control">
                       <Upload size={16} /> {certFileName || 'Upload truststore'}
-                      <input type="file" accept=".p12,.pfx,.jks" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} />
+                      <input type="file" accept=".p12,.pfx" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} />
                     </label>
                     {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> File selected: {certFileName}</span>}
                   </div>
                 )}
               </div>
-              {certType === 'PKCS12_JKS' && <div className="ds-field"><label>Truststore Password {selectedConn?.truststoreConfigured ? '(Leave blank to keep existing)' : ''}</label><input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" /></div>}
+              {certType === 'PKCS12' && <div className="ds-field"><label>Truststore Password {selectedConn?.truststoreConfigured ? '(Leave blank to keep existing)' : ''}</label><input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" /></div>}
               <div className="ds-default-toggle-row">
                 <label className="ds-toggle-switch" htmlFor="sr-is-default">
                   <input

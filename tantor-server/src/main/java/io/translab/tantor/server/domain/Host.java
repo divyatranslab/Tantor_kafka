@@ -22,9 +22,10 @@ public class Host {
     @Column(name = "agent_name")
     private String agentName;
 
-    @Column(name = "ip_addresses", columnDefinition = "jsonb")
-    @JdbcTypeCode(SqlTypes.JSON)
-    private String ipAddresses; // Stored as JSON string
+    @Transient
+    public String getIpAddresses() {
+        return hostIp == null ? "[]" : "[\"" + hostIp + "\"]";
+    }
 
     @Column(name = "os_details")
     private String osDetails;
@@ -35,8 +36,10 @@ public class Host {
     @Column(name = "agent_path")
     private String agentPath;
 
-    @Column(name = "agent_status")
-    private String agentStatus;
+    @Transient
+    public String getAgentStatus() {
+        return getStatus();
+    }
     @Column(nullable = false)
     private String status;
 
@@ -73,7 +76,7 @@ public class Host {
     @Column(name = "resource_type")
     private String resourceType;
 
-    @Column(name = "user_name")
+    @Transient // user_name column was dropped in V58 migration — kept for API compatibility only
     private String user;
 
     @Column(name = "cluster_id")
