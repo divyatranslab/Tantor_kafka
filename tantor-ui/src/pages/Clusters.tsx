@@ -373,7 +373,7 @@ export function Clusters() {
         <div className="cd-modal-backdrop" onClick={() => setShowDeploymentModal(false)}>
           <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
             <div className="cd-deployment-modal-header">
-              <div>
+              <div className="cd-deployment-modal-header-content">
                 <h2>Cluster Development</h2>
                 <p>Create a managed Kafka cluster or connect an exiting external cluster.</p>
               </div>
@@ -395,7 +395,7 @@ export function Clusters() {
                   <button className="cd-deployment-btn outline" onClick={() => navigate('/cluster-deployment')}>Create</button>
                 </div>
                 
-                <div className="cd-deployment-card active">
+                <div className="cd-deployment-card">
                   <div className="cd-deployment-card-content">
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z"/>
@@ -403,7 +403,7 @@ export function Clusters() {
                     <h3>Existing Cluster</h3>
                     <p>Connect or discover an external Kafka cluster</p>
                   </div>
-                  <button className="cd-deployment-btn primary" onClick={() => navigate('/external-clusters')}>Explorer</button>
+                  <button className="cd-deployment-btn outline" onClick={() => navigate('/external-clusters')}>Explorer</button>
                 </div>
               </div>
             </div>

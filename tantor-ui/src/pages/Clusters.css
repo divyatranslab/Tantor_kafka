@@ -875,7 +875,7 @@
   box-sizing: border-box;
 }
 
-.cd-deployment-card.active {
+.cd-deployment-card:hover {
   background: #FAF8FF;
   border: 1px solid #8E77BB;
 }
@@ -892,7 +892,7 @@
   margin-bottom: 4px;
 }
 
-.cd-deployment-card.active .cd-deployment-card-content svg {
+.cd-deployment-card:hover .cd-deployment-card-content svg {
   color: #3E1363;
 }
 
@@ -905,7 +905,7 @@
   margin: 0;
 }
 
-.cd-deployment-card.active h3 {
+.cd-deployment-card:hover h3 {
   color: #3E1363;
 }
 
@@ -917,12 +917,19 @@
   margin: 0;
 }
 
+.cd-deployment-card:hover .cd-deployment-btn.outline {
+  background: #3E1363;
+  border: 1px solid #3E1363;
+  color: #FFFFFF;
+}
+
 .cd-deployment-btn {
   display: flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
   padding: 6px 8px;
+  gap: 6px;
   height: 28px;
   border-radius: 6px;
   font-family: 'Satoshi', sans-serif;
