@@ -543,6 +543,7 @@
 
 .source-pill,
 .access-pill,
+.agent-pill,
 .cluster-status-badge {
   display: inline-flex;
   align-items: center;
@@ -578,6 +579,24 @@
   background: #fff6df;
   color: #7a5407;
   border: 0.5px solid #f0d796;
+}
+
+.agent-pill.connected {
+  background: #ecfdf5;
+  color: #047857;
+  border: 0.5px solid #a7f3d0;
+}
+
+.agent-pill.partial {
+  background: #fff6df;
+  color: #7a5407;
+  border: 0.5px solid #f0d796;
+}
+
+.agent-pill.not-linked {
+  background: #f5f4f1;
+  color: #5f5e5a;
+  border: 0.5px solid #e2e0db;
 }
 
 .cluster-status-badge::before {

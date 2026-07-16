@@ -16,6 +16,10 @@ interface ClusterInfo {
   kafkaClusterId?: string;
   originType?: string;
   installDirectory?: string;
+  kafkaHealth?: string;
+  agentHealth?: string;
+  monitoringHealth?: string;
+  overallHealth?: string;
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
@@ -72,6 +76,26 @@ export function ClusterDetails() {
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
   const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
   const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
+  const agentLabel = (() => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'Agent connected';
+      case 'PARTIAL':
+        return 'Agent partial';
+      default:
+        return 'Agent not linked';
+    }
+  })();
+  const agentClass = (() => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'connected';
+      case 'PARTIAL':
+        return 'partial';
+      default:
+        return 'not-linked';
+    }
+  })();
 
   if (isLogsView) {
     return (
@@ -143,8 +167,15 @@ export function ClusterDetails() {
               <p className="cluster-identity-line">Kafka Cluster ID: <code>{cluster.kafkaClusterId || 'Pending discovery'}</code> · Install directory: <code>{cluster.installDirectory || '-'}</code></p>
             </div>
           </div>
-          <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-            <div className="status-dot"></div> {runtimeLabel}
+          <div className="cluster-health-stack">
+            <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+              <div className="status-dot"></div> {runtimeLabel}
+            </div>
+            {cluster.mode === 'EXTERNAL' && (
+              <div className={`agent-status-badge ${agentClass}`}>
+                {agentLabel}
+              </div>
+            )}
           </div>
         </div>
       </header>

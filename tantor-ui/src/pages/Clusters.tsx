@@ -36,6 +36,10 @@ interface ClusterInfo {
   totalHostsCount?: number;
   telemetry?: string;
   lastAgentHeartbeat?: string;
+  kafkaHealth?: string;
+  agentHealth?: string;
+  monitoringHealth?: string;
+  overallHealth?: string;
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
@@ -163,6 +167,34 @@ export function Clusters() {
     if (cluster.mode !== 'EXTERNAL') return 'Full access';
     if (cluster.managementLevel === 'AGENT_MANAGED') return 'Fully managed';
     return 'Metadata available';
+  };
+
+  const managementClass = (cluster: ClusterInfo) => {
+    const label = `${cluster.managementLevel || ''} ${cluster.accessLabel || ''}`.toLowerCase();
+    return label.includes('bootstrap') || label.includes('metadata') ? 'metadata' : 'managed';
+  };
+
+  const agentHealthLabel = (cluster: ClusterInfo) => {
+    if (cluster.mode !== 'EXTERNAL') return '';
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'Agent connected';
+      case 'PARTIAL':
+        return 'Agent partial';
+      default:
+        return 'Agent not linked';
+    }
+  };
+
+  const agentHealthClass = (cluster: ClusterInfo) => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'connected';
+      case 'PARTIAL':
+        return 'partial';
+      default:
+        return 'not-linked';
+    }
   };
 
   const sourceLabel = (cluster: ClusterInfo) =>
@@ -301,12 +333,17 @@ export function Clusters() {
                           <span className={`source-pill ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
                             {sourceLabel(cluster)}
                           </span>
-                          <span className={`access-pill ${cluster.managementLevel === 'BOOTSTRAP_ONLY' ? 'metadata' : 'managed'}`}>
+                          <span className={`access-pill ${managementClass(cluster)}`}>
                             {managementLabel(cluster)}
                           </span>
+                          {cluster.mode === 'EXTERNAL' && (
+                            <span className={`agent-pill ${agentHealthClass(cluster)}`}>
+                              {agentHealthLabel(cluster)}
+                            </span>
+                          )}
                           <span 
                             className={`cluster-status-badge ${statusClass(cluster)}`}
-                            title={cluster.runtimeStatusReason || (cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined)}
+                            title={cluster.runtimeStatusReason}
                           >
                             {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
                               <RefreshCw size={11} className="spin" />
