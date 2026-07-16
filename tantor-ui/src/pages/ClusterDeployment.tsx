@@ -1009,7 +1009,7 @@ export function ClusterDeployment() {
   const checkHostPorts = async (hostId: string) => {
     setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites`, {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

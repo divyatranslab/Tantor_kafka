@@ -281,6 +281,7 @@ public class AgentService {
                             task.getClusterId(), "IN_PROGRESS", dto.getStatus(), dto.getStatus(), null,
                             dto.getErrorMsg());
                     if ("CHECK_PREREQUISITES".equals(task.getCommand())
+                            || "CHECK_PORTS".equals(task.getCommand())
                             || "APPLY_PREREQUISITES".equals(task.getCommand())) {
                         Map<String, Object> prerequisiteDetails = new java.util.LinkedHashMap<>();
                         prerequisiteDetails.put("taskId", taskId.toString());
@@ -293,7 +294,10 @@ public class AgentService {
                             prerequisiteDetails.put("failedReason", dto.getFailedReason());
                         }
                         String action = "APPLY_PREREQUISITES".equals(task.getCommand())
-                                ? "PREREQUISITE_FIX_COMPLETED" : "PREREQUISITE_CHECK_COMPLETED";
+                                ? "PREREQUISITE_FIX_COMPLETED"
+                                : "CHECK_PORTS".equals(task.getCommand())
+                                ? "PORT_CHECK_COMPLETED"
+                                : "PREREQUISITE_CHECK_COMPLETED";
                         auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
                                 "PREREQUISITE", action, "HOST", task.getHostId(),
                                 task.getClusterId(), dto.getStatus(), null, null, null, prerequisiteDetails);
