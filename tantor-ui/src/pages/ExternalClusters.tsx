@@ -2,15 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  ChevronDown,
   ChevronLeft,
   CheckCircle2,
   Copy,
-  Globe,
-  Play,
   RefreshCw,
   Server,
-  Terminal,
   Network,
   FileText,
   X,

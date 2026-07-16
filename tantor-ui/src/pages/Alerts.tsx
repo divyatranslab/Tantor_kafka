@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle, Clock, Database, HardDrive, RefreshCw, Server,
+  AlertTriangle, CheckCircle, RefreshCw,
   Shield, Activity
 } from 'lucide-react';
 import './Alerts.css';

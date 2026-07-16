@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  Package, Upload, CheckCircle, XCircle, ChevronDown, ChevronUp,
-  Loader2, HardDrive, X, RefreshCw, Server, DownloadCloud,
+  Upload, XCircle, ChevronDown, ChevronUp,
+  Loader2, X, RefreshCw, Server, DownloadCloud,
   Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -199,7 +199,7 @@ export function Artifacts() {
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
-  const isHostOnline = (host: Host) => {
+  const isHostOnline = (_host: Host) => {
     //const status = (host.status || '').toUpperCase();
     //const agentStatus = (host.agentStatus || '').toUpperCase();
     //return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';

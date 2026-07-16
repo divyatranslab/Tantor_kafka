@@ -17,7 +17,6 @@ import {
   Users,
 } from 'lucide-react';
 import './Sidebar.css';
-import tantorLogo from '../assets/tantor-logo.png';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 

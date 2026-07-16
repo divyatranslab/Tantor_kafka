@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, BarChart3, Bot, Clock, Database, ExternalLink,
+  Activity, AlertTriangle, Bot, Database, ExternalLink,
   HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X
 } from 'lucide-react';
 import {
@@ -181,9 +181,7 @@ export function Dashboard() {
   }, []);
 
   const summary = dashboard.summary;
-  const platformState = summary.failedServices > 0 || summary.failedTasks > 0 || summary.offlineHosts > 0
-    ? 'Attention'
-    : 'Healthy';
+
 
   const kpis = useMemo(() => [
     {
