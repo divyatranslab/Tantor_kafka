@@ -429,7 +429,6 @@ export function Clusters() {
               </div>
             </div>
           </div>
-
         </div>
       )}
     </div>
