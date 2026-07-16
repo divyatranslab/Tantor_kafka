@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
-  Database,
   FileText,
   Upload,
   Loader2,
@@ -1552,7 +1551,7 @@ export function ClusterDeployment() {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('landing')}>Cancel</button>
+            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('details')}>Cancel</button>
             <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
               {validatingKraft && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Preview add node' : validatingKraft ? 'Validating topology' : 'Preview'}

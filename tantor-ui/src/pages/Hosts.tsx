@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
+import { RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './Hosts.css';
 

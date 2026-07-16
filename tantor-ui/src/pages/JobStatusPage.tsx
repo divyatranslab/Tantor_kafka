@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, CheckCircle2, Maximize2, Minimize2, Check, Server, MoreVertical, Activity } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './JobStatusPage.css';
 
@@ -237,42 +237,6 @@ export function JobStatusPage() {
       case 'ROLLBACK_PENDING':
       default:
         return <div className="step-icon-pending-circle" style={{ width: size, height: size }}></div>;
-    }
-  };
-
-  const getStepProgressPercentage = (status: string) => {
-    switch (status) {
-      case 'SUCCESS': return 100;
-      case 'ROLLED_BACK': return 100;
-      case 'IN_PROGRESS': return 50;
-      case 'ROLLING_BACK': return 50;
-      case 'FAILED': return 100;
-      case 'ROLLBACK_FAILED': return 100;
-      default: return 0;
-    }
-  };
-
-  const getStepProgressText = (status: string) => {
-    switch (status) {
-      case 'SUCCESS': return '100% Complete';
-      case 'ROLLED_BACK': return '100% Rolled Back';
-      case 'IN_PROGRESS': return '50% In Progress';
-      case 'ROLLING_BACK': return '50% Rolling Back';
-      case 'FAILED': return 'Failed';
-      case 'ROLLBACK_FAILED': return 'Rollback Failed';
-      default: return '0% Pending';
-    }
-  };
-
-  const getStepBarClass = (status: string) => {
-    switch (status) {
-      case 'SUCCESS': return 'bar-success';
-      case 'ROLLED_BACK': return 'bar-success';
-      case 'IN_PROGRESS': return 'bar-in-progress';
-      case 'ROLLING_BACK': return 'bar-in-progress';
-      case 'FAILED': return 'bar-failed';
-      case 'ROLLBACK_FAILED': return 'bar-failed';
-      default: return 'bar-pending';
     }
   };
 

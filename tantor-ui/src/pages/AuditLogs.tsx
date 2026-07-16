@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2, Clock3, FileClock, Filter,
-  History, Info, LockKeyhole, Package, Search, UserRound, XCircle, Database,
+  CheckCircle2, FileClock,
+  History, Info, Package, Search, XCircle, Database,
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 import './AuditLogs.css';
