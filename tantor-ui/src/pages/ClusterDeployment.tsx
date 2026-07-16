@@ -1235,40 +1235,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-  if (stage === 'landing' && !isAddNodeMode) {
-    return (
-      <div className="cluster-deploy-page animate-fade-in">
-        <header className="cd-header">
-          <div>
-            <h1 style={{ fontFamily: 'Satoshi', fontWeight: 500, color: '#282F49', fontSize: '24px' }}>Cluster Development</h1>
-            <p style={{ color: '#818181', fontSize: '14px', marginTop: '4px' }}>Create a managed Kafka cluster or connect an exiting external cluster.</p>
-          </div>
-        </header>
-
-        <div className="cd-choice-grid" style={{ marginTop: '16px' }}>
-          <div className="cd-choice-card-wrapper active-choice">
-            <Network size={26} className="choice-icon" />
-            <span>Create your Cluster</span>
-            <small>Build a new Kraft or ZooKeeper cluster on selected Tantor host</small>
-            <button className="choice-action-btn fill" onClick={() => setStage('details')}>
-              Create
-            </button>
-          </div>
-          <div className="cd-choice-card-wrapper active-choice">
-            <Database size={26} className="choice-icon" />
-            <span>Existing Cluster</span>
-            <small>Connect or discover an external Kafka cluster</small>
-            <button className="choice-action-btn outline" onClick={() => {
-              if (onClose) onClose();
-              navigate('/external-clusters');
-            }}>
-              Explorer
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="cluster-deploy-page animate-fade-in">
