@@ -73,6 +73,30 @@ public class RoleAuthenticationUtil {
         return roles.stream().anyMatch(allowedRoles::contains);
     }
 
+    public String extractUsername(String authorizationHeader) {
+        String token = bearerToken(authorizationHeader);
+        if (token == null || token.isBlank()) {
+            return "system";
+        }
+        Map<String, Object> claims = decodeClaims(token);
+        if (claims.isEmpty()) {
+            return "system";
+        }
+        if (claims.containsKey("preferred_username")) {
+            return String.valueOf(claims.get("preferred_username"));
+        }
+        if (claims.containsKey("email")) {
+            return String.valueOf(claims.get("email"));
+        }
+        if (claims.containsKey("name")) {
+            return String.valueOf(claims.get("name"));
+        }
+        if (claims.containsKey("sub")) {
+            return String.valueOf(claims.get("sub"));
+        }
+        return "system";
+    }
+
     private Map<String, Set<String>> loadAllowedRoles() {
         try (InputStream input = new ClassPathResource("config/config.json").getInputStream()) {
             Map<String, List<String>> configured = objectMapper.readValue(input, new TypeReference<>() {});

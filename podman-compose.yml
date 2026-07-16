@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:13
+    container_name: tantor_db
+    environment:
+      POSTGRES_DB: tantor
+      POSTGRES_USER: ${TANTOR_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${TANTOR_DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - tantor_db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  tantor-artifact-repository:
+    build:
+      context: ./tantor-artifact-repository
+    container_name: tantor_artifact_repo
+    ports:
+      - "8081:8081"
+    volumes:
+      - tantor_repo_data:/var/lib/tantor/repository
+    restart: unless-stopped
+
+  tantor-server:
+    build:
+      context: ./tantor-server
+    container_name: tantor_server
+    environment:
+      TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
+      TANTOR_DB_USER: ${TANTOR_DB_USER:-postgres}
+      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:-postgres}
+      TANTOR_REPO_URL: http://tantor-artifact-repository:8081
+      TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
+      TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
+    ports:
+      - "8443:8443"
+    depends_on:
+      - database
+      - tantor-artifact-repository
+    restart: unless-stopped
+
+  tantor-ui:
+    build:
+      context: ./tantor-ui
+    container_name: tantor_ui
+    ports:
+      - "80:80"
+    depends_on:
+      - tantor-server
+      - tantor-artifact-repository
+    restart: unless-stopped
+
+volumes:
+  tantor_db_data:
+  tantor_repo_data:

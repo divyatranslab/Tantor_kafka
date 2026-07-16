@@ -18,6 +18,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSp
     @org.springframework.data.jpa.repository.Query(value = "SELECT agent_name, host_ip, hostname FROM kf_hosts WHERE id = :hostId LIMIT 1", nativeQuery = true)
     java.util.List<Object[]> findHostAgentInfo(@org.springframework.data.repository.query.Param("hostId") String hostId);
 
-    @org.springframework.data.jpa.repository.Query(value = "SELECT cluster_name, bootstrap_servers FROM kf_clusters WHERE id = CAST(:clusterId AS UUID) LIMIT 1", nativeQuery = true)
+    @org.springframework.data.jpa.repository.Query(value = "SELECT cluster_name, bootstrap_servers, kafka_cluster_id FROM kf_clusters WHERE id = CAST(:clusterId AS UUID) LIMIT 1", nativeQuery = true)
     java.util.List<Object[]> findClusterInfo(@org.springframework.data.repository.query.Param("clusterId") String clusterId);
 }

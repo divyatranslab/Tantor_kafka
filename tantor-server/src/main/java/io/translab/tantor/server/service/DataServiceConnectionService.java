@@ -135,7 +135,7 @@ public class DataServiceConnectionService {
 
         // Always recompute rest_endpoint server-side
         conn.setRestEndpoint(buildRestEndpoint(conn.getProtocol(), conn.getHost(), conn.getPort()));
-        conn.setUpdatedBy(callerUsername != null ? callerUsername : "system");
+        conn.setUpdatedBy(callerUsername != null ? callerUsername : io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
 
         boolean isNew = conn.getId() == null;
 
@@ -170,7 +170,7 @@ public class DataServiceConnectionService {
         repository.findByIdAndClusterIdAndServiceTypeAndIsActiveTrue(connectionId, clusterId, serviceType)
                 .ifPresent(conn -> {
                     conn.setIsActive(false);
-                    conn.setUpdatedBy(callerUsername != null ? callerUsername : "system");
+                    conn.setUpdatedBy(callerUsername != null ? callerUsername : io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
                     repository.save(conn);
                     
                     // If the deleted connection was default, optionally elect a new default
@@ -290,7 +290,7 @@ public class DataServiceConnectionService {
         c.setConnectionName(connectionName);
         c.setIsActive(true);
         c.setIsDefault(false);
-        c.setCreatedBy("system");
+        c.setCreatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
         return c;
     }
 

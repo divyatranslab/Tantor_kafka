@@ -169,7 +169,7 @@ public class TopicsController {
 
     private void clusterChanged(UUID clusterId, String action, Map<String, Object> details) {
         clusterRepository.findById(clusterId).ifPresent(cluster -> {
-            cluster.setUpdatedBy("system");
+            cluster.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
             clusterRepository.save(cluster);
         });
         auditService.record("CLUSTER_CHANGE", action, "CLUSTER", clusterId.toString(), clusterId,

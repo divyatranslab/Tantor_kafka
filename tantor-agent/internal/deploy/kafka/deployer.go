@@ -297,11 +297,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	if !jmxInstalled {
-		log("Warning: JMX exporter jar is unavailable. Kafka will start without JMX exporter instead of failing startup.")
+		return logs.String(), fmt.Errorf("JMX exporter jar is unavailable. Upload a JMX_EXPORTER artifact to Tantor and retry deployment")
 	}
 
 	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, filepath.Join(jmxDir, "jmx_config.yml")); err != nil {
-		log("Warning: Failed to write JMX config: %v", err)
+		return logs.String(), fmt.Errorf("failed to write JMX exporter config: %w", err)
 	}
 
 	setStep("Backup old config if exists")
@@ -358,7 +358,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				}
 
 				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-				formatOut, formatErr, err := d.exec.Run(ctx, storageScript, formatArgs...)
+				envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+				bashCmd := fmt.Sprintf("%s %s %s", envSetup, storageScript, strings.Join(formatArgs, " "))
+				formatOut, formatErr, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 				if err != nil {
 					technicalOutput := strings.TrimSpace(strings.TrimSpace(formatOut) + "\n" + strings.TrimSpace(formatErr))
 					if technicalOutput == "" {
@@ -442,7 +444,10 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		}
 		// Try to wait a bit before connecting
 		time.Sleep(5 * time.Second)
-		out, errOut, err := d.exec.Run(ctx, filepath.Join(activeInstallDir, "bin", "kafka-topics.sh"), "--list", "--bootstrap-server", "localhost:"+listenerPort)
+		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
+		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:"+listenerPort}, " "))
+		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 		if err != nil {
 			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
 		} else {
@@ -489,7 +494,10 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 	if listenerPort == "" {
 		listenerPort = "9092"
 	}
-	jmxMetricsPort := "7071"
+	jmxMetricsPort := t.Parameters["jmx_port"]
+	if jmxMetricsPort == "" {
+		jmxMetricsPort = "7071"
+	}
 
 	// Report VALIDATING status
 	if err := d.client.ReportTaskResult(&api.TaskResult{
@@ -571,21 +579,29 @@ check5:
 	log("Validation [5/6]: Checking JMX Exporter javaagent...")
 	out2, _, _ := d.exec.Run(ctx, "bash", "-c", "ps aux | grep javaagent | grep -v grep")
 	if strings.Contains(out2, "jmx_prometheus_javaagent") {
-		log("  ✓ JMX Prometheus Exporter attached")
+		log("  JMX Prometheus Exporter attached")
 	} else {
-		log("  ⚠ JMX Exporter not detected in process args (non-fatal)")
+		if isBroker {
+			journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceNameForTask(t), "-n", "80", "--no-pager")
+			return fmt.Errorf("JMX exporter not attached to Kafka process. Logs:\n%s", journalOut)
+		}
+		log("  JMX Exporter not detected for non-broker role")
 	}
 
 	log("Validation [6/6]: Checking metrics endpoint on port %s...", jmxMetricsPort)
 	for i := 0; i < 5; i++ {
 		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("curl -sf http://localhost:%s/metrics | head -1", jmxMetricsPort))
 		if err == nil {
-			log("  ✓ Metrics endpoint responding on port %s", jmxMetricsPort)
+			log("  Metrics endpoint responding on port %s", jmxMetricsPort)
 			return nil
 		}
 		time.Sleep(3 * time.Second)
 	}
-	log("  ⚠ Metrics endpoint not responding on port %s (non-fatal — JMX jar may be missing)", jmxMetricsPort)
+	if isBroker {
+		journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceNameForTask(t), "-n", "80", "--no-pager")
+		return fmt.Errorf("JMX metrics endpoint not responding on port %s. Logs:\n%s", jmxMetricsPort, journalOut)
+	}
+	log("  Metrics endpoint not responding on port %s for non-broker role", jmxMetricsPort)
 
 	return nil
 }
@@ -1493,7 +1509,9 @@ func (d *Deployer) stageUpgradeBinaries(ctx context.Context, t *api.Task, target
 
 func (d *Deployer) ensureKafkaBinaryVersion(ctx context.Context, installDir, expectedVersion string, log func(string, ...interface{})) error {
 	versionScript := filepath.Join(installDir, "bin", "kafka-topics.sh")
-	out, errOut, err := d.exec.Run(ctx, versionScript, "--version")
+	envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+	bashCmd := fmt.Sprintf("%s %s %s", envSetup, versionScript, "--version")
+	out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 	if err != nil {
 		return fmt.Errorf("failed to read Kafka binary version from %s: %w, err: %s", versionScript, err, errOut)
 	}
@@ -1537,7 +1555,8 @@ func isUsableJar(path string) bool {
 
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
-	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
+	findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname $(dirname $(readlink -f $(command -v $JAVA_CMD))); fi`
+	out, _, _ := d.exec.Run(ctx, "bash", "-c", findJavaCmd)
 	javaHome := strings.TrimSpace(out)
 	if javaHome == "" || javaHome == "." {
 		javaHome = "/usr" // fallback
@@ -1562,7 +1581,15 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	serviceName := serviceNameForTask(t)
 	jmxAgentPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
 	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
-	if serviceName == "controller" || !isUsableJar(jmxAgentPath) {
+	_, isBroker, _ := normalizeKRaftRole(t.Parameters["role"])
+	if serviceName == "controller" {
+		jmxPort = ""
+		jmxAgentPath = ""
+		jmxConfigPath = ""
+	} else if !isUsableJar(jmxAgentPath) {
+		if isBroker {
+			return fmt.Errorf("JMX exporter jar is missing or invalid at %s", jmxAgentPath)
+		}
 		jmxPort = ""
 		jmxAgentPath = ""
 		jmxConfigPath = ""

@@ -25,6 +25,8 @@ interface AuditEvent {
   resourceId?: string;
   resource?: string;
   clusterId?: string;
+  kafkaClusterId?: string;
+  displayResourceId?: string;
   hostId?: string;
   hostIp?: string;
   hostName?: string;
@@ -85,8 +87,10 @@ const resourceTypeLabel = (event: AuditEvent) => {
 
 const resourceName = (event: AuditEvent) => {
   if (isHostOnboardingEvent(event) || isArtifactEvent(event)) return '';
-  return event.resource || event.hostName || event.hostId || event.clusterId || 'platform';
+  return event.resource || event.hostName || event.hostId || event.displayResourceId || event.kafkaClusterId || 'platform';
 };
+
+const scopeId = (event: AuditEvent) => event.displayResourceId || event.kafkaClusterId || event.resourceId || event.hostId || '-';
 
 const detailLabel = (event: AuditEvent) => {
   const parsed = parseJson(event.details);
@@ -179,13 +183,15 @@ export function AuditLogs() {
     if (appliedFilters.actor !== 'ALL' && actorOf(event) !== appliedFilters.actor) return false;
     if (appliedFilters.resourceId.trim()) {
       const needle = appliedFilters.resourceId.trim().toLowerCase();
-      const resourceHaystack = [event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId].join(' ').toLowerCase();
+      const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
+        .join(' ')
+        .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;
     }
     const created = new Date(timeOf(event)).getTime();
     if (appliedFilters.from && created < new Date(appliedFilters.from).getTime()) return false;
     if (appliedFilters.to && created > new Date(appliedFilters.to).getTime()) return false;
-    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
+    const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
     return !appliedFilters.search.trim() || haystack.includes(appliedFilters.search.trim().toLowerCase());
   }), [events, appliedFilters]);
 
@@ -336,7 +342,7 @@ export function AuditLogs() {
         : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
         : <div className="audit-table-wrap">
             <table className="audit-table">
-              <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster ID</th><th>Details</th><th>Status</th></tr></thead>
+              <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
               <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
             </table>
             <div className="audit-pagination">
@@ -371,7 +377,7 @@ function AuditRow({ event }: { event: AuditEvent }) {
       <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
       <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
       <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
-      <td><div className="audit-resource"><small>{event.clusterId || '-'}</small></div></td>
+      <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
       <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
       <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
     </tr>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,6 +38,7 @@ type ExternalClusterPayload struct {
 	DataDirs            string  `json:"dataDirs"`
 	LogDirs             string  `json:"logDirs"`
 	Hostname            string  `json:"hostname"`
+	IPAddresses         string  `json:"ipAddresses"`
 	Listeners           string  `json:"listeners"`
 	AdvertisedListeners string  `json:"advertisedListeners"`
 	ProcessRoles        string  `json:"processRoles"`
@@ -97,6 +99,7 @@ func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName strin
 		DataDirs:            firstNonBlank(c.DataDirs, c.LogDirs),
 		LogDirs:             c.LogDirs,
 		Hostname:            c.Hostname,
+		IPAddresses:         localIPAddressesJSON(),
 		Listeners:           c.Listeners,
 		AdvertisedListeners: c.AdvertisedListeners,
 		ProcessRoles:        c.ProcessRoles,
@@ -138,4 +141,82 @@ func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName strin
 	respBody, _ := io.ReadAll(resp.Body)
 	fmt.Printf("  [failed] %s HTTP %d: %s\n", c.Name, resp.StatusCode, string(respBody))
 	return false
+}
+
+func reportAgentHeartbeat(serverURL, hostname, hostID, agentName string) bool {
+	payload := map[string]any{
+		"hostId":          hostID,
+		"agentName":       agentName,
+		"hostname":        hostname,
+		"ipAddresses":     localIPAddressesJSON(),
+		"isRunning":       true,
+		"canExecuteTasks": true,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Printf("  [failed] Agent heartbeat JSON error: %v\n", err)
+		return false
+	}
+
+	apiURL := strings.TrimRight(serverURL, "/") + "/api/v1/ui/external-clusters/discovery/heartbeat"
+	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		fmt.Printf("  [failed] Agent heartbeat connection error: %v\n", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		fmt.Printf("  [ok] discovery agent heartbeat reported for %s\n", hostname)
+		return true
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	fmt.Printf("  [failed] Agent heartbeat HTTP %d: %s\n", resp.StatusCode, string(respBody))
+	return false
+}
+
+func localIPAddressesJSON() string {
+	addresses := localIPAddresses()
+	body, err := json.Marshal(addresses)
+	if err != nil {
+		return "[]"
+	}
+	return string(body)
+}
+
+func localIPAddresses() []string {
+	var values []string
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return values
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch typed := addr.(type) {
+			case *net.IPNet:
+				ip = typed.IP
+			case *net.IPAddr:
+				ip = typed.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			if ipv4 := ip.To4(); ipv4 != nil {
+				values = append(values, ipv4.String())
+				continue
+			}
+			values = append(values, ip.String())
+		}
+	}
+	return values
 }

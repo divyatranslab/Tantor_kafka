@@ -138,7 +138,7 @@ export function Sidebar() {
           <div key={section.label} className="nav-section">
             <span className="nav-section-label">{section.label}</span>
             {section.items
-              .filter(item => isAdmin || item.path !== '/user-management')
+              .filter(item => isAdmin || (item.path !== '/user-management' && item.path !== '/ldap-settings'))
               .map(item => renderItem(item))}
           </div>
         ))}

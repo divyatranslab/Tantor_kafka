@@ -5,9 +5,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
+import io.translab.tantor.server.repository.HostRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
+
+@Slf4j
 @Service
 public class HostStatusService {
+
+    @Autowired
+    private HostRepository hostRepository;
 
     @Value("${tantor.hosts.heartbeat-timeout-seconds:90}")
     private long heartbeatTimeoutSeconds;
@@ -70,5 +81,19 @@ public class HostStatusService {
 
     public boolean isInfrastructureHost(Host host) {
         return !isDiscoveryAgent(host);
+    }
+
+    @Scheduled(fixedDelayString = "${tantor.hosts.offline-check-delay-ms:30000}")
+    @Transactional
+    public void syncOfflineStatus() {
+        List<Host> hosts = hostRepository.findAll();
+        for (Host host : hosts) {
+            if ("ONLINE".equalsIgnoreCase(host.getStatus()) && "OFFLINE".equalsIgnoreCase(effectiveStatus(host))) {
+                log.info("Marking host {} as OFFLINE in database due to missed heartbeats", host.getId());
+                host.setStatus("OFFLINE");
+                host.setAgentStatus("OFFLINE");
+                hostRepository.save(host);
+            }
+        }
     }
 }

@@ -251,7 +251,7 @@ public class ConfigVersionService {
         rollback.setOldConfig(active.getNewConfig());
         rollback.setNewConfig(target.getNewConfig());
         rollback.setRollbackVersion(target.getConfigVersion());
-        rollback.setCreatedBy(currentUser());
+        rollback.setCreatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
         boolean approvalRequired = Boolean.TRUE.equals(target.getApprovalRequired())
                 || "UAT".equalsIgnoreCase(cluster.getEnvironment()) || "PROD".equalsIgnoreCase(cluster.getEnvironment());
         rollback.setApprovalRequired(approvalRequired);
@@ -283,7 +283,7 @@ public class ConfigVersionService {
         version.setAppliedAt(Instant.now());
         configVersionRepository.save(version);
         clusterRepository.findById(version.getClusterId()).ifPresent(cluster -> {
-            cluster.setUpdatedBy("system");
+            cluster.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
             clusterRepository.save(cluster);
         });
         auditService.record("CONFIG_CHANGE", "CONFIG_VERSION_APPLIED", "CONFIG_VERSION", version.getId().toString(),
@@ -319,8 +319,8 @@ public class ConfigVersionService {
         rollback.setOldConfig(version.getNewConfig());
         rollback.setNewConfig(version.getOldConfig());
         rollback.setRollbackVersion(Math.max(1, version.getConfigVersion() - 1));
-        rollback.setCreatedBy("job-rollback");
-        rollback.setApprovedBy("job-rollback");
+        rollback.setCreatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
+        rollback.setApprovedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
         rollback.setApprovalRequired(false);
         rollback.setStatus(ConfigVersionStatus.APPLIED);
         rollback.setAppliedAt(Instant.now());

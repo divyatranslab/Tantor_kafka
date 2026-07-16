@@ -64,6 +64,42 @@
   background-color: #10b981; /* emerald-500 */
 }
 
+.status-badge.healthy,
+.status-badge.success {
+  background-color: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.status-badge.healthy .status-dot,
+.status-badge.success .status-dot {
+  background-color: #10b981;
+}
+
+.status-badge.degraded,
+.status-badge.unknown {
+  background-color: #fffbeb;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.status-badge.degraded .status-dot,
+.status-badge.unknown .status-dot {
+  background-color: #f59e0b;
+}
+
+.status-badge.offline,
+.status-badge.failed {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.status-badge.offline .status-dot,
+.status-badge.failed .status-dot {
+  background-color: #ef4444;
+}
+
 .cluster-tabs {
   margin-top: 2rem;
   border-bottom: 1px solid var(--border-color);

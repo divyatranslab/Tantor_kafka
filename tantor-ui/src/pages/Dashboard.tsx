@@ -8,6 +8,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
+import { usePermissions } from '../hooks/usePermissions';
 import './Dashboard.css';
 
 interface DashboardSummary {
@@ -145,6 +146,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function Dashboard() {
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [dashboard, setDashboard] = useState<DashboardPayload>(emptyDashboard);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -250,10 +252,12 @@ export function Dashboard() {
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Refresh
           </button>
-          <button className="db-btn primary" onClick={() => navigate('/cluster-deployment')}>
-            <Plus size={14} />
-            New cluster
-          </button>
+          {canManage && (
+            <button className="db-btn primary" onClick={() => navigate('/cluster-deployment')}>
+              <Plus size={14} />
+              New cluster
+            </button>
+          )}
         </div>
       </header>
 

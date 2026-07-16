@@ -95,10 +95,10 @@ public class DataServiceConnection {
     private Boolean isDefault = false;
 
     @Column(name = "created_by", nullable = false)
-    private String createdBy = "system";
+    private String createdBy;
 
     @Column(name = "updated_by", nullable = false)
-    private String updatedBy = "system";
+    private String updatedBy;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -111,10 +111,13 @@ public class DataServiceConnection {
         Instant now = Instant.now();
         if (createdAt == null) createdAt = now;
         updatedAt = now;
+        if (createdBy == null || createdBy.isBlank()) createdBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();
+        if (updatedBy == null || updatedBy.isBlank()) updatedBy = io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, CheckCircle2, Maximize2, Minimize2, Check } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, CheckCircle2, Maximize2, Minimize2, Check, Server, MoreVertical, Activity } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
 import './JobStatusPage.css';
 
 type Job = {
@@ -73,6 +74,7 @@ function getBusinessStepName(rawName: string): string {
 export function JobStatusPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [loading, setLoading] = useState(true);
@@ -303,12 +305,12 @@ export function JobStatusPage() {
           </div>
         </div>
         <div className="action-buttons">
-          {(job.status === 'FAILED' || job.status === 'PARTIAL_SUCCESS') && (
+          {canManage && (job.status === 'FAILED' || job.status === 'PARTIAL_SUCCESS') && (
             <button className="btn btn-outline-primary" onClick={handleRetry}>
               <RefreshCw size={14} style={{ marginRight: '6px' }} /> Retry Job
             </button>
           )}
-          {job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
+          {canManage && job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRollback}>
               <Undo2 size={14} style={{ marginRight: '6px' }} /> Rollback
             </button>

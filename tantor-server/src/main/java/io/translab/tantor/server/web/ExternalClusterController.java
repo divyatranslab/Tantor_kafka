@@ -30,6 +30,11 @@ public class ExternalClusterController {
         return ResponseEntity.ok(externalClusterService.listPendingDiscoveries());
     }
 
+    @GetMapping("/api/v1/ui/external-clusters/agents")
+    public ResponseEntity<List<Map<String, Object>>> listDiscoveryAgents() {
+        return ResponseEntity.ok(externalClusterService.listDiscoveryAgents());
+    }
+
     @GetMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/inspect")
     public ResponseEntity<Map<String, Object>> inspectDiscovery(@PathVariable String discoveryKey) {
         return ResponseEntity.ok(externalClusterService.inspectDiscovery(discoveryKey));
@@ -58,6 +63,17 @@ public class ExternalClusterController {
         String remoteIp = httpRequest.getRemoteAddr();
         request.setIpAddresses("[\"" + remoteIp + "\"]");
         return ResponseEntity.ok(externalClusterService.recordDiscoveryReport(request));
+    }
+
+    @PostMapping("/api/v1/ui/external-clusters/discovery/heartbeat")
+    public ResponseEntity<Map<String, Object>> heartbeatDiscoveryAgent(
+            @RequestBody ExternalClusterService.ExternalDiscoveryReport request,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        String remoteIp = httpRequest.getRemoteAddr();
+        if (request.getIpAddresses() == null || request.getIpAddresses().isBlank()) {
+            request.setIpAddresses("[\"" + remoteIp + "\"]");
+        }
+        return ResponseEntity.ok(externalClusterService.recordDiscoveryAgentHeartbeat(request));
     }
 
     @PostMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/connect")

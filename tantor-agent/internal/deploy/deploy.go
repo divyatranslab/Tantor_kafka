@@ -318,7 +318,7 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 	run("Swappiness", "bash", "-c", "value=$(cat /proc/sys/vm/swappiness 2>/dev/null); echo \"$value\"; [[ \"$value\" -eq 0 ]]")
 	run("Transparent Huge Pages", "bash", "-c", "value=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null); echo \"$value\"; [[ \"$value\" =~ \\[never\\] ]]")
 	run("SELinux", "bash", "-c", "value=$(getenforce 2>/dev/null || echo Disabled); echo \"$value\"; [[ \"$value\" == Disabled || \"$value\" == Permissive ]]")
-	run("Java Version", "bash", "-c", "command -v java >/dev/null 2>&1 || exit 1; value=$(java -version 2>&1 | head -n 1 | awk -F '\"' '{print $2}'); echo \"$value\"; [[ \"$value\" == 17.* ]]")
+	run("Java Version", "bash", "-c", `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -z "$JAVA_CMD" ]; then echo "Java not found"; exit 1; fi; output=$($JAVA_CMD -version 2>&1 | head -n 1); echo "$output"; echo "$output" | grep -qE '"?(11|17|21)\.'`)
 	run("NTP Service", "bash", "-c", "if systemctl is-active --quiet ntpd; then echo 'ntpd Active'; elif systemctl is-active --quiet chronyd; then echo 'chronyd Active'; else echo 'Not running'; exit 1; fi")
 	logs.WriteString("===== Pre-check Completed =====\n")
 	if failed > 0 {
@@ -383,7 +383,9 @@ func (e *Engine) verifyKRaftQuorum(ctx context.Context, t *api.Task) (*api.TaskR
 		activeDir = filepath.Join(activeDir, "kafka")
 	}
 	quorumScript := filepath.Join(activeDir, "bin", "kafka-metadata-quorum.sh")
-	out, errOut, err := e.exec.Run(ctx, quorumScript, "--bootstrap-controller", endpoints[0], "describe", "--status")
+	envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+	bashCmd := fmt.Sprintf("%s %s %s", envSetup, quorumScript, strings.Join([]string{"--bootstrap-controller", endpoints[0], "describe", "--status"}, " "))
+	out, errOut, err := e.exec.Run(ctx, "bash", "-c", bashCmd)
 	output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("KRaft quorum status command failed: %v\n%s", err, output)), nil
@@ -440,7 +442,9 @@ func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.T
 
 	var logs strings.Builder
 	for _, endpoint := range endpoints {
-		out, errOut, err := e.exec.Run(ctx, zkShellScript, endpoint, "ls", "/")
+		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, zkShellScript, strings.Join([]string{endpoint, "ls", "/"}, " "))
+		out, errOut, err := e.exec.Run(ctx, "bash", "-c", bashCmd)
 		output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
 		if err != nil {
 			return e.fail(t, fmt.Sprintf("ZooKeeper quorum status command failed for endpoint %s: %v\n%s", endpoint, err, output)), nil

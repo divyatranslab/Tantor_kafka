@@ -35,9 +35,16 @@ type AgentTaskResult struct {
 	Data    map[string]string `json:"data"`
 }
 
-func pollForTasksLoop(serverURL, hostname, restartCommand string, clustersChan <-chan []DiscoveredCluster) {
+func pollForTasksLoop(
+	serverURL, hostname, restartCommand string,
+	systemdUseSudo bool,
+	metricsURL string,
+	metricsEnabled bool,
+	taskPollInterval time.Duration,
+	clustersChan <-chan []DiscoveredCluster,
+) {
 	var currentClusters []DiscoveredCluster
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(taskPollInterval)
 	defer ticker.Stop()
 
 	var metricsStarted = make(map[string]bool)
@@ -48,17 +55,17 @@ func pollForTasksLoop(serverURL, hostname, restartCommand string, clustersChan <
 			currentClusters = newClusters
 		case <-ticker.C:
 			for _, c := range currentClusters {
-				if !metricsStarted[c.Name] {
-					startMetricsStream(serverURL, c.Name, hostname, c.BootstrapServers, 5*time.Second)
+				if metricsEnabled && !metricsStarted[c.Name] {
+					startMetricsStream(serverURL, c.Name, hostname, c.BootstrapServers, metricsURL, 5*time.Second)
 					metricsStarted[c.Name] = true
 				}
-				pollForTask(serverURL, c, hostname, restartCommand)
+				pollForTask(serverURL, c, hostname, restartCommand, systemdUseSudo)
 			}
 		}
 	}
 }
 
-func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultRestartCommand string) {
+func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultRestartCommand string, systemdUseSudo bool) {
 	apiURL := externalAgentURL(serverURL, cluster.Name, "/tasks")
 	query := url.Values{}
 	query.Set("hostname", hostname)
@@ -81,7 +88,7 @@ func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultR
 	}
 
 	fmt.Printf("Received %s task %s for cluster %s\n", task.Task, task.TaskID, cluster.Name)
-	
+
 	result := AgentTaskResult{
 		TaskID: task.TaskID,
 		Status: "SUCCESS",
@@ -114,12 +121,12 @@ func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultR
 			result.Message = err.Error()
 		}
 	case "restart_service":
-		if err := executeRestartService(task, defaultRestartCommand, cluster); err != nil {
+		if err := executeRestartService(task, defaultRestartCommand, cluster, systemdUseSudo); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
 	case "service_status":
-		if active, err := executeServiceStatus(task.ServiceName, cluster); err != nil {
+		if active, err := executeServiceStatus(task.ServiceName, cluster, systemdUseSudo); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		} else {
@@ -169,11 +176,11 @@ func executeBackupFile(task AgentTask, cluster DiscoveredCluster) error {
 	if task.ConfigFilePath == "" || task.BackupDirPath == "" || task.BackupFilePath == "" {
 		return fmt.Errorf("missing configFilePath, backupDirPath, or backupFilePath")
 	}
-	
+
 	if err := validatePathSafety(task.ConfigFilePath, cluster); err != nil {
 		return err
 	}
-	
+
 	if err := os.MkdirAll(task.BackupDirPath, 0755); err != nil {
 		return fmt.Errorf("failed to create backup dir: %w", err)
 	}
@@ -198,7 +205,7 @@ func executeBackupFile(task AgentTask, cluster DiscoveredCluster) error {
 	if _, err := io.Copy(dst, src); err != nil {
 		return fmt.Errorf("failed to copy file: %w", err)
 	}
-	
+
 	// Create metadata sidecar
 	metaPath := task.BackupFilePath + ".meta.json"
 	metaContent, _ := json.Marshal(task)
@@ -211,7 +218,7 @@ func executeRestoreBackup(task AgentTask, cluster DiscoveredCluster) error {
 	if task.ConfigFilePath == "" || task.BackupFilePath == "" {
 		return fmt.Errorf("missing configFilePath or backupFilePath")
 	}
-	
+
 	if err := validatePathSafety(task.ConfigFilePath, cluster); err != nil {
 		return err
 	}
@@ -244,16 +251,16 @@ func executeReadConfig(path string, cluster DiscoveredCluster) (map[string]strin
 	if path == "" {
 		return nil, fmt.Errorf("no configFilePath provided")
 	}
-	
+
 	if err := validatePathSafety(path, cluster); err != nil {
 		return nil, err
 	}
-	
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
-	
+
 	props := make(map[string]string)
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
@@ -266,7 +273,7 @@ func executeReadConfig(path string, cluster DiscoveredCluster) (map[string]strin
 			props[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
 		}
 	}
-	
+
 	return props, nil
 }
 
@@ -274,7 +281,7 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster) error {
 	if task.ConfigFilePath == "" || len(task.ConfigChanges) == 0 {
 		return fmt.Errorf("missing configFilePath or configChanges")
 	}
-	
+
 	if err := validatePathSafety(task.ConfigFilePath, cluster); err != nil {
 		return err
 	}
@@ -285,7 +292,7 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster) error {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	
+
 	for key, value := range task.ConfigChanges {
 		found := false
 		for i, line := range lines {
@@ -325,14 +332,18 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster) error {
 	return os.WriteFile(task.ConfigFilePath, []byte(strings.Join(lines, "\n")), fileInfo.Mode())
 }
 
-func executeRestartService(task AgentTask, defaultRestartCommand string, cluster DiscoveredCluster) error {
+func executeRestartService(task AgentTask, defaultRestartCommand string, cluster DiscoveredCluster, systemdUseSudo bool) error {
 	var cmd *exec.Cmd
 	if task.ServiceName != "" {
 		if err := validateServiceSafety(task.ServiceName, cluster); err != nil {
 			return err
 		}
 		fmt.Printf("Restarting systemd service: %s\n", task.ServiceName)
-		cmd = exec.Command("systemctl", "restart", task.ServiceName)
+		if systemdUseSudo {
+			cmd = exec.Command("sudo", "systemctl", "restart", task.ServiceName)
+		} else {
+			cmd = exec.Command("systemctl", "restart", task.ServiceName)
+		}
 	} else if defaultRestartCommand != "" {
 		fmt.Printf("Executing default restart command: %s\n", defaultRestartCommand)
 		cmdParts := strings.Fields(defaultRestartCommand)
@@ -346,15 +357,20 @@ func executeRestartService(task AgentTask, defaultRestartCommand string, cluster
 	return cmd.Run()
 }
 
-func executeServiceStatus(serviceName string, cluster DiscoveredCluster) (bool, error) {
+func executeServiceStatus(serviceName string, cluster DiscoveredCluster, systemdUseSudo bool) (bool, error) {
 	if serviceName == "" {
 		return false, fmt.Errorf("no serviceName provided")
 	}
 	if err := validateServiceSafety(serviceName, cluster); err != nil {
 		return false, err
 	}
-	
-	cmd := exec.Command("systemctl", "is-active", "--quiet", serviceName)
+
+	var cmd *exec.Cmd
+	if systemdUseSudo {
+		cmd = exec.Command("sudo", "systemctl", "is-active", "--quiet", serviceName)
+	} else {
+		cmd = exec.Command("systemctl", "is-active", "--quiet", serviceName)
+	}
 	err := cmd.Run()
 	if err == nil {
 		return true, nil
@@ -375,5 +391,3 @@ func completeTaskWithResult(serverURL string, cluster DiscoveredCluster, hostnam
 		resp.Body.Close()
 	}
 }
-
-
