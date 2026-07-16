@@ -439,24 +439,28 @@ export function TopicDetails() {
                 value={messageOrder}
                 onChange={setMessageOrder}
                 options={orderOptions}
+                width="135px"
               />
               <CustomSelect
                 value={messagePartition}
                 onChange={setMessagePartition}
                 options={partitionOptions}
+                width="145px"
               />
               <CustomSelect
                 value={keyDeserializer}
                 onChange={setKeyDeserializer}
                 options={keyDeserializerOptions}
+                width="130px"
               />
               <CustomSelect
                 value={valueDeserializer}
                 onChange={setValueDeserializer}
                 options={valueDeserializerOptions}
+                width="140px"
               />
-              <button onClick={loadMessages} disabled={messagesLoading}><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /> Refresh</button>
               <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMessages()} placeholder="Search key or value" /></label>
+              <button onClick={loadMessages} disabled={messagesLoading}><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
             </div>
             {messages && <div className="message-fetch-meta"><span><Clock3 size={13} /> {messages.elapsedMs} ms</span><span>{formatBytes(messages.bytes)}</span><span>{messages.count} messages consumed</span></div>}
             <div className="detail-table-wrap">
