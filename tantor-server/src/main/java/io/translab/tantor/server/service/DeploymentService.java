@@ -92,7 +92,7 @@ public class DeploymentService {
             applyActiveParcelParams(params, hostId, version);
 
             injectJmxArtifactUrl(params, artifactUrl);
-            applyV9KafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, artifactUrl);
+            applyAgentKafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, artifactUrl);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -600,7 +600,7 @@ public class DeploymentService {
         }
     }
 
-    private void applyV9KafkaDeploymentParams(
+    private void applyAgentKafkaDeploymentParams(
             Map<String, Object> params,
             String version,
             String role,
@@ -613,9 +613,6 @@ public class DeploymentService {
         if (!hasText(runtimeGroup)) runtimeGroup = defaultRuntimeGroup;
         String javaHome = firstParam(params, "java_home", "javaHome");
         if (!hasText(javaHome)) javaHome = defaultJavaHome;
-        if (!hasText(runtimeUser) || !hasText(runtimeGroup) || !hasText(javaHome)) {
-            throw new IllegalArgumentException("V9 agent deployment requires runtime_user, runtime_group, and java_home in deployment config or server properties.");
-        }
 
         String kafkaVersion = firstNonBlank(version, firstParam(params, "kafka_version", "version", "target_version"));
         String scalaVersion = firstNonBlank(firstParam(params, "scala_version"), "2.13");
@@ -637,9 +634,9 @@ public class DeploymentService {
         String kraftFormatMode = firstParam(params, "kraft_format_mode");
         String initialControllers = firstParam(params, "initial_controllers");
 
-        putParam(params, "runtime_user", runtimeUser);
-        putParam(params, "runtime_group", runtimeGroup);
-        putParam(params, "java_home", javaHome);
+        putParamIfText(params, "runtime_user", runtimeUser);
+        putParamIfText(params, "runtime_group", runtimeGroup);
+        putParamIfText(params, "java_home", javaHome);
         putParam(params, "kafka_version", kafkaVersion);
         putParam(params, "scala_version", scalaVersion);
         putParam(params, "install_base_path", installBasePath);
@@ -726,6 +723,12 @@ public class DeploymentService {
     private void putParam(Map<String, Object> params, String key, String value) {
         if (value != null) {
             params.put(key, value);
+        }
+    }
+
+    private void putParamIfText(Map<String, Object> params, String key, String value) {
+        if (hasText(value)) {
+            params.put(key, value.trim());
         }
     }
 
