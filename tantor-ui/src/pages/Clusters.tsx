@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings } from 'lucide-react';
+import { MoreVertical, Network, Database, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './Clusters.css';
 
@@ -44,6 +44,7 @@ export function Clusters() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [showDeploymentModal, setShowDeploymentModal] = useState(false);
 
   const fetchClusters = async () => {
     setLoading(true);
@@ -164,40 +165,47 @@ export function Clusters() {
 
   useEffect(() => { fetchClusters(); }, []);
 
-  return (
-    <div className="clusters-page animate-fade-in" onClick={() => setOpenMenuId(null)}>
-      <header className="page-header flex-between">
-        <div>
-          <h1>Kafka clusters</h1>
-          <p>Deploy and manage your Tantor Kafka environments</p>
-        </div>
-        <div className="header-actions">
-          {canManage && (
-            <button className="btn btn-primary-action" onClick={() => navigate('/cluster-deployment')}>
-              <Network size={13} /> Deploy Cluster
-            </button>
-          )}
-          <button className="btn" onClick={fetchClusters}>
-            <RefreshCw size={13} className={loading ? 'spin' : ''} />
-            Refresh
+  const renderHeader = () => (
+    <header className="page-header flex-between">
+      <div>
+        <h1>Cluster</h1>
+        <p>Deploy and manage your Tantor Kafka environments</p>
+      </div>
+      <div className="header-actions">
+        <button className="btn icon-only outline refresh-btn" onClick={fetchClusters} title="Refresh">
+          <RefreshCw size={20} className={loading ? 'spin' : ''} />
+        </button>
+        {canManage && (
+          <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
+            <Plus size={20} /> Add Cluster
           </button>
-        </div>
-      </header>
+        )}
+      </div>
+    </header>
+  );
 
-      {loading ? (
-        <div className="state-center">
-          <RefreshCw size={24} className="spin" style={{ color: '#378ADD' }} />
-          <p>Loading clusters...</p>
-        </div>
-      ) : clusters.length === 0 ? (
-        <div className="state-center">
-          <Network size={32} style={{ color: '#c0beb8' }} />
-          <h2>No clusters yet</h2>
-          <p>
-            You haven't added any Kafka clusters. Click above to provision your first cluster or connect an external one.
-          </p>
+  return (
+    <div className={`clusters-page animate-fade-in ${!loading && clusters.length === 0 ? 'is-empty' : ''}`} onClick={() => setOpenMenuId(null)}>
+      {(!loading && clusters.length === 0) ? (
+        <div className="white-container full-empty-card">
+          {renderHeader()}
+          <div className="state-center">
+            <div className="empty-state-icon" />
+            <h2>No clusters yet</h2>
+            <p>
+              You haven't added any Kafka clusters.<br />Click above to provision your first cluster or connect an external one.
+            </p>
+          </div>
         </div>
       ) : (
+        <>
+          {renderHeader()}
+          {loading ? (
+            <div className="state-center">
+              <RefreshCw size={24} className="spin" style={{ color: '#378ADD' }} />
+              <p>Loading clusters...</p>
+            </div>
+          ) : (
         <section className="clusters-inventory">
           <div className="clusters-inventory-header">
             <div>
@@ -351,6 +359,50 @@ export function Clusters() {
             </table>
           </div>
         </section>
+          )}
+        </>
+      )}
+
+      {showDeploymentModal && (
+        <div className="cd-modal-backdrop" onClick={() => setShowDeploymentModal(false)}>
+          <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
+            <div className="cd-deployment-modal-header">
+              <div>
+                <h2>Cluster Development</h2>
+                <p>Create a managed Kafka cluster or connect an exiting external cluster.</p>
+              </div>
+              <button className="cd-icon-btn close-btn" onClick={() => setShowDeploymentModal(false)} title="Close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+              </button>
+            </div>
+            
+            <div className="cd-deployment-cards-wrapper">
+              <div className="cd-deployment-choice-grid">
+                <div className="cd-deployment-card">
+                  <div className="cd-deployment-card-content">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z"/>
+                    </svg>
+                    <h3>Create your Cluster</h3>
+                    <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
+                  </div>
+                  <button className="cd-deployment-btn outline" onClick={() => navigate('/cluster-deployment')}>Create</button>
+                </div>
+                
+                <div className="cd-deployment-card active">
+                  <div className="cd-deployment-card-content">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z"/>
+                    </svg>
+                    <h3>Existing Cluster</h3>
+                    <p>Connect or discover an external Kafka cluster</p>
+                  </div>
+                  <button className="cd-deployment-btn primary" onClick={() => navigate('/external-clusters')}>Explorer</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

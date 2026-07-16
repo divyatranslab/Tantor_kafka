@@ -42,8 +42,8 @@
   width: 40px;
   height: 40px;
   padding: 8px;
-  border-radius: 8px;
-  border: 1px solid #CCCCCC;
+  border-radius: 12px;
+  border: 1px solid #E5E7EB;
   background: #ffffff;
   color: #818181;
   cursor: pointer;
@@ -249,8 +249,8 @@
   width: 40px;
   height: 40px;
   background: #ffffff;
-  border: 1px solid #cccccc;
-  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
   color: #818181;
   cursor: pointer;
 }

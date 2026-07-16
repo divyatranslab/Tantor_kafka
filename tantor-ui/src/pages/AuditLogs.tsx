@@ -1,10 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2, Clock3, FileClock, Filter,
-  History, Info, LockKeyhole, Package, RefreshCw, Search, UserRound, XCircle, Database,
-  ChevronLeft, ChevronRight, RotateCcw
+  History, Info, LockKeyhole, Package, Search, UserRound, XCircle, Database,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import './AuditLogs.css';
+
+const CustomRefreshIcon = ({ size = 20, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M 12 5 A 7 7 0 0 1 17 17" />
+    <path d="M 18 13 L 17 17 L 21 16" />
+    <path d="M 12 19 A 7 7 0 0 1 7 7" />
+    <path d="M 6 11 L 7 7 L 3 8" />
+  </svg>
+);
 
 interface AuditEvent {
   id: string;
@@ -216,7 +225,7 @@ export function AuditLogs() {
         <p>Who performed each action, on which resource, and whether it succeeded.</p>
       </div>
       <button className="btn btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
-        <RefreshCw size={24} color="#818181" className={loading ? 'spin' : ''} />
+        <CustomRefreshIcon size={20} color="#818181" className={loading ? 'spin' : ''} />
       </button>
     </header>
 
@@ -266,7 +275,7 @@ export function AuditLogs() {
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">
-          <button className="btn-refresh" onClick={fetchLogs} title="Refresh"><RotateCcw size={20} /></button>
+          <button className="btn-refresh" onClick={fetchLogs} title="Refresh"><CustomRefreshIcon size={20} /></button>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
         </div>
@@ -323,7 +332,7 @@ export function AuditLogs() {
       <div className="audit-ledger-head">
         <div><History size={15} /><strong>Event Ledger</strong></div>
       </div>
-      {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
+      {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
         : <div className="audit-table-wrap">
             <table className="audit-table">
