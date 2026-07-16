@@ -5,7 +5,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
-  Database,
+  ChevronLeft,
   FileText,
   Upload,
   Loader2,
@@ -66,7 +66,7 @@ type KafkaVersionInfo = {
 
 type DeploymentMode = 'kraft' | 'zookeeper';
 type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate' | 'broker_zookeeper' | 'zookeeper';
-type FlowStage = 'landing' | 'details' | 'preview';
+type FlowStage = 'details' | 'preview';
 type ConfigMode = 'default' | 'custom';
 type ConfigKind = 'server' | 'broker' | 'controller' | 'zookeeper';
 type PrereqStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'REBOOT_REQUIRED';
@@ -343,12 +343,21 @@ function activeStatus(status: string): boolean {
   return ['PENDING', 'IN_PROGRESS', 'RUNNING', 'QUEUED'].includes(String(status || '').toUpperCase());
 }
 
+const CustomRefreshIcon = ({ size = 20, color = '#818181', className = '' }: { size?: number, color?: string, className?: string }) => (
+  <svg width={size} height={size} viewBox='0 0 24 24' fill='none' stroke={color} strokeWidth='1.25' strokeLinecap='round' strokeLinejoin='round' className={className}>
+    <path d='M 12 5 A 7 7 0 0 1 17 17' />
+    <path d='M 18 13 L 17 17 L 21 16' />
+    <path d='M 12 19 A 7 7 0 0 1 7 7' />
+    <path d='M 6 11 L 7 7 L 3 8' />
+  </svg>
+);
+
 export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const addClusterId = searchParams.get('mode') === 'add' ? searchParams.get('clusterId') : null;
   const isAddNodeMode = Boolean(addClusterId);
-  const [stage, setStage] = useState<FlowStage>(isAddNodeMode ? 'details' : 'landing');
+  const [stage, setStage] = useState<FlowStage>('details');
   const [hosts, setHosts] = useState<Host[]>([]);
   const [versions, setVersions] = useState<KafkaVersionInfo[]>([]);
   const [existingCluster, setExistingCluster] = useState<ExistingCluster | null>(null);
@@ -1265,7 +1274,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     <div className="cluster-deploy-page animate-fade-in">
       <header className="cd-header">
         <div>
-          <h1>{stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}</h1>
+          <h1>
+            <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => window.history.back()} />
+            {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
+          </h1>
           <p>{stage === 'details'
             ? isAddNodeMode
               ? 'External cluster details are loaded. Select new nodes and roles to add.'
@@ -1292,16 +1304,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           )}
           <section className="cd-panel">
             <div className="cd-panel-title">
-              <Settings2 size={18} />
               <h2>Cluster Details</h2>
-            </div>
-            <div className="cd-detail-controls">
-              <div className="cd-control-group">
-                <span>Configuration</span>
-                <div className="cd-choice-toggle">
-                  <button className={clusterConfigMode === 'default' ? 'active' : ''} onClick={() => selectClusterConfigMode('default')} disabled={isAddNodeMode}>Default</button>
-                  <button className={clusterConfigMode === 'custom' ? 'active' : ''} onClick={() => selectClusterConfigMode('custom')} disabled={isAddNodeMode}>Custom</button>
-                </div>
+              <div className="cd-header-toggle">
+                <span>Default</span>
+                <label className="cd-toggle-switch">
+                  <input type="checkbox" checked={clusterConfigMode === 'custom'} onChange={() => selectClusterConfigMode(clusterConfigMode === 'default' ? 'custom' : 'default')} disabled={isAddNodeMode} />
+                  <span className="cd-toggle-slider"></span>
+                </label>
+                <span>Custom</span>
               </div>
             </div>
             {clusterConfigMode === 'custom' && !isAddNodeMode && (
@@ -1324,7 +1334,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             )}
             <div className="cd-grid-2">
               <label className="cd-field">
-                <span>Cluster name</span>
+                <span>Cluster Name</span>
                 <input value={clusterName} onChange={e => setClusterName(e.target.value)} placeholder="production-kraft" disabled={isAddNodeMode} />
               </label>
               {isAddNodeMode && (
@@ -1334,7 +1344,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 </label>
               )}
               <label className="cd-field">
-                <span>Kafka version</span>
+                <span>Kafka Version</span>
                 <select value={kafkaVersion} onChange={e => changeKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
                   {availableVersions.map(version => (
                     <option key={version.version} value={version.version}>
@@ -1345,7 +1355,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 </select>
               </label>
               <div className="cd-field">
-                <span>Environment</span>
+                <span>Environment (optional)</span>
                 <div className="cd-env-buttons">
                   {['SIT', 'UAT', 'DEV'].map(env => (
                     <button
@@ -1354,13 +1364,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       onClick={() => setEnvironment(env)}
                       disabled={isAddNodeMode}
                     >
-                      {env === 'DEV' ? 'Dev' : env}
+                      {env}
                     </button>
                   ))}
                 </div>
               </div>
               <div className="cd-field">
-                <span>Metadata mode</span>
+                <span>Metadata Mode</span>
                 <div className="cd-choice-toggle cd-mode-toggle">
                   <button className={deploymentMode === 'kraft' ? 'active' : ''} onClick={() => changeDeploymentMode('kraft')} disabled={isAddNodeMode}>KRaft</button>
                   {zookeeperSupported && (
@@ -1373,10 +1383,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
           <section className="cd-panel">
             <div className="cd-panel-title">
-              <Server size={18} />
               <h2>Deployment Paths</h2>
               <button className="cd-secondary-btn compact" onClick={() => setCommonConfigOpen(true)}>
-                <FileText size={14} />
+                <FileText size={16} />
                 Config
               </button>
             </div>
@@ -1394,7 +1403,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 <input value={logDir} onChange={e => setLogDir(e.target.value)} placeholder="/var/log/kafka" />
               </label>
               <label className="cd-field">
-                <span>Artifact/load directory</span>
+                <span>Artefacts/ Load directory</span>
                 <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
               </label>
             </div>
@@ -1402,14 +1411,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
           <section className="cd-panel">
             <div className="cd-panel-title">
-              <Network size={18} />
-              <h2>Nodes and Roles</h2>
-              <button className="cd-ghost-btn" onClick={() => setShowEnrollModal(true)}>
-                Add node
+              <h2>Nodes & Roles</h2>
+              <button className="cd-add-node-btn" onClick={() => setShowEnrollModal(true)}>
+                + Add Node
               </button>
-              <button className="cd-ghost-btn" onClick={loadHosts}>
-                <RefreshCw size={14} className={loadingHosts ? 'spin' : ''} />
-                Refresh
+              <button className="cd-refresh-icon" onClick={loadHosts} title="Refresh">
+                <CustomRefreshIcon size={14} className={loadingHosts ? 'spin' : ''} />
               </button>
             </div>
 
@@ -1418,7 +1425,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 setDraftNodeIds(selectedNodeIds);
                 setNodeDropdownOpen(open => !open);
               }}>
-                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select nodes'}</span>
+                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select node'}</span>
                 <ChevronDown size={16} />
               </button>
               {nodeDropdownOpen && (
@@ -1580,7 +1587,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('landing')}>Back</button>
+            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('details')}>Cancel</button>
             <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
               {validatingKraft && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Preview add node' : validatingKraft ? 'Validating topology' : 'Preview'}

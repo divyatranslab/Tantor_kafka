@@ -911,3 +911,16 @@ temp-jdk/jdk-21.0.11+10/lib/security/blocked.certs
 temp-jdk/jdk-21.0.11+10/lib/security/cacerts
 temp-jdk/jdk-21.0.11+10/lib/security/default.policy
 temp-jdk/jdk-21.0.11+10/lib/security/public_suffix_list.dat
+# AI Scratch files and logs
+tantor-ui/*.txt
+tantor-ui/*.patch
+tantor-ui/audit_writes*.json
+tantor-ui/*_fixed.css
+tantor-ui/*_snippet.css
+tantor-ui/audit_css_full.css
+
+*_fixed.css
+
+# Compiled agent binaries
+tantor-agent-linux
+tantor-discovery-agent-linux

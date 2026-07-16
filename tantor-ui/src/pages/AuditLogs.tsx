@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  CheckCircle2, Clock3, FileClock, Filter,
-  History, LockKeyhole, Package, RefreshCw, Search, UserRound, XCircle,
+  CheckCircle2, FileClock,
+  History, Info, Package, Search, XCircle, Database,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import './AuditLogs.css';
+
+const CustomRefreshIcon = ({ size = 20, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M 12 5 A 7 7 0 0 1 17 17" />
+    <path d="M 18 13 L 17 17 L 21 16" />
+    <path d="M 12 19 A 7 7 0 0 1 7 7" />
+    <path d="M 6 11 L 7 7 L 3 8" />
+  </svg>
+);
 
 interface AuditEvent {
   id: string;
@@ -118,6 +128,8 @@ export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // Draft filter state
   const [search, setSearch] = useState('');
   const [resourceId, setResourceId] = useState('');
   const [category, setCategory] = useState('ALL');
@@ -125,6 +137,15 @@ export function AuditLogs() {
   const [actor, setActor] = useState('ALL');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+
+  // Applied filter state
+  const [appliedFilters, setAppliedFilters] = useState({
+    search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: ''
+  });
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -155,23 +176,43 @@ export function AuditLogs() {
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
+  
   const filtered = useMemo(() => events.filter(event => {
-    if (category !== 'ALL' && event.category !== category) return false;
-    if (status !== 'ALL' && event.status !== status) return false;
-    if (actor !== 'ALL' && actorOf(event) !== actor) return false;
-    if (resourceId.trim()) {
-      const needle = resourceId.trim().toLowerCase();
-    const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
+    if (appliedFilters.category !== 'ALL' && event.category !== appliedFilters.category) return false;
+    if (appliedFilters.status !== 'ALL' && event.status !== appliedFilters.status) return false;
+    if (appliedFilters.actor !== 'ALL' && actorOf(event) !== appliedFilters.actor) return false;
+    if (appliedFilters.resourceId.trim()) {
+      const needle = appliedFilters.resourceId.trim().toLowerCase();
+      const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
         .join(' ')
         .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;
     }
     const created = new Date(timeOf(event)).getTime();
-    if (from && created < new Date(from).getTime()) return false;
-    if (to && created > new Date(to).getTime()) return false;
+    if (appliedFilters.from && created < new Date(appliedFilters.from).getTime()) return false;
+    if (appliedFilters.to && created > new Date(appliedFilters.to).getTime()) return false;
     const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
-    return !search.trim() || haystack.includes(search.trim().toLowerCase());
-  }), [events, category, status, actor, resourceId, from, to, search]);
+    return !appliedFilters.search.trim() || haystack.includes(appliedFilters.search.trim().toLowerCase());
+  }), [events, appliedFilters]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtered.length]);
+
+  const paginatedEvents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  const applyFilters = () => {
+    setAppliedFilters({ search, resourceId, category, status, actor, from, to });
+  };
+
+  const resetFilters = () => {
+    setSearch(''); setResourceId(''); setCategory('ALL'); setStatus('ALL'); setActor('ALL'); setFrom(''); setTo('');
+    setAppliedFilters({ search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: '' });
+  };
 
   const summary = useMemo(() => ({
     total: events.length,
@@ -179,38 +220,145 @@ export function AuditLogs() {
     failed: events.filter(event => event.status === 'FAILED').length,
   }), [events]);
 
-  return <div className="audit-page animate-fade-in">
-    <header className="audit-header"><div>
-      <div className="audit-eyebrow"><LockKeyhole size={13} /> Append-only event ledger</div>
-      <h1>Audit Trail</h1><p>Who performed each action, on which resource, and whether it succeeded.</p>
-    </div><button className="btn" onClick={fetchLogs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button></header>
+  const totalResults = filtered.length;
+  const startResult = totalResults === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endResult = Math.min(currentPage * pageSize, totalResults);
 
-    <section className="audit-summary-grid">
-      <article><FileClock size={18} /><div><strong>{summary.total}</strong><span>Captured events</span></div></article>
-      <article className="success"><CheckCircle2 size={18} /><div><strong>{summary.success}</strong><span>Successful</span></div></article>
-      <article className="failed"><XCircle size={18} /><div><strong>{summary.failed}</strong><span>Failed</span></div></article>
+  return <div className="audit-page animate-fade-in">
+    <header className="audit-header">
+      <div>
+        <h1>Audit Trail</h1>
+        <p>Who performed each action, on which resource, and whether it succeeded.</p>
+      </div>
+      <button className="btn btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
+        <CustomRefreshIcon size={20} color="#818181" className={loading ? 'spin' : ''} />
+      </button>
+    </header>
+
+    <div className="audit-summary-wrapper">
+      <section className="audit-summary-grid">
+        <article className="captured">
+          <div className="card-header">
+            <div className="icon-wrap"><FileClock size={20} /></div>
+            <span>Captured Events</span>
+          </div>
+          <strong>{summary.total}</strong>
+        </article>
+        <article className="success">
+          <div className="card-header">
+            <div className="icon-wrap"><CheckCircle2 size={20} /></div>
+            <span>Successful</span>
+          </div>
+          <strong>{summary.success}</strong>
+        </article>
+        <article className="failed">
+          <div className="card-header">
+            <div className="icon-wrap"><XCircle size={20} /></div>
+            <span>Failed</span>
+          </div>
+          <strong>{summary.failed}</strong>
+        </article>
+      </section>
+    </div>
+
+    <section className="audit-readonly-note">
+      <Info size={16} />
+      <div>
+        <strong>Read-only audit history</strong>
+        <span>This screen has no edit or delete controls. Every application action creates a separate record.</span>
+      </div>
     </section>
 
-    <section className="audit-readonly-note"><LockKeyhole size={15} /><div><strong>Read-only audit history</strong><span>This screen has no edit or delete controls. Every application action creates a separate record.</span></div></section>
-
-    <section className="audit-filters">
-      <label className="audit-search"><Search size={14} /><input placeholder="Search user, action, resource or details" value={search} onChange={event => setSearch(event.target.value)} /></label>
-      <label><input placeholder="Resource" value={resourceId} onChange={event => setResourceId(event.target.value)} /></label>
-      <label><Filter size={13} /><select value={category} onChange={event => setCategory(event.target.value)}><option value="ALL">All events</option>{categories.map(item => <option key={item} value={item}>{title(item)}</option>)}</select></label>
-      <label><select value={status} onChange={event => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>SUCCESS</option><option>FAILED</option><option>REQUESTED</option></select></label>
-      <label><UserRound size={13} /><select value={actor} onChange={event => setActor(event.target.value)}><option value="ALL">All users</option>{actors.map(item => <option key={item}>{item}</option>)}</select></label>
-      <label className="date-filter"><span>From</span><input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
-      <label className="date-filter"><span>To</span><input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
+    <section className="audit-filters-container">
+      <h3 className="section-heading">Audit Log Filters</h3>
+      <div className="audit-filters-row-1">
+        <label className="audit-search">
+          <Search size={14} />
+          <input placeholder="Search configs..." value={search} onChange={e => setSearch(e.target.value)} />
+        </label>
+        <label className="audit-resource-id">
+          <Database size={14} />
+          <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
+        </label>
+        <div className="audit-filters-actions">
+          <button className="btn-refresh" onClick={fetchLogs} title="Refresh"><CustomRefreshIcon size={20} /></button>
+          <button className="btn-reset" onClick={resetFilters}>Reset</button>
+          <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
+        </div>
+      </div>
+      <div className="audit-filters-row-2">
+        <div className="filter-group">
+          <label>Event</label>
+          <div>
+            <select value={category} onChange={e => setCategory(e.target.value)}>
+              <option value="ALL">All Event</option>
+              {categories.map(item => <option key={item} value={item}>{title(item)}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="filter-group">
+          <label>Status</label>
+          <div>
+            <select value={status} onChange={e => setStatus(e.target.value)}>
+              <option value="ALL">All</option>
+              <option>SUCCESS</option>
+              <option>FAILED</option>
+              <option>ATTEMPTED</option>
+              <option>SCHEDULED</option>
+              <option>REQUESTED</option>
+            </select>
+          </div>
+        </div>
+        <div className="filter-group">
+          <label>Actors</label>
+          <div>
+            <select value={actor} onChange={e => setActor(e.target.value)}>
+              <option value="ALL">All</option>
+              {actors.map(item => <option key={item}>{item}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="filter-group">
+          <label>From</label>
+          <div>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+          </div>
+        </div>
+        <div className="filter-group">
+          <label>To</label>
+          <div>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+        </div>
+      </div>
     </section>
 
     {error && <div className="audit-warning">{error}</div>}
     <section className="audit-ledger">
-      <div className="audit-ledger-head"><div><History size={15} /><strong>Event ledger</strong></div><span>{filtered.length} of {events.length} events</span></div>
-      {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
-        : filtered.length === 0 ? <div className="audit-empty"><LockKeyhole /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
-          <tbody>{filtered.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
-        </table></div>}
+      <div className="audit-ledger-head">
+        <div><History size={15} /><strong>Event Ledger</strong></div>
+      </div>
+      {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
+        : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
+        : <div className="audit-table-wrap">
+            <table className="audit-table">
+              <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
+              <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
+            </table>
+            <div className="audit-pagination">
+              <span className="pagination-info">{startResult} to {endResult} of results</span>
+              <div className="pagination-controls">
+                <span>Show per page</span>
+                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+                <button className="page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}><ChevronLeft size={14} /></button>
+                <button className="page-btn" disabled={currentPage * pageSize >= totalResults} onClick={() => setCurrentPage(p => p + 1)}><ChevronRight size={14} /></button>
+              </div>
+            </div>
+          </div>}
     </section>
   </div>;
 }
@@ -219,13 +367,18 @@ function AuditRow({ event }: { event: AuditEvent }) {
   const created = timeOf(event);
   const createdDate = created ? new Date(created) : null;
   const details = detailLabel(event);
+  
+  const formattedTime = createdDate && !Number.isNaN(createdDate.getTime())
+    ? `${String(createdDate.getDate()).padStart(2, '0')}/${String(createdDate.getMonth() + 1).padStart(2, '0')}/${createdDate.getFullYear()} | ${createdDate.toLocaleTimeString('en-GB', { hour12: false })}`
+    : '-';
+    
   return <tr>
-      <td><div className="audit-time"><Clock3 size={12} /><span>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString() : '-'}</span><small>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleTimeString() : ''}</small></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong><small>{title(event.category)}</small></div></div></td>
-      <td><div className="audit-actor"><UserRound size={13} /><span>{actorOf(event)}</span></div></td>
+      <td><div className="audit-time"><span>{formattedTime}</span></div></td>
+      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
+      <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
       <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
       <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
       <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
-      <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status}</span></td>
+      <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
     </tr>
 }
