@@ -36,6 +36,9 @@ public class DeploymentService {
     @Value("${tantor.artifact-repo.jmx-exporter-artifact-id:}")
     private String jmxExporterArtifactId;
 
+    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
+    private String artifactRepoUrl;
+
     @Value("${tantor.kafka-deployment.runtime-user:}")
     private String defaultRuntimeUser;
 
@@ -61,10 +64,11 @@ public class DeploymentService {
         log.info("Scheduling Kafka {} deployment on host {}", version, hostId);
 
         Task task = createTask(clusterId, hostId, "INSTALL_KAFKA");
-        task.setArtifactUrl(artifactUrl);
+        String agentArtifactUrl = normalizeArtifactRepoUrl(artifactUrl);
+        task.setArtifactUrl(agentArtifactUrl);
         
         try {
-            String resolvedChecksum = firstNonBlank(checksum, resolveArtifactChecksum(artifactUrl).orElse(""));
+            String resolvedChecksum = firstNonBlank(checksum, resolveArtifactChecksum(agentArtifactUrl).orElse(""));
             if (!hasText(resolvedChecksum)) {
                 throw new IllegalArgumentException("Kafka artifact checksum is required for V9 agent deployment. Upload/select an artifact with SHA-256 metadata.");
             }
@@ -91,8 +95,8 @@ public class DeploymentService {
             applyDefaultKafkaPaths(params);
             applyActiveParcelParams(params, hostId, version);
 
-            injectJmxArtifactUrl(params, artifactUrl);
-            applyAgentKafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, artifactUrl);
+            injectJmxArtifactUrl(params, agentArtifactUrl);
+            applyAgentKafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, agentArtifactUrl);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -124,6 +128,24 @@ public class DeploymentService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String normalizeArtifactRepoUrl(String artifactUrl) {
+        if (!hasText(artifactUrl) || !artifactUrl.contains("/api/v1/artifacts/")) {
+            return artifactUrl;
+        }
+        int pathStart = artifactUrl.indexOf("/api/v1/artifacts/");
+        return joinArtifactRepoBase(artifactUrl.substring(pathStart));
+    }
+
+    private String joinArtifactRepoBase(String pathAndQuery) {
+        String base = hasText(artifactRepoUrl) ? artifactRepoUrl.trim() : "http://localhost:8081";
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String path = pathAndQuery == null ? "" : pathAndQuery.trim();
+        if (path.isBlank()) return base;
+        return base + (path.startsWith("/") ? path : "/" + path);
     }
 
     private void injectJmxArtifactUrl(Map<String, Object> params, String artifactUrl) {

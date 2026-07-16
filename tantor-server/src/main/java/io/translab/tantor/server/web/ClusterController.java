@@ -102,6 +102,7 @@ public class ClusterController {
             m.putAll(internalRuntimeHealth(c));
             result.add(m);
         }
+        List<io.translab.tantor.server.domain.DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findAll();
         for (ExternalCluster c : externalClusterRepository.findByStatusNot("DELETED")) {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
@@ -122,50 +123,16 @@ public class ClusterController {
             m.put("kafkaClusterId", c.getKafkaClusterId());
             m.put("config", new HashMap<>());
             List<io.translab.tantor.server.domain.ExternalClusterNode> clusterNodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            List<io.translab.tantor.server.domain.DiscoveryAgent> clusterAgents = discoveryAgentRepository.findByClusterId(c.getId());
+            ExternalHealthView health = externalHealthView(c, clusterNodes, discoveryAgents);
 
-            long totalHostsCount = clusterNodes.stream().map(n -> n.getHost()).distinct().count();
-            long managedHostsCount = 0;
-            OffsetDateTime maxHeartbeat = null;
-            OffsetDateTime now = OffsetDateTime.now();
-
-            for (String host : clusterNodes.stream().map(n -> n.getHost()).distinct().toList()) {
-                Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentForHost = clusterAgents.stream()
-                    .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) &&
-                                 matchesDiscoveryAgent(a, host))
-                    .filter(a -> a.getLastHeartbeat() != null && java.time.Duration.between(a.getLastHeartbeat(), now).getSeconds() <= 120)
-                    .findFirst();
-                if (agentForHost.isPresent()) {
-                    managedHostsCount++;
-                    OffsetDateTime hb = agentForHost.get().getLastHeartbeat();
-                    if (maxHeartbeat == null || hb.isAfter(maxHeartbeat)) {
-                        maxHeartbeat = hb;
-                    }
-                }
-            }
-
-            String telemetry = "None";
-            String managementLevel = "Bootstrap only";
-            if (managedHostsCount > 0) {
-                if (managedHostsCount == totalHostsCount) {
-                    telemetry = "Full";
-                    managementLevel = "Fully managed";
-                } else {
-                    telemetry = "Partial";
-                    managementLevel = "Partially managed";
-                }
-            }
-
-            m.put("managementLevel", managementLevel);
+            m.put("managementLevel", health.managementLevel());
             m.put("sourceLabel", "External");
-            m.put("accessLabel", managementLevel);
-            m.put("telemetry", telemetry);
-            m.put("managedHostsCount", managedHostsCount);
-            m.put("totalHostsCount", totalHostsCount);
-            m.put("lastAgentHeartbeat", maxHeartbeat != null ? maxHeartbeat.toString() : null);
-            m.put("runtimeHealth", externalRuntimeHealth(c.getStatus()));
-            m.put("runtimeStatusLabel", externalRuntimeStatusLabel(c.getStatus()));
-            m.put("runtimeStatusReason", "External health is reconciled from Kafka bootstrap reachability and discovery-agent heartbeat.");
+            m.put("accessLabel", health.managementLevel());
+            m.put("telemetry", health.telemetry());
+            m.put("managedHostsCount", health.managedHostsCount());
+            m.put("totalHostsCount", health.totalHostsCount());
+            m.put("lastAgentHeartbeat", health.lastAgentHeartbeat() != null ? health.lastAgentHeartbeat().toString() : null);
+            putExternalHealth(m, health);
             List<Map<String, Object>> hosts = externalClusterHosts(c, clusterNodes);
             m.put("nodeCount", hosts.isEmpty() ? clusterNodes.size() : hosts.size());
             m.put("hosts", hosts);
@@ -240,18 +207,20 @@ public class ClusterController {
             m.put("dataDirectory", "");
             m.put("logDirectory", c.getLogDirs());
             m.put("config", new HashMap<>());
-            boolean agentManaged = externalClusterService.isAgentManaged(c);
-            m.put("managementLevel", agentManaged ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY");
             m.put("sourceLabel", "External");
-            m.put("accessLabel", agentManaged ? "Agent managed" : "Bootstrap only");
 
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
+            ExternalHealthView health = externalHealthView(c, nodes, discoveryAgentRepository.findAll());
             List<Map<String, Object>> hosts = externalClusterHosts(c, nodes);
+            m.put("managementLevel", health.managementLevel());
+            m.put("accessLabel", health.managementLevel());
+            m.put("telemetry", health.telemetry());
             m.put("nodeCount", hosts.isEmpty() ? nodes.size() : hosts.size());
             m.put("hosts", hosts);
-            m.put("runtimeHealth", externalRuntimeHealth(c.getStatus()));
-            m.put("runtimeStatusLabel", externalRuntimeStatusLabel(c.getStatus()));
-            m.put("runtimeStatusReason", "External health is reconciled from Kafka bootstrap reachability and discovery-agent heartbeat.");
+            m.put("managedHostsCount", health.managedHostsCount());
+            m.put("totalHostsCount", health.totalHostsCount());
+            m.put("lastAgentHeartbeat", health.lastAgentHeartbeat() != null ? health.lastAgentHeartbeat().toString() : null);
+            putExternalHealth(m, health);
             return ResponseEntity.ok(m);
         }).orElse(ResponseEntity.notFound().build());
     }
@@ -1170,6 +1139,13 @@ public class ClusterController {
         if (svc.getHeap_size() != null && !svc.getHeap_size().isBlank()) {
             serviceConfig.put("heap_size", svc.getHeap_size());
         }
+        if (svc.getListener_port() != null) {
+            serviceConfig.put("listener_port", svc.getListener_port());
+            serviceConfig.put("broker_port", svc.getListener_port());
+        }
+        if (svc.getController_port() != null) {
+            serviceConfig.put("controller_port", svc.getController_port());
+        }
         if (svc.getProperties_template() != null && !svc.getProperties_template().isBlank()) {
             String role = svc.getRole();
             if ("controller".equals(role)) {
@@ -1871,6 +1847,166 @@ public class ClusterController {
         return health;
     }
 
+    private ExternalHealthView externalHealthView(
+            ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents
+    ) {
+        List<io.translab.tantor.server.domain.ExternalClusterNode> safeNodes = nodes == null ? List.of() : nodes;
+        List<String> hosts = safeNodes.stream()
+                .map(io.translab.tantor.server.domain.ExternalClusterNode::getHost)
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+        long totalHostsCount = hosts.size();
+
+        List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents =
+                knownDiscoveryAgents == null ? discoveryAgentRepository.findAll() : knownDiscoveryAgents;
+        List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents = allAgents.stream()
+                .filter(agent -> cluster.getId().equals(agent.getClusterId()))
+                .toList();
+        OffsetDateTime maxHeartbeat = null;
+        long managedHostsCount = 0;
+        for (String host : hosts) {
+            Optional<io.translab.tantor.server.domain.DiscoveryAgent> agent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
+            if (agent.isPresent()) {
+                managedHostsCount++;
+                OffsetDateTime heartbeat = agent.get().getLastHeartbeat();
+                if (heartbeat != null && (maxHeartbeat == null || heartbeat.isAfter(maxHeartbeat))) {
+                    maxHeartbeat = heartbeat;
+                }
+            }
+        }
+
+        String telemetry = "None";
+        String managementLevel = "Bootstrap only";
+        String agentHealth = "NOT_LINKED";
+        if (managedHostsCount > 0) {
+            if (managedHostsCount == totalHostsCount || totalHostsCount == 0) {
+                telemetry = "Full";
+                managementLevel = "Fully managed";
+                agentHealth = "CONNECTED";
+            } else {
+                telemetry = "Partial";
+                managementLevel = "Partially managed";
+                agentHealth = "PARTIAL";
+            }
+        }
+
+        String kafkaHealth = externalKafkaHealth(cluster, safeNodes);
+        String overallHealth = "OFFLINE".equals(kafkaHealth) ? "OFFLINE"
+                : "DEGRADED".equals(kafkaHealth) ? "DEGRADED"
+                : "UNKNOWN".equals(kafkaHealth) ? "UNKNOWN"
+                : "HEALTHY";
+        String statusLabel = switch (overallHealth) {
+            case "OFFLINE" -> "Kafka Offline";
+            case "DEGRADED" -> "Kafka Degraded";
+            case "HEALTHY" -> "Connected";
+            default -> "Unknown";
+        };
+        String reason = externalHealthReason(kafkaHealth, agentHealth, managedHostsCount, totalHostsCount);
+
+        return new ExternalHealthView(
+                kafkaHealth,
+                agentHealth,
+                "UNKNOWN",
+                overallHealth,
+                statusLabel,
+                reason,
+                telemetry,
+                managementLevel,
+                managedHostsCount,
+                totalHostsCount,
+                maxHeartbeat
+        );
+    }
+
+    private Optional<io.translab.tantor.server.domain.DiscoveryAgent> matchingFreshAgent(
+            String host,
+            UUID clusterId,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents
+    ) {
+        return linkedAgents.stream()
+                .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, host))
+                .findFirst()
+                .or(() -> allAgents.stream()
+                        .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, host))
+                        .filter(agent -> agent.getClusterId() == null || agent.getClusterId().equals(clusterId))
+                        .findFirst());
+    }
+
+    private boolean isFreshOnlineAgent(io.translab.tantor.server.domain.DiscoveryAgent agent) {
+        return agent != null
+                && "ONLINE".equalsIgnoreCase(agent.getStatus())
+                && agent.getLastHeartbeat() != null
+                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(180));
+    }
+
+    private String externalKafkaHealth(
+            ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+    ) {
+        if ("FAILED".equalsIgnoreCase(cluster.getStatus())) {
+            return "OFFLINE";
+        }
+        if (Boolean.FALSE.equals(cluster.getIsRunning())
+                && nodes.stream().noneMatch(node -> node.getLastSeen() != null
+                && node.getLastSeen().isAfter(OffsetDateTime.now().minusSeconds(180)))) {
+            return "OFFLINE";
+        }
+        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
+            return "HEALTHY";
+        }
+        if (cluster.getBrokerCount() != null && cluster.getBrokerCount() > 0) {
+            return "HEALTHY";
+        }
+        if (!nodes.isEmpty()) {
+            return "HEALTHY";
+        }
+        return "UNKNOWN";
+    }
+
+    private String externalHealthReason(String kafkaHealth, String agentHealth, long managedHostsCount, long totalHostsCount) {
+        if ("OFFLINE".equals(kafkaHealth)) {
+            return "Kafka bootstrap/admin connectivity is unavailable.";
+        }
+        if ("DEGRADED".equals(kafkaHealth)) {
+            return "Kafka is reachable but reports a degraded runtime state.";
+        }
+        if ("CONNECTED".equals(agentHealth)) {
+            return "Kafka is reachable and discovery agent heartbeat is fresh.";
+        }
+        if ("PARTIAL".equals(agentHealth)) {
+            return "Kafka is reachable; discovery agent is fresh for " + managedHostsCount + " of " + totalHostsCount + " host(s).";
+        }
+        return "Kafka is reachable; discovery agent management is not linked or heartbeat is stale.";
+    }
+
+    private void putExternalHealth(Map<String, Object> target, ExternalHealthView health) {
+        target.put("kafkaHealth", health.kafkaHealth());
+        target.put("agentHealth", health.agentHealth());
+        target.put("monitoringHealth", health.monitoringHealth());
+        target.put("overallHealth", health.overallHealth());
+        target.put("runtimeHealth", health.overallHealth());
+        target.put("runtimeStatusLabel", health.statusLabel());
+        target.put("runtimeStatusReason", health.reason());
+    }
+
+    private record ExternalHealthView(
+            String kafkaHealth,
+            String agentHealth,
+            String monitoringHealth,
+            String overallHealth,
+            String statusLabel,
+            String reason,
+            String telemetry,
+            String managementLevel,
+            long managedHostsCount,
+            long totalHostsCount,
+            OffsetDateTime lastAgentHeartbeat
+    ) {}
+
     private String externalRuntimeHealth(String status) {
         if ("SUCCESS".equalsIgnoreCase(status)) return "HEALTHY";
         if ("FAILED".equalsIgnoreCase(status)) return "OFFLINE";
@@ -2229,6 +2365,10 @@ public class ClusterController {
             String rawPath = uri.getRawPath();
             if (rawPath != null && rawPath.startsWith("/api/v1/artifacts/")) {
                 return joinArtifactRepoBase(pathAndQuery(uri));
+            }
+            if (rawPath != null && rawPath.contains("/api/v1/artifacts/")) {
+                return joinArtifactRepoBase(rawPath.substring(rawPath.indexOf("/api/v1/artifacts/"))
+                        + (uri.getRawQuery() == null || uri.getRawQuery().isBlank() ? "" : "?" + uri.getRawQuery()));
             }
             if (isLoopbackHost(uri.getHost())) {
                 return joinArtifactRepoBase(pathAndQuery(uri));
