@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -111,10 +112,9 @@ public class DataServiceConnectionService {
         conn.setProtocol(req.getProtocol().trim().toLowerCase());
         conn.setHost(req.getHost().trim());
         conn.setPort(req.getPort());
-        conn.setCertificateType(req.getCertificateType());
+        conn.setCertificateType(normalizeCertificateType(req.getCertificateType()));
         conn.setCertificateData(req.getCertificateData());
-        conn.setTruststorePath(req.getTruststorePath());
-        conn.setSecurityProtocol(null);
+
         conn.setConnectionName(connectionName);
 
         // Only overwrite encrypted password when a new plaintext password is provided
@@ -339,6 +339,18 @@ public class DataServiceConnectionService {
                 });
     }
 
+    private String normalizeCertificateType(String certificateType) {
+        if (certificateType == null || certificateType.isBlank()) {
+            return null;
+        }
+
+        String normalized = certificateType.trim().toUpperCase(Locale.ROOT);
+        if (!"PEM".equals(normalized) && !"PKCS12".equals(normalized)) {
+            throw new IllegalArgumentException("certificateType must be PEM or PKCS12");
+        }
+        return normalized;
+    }
+
     private String buildRestEndpoint(String protocol, String host, int port) {
         return protocol + "://" + host + ":" + port;
     }
@@ -347,17 +359,19 @@ public class DataServiceConnectionService {
         String certType = conn.getCertificateType();
         String certData = conn.getCertificateData();
 
-        if ("PKCS12_JKS".equalsIgnoreCase(certType)) {
+        if ("PKCS12".equalsIgnoreCase(certType)) {
             String password = null;
             if (conn.getTruststorePasswordEncrypted() != null
                     && !conn.getTruststorePasswordEncrypted().isBlank()) {
                 password = encryptionService.decrypt(conn.getTruststorePasswordEncrypted());
             }
             return SslUtils.createSslContextFromPkcs12(certData, password);
-        } else {
+        } else if ("PEM".equalsIgnoreCase(certType)) {
             String pemText = new String(
                     java.util.Base64.getDecoder().decode(certData), StandardCharsets.UTF_8);
             return SslUtils.createSslContextFromPem(pemText);
+        } else {
+            throw new IllegalArgumentException("Unsupported certificate type: " + certType);
         }
     }
 
@@ -433,10 +447,10 @@ public class DataServiceConnectionService {
                 .certificateType(conn.getCertificateType())
                 .certificateConfigured(conn.getCertificateData() != null
                         && !conn.getCertificateData().isBlank())
-                .truststorePath(conn.getTruststorePath())
+
                 .truststoreConfigured(conn.getTruststorePasswordEncrypted() != null
                         && !conn.getTruststorePasswordEncrypted().isBlank())
-                .securityProtocol(conn.getSecurityProtocol())
+
                 .status(conn.getStatus())
                 .lastError(conn.getLastError())
                 .lastCheckedAt(conn.getLastCheckedAt())
