@@ -90,7 +90,7 @@ export function ExternalClusters() {
   }, []);
 
   const agentConfig = useMemo(() => (
-`discovery:
+    `discovery:
   server_url: "${serverHint}"
   scan_paths:
     - "/srv/apps"
@@ -101,7 +101,7 @@ export function ExternalClusters() {
   restart_command: "systemctl restart kafka"`
   ), [serverHint]);
 
-    const testBootstrap = async () => {
+  const testBootstrap = async () => {
     if (!form.bootstrapServers.trim()) return;
     setTesting(true);
     setError('');
@@ -115,7 +115,7 @@ export function ExternalClusters() {
       });
       const data = await res.json();
       setBootstrapResult(data);
-      
+
       if (data.brokers) {
         const initialSelection: Record<string, string> = {};
         data.brokers.forEach((b: any) => {
@@ -223,422 +223,424 @@ export function ExternalClusters() {
     <div className="external-page animate-fade-in">
       <div className="external-wrapper">
         <header className="external-header">
-        <div className="external-header-left">
-          <div className="back-clickable-title" onClick={() => navigate('/clusters')}>
-            <ChevronLeft size={24} className="back-arrow-icon" />
-            <h1>External Kafka Clusters</h1>
-          </div>
-          <p>Connect an external Kafka cluster using its bootstrap URL.</p>
-        </div>
-        
-        <div className="external-tab-switcher">
-          <button 
-            className={`tab-btn ${openPanel === 'bootstrap' ? 'active' : ''}`}
-            onClick={() => setOpenPanel('bootstrap')}
-          >
-            Connect external cluster
-          </button>
-          <button 
-            className={`tab-btn ${openPanel === 'agent' ? 'active' : ''}`}
-            onClick={() => setOpenPanel('agent')}
-          >
-            Discovery Agent setup
-          </button>
-        </div>
-      </header>
-
-      {(banner || error) && (
-        <div className={`external-banner ${error ? 'error' : 'success'}`}>
-          {error ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-          <span>{error || banner}</span>
-        </div>
-      )}
-
-      <section className="external-connect-grid">
-        {openPanel === 'bootstrap' && (
-          <div className="external-bootstrap-container">
-            <div className="external-card bootstrap-server-card">
-              <div className="card-header-title">
-                <h3>Bootstrap server</h3>
-              </div>
-              <div className="form-row-three">
-                <div className="form-field-group">
-                  <label>Cluster Name (Optional)</label>
-                  <input 
-                    type="text" 
-                    placeholder="prod-external-01" 
-                    value={form.name}
-                    onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div className="form-field-group">
-                  <label>Environment</label>
-                  <select 
-                    value={form.environment} 
-                    onChange={e => setForm(prev => ({ ...prev, environment: e.target.value }))}
-                  >
-                    <option value="dev">Development</option>
-                    <option value="test">Test</option>
-                    <option value="staging">Staging</option>
-                    <option value="prod">Production</option>
-                  </select>
-                </div>
-                <div className="form-field-group bootstrap-url-field">
-                  <label>Bootstrap URL</label>
-                  <input
-                    type="text"
-                    placeholder="192.168.1.100:9092"
-                    value={form.bootstrapServers}
-                    onChange={e => {
-                      setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
-                      setBootstrapResult(null);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') testBootstrap();
-                    }}
-                  />
-                </div>
-              </div>
+          <div className="external-header-left">
+            <div className="back-clickable-title" onClick={() => navigate('/clusters')}>
+              <ChevronLeft size={24} className="back-arrow-icon" />
+              <h1>External Kafka Clusters</h1>
             </div>
+            <p>Connect an external Kafka cluster using its bootstrap URL.</p>
+          </div>
 
-            <div className="external-card security-config-card">
-              <div className="card-header-title">
-                <h3>Security Configuration</h3>
-              </div>
-              <div className="form-grid-columns">
-                <div className="form-field-group security-protocol-field">
-                  <label>Security Protocol</label>
-                  <select 
-                    value={form.securityProtocol} 
-                    onChange={e => {
-                      setForm(prev => ({ ...prev, securityProtocol: e.target.value }));
-                      setBootstrapResult(null);
-                    }}
-                  >
-                    <option value="PLAINTEXT">PLAINTEXT</option>
-                    <option value="SSL">SSL</option>
-                    <option value="SASL_PLAINTEXT">SASL_PLAINTEXT</option>
-                    <option value="SASL_SSL">SASL_SSL</option>
-                  </select>
+          <div className="external-tab-switcher">
+            <button
+              className={`tab-btn ${openPanel === 'bootstrap' ? 'active' : ''}`}
+              onClick={() => setOpenPanel('bootstrap')}
+            >
+              Connect external cluster
+            </button>
+            <button
+              className={`tab-btn ${openPanel === 'agent' ? 'active' : ''}`}
+              onClick={() => setOpenPanel('agent')}
+            >
+              Discovery Agent setup
+            </button>
+          </div>
+        </header>
+
+        {(banner || error) && (
+          <div className={`external-banner ${error ? 'error' : 'success'}`}>
+            {error ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+            <span>{error || banner}</span>
+          </div>
+        )}
+
+        <section className="external-connect-grid">
+          {openPanel === 'bootstrap' && (
+            <div className="external-bootstrap-container">
+              <div className="external-card bootstrap-server-card">
+                <div className="card-header-title">
+                  <h3>Bootstrap server</h3>
                 </div>
+                <div className="form-row-three">
+                  <div className="form-field-group">
+                    <label>Cluster Name (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="prod-external-01"
+                      value={form.name}
+                      onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-field-group">
+                    <label>Environment</label>
+                    <select
+                      value={form.environment}
+                      onChange={e => setForm(prev => ({ ...prev, environment: e.target.value }))}
+                    >
+                      <option value="dev">Development</option>
+                      <option value="test">Test</option>
+                      <option value="staging">Staging</option>
+                      <option value="prod">Production</option>
+                    </select>
+                  </div>
+                  <div className="form-field-group bootstrap-url-field">
+                    <label>Bootstrap URL</label>
+                    <input
+                      type="text"
+                      placeholder="192.168.1.100:9092"
+                      value={form.bootstrapServers}
+                      onChange={e => {
+                        setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
+                        setBootstrapResult(null);
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') testBootstrap();
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
 
-                {(form.securityProtocol === 'SASL_PLAINTEXT' || form.securityProtocol === 'SASL_SSL') && (
-                  <>
-                    <div className="form-field-group">
-                      <label>SASL Mechanism</label>
-                      <select 
-                        value={form.saslMechanism} 
-                        onChange={e => {
-                          setForm(prev => ({ ...prev, saslMechanism: e.target.value }));
-                          setBootstrapResult(null);
-                        }}
-                      >
-                        <option value="PLAIN">PLAIN</option>
-                        <option value="SCRAM-SHA-256">SCRAM-SHA-256</option>
-                        <option value="SCRAM-SHA-512">SCRAM-SHA-512</option>
-                      </select>
-                    </div>
-                    <div className="form-field-group">
-                      <label>SASL Username</label>
-                      <input 
-                        type="text" 
-                        placeholder="Username" 
-                        value={form.saslUsername}
-                        onChange={e => {
-                          setForm(prev => ({ ...prev, saslUsername: e.target.value }));
-                          setBootstrapResult(null);
-                        }}
-                      />
-                    </div>
-                    <div className="form-field-group">
-                      <label>SASL Password</label>
-                      <input 
-                        type="password" 
-                        placeholder="Password" 
-                        value={form.saslPassword}
-                        onChange={e => {
-                          setForm(prev => ({ ...prev, saslPassword: e.target.value }));
-                          setBootstrapResult(null);
-                        }}
-                      />
-                    </div>
-                  </>
-                )}
+              <div className="external-card security-config-card">
+                <div className="card-header-title">
+                  <h3>Security Configuration</h3>
+                </div>
+                <div className="form-grid-columns">
+                  <div className="form-field-group security-protocol-field">
+                    <label>Security Protocol</label>
+                    <select
+                      value={form.securityProtocol}
+                      onChange={e => {
+                        setForm(prev => ({ ...prev, securityProtocol: e.target.value }));
+                        setBootstrapResult(null);
+                      }}
+                    >
+                      <option value="PLAINTEXT">PLAINTEXT</option>
+                      <option value="SSL">SSL</option>
+                      <option value="SASL_PLAINTEXT">SASL_PLAINTEXT</option>
+                      <option value="SASL_SSL">SASL_SSL</option>
+                    </select>
+                  </div>
 
-                {(form.securityProtocol === 'SSL' || form.securityProtocol === 'SASL_SSL') && (
-                  <>
-                    <div className="form-field-group">
-                      <label>Truststore Type</label>
-                      <select 
-                        value={form.truststoreType} 
-                        onChange={e => {
-                          setForm(prev => ({
-                            ...prev,
-                            truststoreType: e.target.value,
-                            truststoreBase64: '',
-                            truststoreFilename: '',
-                          }));
-                          setBootstrapResult(null);
-                        }}
-                      >
-                        <option value="JKS">JKS</option>
-                        <option value="PKCS12">PKCS12</option>
-                        <option value="PEM">PEM / X.509</option>
-                      </select>
-                    </div>
-                    <div className="form-field-group">
-                      <label>Truststore File (CA Certificate)</label>
-                      <div className="file-upload-custom-wrapper">
-                        <label className="file-upload-custom-btn">
-                          <FileText size={15} />
-                          <span>Choose file</span>
-                          <input 
-                            key={form.truststoreType}
-                            type="file" 
-                            accept={truststoreFileRule.accept}
-                            onChange={e => {
-                              handleFileUpload(e, 'truststoreBase64', 'truststoreFilename', truststoreFileRule);
-                              setBootstrapResult(null);
-                            }}
-                            style={{ display: 'none' }}
-                          />
-                        </label>
-                        {form.truststoreFilename && (
-                          <div className="file-attached-badge">
-                            <span className="file-attached-label">{form.truststoreFilename} attached</span>
-                            <button
-                              type="button"
-                              className="clear-file-btn"
-                              onClick={() => {
-                                setForm(prev => ({
-                                  ...prev,
-                                  truststoreBase64: '',
-                                  truststoreFilename: '',
-                                }));
+                  {(form.securityProtocol === 'SASL_PLAINTEXT' || form.securityProtocol === 'SASL_SSL') && (
+                    <>
+                      <div className="form-field-group">
+                        <label>SASL Mechanism</label>
+                        <select
+                          value={form.saslMechanism}
+                          onChange={e => {
+                            setForm(prev => ({ ...prev, saslMechanism: e.target.value }));
+                            setBootstrapResult(null);
+                          }}
+                        >
+                          <option value="PLAIN">PLAIN</option>
+                          <option value="SCRAM-SHA-256">SCRAM-SHA-256</option>
+                          <option value="SCRAM-SHA-512">SCRAM-SHA-512</option>
+                        </select>
+                      </div>
+                      <div className="form-field-group">
+                        <label>SASL Username</label>
+                        <input
+                          type="text"
+                          placeholder="Username"
+                          value={form.saslUsername}
+                          onChange={e => {
+                            setForm(prev => ({ ...prev, saslUsername: e.target.value }));
+                            setBootstrapResult(null);
+                          }}
+                        />
+                      </div>
+                      <div className="form-field-group">
+                        <label>SASL Password</label>
+                        <input
+                          type="password"
+                          placeholder="Password"
+                          value={form.saslPassword}
+                          onChange={e => {
+                            setForm(prev => ({ ...prev, saslPassword: e.target.value }));
+                            setBootstrapResult(null);
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {(form.securityProtocol === 'SSL' || form.securityProtocol === 'SASL_SSL') && (
+                    <>
+                      <div className="form-field-group">
+                        <label>Truststore Type</label>
+                        <select
+                          value={form.truststoreType}
+                          onChange={e => {
+                            setForm(prev => ({
+                              ...prev,
+                              truststoreType: e.target.value,
+                              truststoreBase64: '',
+                              truststoreFilename: '',
+                            }));
+                            setBootstrapResult(null);
+                          }}
+                        >
+                          <option value="JKS">JKS</option>
+                          <option value="PKCS12">PKCS12</option>
+                          <option value="PEM">PEM / X.509</option>
+                        </select>
+                      </div>
+                      <div className="form-field-group">
+                        <label>Truststore File (CA Certificate)</label>
+                        <div className="file-upload-custom-wrapper">
+                          <label className="file-upload-custom-btn">
+                            <FileText size={15} />
+                            <span>Choose file</span>
+                            <input
+                              key={form.truststoreType}
+                              type="file"
+                              accept={truststoreFileRule.accept}
+                              onChange={e => {
+                                handleFileUpload(e, 'truststoreBase64', 'truststoreFilename', truststoreFileRule);
                                 setBootstrapResult(null);
                               }}
-                              aria-label="Remove file"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        )}
+                              style={{ display: 'none' }}
+                            />
+                          </label>
+                          {form.truststoreFilename && (
+                            <div className="file-attached-badge">
+                              <span className="file-attached-label">{form.truststoreFilename} attached</span>
+                              <button
+                                type="button"
+                                className="clear-file-btn"
+                                onClick={() => {
+                                  setForm(prev => ({
+                                    ...prev,
+                                    truststoreBase64: '',
+                                    truststoreFilename: '',
+                                  }));
+                                  setBootstrapResult(null);
+                                }}
+                                aria-label="Remove file"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <div className="form-field-group ssl-hostname-field">
-                      <label>Disable Hostname Verification</label>
-                      <div className="checkbox-wrapper">
-                        <input 
-                          type="checkbox" 
-                          checked={form.disableHostnameVerification}
-                          onChange={e => {
-                            setForm(prev => ({ ...prev, disableHostnameVerification: e.target.checked }));
-                            setBootstrapResult(null);
-                          }}
-                        />
-                        <span>Skip checking hostname in certificate</span>
+                      <div className="form-field-group ssl-hostname-field">
+                        <label>Disable Hostname Verification</label>
+                        <div className="checkbox-wrapper">
+                          <input
+                            type="checkbox"
+                            checked={form.disableHostnameVerification}
+                            onChange={e => {
+                              setForm(prev => ({ ...prev, disableHostnameVerification: e.target.checked }));
+                              setBootstrapResult(null);
+                            }}
+                          />
+                          <span>Skip checking hostname in certificate</span>
+                        </div>
                       </div>
-                    </div>
-                    {form.truststoreType !== 'PEM' && (
-                      <div className="form-field-group ssl-password-field">
-                        <label>Truststore Password</label>
-                        <input 
-                          type="password" 
-                          placeholder="Password" 
-                          value={form.truststorePassword}
-                          onChange={e => {
-                            setForm(prev => ({ ...prev, truststorePassword: e.target.value }));
-                            setBootstrapResult(null);
-                          }}
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {testing && (
-              <div className="inspection-loading">
-                <RefreshCw size={15} className="spin" />
-                Testing direct connection via Kafka Admin API...
-              </div>
-            )}
-
-            {bootstrapResult && (
-              <div className={`inspection-result ${(bootstrapResult.success ?? bootstrapResult.connected) ? 'ok' : 'error'}`}>
-                <div className="inspection-result-header">
-                  <div className="status-icon-wrapper">
-                    {(bootstrapResult.success ?? bootstrapResult.connected) ? (
-                      <span className="success-check-dot">✔</span>
-                    ) : (
-                      <span className="error-warn-dot">⚠</span>
-                    )}
-                  </div>
-                  <div className="status-info-col">
-                    <strong className="status-title">{form.name || bootstrapResult.name || 'External Kafka Cluster'}</strong>
-                    <span className="status-desc">{(bootstrapResult.success ?? bootstrapResult.connected) ? 'Bootstrap connection verified' : 'Bootstrap connection failed'}</span>
-                  </div>
+                      {form.truststoreType !== 'PEM' && (
+                        <div className="form-field-group ssl-password-field">
+                          <label>Truststore Password</label>
+                          <input
+                            type="password"
+                            placeholder="Password"
+                            value={form.truststorePassword}
+                            onChange={e => {
+                              setForm(prev => ({ ...prev, truststorePassword: e.target.value }));
+                              setBootstrapResult(null);
+                            }}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
+              </div>
 
-                <div className="bootstrap-summary">
-                  <div className="summary-item">
-                    <span>{bootstrapResult.brokers?.length ?? bootstrapResult.brokerCount ?? 0} broker(s) detected</span>
+              {testing && (
+                <div className="inspection-loading">
+                  <RefreshCw size={15} className="spin" />
+                  Testing direct connection via Kafka Admin API...
+                </div>
+              )}
+
+              {bootstrapResult && (
+                <div className={`inspection-result ${(bootstrapResult.success ?? bootstrapResult.connected) ? 'ok' : 'error'}`}>
+                  <div className="inspection-result-header">
+                    <div className="status-icon-wrapper">
+                      {(bootstrapResult.success ?? bootstrapResult.connected) ? (
+                        <span className="success-check-dot">✔</span>
+                      ) : (
+                        <span className="error-warn-dot">⚠</span>
+                      )}
+                    </div>
+                    <div className="status-info-col">
+                      <strong className="status-title">{form.name || bootstrapResult.name || 'External Kafka Cluster'}</strong>
+                      <span className="status-desc">{(bootstrapResult.success ?? bootstrapResult.connected) ? 'Bootstrap connection verified' : 'Bootstrap connection failed'}</span>
+                    </div>
                   </div>
-                  <div className="summary-item">
-                     <span>
+
+                  <div className="bootstrap-summary">
+                    <div className="summary-item">
+                      <span>{bootstrapResult.brokers?.length ?? bootstrapResult.brokerCount ?? 0} broker(s) detected</span>
+                    </div>
+                    <div className="summary-item">
+                      <span>
                         Version: {(() => {
                           const v = bootstrapResult.kafkaVersion || bootstrapResult.kafka_version || 'Auto-detected';
                           return v === 'auto-detected by Kafka client' ? 'Auto-detected' : v;
                         })()}
-                     </span>
-                  </div>
-                  <div className="summary-item">
-                     <span>
+                      </span>
+                    </div>
+                    <div className="summary-item">
+                      <span>
                         Mode: {(() => {
                           const m = bootstrapResult.mode || bootstrapResult.kafkaMode || 'Auto-detected';
                           return m === 'auto-detected by Kafka client' ? 'Auto-detected' : m;
                         })()}
-                     </span>
-                  </div>
-                  <div className="summary-item">
-                     <span>
+                      </span>
+                    </div>
+                    <div className="summary-item">
+                      <span>
                         Security: {form.securityProtocol || bootstrapResult.security_protocol || 'PLAINTEXT'}
-                     </span>
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                {bootstrapResult.brokers && bootstrapResult.brokers.length > 0 && (
-                  <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                    <h4 style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Discovered Nodes</h4>
-                    <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#64748b' }}>
-                          <th style={{ padding: '6px', width: '40px' }}></th>
-                          <th style={{ padding: '6px' }}>Node ID</th>
-                          <th style={{ padding: '6px' }}>Host</th>
-                          <th style={{ padding: '6px' }}>Port</th>
-                          <th style={{ padding: '6px' }}>Role</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bootstrapResult.brokers.map((broker: any) => {
-                          const isSelected = !!selectedAgents[broker.host];
-                          const hasAgent = !!broker.hasActiveAgent;
-                          return (
-                          <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
-                            <td style={{ padding: '6px', textAlign: 'center' }}>
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                disabled={false}
-                                onChange={(e) => {
-                                  setSelectedAgents(prev => {
-                                    const next = { ...prev };
-                                    if (e.target.checked) {
-                                      next[broker.host] = broker.agentDiscoveryKey || broker.host;
-                                    } else {
-                                      delete next[broker.host];
-                                    }
-                                    return next;
-                                  });
-                                }}
-                                style={{ cursor: 'pointer' }}
-                              />
-                            </td>
-                            <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
-                            <td style={{ padding: '6px' }}>
-                              {broker.host}
-                              {!hasAgent && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
-                            </td>
-                            <td style={{ padding: '6px' }}>{broker.port}</td>
-                            <td style={{ padding: '6px' }}>
-                              {broker.isController && broker.isBroker ? (
-                                <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
-                              ) : broker.isController ? (
-                                <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>
-                              ) : (
-                                <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
-                              )}
-                            </td>
+                  {bootstrapResult.brokers && bootstrapResult.brokers.length > 0 && (
+                    <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      <h4 style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Discovered Nodes</h4>
+                      <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#64748b' }}>
+                            <th style={{ padding: '6px', width: '40px' }}></th>
+                            <th style={{ padding: '6px' }}>Node ID</th>
+                            <th style={{ padding: '6px' }}>Host</th>
+                            <th style={{ padding: '6px' }}>Port</th>
+                            <th style={{ padding: '6px' }}>Role</th>
                           </tr>
-                        )})}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody>
+                          {bootstrapResult.brokers.map((broker: any) => {
+                            const isSelected = !!selectedAgents[broker.host];
+                            const hasAgent = !!broker.hasActiveAgent;
+                            return (
+                              <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                                <td style={{ padding: '6px', textAlign: 'center' }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    disabled={false}
+                                    onChange={(e) => {
+                                      setSelectedAgents(prev => {
+                                        const next = { ...prev };
+                                        if (e.target.checked) {
+                                          next[broker.host] = broker.agentDiscoveryKey || broker.host;
+                                        } else {
+                                          delete next[broker.host];
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    style={{ cursor: 'pointer' }}
+                                  />
+                                </td>
+                                <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
+                                <td style={{ padding: '6px' }}>
+                                  {broker.host}
+                                  {!hasAgent && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
+                                </td>
+                                <td style={{ padding: '6px' }}>{broker.port}</td>
+                                <td style={{ padding: '6px' }}>
+                                  {broker.isController && broker.isBroker ? (
+                                    <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
+                                  ) : broker.isController ? (
+                                    <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>
+                                  ) : (
+                                    <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                {bootstrapResult.message && !(bootstrapResult.success ?? bootstrapResult.connected) && (
-                  <p className="inspection-error-message">{bootstrapResult.message}</p>
-                )}
-              </div>
-            )}
+                  {bootstrapResult.message && !(bootstrapResult.success ?? bootstrapResult.connected) && (
+                    <p className="inspection-error-message">{bootstrapResult.message}</p>
+                  )}
+                </div>
+              )}
 
-            <div className="external-actions-row">
-              <button className="action-btn cancel-btn" onClick={() => navigate('/clusters')}>
-                Cancel
-              </button>
-              <button
-                className="action-btn test-btn"
-                onClick={testBootstrap}
-                title="Test Connection"
-                disabled={!form.bootstrapServers.trim() || testing}
-              >
-                <RefreshCw size={14} className={testing ? 'spin' : ''} />
-                Test Connection
-              </button>
-              <button 
-                className={`action-btn connect-btn ${bootstrapResult?.connected === true ? 'active' : ''}`}
-                onClick={registerBootstrap} 
-                disabled={registering || bootstrapResult?.connected !== true}
-              >
-                {registering ? <RefreshCw size={14} className="spin" /> : <Network size={14} />}
-                Connect Cluster
-              </button>
-            </div>
-          </div>
-        )}
-
-        {openPanel === 'agent' && (
-          <div className="external-card agent-card">
-            <div className="card-header-title">
-              <h3>Discovery Agent</h3>
-              <p className="card-header-subtitle">Full management path for restart, host metrics, and config persistence.</p>
-            </div>
-            <hr className="agent-divider" />
-
-            <div className="agent-flow">
-              <div className="flow-step">
-                <span className="step-number">1</span>
-                <span className="step-text">Build or copy tantor-discovery-agent-linux to the Kafka VM.</span>
-              </div>
-              <div className="flow-step">
-                <span className="step-number">2</span>
-                <span className="step-text">Set server_url to this Tantor backend.</span>
-              </div>
-              <div className="flow-step">
-                <span className="step-number">3</span>
-                <span className="step-text">Run it with nohup; discovered clusters will report metrics and handle restart tasks.</span>
-              </div>
-            </div>
-
-            <div className="code-block-container">
-              <div className="code-block-header">
-                <button className="copy-btn" onClick={copyAgentConfig} title="Copy config">
-                  <Copy size={16} />
+              <div className="external-actions-row">
+                <button className="action-btn cancel-btn" onClick={() => navigate('/clusters')}>
+                  Cancel
+                </button>
+                <button
+                  className="action-btn test-btn"
+                  onClick={testBootstrap}
+                  title="Test Connection"
+                  disabled={!form.bootstrapServers.trim() || testing}
+                >
+                  <RefreshCw size={14} className={testing ? 'spin' : ''} />
+                  Test Connection
+                </button>
+                <button
+                  className={`action-btn connect-btn ${bootstrapResult?.connected === true ? 'active' : ''}`}
+                  onClick={registerBootstrap}
+                  disabled={registering || bootstrapResult?.connected !== true}
+                >
+                  {registering ? <RefreshCw size={14} className="spin" /> : <Network size={14} />}
+                  Connect Cluster
                 </button>
               </div>
-              <div className="code-block-body">
-                <pre>{agentConfig}</pre>
+            </div>
+          )}
+
+          {openPanel === 'agent' && (
+            <div className="external-card agent-card">
+              <div className="card-header-title">
+                <h3>Discovery Agent</h3>
+                <p className="card-header-subtitle">Full management path for restart, host metrics, and config persistence.</p>
+              </div>
+              <hr className="agent-divider" />
+
+              <div className="agent-flow">
+                <div className="flow-step">
+                  <span className="step-number">1</span>
+                  <span className="step-text">Build or copy tantor-discovery-agent-linux to the Kafka VM.</span>
+                </div>
+                <div className="flow-step">
+                  <span className="step-number">2</span>
+                  <span className="step-text">Set server_url to this Tantor backend.</span>
+                </div>
+                <div className="flow-step">
+                  <span className="step-number">3</span>
+                  <span className="step-text">Run it with nohup; discovered clusters will report metrics and handle restart tasks.</span>
+                </div>
+              </div>
+
+              <div className="code-block-container">
+                <div className="code-block-header">
+                  <button className="copy-btn" onClick={copyAgentConfig} title="Copy config">
+                    <Copy size={16} />
+                  </button>
+                </div>
+                <div className="code-block-body">
+                  <pre>{agentConfig}</pre>
+                </div>
+              </div>
+
+              <div className="agent-note">
+                <Server size={18} className="note-icon" />
+                <span className="note-text">The agent auto-detects KRaft vs ZooKeeper from Kafka properties. Users do not select the mode manually.</span>
               </div>
             </div>
-
-            <div className="agent-note">
-              <Server size={18} className="note-icon" />
-              <span className="note-text">The agent auto-detects KRaft vs ZooKeeper from Kafka properties. Users do not select the mode manually.</span>
-            </div>
-          </div>
-        )}
+          )}
+        </section>
       </div>
     </div>
   );
