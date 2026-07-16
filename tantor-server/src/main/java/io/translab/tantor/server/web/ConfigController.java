@@ -159,11 +159,26 @@ public class ConfigController {
         if (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(host)) {
             return true;
         }
-        String addresses = agent.getIpAddresses();
-        if (addresses == null || addresses.isBlank()) {
-            return false;
+        return parseAgentAddresses(agent.getIpAddresses()).stream()
+                .anyMatch(address -> address.equalsIgnoreCase(host));
+    }
+
+    private List<String> parseAgentAddresses(String ipAddresses) {
+        if (ipAddresses == null || ipAddresses.isBlank()) {
+            return List.of();
         }
-        return addresses.contains("\"" + host + "\"") || addresses.contains(host);
+        try {
+            return objectMapper.readValue(ipAddresses, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+        } catch (Exception ignored) {
+            List<String> values = new ArrayList<>();
+            for (String part : ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")) {
+                String value = part.trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return values;
+        }
     }
 
     @PostMapping("/rolling-apply")

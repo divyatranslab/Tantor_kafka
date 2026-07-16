@@ -11,20 +11,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func init() {
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-}
-
 func main() {
 	configPath := flag.String("config", "discovery.yaml", "Path to configuration YAML")
 	jsonOutput := flag.Bool("json", false, "Output precheck results in JSON format")
 	flag.Parse()
 
-	// Automatically run pre-deployment checks at startup
-	runPrecheck(*jsonOutput)
-
 	if *jsonOutput {
-		// If JSON was requested, we exit after precheck to avoid mixing JSON with ASCII logs
+		// If JSON was requested, exit after precheck to avoid mixing JSON with logs.
+		runPrecheck(true)
 		os.Exit(0)
 	}
 
@@ -41,17 +35,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	configureHTTPTransport(cfg.Discovery.TLSInsecureSkipVerify)
+
+	if !cfg.Discovery.SkipPrecheck {
+		runPrecheck(false)
+	}
+
 	serverURL := cfg.Discovery.ServerURL
 	if serverURL == "" {
 		fmt.Println("Error: server_url must be set in the YAML config.")
 		os.Exit(1)
 	}
 
-	scanPaths := cfg.Discovery.ScanPaths
-	if len(scanPaths) == 0 {
-		scanPaths = []string{"/"}
-	}
-
+	scanPaths := cfg.Discovery.EffectiveScanPaths()
 	intervalStr := cfg.Discovery.Interval
 
 	hostname := cfg.Discovery.NodeName
@@ -65,6 +61,12 @@ func main() {
 	fmt.Println("======================================================")
 	fmt.Printf("  Server   : %s\n", serverURL)
 	fmt.Printf("  Hostname : %s\n", hostname)
+	if cfg.Discovery.KafkaHome != "" {
+		fmt.Printf("  KafkaHome: %s\n", cfg.Discovery.KafkaHome)
+	}
+	if len(cfg.Discovery.KafkaConfigFiles) > 0 {
+		fmt.Printf("  Configs  : %v\n", cfg.Discovery.KafkaConfigFiles)
+	}
 	fmt.Printf("  Scan dirs: %v\n", scanPaths)
 
 	if intervalStr != "" {
@@ -82,11 +84,25 @@ func main() {
 		}
 
 		clustersChan := make(chan []DiscoveredCluster, 1)
+		taskPollInterval, err := time.ParseDuration(cfg.Discovery.EffectiveTaskPollInterval())
+		if err != nil {
+			fmt.Printf("Invalid task_poll_interval format: %v\n", err)
+			os.Exit(1)
+		}
 
-		go pollForTasksLoop(serverURL, hostname, cfg.Discovery.RestartCommand, clustersChan)
+		go pollForTasksLoop(
+			serverURL,
+			hostname,
+			cfg.Discovery.RestartCommand,
+			cfg.Discovery.SystemdUseSudo,
+			cfg.Discovery.EffectiveMetricsURL(),
+			!cfg.Discovery.DisableMetrics,
+			taskPollInterval,
+			clustersChan,
+		)
 
 		for {
-			clusters := runDiscovery(serverURL, hostname, environment, scanPaths, cfg.Discovery.HostID, cfg.Discovery.AgentName)
+			clusters := runDiscovery(serverURL, hostname, environment, cfg.Discovery)
 			select {
 			case clustersChan <- clusters:
 			default:
@@ -96,6 +112,18 @@ func main() {
 			time.Sleep(duration)
 		}
 	} else {
-		runDiscovery(serverURL, hostname, environment, scanPaths, cfg.Discovery.HostID, cfg.Discovery.AgentName)
+		runDiscovery(serverURL, hostname, environment, cfg.Discovery)
 	}
+}
+
+func configureHTTPTransport(insecureSkipVerify bool) {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return
+	}
+	clone := transport.Clone()
+	if insecureSkipVerify {
+		clone.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	http.DefaultTransport = clone
 }

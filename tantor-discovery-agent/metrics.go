@@ -28,7 +28,7 @@ type ExternalBrokerMetricsDto struct {
 	BytesInPerSec    float64 `json:"bytesInPerSec"`
 }
 
-func startMetricsStream(serverURL string, clusterName string, hostname string, bootstrap string, interval time.Duration) {
+func startMetricsStream(serverURL string, clusterName string, hostname string, bootstrap string, metricsURL string, interval time.Duration) {
 	go func() {
 		for {
 			metrics := ExternalBrokerMetricsDto{
@@ -56,26 +56,31 @@ func startMetricsStream(serverURL string, clusterName string, hostname string, b
 				metrics.DiskUsedGb = int64(d.Used / 1024 / 1024 / 1024)
 			}
 
-			// JMX Metrics (from Prometheus endpoint on port 7071)
-			resp, err := http.Get("http://localhost:7071/metrics")
-			if err == nil && resp.StatusCode == 200 {
-				body, _ := io.ReadAll(resp.Body)
-				metricsText := string(body)
+			// JMX/Prometheus metrics endpoint. Keep this configurable because client
+			// VMs may expose exporters on non-default ports or disable them entirely.
+			if strings.TrimSpace(metricsURL) != "" {
+				resp, err := http.Get(metricsURL)
+				if err == nil && resp.StatusCode == 200 {
+					body, _ := io.ReadAll(resp.Body)
+					metricsText := string(body)
 
-				for _, line := range strings.Split(metricsText, "\n") {
-					if strings.HasPrefix(line, "kafka_server_brokertopicmetrics_messagesinpersec_count") {
-						parts := strings.Fields(line)
-						if len(parts) > 1 {
-							metrics.MessagesInPerSec, _ = strconv.ParseFloat(parts[len(parts)-1], 64)
-						}
-					} else if strings.HasPrefix(line, "kafka_server_brokertopicmetrics_bytesinpersec_count") {
-						parts := strings.Fields(line)
-						if len(parts) > 1 {
-							metrics.BytesInPerSec, _ = strconv.ParseFloat(parts[len(parts)-1], 64)
+					for _, line := range strings.Split(metricsText, "\n") {
+						if strings.HasPrefix(line, "kafka_server_brokertopicmetrics_messagesinpersec_count") {
+							parts := strings.Fields(line)
+							if len(parts) > 1 {
+								metrics.MessagesInPerSec, _ = strconv.ParseFloat(parts[len(parts)-1], 64)
+							}
+						} else if strings.HasPrefix(line, "kafka_server_brokertopicmetrics_bytesinpersec_count") {
+							parts := strings.Fields(line)
+							if len(parts) > 1 {
+								metrics.BytesInPerSec, _ = strconv.ParseFloat(parts[len(parts)-1], 64)
+							}
 						}
 					}
+					resp.Body.Close()
+				} else if resp != nil {
+					resp.Body.Close()
 				}
-				resp.Body.Close()
 			}
 
 			// Send to Backend

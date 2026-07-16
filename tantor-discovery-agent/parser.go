@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,14 +13,11 @@ import (
 // Parsing server.properties
 // =========================================================================
 
-func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEnv string) *DiscoveredCluster {
-	installPath := findKafkaInstallRoot(propsFile)
+func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEnv string, discoveryCfg DiscoveryConfig) *DiscoveredCluster {
+	installPath := firstNonBlank(discoveryCfg.KafkaHome, findKafkaInstallRoot(propsFile))
 	versionStr := detectVersion(installPath)
 
 	is4x := strings.HasPrefix(versionStr, "4.")
-
-	// --- Apply exact version/mode logic to determine EXPECTED file ---
-	expectedFile := ""
 
 	fmt.Printf("\n--- CONFIGURATION FETCHING (Version: %s) ---\n", versionStr)
 	if is4x {
@@ -29,7 +27,6 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 		fmt.Println("        |-- broker.properties")
 		fmt.Println("        `-- controller.properties")
 		fmt.Println("ZooKeeper is not available")
-		expectedFile = filepath.Join(installPath, "config", "broker.properties")
 	} else {
 		fmt.Println("Both ZooKeeper and KRaft supported")
 		kraftBroker := filepath.Join(installPath, "config", "kraft", "broker.properties")
@@ -48,7 +45,6 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 			fmt.Println("        |-- broker.properties   (NOT USED in ZK mode)")
 			fmt.Println("        `-- controller.properties (NOT USED in ZK mode)")
 			fmt.Println("Only server.properties is active")
-			expectedFile = filepath.Join(installPath, "config", "server.properties")
 		} else if clusterMode == "kraft" {
 			fmt.Println("KRaft mode selected")
 			fmt.Println("DIRECTORIES USED:")
@@ -56,22 +52,11 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 			fmt.Println("        |-- broker.properties")
 			fmt.Println("        `-- controller.properties")
 			fmt.Println("No ZooKeeper dependency")
-			expectedFile = kraftBroker
 		} else {
 			fmt.Println("Invalid cluster mode")
 		}
 	}
 	fmt.Println("--------------------------------------------")
-
-	// Skip if offline and this is not the expected configuration file
-	if !isRunning && expectedFile != "" {
-		absProps, _ := filepath.Abs(propsFile)
-		absExpected, _ := filepath.Abs(expectedFile)
-		if absProps != absExpected {
-			return nil
-		}
-	}
-	// -----------------------------------------------------------------
 
 	content, err := os.ReadFile(propsFile)
 	if err != nil {
@@ -101,7 +86,7 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	if listenersRaw == "" {
 		return nil // not a valid Kafka config
 	}
-	bootstrap := extractBootstrapServers(listenersRaw)
+	bootstrap := extractBootstrapServers(listenersRaw, hostname)
 	if bootstrap == "" {
 		return nil
 	}
@@ -133,6 +118,8 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	if logDirs == "" {
 		logDirs = props["log.dir"]
 	}
+	logDirs = firstNonBlank(discoveryCfg.KafkaLogDirs, logDirs)
+	dataDirs := firstNonBlank(discoveryCfg.KafkaDataDirs, logDirs)
 
 	// Derive a meaningful name from the file path and port.
 	clusterName := deriveClusterName(propsFile, hostname)
@@ -151,7 +138,7 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 		IsRunning:           isRunning,
 		InstallPath:         installPath,
 		PropsFile:           propsFile,
-		DataDirs:            logDirs,
+		DataDirs:            dataDirs,
 		LogDirs:             logDirs,
 		Environment:         defaultEnv,
 		Listeners:           props["listeners"],
@@ -159,21 +146,66 @@ func parseServerProperties(propsFile string, isRunning bool, hostname, defaultEn
 	}
 }
 
-func extractBootstrapServers(listenersStr string) string {
+func extractBootstrapServers(listenersStr, fallbackHost string) string {
 	parts := strings.Split(listenersStr, ",")
-	re := regexp.MustCompile(`://([^:]+:[0-9]+)`)
 	var brokers []string
 	for _, p := range parts {
-		upper := strings.ToUpper(p)
-		if strings.Contains(upper, "CONTROLLER") {
+		listener := strings.TrimSpace(p)
+		upper := strings.ToUpper(listener)
+		if listener == "" || strings.Contains(upper, "CONTROLLER") {
 			continue
 		}
-		m := re.FindStringSubmatch(p)
-		if len(m) > 1 {
-			brokers = append(brokers, m[1])
+		hostPort := listener
+		if idx := strings.Index(hostPort, "://"); idx >= 0 {
+			hostPort = hostPort[idx+3:]
+		}
+		host, port, err := net.SplitHostPort(hostPort)
+		if err != nil {
+			lastColon := strings.LastIndex(hostPort, ":")
+			if lastColon <= 0 || lastColon == len(hostPort)-1 {
+				continue
+			}
+			host = hostPort[:lastColon]
+			port = hostPort[lastColon+1:]
+		}
+		host = strings.Trim(host, "[]")
+		if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
+			host = preferredAdvertisedHost(fallbackHost)
+		}
+		if host == "" || port == "" {
+			continue
+		}
+		endpoint := net.JoinHostPort(host, port)
+		if strings.Contains(host, ":") {
+			endpoint = "[" + host + "]:" + port
+		}
+		if !containsString(brokers, endpoint) {
+			brokers = append(brokers, endpoint)
 		}
 	}
 	return strings.Join(brokers, ",")
+}
+
+func preferredAdvertisedHost(fallbackHost string) string {
+	for _, ip := range localIPAddresses() {
+		if ip != "" {
+			return ip
+		}
+	}
+	if strings.TrimSpace(fallbackHost) != "" {
+		return strings.TrimSpace(fallbackHost)
+	}
+	hostname, _ := os.Hostname()
+	return hostname
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func detectSecurity(listenersStr, protocolMap string) string {

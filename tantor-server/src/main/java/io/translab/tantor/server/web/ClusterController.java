@@ -132,8 +132,7 @@ public class ClusterController {
             for (String host : clusterNodes.stream().map(n -> n.getHost()).distinct().toList()) {
                 Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentForHost = clusterAgents.stream()
                     .filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) &&
-                                 ((a.getHostname() != null && a.getHostname().equalsIgnoreCase(host)) ||
-                                  (a.getIpAddresses() != null && a.getIpAddresses().contains(host))))
+                                 matchesDiscoveryAgent(a, host))
                     .filter(a -> a.getLastHeartbeat() != null && java.time.Duration.between(a.getLastHeartbeat(), now).getSeconds() <= 120)
                     .findFirst();
                 if (agentForHost.isPresent()) {
@@ -241,13 +240,15 @@ public class ClusterController {
             m.put("dataDirectory", "");
             m.put("logDirectory", c.getLogDirs());
             m.put("config", new HashMap<>());
-            m.put("managementLevel", externalClusterService.isAgentManaged(c) ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY");
+            boolean agentManaged = externalClusterService.isAgentManaged(c);
+            m.put("managementLevel", agentManaged ? "AGENT_MANAGED" : "BOOTSTRAP_ONLY");
             m.put("sourceLabel", "External");
-            m.put("accessLabel", "Bootstrap only");
-            m.put("nodeCount", c.getBrokerCount() != null ? c.getBrokerCount() : 0);
-            
+            m.put("accessLabel", agentManaged ? "Agent managed" : "Bootstrap only");
+
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            m.put("hosts", externalClusterHosts(c, nodes));
+            List<Map<String, Object>> hosts = externalClusterHosts(c, nodes);
+            m.put("nodeCount", hosts.isEmpty() ? nodes.size() : hosts.size());
+            m.put("hosts", hosts);
             m.put("runtimeHealth", externalRuntimeHealth(c.getStatus()));
             m.put("runtimeStatusLabel", externalRuntimeStatusLabel(c.getStatus()));
             m.put("runtimeStatusReason", "External health is reconciled from Kafka bootstrap reachability and discovery-agent heartbeat.");
@@ -1891,11 +1892,26 @@ public class ClusterController {
         if (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(host)) {
             return true;
         }
-        String addresses = agent.getIpAddresses();
-        if (addresses == null || addresses.isBlank()) {
-            return false;
+        return parseAgentAddresses(agent.getIpAddresses()).stream()
+                .anyMatch(address -> address.equalsIgnoreCase(host));
+    }
+
+    private List<String> parseAgentAddresses(String ipAddresses) {
+        if (ipAddresses == null || ipAddresses.isBlank()) {
+            return List.of();
         }
-        return addresses.contains("\"" + host + "\"") || addresses.contains(host);
+        try {
+            return objectMapper.readValue(ipAddresses, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+        } catch (Exception ignored) {
+            List<String> values = new ArrayList<>();
+            for (String part : ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")) {
+                String value = part.trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return values;
+        }
     }
 
     private String firstNonBlank(String... values) {

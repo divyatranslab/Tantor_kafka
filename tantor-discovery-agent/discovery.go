@@ -32,7 +32,10 @@ type DiscoveredCluster struct {
 	SystemdService      string
 }
 
-func runDiscovery(serverURL, hostname, environment string, scanPaths []string, hostID, agentName string) []DiscoveredCluster {
+func runDiscovery(serverURL, hostname, environment string, discoveryCfg DiscoveryConfig) []DiscoveredCluster {
+	scanPaths := discoveryCfg.EffectiveScanPaths()
+	reportAgentHeartbeat(serverURL, hostname, discoveryCfg.HostID, discoveryCfg.AgentName)
+
 	// Step 1: build a set of running Kafka PIDs and their server.properties.
 	runningProps := getRunningKafkaPropsFiles()
 	fmt.Printf("Running Kafka processes/services: %d\n", len(runningProps))
@@ -43,24 +46,41 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 	// Step 2: Extract exact config file paths from running processes.
 	var exactProps []string
 	seenPath := map[string]bool{}
-
-	for _, processInfo := range runningProps {
-		absPath := extractPropsPath(processInfo.Cmdline, processInfo.Cwd)
-		if absPath != "" {
-			if !seenPath[absPath] {
-				exactProps = append(exactProps, absPath)
-				seenPath[absPath] = true
-			}
+	addPropsFile := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" || !fileExists(path) {
+			return
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			absPath = path
+		}
+		if !seenPath[absPath] {
+			exactProps = append(exactProps, absPath)
+			seenPath[absPath] = true
 		}
 	}
 
-	// Step 3: scan the filesystem for offline properties files.
+	for _, processInfo := range runningProps {
+		absPath := extractPropsPath(processInfo.Cmdline, processInfo.Cwd)
+		if absPath != "" && !seenPath[absPath] {
+			exactProps = append(exactProps, absPath)
+			seenPath[absPath] = true
+		}
+	}
+
+	// Step 3: prefer deployment-provided Kafka paths before broad filesystem scan.
+	for _, configFile := range discoveryCfg.KafkaConfigFiles {
+		addPropsFile(configFile)
+	}
+	for _, configFile := range kafkaHomeConfigCandidates(discoveryCfg.KafkaHome) {
+		addPropsFile(configFile)
+	}
+
+	// Step 4: scan the filesystem for offline properties files.
 	fsProps := findAllConfigProperties(scanPaths)
 	for _, p := range fsProps {
-		if !seenPath[p] {
-			exactProps = append(exactProps, p)
-			seenPath[p] = true
-		}
+		addPropsFile(p)
 	}
 
 	fmt.Printf("\nFound %d config file(s) to process:\n", len(exactProps))
@@ -102,7 +122,7 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 			}
 		}
 
-		dc := parseServerProperties(propsFile, isRunning, hostname, environment)
+		dc := parseServerProperties(propsFile, isRunning, hostname, environment, discoveryCfg)
 		if dc == nil {
 			continue
 		}
@@ -153,7 +173,7 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 	apiURL := strings.TrimRight(serverURL, "/") + "/api/v1/ui/external-clusters/discovery/report"
 	ok, fail := 0, 0
 	for _, c := range clusters {
-		if registerCluster(apiURL, c, hostID, agentName) {
+		if registerCluster(apiURL, c, discoveryCfg.HostID, discoveryCfg.AgentName) {
 			ok++
 		} else {
 			fail++
@@ -161,4 +181,19 @@ func runDiscovery(serverURL, hostname, environment string, scanPaths []string, h
 	}
 	fmt.Printf("\nDone. Registered: %d  |  Failed: %d\n", ok, fail)
 	return clusters
+}
+
+func kafkaHomeConfigCandidates(kafkaHome string) []string {
+	kafkaHome = strings.TrimSpace(kafkaHome)
+	if kafkaHome == "" {
+		return nil
+	}
+	return []string{
+		filepath.Join(kafkaHome, "config", "server.properties"),
+		filepath.Join(kafkaHome, "config", "broker.properties"),
+		filepath.Join(kafkaHome, "config", "controller.properties"),
+		filepath.Join(kafkaHome, "config", "kraft", "server.properties"),
+		filepath.Join(kafkaHome, "config", "kraft", "broker.properties"),
+		filepath.Join(kafkaHome, "config", "kraft", "controller.properties"),
+	}
 }

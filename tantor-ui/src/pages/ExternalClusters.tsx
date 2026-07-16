@@ -98,19 +98,32 @@ export function ExternalClusters() {
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
-    return `http://${host}:8443`;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://<tantor-server-ip-or-dns>:8443';
+    }
+    return `${window.location.protocol}//${host}:8443`;
   }, []);
 
   const agentConfig = useMemo(() => (
 `discovery:
   server_url: "${serverHint}"
+  host_id: "discovery-<vm-hostname-or-ip>"
+  agent_name: "tantor-discovery-<vm-hostname-or-ip>"
   scan_paths:
-    - "/srv/apps"
-    - "/data/apps"
     - "/opt"
+    - "/srv"
+    - "/data"
+    - "/usr/local"
+    - "/var/lib"
   interval: "15s"
+  task_poll_interval: "5s"
   node_name: ""
-  restart_command: "systemctl restart kafka"`
+  restart_command: "systemctl restart kafka.service"
+  systemd_use_sudo: false
+  metrics_url: "http://localhost:7071/metrics"
+  disable_metrics: false
+  skip_precheck: false
+  tls_insecure_skip_verify: true`
   ), [serverHint]);
 
   const loadAgents = async () => {

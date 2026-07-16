@@ -28,10 +28,12 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,7 +45,7 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 public class ExternalClusterService {
 
     private static final String EXTERNAL_MODE = "EXTERNAL";
-    private static final long AGENT_STALE_SECONDS = 90;
+    private static final long AGENT_STALE_SECONDS = 180;
 
     private final ClusterRepository clusterRepository;
     private final ExternalClusterRepository externalClusterRepository;
@@ -306,6 +308,8 @@ public class ExternalClusterService {
             savedCluster = externalClusterRepository.save(savedCluster);
         }
 
+        List<ExternalDiscoveryReport> selectedDiscoveryReports = new ArrayList<>();
+
         // Process Selected Agents
         if (request.getSelectedAgents() != null && !request.getSelectedAgents().isEmpty()) {
             for (Map.Entry<String, String> entry : request.getSelectedAgents().entrySet()) {
@@ -314,6 +318,7 @@ public class ExternalClusterService {
                 if (pendingDiscoveries.containsKey(agentId)) {
                     ExternalDiscoveryReport report = pendingDiscoveries.get(agentId);
                     upsertDiscoveryAgent(report, savedCluster);
+                    selectedDiscoveryReports.add(report);
                     pendingDiscoveries.remove(agentId);
                 } else {
                     // Update existing db agent to link to this cluster
@@ -321,6 +326,8 @@ public class ExternalClusterService {
                     if (optAgent.isPresent()) {
                         DiscoveryAgent agent = optAgent.get();
                         agent.setClusterId(savedCluster.getId());
+                        agent.setStatus("ONLINE");
+                        agent.setLastHeartbeat(OffsetDateTime.now());
                         discoveryAgentRepository.save(agent);
                     }
                 }
@@ -355,6 +362,15 @@ public class ExternalClusterService {
                 );
             }
         }
+
+        ExternalCluster selectedCluster = savedCluster;
+        for (ExternalDiscoveryReport report : selectedDiscoveryReports) {
+            String agentId = report.getHostId() == null || report.getHostId().isBlank()
+                    ? discoveryHostId(report)
+                    : report.getHostId();
+            discoveryAgentRepository.findById(agentId)
+                    .ifPresent(agent -> applyDiscoveryReportToNodes(selectedCluster, report, agent));
+        }
         auditService.record(
                 "CLUSTER_MANAGEMENT",
                 "EXTERNAL_CLUSTER_CONNECTED",
@@ -384,36 +400,12 @@ public class ExternalClusterService {
         io.translab.tantor.server.domain.DiscoveryAgent agent = discoveryAgentRepository.findById(agentId).orElse(null);
 
         Optional<ExternalCluster> connectedCluster = findExternalCluster(report.getKafkaClusterId(), report.getName(), report.getBootstrapServers().trim());
-        
-        if (connectedCluster.isPresent() && agent != null && connectedCluster.get().getId().equals(agent.getClusterId())) {
+
+        if (connectedCluster.isPresent() && agent != null) {
             ExternalCluster cluster = upsertDiscoveryCluster(report);
-            
-            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
-            for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
-                boolean match = (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(node.getHost())) ||
-                                (agent.getIpAddresses() != null && agent.getIpAddresses().contains(node.getHost()));
-                if (match) {
-                    node.setCpuUsagePct(report.getCpuUsagePct());
-                    node.setMemoryUsedMb(report.getMemoryUsedMb());
-                    node.setMemoryTotalMb(report.getMemoryTotalMb());
-                    node.setDiskUsedGb(report.getDiskUsedGb());
-                    node.setDiskTotalGb(report.getDiskTotalGb());
-                    node.setLastSeen(OffsetDateTime.now());
-                    
-                    boolean nodeIdMatches = (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) ||
-                                            (report.getBrokerCount() > 0 && report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())); // Fallback if brokerId is not sent separately
-                    
-                    // Always try to match by nodeId. (brokerId == nodeId in most cases).
-                    if (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) {
-                        node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
-                        node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
-                        node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
-                        node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
-                    }
-                    externalClusterNodeRepository.save(node);
-                }
-            }
-            
+            linkDiscoveryAgent(agent, cluster);
+            applyDiscoveryReportToNodes(cluster, report, agent);
+
             return Map.of(
                     "id", cluster.getId(),
                     "name", cluster.getName(),
@@ -534,6 +526,13 @@ public class ExternalClusterService {
 
         ExternalDiscoveryReport report = requiredPendingDiscovery(discoveryKey);
         ExternalCluster cluster = upsertDiscoveryCluster(report);
+        String agentId = report.getHostId() == null || report.getHostId().isBlank()
+                ? discoveryHostId(report)
+                : report.getHostId();
+        discoveryAgentRepository.findById(agentId).ifPresent(agent -> {
+            linkDiscoveryAgent(agent, cluster);
+            applyDiscoveryReportToNodes(cluster, report, agent);
+        });
         pendingDiscoveries.remove(discoveryKey);
         reconcileMonitoringExporter(cluster.getId());
         return cluster;
@@ -885,7 +884,8 @@ public class ExternalClusterService {
         if (cluster == null) {
             return false;
         }
-        return readBrokerRecords(cluster).stream().anyMatch(this::isAgentRecord);
+        return discoveryAgentRepository.findByClusterId(cluster.getId()).stream()
+                .anyMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()));
     }
 
     public List<ExternalBrokerRecord> brokerRecords(ExternalCluster cluster) {
@@ -904,6 +904,11 @@ public class ExternalClusterService {
             Optional<ExternalCluster> byBootstrap = externalClusterRepository.findByBootstrapServersAndStatusNot(bootstrapServers.trim(), "DELETED");
             if (byBootstrap.isPresent()) {
                 return byBootstrap;
+            }
+            for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+                if (bootstrapServersOverlap(cluster.getBootstrapServers(), bootstrapServers)) {
+                    return Optional.of(cluster);
+                }
             }
         }
         if (name != null && !name.isBlank()) {
@@ -928,6 +933,12 @@ public class ExternalClusterService {
             if (byBootstrap.isPresent()) {
                 return byBootstrap;
             }
+            for (ExternalCluster cluster : externalClusterRepository.findAll()) {
+                if (!"DELETED".equalsIgnoreCase(cluster.getStatus())
+                        && bootstrapServersOverlap(cluster.getBootstrapServers(), bootstrapServers)) {
+                    return Optional.of(cluster);
+                }
+            }
         }
         if (name != null && !name.isBlank()) {
             return externalClusterRepository.findByName(name.trim());
@@ -937,8 +948,9 @@ public class ExternalClusterService {
 
     private Map<String, Object> toSummary(ExternalCluster cluster) {
         List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
-        long agentCount = brokers.stream().filter(this::isAgentRecord).count();
-        long freshAgents = brokers.stream().filter(this::isFreshAgent).count();
+        List<DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
+        long agentCount = agents.stream().filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus())).count();
+        long freshAgents = agents.stream().filter(this::isFreshAgent).count();
         int brokerCount = cluster.getBrokerCount() != null ? cluster.getBrokerCount() : (brokers.isEmpty() ? 0 : brokers.size());
 
         Map<String, Object> summary = new LinkedHashMap<>();
@@ -958,7 +970,18 @@ public class ExternalClusterService {
                 ? (freshAgents == agentCount ? "Agent online" : "Agent stale")
                 : "Bootstrap registered");
         summary.put("createdAt", cluster.getCreatedAt());
-        summary.put("lastSeen", brokers.stream().map(ExternalBrokerRecord::getLastSeen).filter(value -> value != null && !value.isBlank()).max(String::compareTo).orElse(""));
+        String brokerLastSeen = brokers.stream()
+                .map(ExternalBrokerRecord::getLastSeen)
+                .filter(value -> value != null && !value.isBlank())
+                .max(String::compareTo)
+                .orElse("");
+        String agentLastSeen = agents.stream()
+                .map(DiscoveryAgent::getLastHeartbeat)
+                .filter(value -> value != null)
+                .map(OffsetDateTime::toString)
+                .max(String::compareTo)
+                .orElse("");
+        summary.put("lastSeen", brokerLastSeen.isBlank() ? agentLastSeen : brokerLastSeen);
         summary.put("installPath", blankToDefault(cluster.getInstallPath(), ""));
         summary.put("logDirs", blankToDefault(cluster.getLogDirs(), ""));
         return summary;
@@ -1026,6 +1049,16 @@ public class ExternalClusterService {
         if (cluster != null) {
             agent.setClusterId(cluster.getId());
         }
+        discoveryAgentRepository.save(agent);
+    }
+
+    private void linkDiscoveryAgent(DiscoveryAgent agent, ExternalCluster cluster) {
+        if (agent == null || cluster == null) {
+            return;
+        }
+        agent.setClusterId(cluster.getId());
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
         discoveryAgentRepository.save(agent);
     }
 
@@ -1119,6 +1152,7 @@ public class ExternalClusterService {
 
     private List<ExternalBrokerRecord> readBrokerRecords(ExternalCluster cluster) {
         List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
+        List<DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
         List<ExternalBrokerRecord> records = new ArrayList<>();
         for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
             ExternalBrokerRecord r = new ExternalBrokerRecord();
@@ -1131,17 +1165,109 @@ public class ExternalClusterService {
             else if (isController) r.setRole("controller");
             else r.setRole("unknown");
             r.setNodeId(n.getNodeId());
-            if (n.getLastSeen() != null) r.setLastSeen(n.getLastSeen().toString());
+            Optional<DiscoveryAgent> agent = agents.stream()
+                    .filter(candidate -> matchesDiscoveryAgent(candidate, n.getHost()))
+                    .findFirst();
+            OffsetDateTime lastSeen = n.getLastSeen();
+            if (lastSeen == null && agent.isPresent()) {
+                lastSeen = agent.get().getLastHeartbeat();
+            }
+            if (lastSeen != null) r.setLastSeen(lastSeen.toString());
             r.setCpuUsagePct(n.getCpuUsagePct());
             r.setMemoryUsedMb(n.getMemoryUsedMb());
             r.setMemoryTotalMb(n.getMemoryTotalMb());
             r.setDiskUsedGb(n.getDiskUsedGb());
             r.setDiskTotalGb(n.getDiskTotalGb());
-            r.setInstallPath(n.getInstallDir());
-            r.setLogDirs(n.getLogDirs());
+            r.setInstallPath(blankToDefault(n.getInstallDir(), cluster.getInstallPath()));
+            r.setLogDirs(blankToDefault(n.getLogDirs(), cluster.getLogDirs()));
+            r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS)));
             records.add(r);
         }
         return records;
+    }
+
+    private void applyDiscoveryReportToNodes(ExternalCluster cluster, ExternalDiscoveryReport report, DiscoveryAgent agent) {
+        List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
+        OffsetDateTime seen = OffsetDateTime.now();
+        boolean matched = false;
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            if (!matchesDiscoveryNode(node, report, agent)) {
+                continue;
+            }
+            matched = true;
+            node.setCpuUsagePct(report.getCpuUsagePct());
+            node.setMemoryUsedMb(report.getMemoryUsedMb());
+            node.setMemoryTotalMb(report.getMemoryTotalMb());
+            node.setDiskUsedGb(report.getDiskUsedGb());
+            node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setLastSeen(seen);
+            node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
+            node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
+            node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
+            node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
+            externalClusterNodeRepository.save(node);
+        }
+
+        if (!matched && report.getNodeId() != null) {
+            io.translab.tantor.server.domain.ExternalClusterNode node = new io.translab.tantor.server.domain.ExternalClusterNode();
+            node.setClusterId(cluster.getId());
+            node.setHost(firstNonBlank(extractHostFromBootstrap(report.getBootstrapServers()), report.getHostname(), agent.getHostname()));
+            node.setNodeId(report.getNodeId());
+            String roles = blankToDefault(report.getProcessRoles(), "").toLowerCase();
+            node.setIsBroker(roles.isBlank() || roles.contains("broker"));
+            node.setIsController(roles.contains("controller"));
+            node.setCpuUsagePct(report.getCpuUsagePct());
+            node.setMemoryUsedMb(report.getMemoryUsedMb());
+            node.setMemoryTotalMb(report.getMemoryTotalMb());
+            node.setDiskUsedGb(report.getDiskUsedGb());
+            node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setLastSeen(seen);
+            node.setInstallDir(blankToDefault(report.getInstallPath(), null));
+            node.setLogDirs(blankToDefault(report.getLogDirs(), null));
+            node.setConfigFile(blankToDefault(report.getConfigFile(), null));
+            node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), null)));
+            externalClusterNodeRepository.save(node);
+        }
+    }
+
+    private boolean matchesDiscoveryNode(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalDiscoveryReport report,
+            DiscoveryAgent agent
+    ) {
+        if (node == null) {
+            return false;
+        }
+        if (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) {
+            return true;
+        }
+        String nodeHost = node.getHost();
+        if (nodeHost == null || nodeHost.isBlank()) {
+            return false;
+        }
+        for (String candidate : discoveryHostCandidates(report, agent)) {
+            if (candidate.equalsIgnoreCase(nodeHost)) {
+                return true;
+            }
+        }
+        return matchesDiscoveryAgent(agent, nodeHost);
+    }
+
+    private Set<String> discoveryHostCandidates(ExternalDiscoveryReport report, DiscoveryAgent agent) {
+        Set<String> candidates = new HashSet<>();
+        addCandidate(candidates, report.getHostname());
+        addCandidate(candidates, extractHostFromBootstrap(report.getBootstrapServers()));
+        if (agent != null) {
+            addCandidate(candidates, agent.getHostname());
+            candidates.addAll(parseAgentAddresses(agent.getIpAddresses()));
+        }
+        return candidates;
+    }
+
+    private void addCandidate(Set<String> candidates, String value) {
+        if (value != null && !value.isBlank()) {
+            candidates.add(value.trim());
+        }
     }
 
     private Map<String, Object> readMetadata(Cluster cluster) {
@@ -1206,6 +1332,11 @@ public class ExternalClusterService {
         }
     }
 
+    private boolean isFreshAgent(DiscoveryAgent agent) {
+        return agent.getLastHeartbeat() != null
+                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+    }
+
     private boolean isFreshDiscovery(ExternalDiscoveryReport report) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(report.getLastSeen());
@@ -1267,6 +1398,127 @@ public class ExternalClusterService {
         }
         int idx = first.lastIndexOf(":");
         return idx > 0 ? first.substring(0, idx) : first;
+    }
+
+    private boolean bootstrapServersOverlap(String left, String right) {
+        List<String> leftEndpoints = splitBootstrapEndpoints(left);
+        List<String> rightEndpoints = splitBootstrapEndpoints(right);
+        if (leftEndpoints.isEmpty() || rightEndpoints.isEmpty()) {
+            return false;
+        }
+        for (String leftEndpoint : leftEndpoints) {
+            for (String rightEndpoint : rightEndpoints) {
+                if (leftEndpoint.equalsIgnoreCase(rightEndpoint)) {
+                    return true;
+                }
+                String leftPort = endpointPort(leftEndpoint);
+                String rightPort = endpointPort(rightEndpoint);
+                if (!leftPort.isBlank()
+                        && leftPort.equals(rightPort)
+                        && hostsCompatible(endpointHost(leftEndpoint), endpointHost(rightEndpoint))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<String> splitBootstrapEndpoints(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        List<String> endpoints = new ArrayList<>();
+        for (String endpoint : value.split(",")) {
+            String normalized = endpoint.trim();
+            if (normalized.contains("://")) {
+                normalized = normalized.substring(normalized.indexOf("://") + 3);
+            }
+            if (!normalized.isBlank()) {
+                endpoints.add(normalized);
+            }
+        }
+        return endpoints;
+    }
+
+    private String endpointHost(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return "";
+        }
+        String value = endpoint.trim();
+        if (value.startsWith("[")) {
+            int end = value.indexOf(']');
+            return end > 0 ? value.substring(1, end) : "";
+        }
+        int idx = value.lastIndexOf(":");
+        return idx > 0 ? value.substring(0, idx) : value;
+    }
+
+    private String endpointPort(String endpoint) {
+        if (endpoint == null || endpoint.isBlank()) {
+            return "";
+        }
+        String value = endpoint.trim();
+        int idx = value.lastIndexOf(":");
+        return idx > 0 && idx < value.length() - 1 ? value.substring(idx + 1) : "";
+    }
+
+    private boolean hostsCompatible(String left, String right) {
+        if (left == null || right == null || left.isBlank() || right.isBlank()) {
+            return false;
+        }
+        if (left.equalsIgnoreCase(right)) {
+            return true;
+        }
+        return isWildcardHost(left) || isWildcardHost(right);
+    }
+
+    private boolean isWildcardHost(String host) {
+        return "localhost".equalsIgnoreCase(host)
+                || "0.0.0.0".equals(host)
+                || "::".equals(host)
+                || "*".equals(host);
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private boolean matchesDiscoveryAgent(DiscoveryAgent agent, String host) {
+        if (agent == null || host == null || host.isBlank()) {
+            return false;
+        }
+        if (agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(host)) {
+            return true;
+        }
+        return parseAgentAddresses(agent.getIpAddresses()).stream()
+                .anyMatch(address -> address.equalsIgnoreCase(host));
+    }
+
+    private List<String> parseAgentAddresses(String ipAddresses) {
+        if (ipAddresses == null || ipAddresses.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> values = objectMapper.readValue(ipAddresses, new TypeReference<List<String>>() {});
+            return values.stream().filter(value -> value != null && !value.isBlank()).toList();
+        } catch (Exception ignored) {
+            List<String> values = new ArrayList<>();
+            for (String part : ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")) {
+                String value = part.trim();
+                if (!value.isBlank()) {
+                    values.add(value);
+                }
+            }
+            return values;
+        }
     }
 
     private String mergeBootstrapServers(String existing, String reported) {
