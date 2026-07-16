@@ -706,8 +706,22 @@ public class PrometheusMonitoringService {
                 "sum(kafka_server_brokertopicmetrics_oneminuterate{" + selector + ",name=\"" + metric + "\"})",
                 "sum(kafka_server_brokertopicmetrics_fiveminuterate{" + selector + ",name=\"" + metric + "\"})",
                 "sum(kafka_server_brokertopicmetrics_meanrate{" + selector + ",name=\"" + metric + "\"})",
-                "sum(rate(kafka_server_brokertopicmetrics_count{" + selector + ",name=\"" + metric + "\"}[5m]))"
+                "sum(rate(kafka_server_brokertopicmetrics_count{" + selector + ",name=\"" + metric + "\"}[5m]))",
+                "sum(rate(kafka_server_brokertopicmetrics_" + prometheusCounterName(metric) + "_total{" + selector + "}[5m]))"
         };
+    }
+
+    private String prometheusCounterName(String metric) {
+        if ("MessagesInPerSec".equals(metric)) {
+            return "messagesin";
+        }
+        if ("BytesInPerSec".equals(metric)) {
+            return "bytesin";
+        }
+        if ("BytesOutPerSec".equals(metric)) {
+            return "bytesout";
+        }
+        return metric.toLowerCase(Locale.ROOT);
     }
 
     private String heapPercent(String selector, String usedMetric, String limitMetric, String area) {
