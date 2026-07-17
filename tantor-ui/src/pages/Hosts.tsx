@@ -187,8 +187,8 @@ export function Hosts() {
               <rect x="60" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
             </svg>
           </div>
-          <h3>No hosts at this moment</h3>
-          <p>Run the agent script on a node to discover and connect it here.</p>
+          <h3>No Host at this movment</h3>
+          <p>Create your first rule to start identifying duplicate records and improving your data quality.</p>
         </div>
       ) : (
       <div className="table-container">

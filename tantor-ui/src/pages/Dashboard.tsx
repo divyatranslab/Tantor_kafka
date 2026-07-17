@@ -155,6 +155,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
+  const [deploymentStep, setDeploymentStep] = useState<'choice' | 'deploy'>('choice');
 
   // Capitalize the first letter of username
   const username = useMemo(() => {
@@ -248,7 +249,7 @@ export function Dashboard() {
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
             </button>
             {canManage && (
-              <button className="db-btn primary" onClick={() => setShowDeploymentModal(true)}>
+              <button className="db-btn primary" onClick={() => { setDeploymentStep('choice'); setShowDeploymentModal(true); }}>
                 <Plus size={14} />
                 New Cluster
               </button>
@@ -393,15 +394,55 @@ export function Dashboard() {
       </section>
 
       {showDeploymentModal && (
-        <div className="cd-modal-overlay">
-          <div className="cd-modal-container">
-            <button className="cd-modal-close" onClick={() => setShowDeploymentModal(false)}>
-              <X size={20} />
-            </button>
-            <div className="cd-modal-content">
-              <ClusterDeployment onClose={() => setShowDeploymentModal(false)} />
+        <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
+          {deploymentStep === 'choice' ? (
+            <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
+              <div className="cd-deployment-modal-header">
+                <div className="cd-deployment-modal-header-content">
+                  <h2>Cluster Development</h2>
+                  <p>Create a managed Kafka cluster or connect an exiting external cluster.</p>
+                </div>
+                <button className="cd-icon-btn close-btn" onClick={() => setShowDeploymentModal(false)} title="Close">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+              </div>
+              
+              <div className="cd-deployment-cards-wrapper">
+                <div className="cd-deployment-choice-grid">
+                  <div className="cd-deployment-card">
+                    <div className="cd-deployment-card-content">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z"/>
+                      </svg>
+                      <h3>Create your Cluster</h3>
+                      <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
+                    </div>
+                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setDeploymentStep('deploy'); }}>Create</button>
+                  </div>
+                  
+                  <div className="cd-deployment-card">
+                    <div className="cd-deployment-card-content">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z"/>
+                      </svg>
+                      <h3>Existing Cluster</h3>
+                      <p>Connect or discover an external Kafka cluster</p>
+                    </div>
+                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setShowDeploymentModal(false); navigate('/external-clusters'); }}>Explorer</button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="cd-modal-container" onClick={e => e.stopPropagation()}>
+              <button className="cd-modal-close" onClick={() => setShowDeploymentModal(false)}>
+                <X size={20} />
+              </button>
+              <div className="cd-modal-content">
+                <ClusterDeployment onClose={() => setShowDeploymentModal(false)} />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

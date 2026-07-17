@@ -124,6 +124,56 @@ const detailLabel = (event: AuditEvent) => {
   return title(event.status || 'Captured');
 };
 
+interface CustomDropdownProps {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (val: string) => void;
+}
+
+function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClose = () => setIsOpen(false);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, [isOpen]);
+
+  return (
+    <div className="custom-select-wrapper" onClick={e => e.stopPropagation()}>
+      <div 
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`} 
+        onClick={() => setIsOpen(prev => !prev)}
+      >
+        <span>{selectedOption ? selectedOption.label : value}</span>
+        <span className="custom-select-arrow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#707070" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </div>
+      {isOpen && (
+        <div className="custom-select-options">
+          {options.map(opt => (
+            <div 
+              key={opt.value} 
+              className={`custom-select-option ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,7 +331,9 @@ export function AuditLogs() {
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">
-          <button className="btn-refresh" onClick={fetchLogs} title="Refresh"><CustomRefreshIcon size={20} /></button>
+          <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
+            <CustomRefreshIcon size={20} className={loading ? 'spin' : ''} />
+          </button>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
         </div>
@@ -289,34 +341,40 @@ export function AuditLogs() {
       <div className="audit-filters-row-2">
         <div className="filter-group">
           <label>Event</label>
-          <div>
-            <select value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="ALL">All Event</option>
-              {categories.map(item => <option key={item} value={item}>{title(item)}</option>)}
-            </select>
-          </div>
+          <CustomDropdown 
+            value={category} 
+            options={[
+              { label: 'All Event', value: 'ALL' },
+              ...categories.map(item => ({ label: title(item), value: item }))
+            ]} 
+            onChange={setCategory} 
+          />
         </div>
         <div className="filter-group">
           <label>Status</label>
-          <div>
-            <select value={status} onChange={e => setStatus(e.target.value)}>
-              <option value="ALL">All</option>
-              <option>SUCCESS</option>
-              <option>FAILED</option>
-              <option>ATTEMPTED</option>
-              <option>SCHEDULED</option>
-              <option>REQUESTED</option>
-            </select>
-          </div>
+          <CustomDropdown 
+            value={status} 
+            options={[
+              { label: 'All', value: 'ALL' },
+              { label: 'SUCCESS', value: 'SUCCESS' },
+              { label: 'FAILED', value: 'FAILED' },
+              { label: 'ATTEMPTED', value: 'ATTEMPTED' },
+              { label: 'SCHEDULED', value: 'SCHEDULED' },
+              { label: 'REQUESTED', value: 'REQUESTED' }
+            ]} 
+            onChange={setStatus} 
+          />
         </div>
         <div className="filter-group">
           <label>Actors</label>
-          <div>
-            <select value={actor} onChange={e => setActor(e.target.value)}>
-              <option value="ALL">All</option>
-              {actors.map(item => <option key={item}>{item}</option>)}
-            </select>
-          </div>
+          <CustomDropdown 
+            value={actor} 
+            options={[
+              { label: 'All', value: 'ALL' },
+              ...actors.map(item => ({ label: item, value: item }))
+            ]} 
+            onChange={setActor} 
+          />
         </div>
         <div className="filter-group">
           <label>From</label>

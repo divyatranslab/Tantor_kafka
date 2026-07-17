@@ -15,10 +15,16 @@ type Job = {
 
 export function JobsList() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // tracks initial load
+  const [refreshing, setRefreshing] = useState(false); // tracks manual/auto refreshes
   const navigate = useNavigate();
 
-  const fetchJobs = async () => {
+  const fetchJobs = async (isManual = false) => {
+    if (isManual) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const res = await fetch('/api/v1/ui/jobs');
       if (res.ok) {
@@ -29,12 +35,13 @@ export function JobsList() {
       console.error(err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchJobs();
-    const interval = setInterval(fetchJobs, 5000);
+    fetchJobs(false);
+    const interval = setInterval(() => fetchJobs(true), 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -67,8 +74,8 @@ export function JobsList() {
           <h2>Job History</h2>
           <p>Track all asynchronous operations in the cluster.</p>
         </div>
-        <button className="refresh-btn" onClick={fetchJobs} title="Refresh">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button className="refresh-btn" onClick={() => fetchJobs(true)} disabled={loading || refreshing} title="Refresh">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={refreshing ? 'spin' : ''}>
             <path d="M21 2v6h-6"></path>
             <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
             <path d="M3 22v-6h6"></path>

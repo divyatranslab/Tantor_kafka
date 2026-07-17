@@ -1,15 +1,15 @@
-
-
 .hosts-page {
   display: flex;
   flex-direction: column;
   gap: 24px;
   background: #FFFFFF;
-  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   padding: 24px;
-  max-width: 1168px;
-  width: 100%;
-  margin: 0 auto;
+  min-height: calc(100vh - 120px);
+  margin: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
 }
 
 .page-header.flex-between {
@@ -58,14 +58,19 @@
   white-space: nowrap;
 }
 
-.btn:hover { background: var(--bg-raised); }
+.btn:hover {
+  background: var(--bg-raised);
+}
 
 .btn-primary-action {
   background: #3E1363;
   color: #fff;
   border-color: transparent;
 }
-.btn-primary-action:hover { background: #2b0c47; }
+
+.btn-primary-action:hover {
+  background: #2b0c47;
+}
 
 .btn.btn-outline {
   border-color: var(--border-subtle);
@@ -83,18 +88,33 @@
   color: var(--text-secondary);
   border-color: var(--border-subtle);
 }
-.btn.icon-only:hover { color: var(--text-primary); background: var(--bg-raised); }
 
-.btn.icon-only.danger:hover { color: var(--color-danger); background: var(--color-danger-light); border-color: transparent; }
+.btn.icon-only:hover {
+  color: var(--text-primary);
+  background: var(--bg-raised);
+}
 
-@keyframes spin { to { transform: rotate(360deg); } }
-.spin { animation: spin 0.7s linear infinite; }
+.btn.icon-only.danger:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-light);
+  border-color: transparent;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.7s linear infinite;
+}
 
 /* ── Table ── */
 .table-container {
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border: 0.5px solid #e8e6e1;
+  border-radius: 10px;
   box-shadow: var(--shadow-sm);
   overflow-x: auto;
 }
@@ -121,8 +141,13 @@
   letter-spacing: normal !important;
 }
 
-.data-table th:first-child { border-radius: var(--radius-lg) 0 0 0; }
-.data-table th:last-child  { border-radius: 0 var(--radius-lg) 0 0; }
+.data-table th:first-child {
+  border-radius: var(--radius-lg) 0 0 0;
+}
+
+.data-table th:last-child {
+  border-radius: 0 var(--radius-lg) 0 0;
+}
 
 .data-table td {
   padding: 14px 16px;
@@ -137,15 +162,26 @@
   vertical-align: middle;
 }
 
-.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:last-child td {
+  border-bottom: none;
+}
 
 .data-table tbody tr {
   transition: background var(--transition-fast);
 }
-.data-table tbody tr:hover { background: var(--bg-raised); }
 
-.font-medium { font-weight: 500; }
-.text-secondary { color: var(--text-secondary); font-size: 0.8rem; }
+.data-table tbody tr:hover {
+  background: var(--bg-raised);
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.text-secondary {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
 
 .agent-kind-cell {
   display: grid;
@@ -194,7 +230,8 @@
   color: #069B68;
 }
 
-.host-status-badge.warning, .host-status-badge.occupied {
+.host-status-badge.warning,
+.host-status-badge.occupied {
   background: #F3F4F6;
   color: #9CA3AF;
 }
@@ -226,7 +263,9 @@
   transition: width 0.3s ease;
 }
 
-.bar-fill.normal  { background: #3E1363; }
+.bar-fill.normal {
+  background: #3E1363;
+}
 
 .metric-bar span {
   font-size: 0.78rem;
@@ -274,11 +313,11 @@
   align-items: center;
   justify-content: center;
   padding: 80px 20px;
-  background: var(--bg-surface);
-  border: 0.5px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   text-align: center;
+  flex-grow: 1;
 }
 
 .empty-illustration {
@@ -354,7 +393,11 @@
   line-height: 1;
   transition: background var(--transition-fast);
 }
-.modal-close:hover { background: var(--color-danger-light); color: var(--color-danger); }
+
+.modal-close:hover {
+  background: var(--color-danger-light);
+  color: var(--color-danger);
+}
 
 .modal-section-title {
   font-size: 0.72rem;
@@ -500,6 +543,7 @@
   justify-content: flex-end;
   gap: 12px;
 }
+
 /* Availability */
 .availability-cell {
   display: flex;
@@ -562,7 +606,8 @@
   z-index: 30;
 }
 
-.menu-info, .host-action-menu button {
+.menu-info,
+.host-action-menu button {
   width: 100%;
   padding: 8px 16px;
   color: #818181;

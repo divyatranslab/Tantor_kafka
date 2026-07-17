@@ -162,7 +162,7 @@ foreach ($service in $services) {
     Write-Host "Starting $($service.DisplayName) on port $($service.Port)..." -ForegroundColor Magenta
     $process = Start-Process `
         -FilePath $JavaExe `
-        -ArgumentList @("-jar", $service.Jar) `
+        -ArgumentList "-jar `"$($service.Jar)`"" `
         -WorkingDirectory $RootDir `
         -RedirectStandardOutput $service.StdOut `
         -RedirectStandardError $service.StdErr `
