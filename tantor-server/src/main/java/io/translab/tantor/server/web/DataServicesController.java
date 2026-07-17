@@ -855,12 +855,15 @@ public class DataServicesController {
         private final int statusCode;
         private final String body;
 
-        DataServiceException(int statusCode, String body) { super(body); this.statusCode = statusCode; this.body = body; }
+        DataServiceException(int statusCode, String body) {
+            super("The native REST API returned HTTP " + statusCode + ".");
+            this.statusCode = statusCode;
+            this.body = body;
+        }
 
         int statusCode() { return statusCode; }
         String message() {
-            if (body == null || body.isBlank()) return "The native REST API returned HTTP " + statusCode + ".";
-            return "The native REST API returned HTTP " + statusCode + ": " + body;
+            return "The native REST API returned HTTP " + statusCode + ".";
         }
     }
 }

@@ -79,6 +79,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.removeParcel(ctx, t)
 	case "CHECK_PREREQUISITES":
 		return e.checkPrerequisites(ctx, t)
+	case "CHECK_PORTS":
+		return e.checkPorts(ctx, t)
 	case "APPLY_PREREQUISITES":
 		return e.applyPrerequisites(ctx, t)
 	case "REBOOT_HOST":
@@ -318,7 +320,7 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 	run("Swappiness", "bash", "-c", "value=$(cat /proc/sys/vm/swappiness 2>/dev/null); echo \"$value\"; [[ \"$value\" -eq 0 ]]")
 	run("Transparent Huge Pages", "bash", "-c", "value=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null); echo \"$value\"; [[ \"$value\" =~ \\[never\\] ]]")
 	run("SELinux", "bash", "-c", "value=$(getenforce 2>/dev/null || echo Disabled); echo \"$value\"; [[ \"$value\" == Disabled || \"$value\" == Permissive ]]")
-	run("Java Version", "bash", "-c", `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -z "$JAVA_CMD" ]; then echo "Java not found"; exit 1; fi; output=$($JAVA_CMD -version 2>&1 | head -n 1); echo "$output"; echo "$output" | grep -qE '"?(11|17|21)\.'`)
+	run("Java Version", "bash", "-c", javaValidationScript(t))
 	run("NTP Service", "bash", "-c", "if systemctl is-active --quiet ntpd; then echo 'ntpd Active'; elif systemctl is-active --quiet chronyd; then echo 'chronyd Active'; else echo 'Not running'; exit 1; fi")
 	logs.WriteString("===== Pre-check Completed =====\n")
 	if failed > 0 {
@@ -327,6 +329,36 @@ func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.Task
 		return e.fail(t, msg+"\n"+logs.String()), nil
 	}
 	logs.WriteString("Prerequisite check passed\n")
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
+}
+
+func (e *Engine) checkPorts(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	ports := prerequisitePorts(t.Parameters["required_ports"])
+	var logs strings.Builder
+	failed := 0
+
+	logs.WriteString("\n===== Kafka Port Check =====\n")
+	for _, port := range ports {
+		out, errOut, err := e.exec.Run(ctx, "bash", "-c", fmt.Sprintf("if ss -ltn \"sport = :%s\" | awk 'NR>1 {found=1} END {exit found ? 0 : 1}'; then echo 'port %s is already in use'; exit 1; else echo 'port %s is available'; fi", port, port, port))
+		detail := strings.TrimSpace(out)
+		if detail == "" {
+			detail = strings.TrimSpace(errOut)
+		}
+		if err != nil {
+			failed++
+			logs.WriteString(fmt.Sprintf("Port %s: %s [Fail]\n", port, firstNonBlank(detail, "in use")))
+			continue
+		}
+		logs.WriteString(fmt.Sprintf("Port %s: %s [Pass]\n", port, firstNonBlank(detail, "available")))
+	}
+	logs.WriteString("===== Port Check Completed =====\n")
+
+	if failed > 0 {
+		msg := fmt.Sprintf("Port check failed: %d of %d port(s) are not available", failed, len(ports))
+		logs.WriteString(msg + "\n")
+		return e.fail(t, msg+"\n"+logs.String()), nil
+	}
+	logs.WriteString("Port check passed\n")
 	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
 }
 
@@ -345,6 +377,92 @@ func prerequisitePorts(raw string) []string {
 		return []string{"9092", "9093", "7071"}
 	}
 	return ports
+}
+
+func javaValidationScript(t *api.Task) string {
+	javaHome := ""
+	if t != nil && t.Parameters != nil {
+		javaHome = firstNonBlank(t.Parameters["java_home"], t.Parameters["javaHome"])
+	}
+	return fmt.Sprintf(`
+set -o pipefail
+JAVA_CMD=""
+configured_java_home=%s
+
+try_java() {
+  candidate="$1"
+  [ -n "$candidate" ] || return 1
+  if [ -x "$candidate" ]; then
+    JAVA_CMD="$candidate"
+    return 0
+  fi
+  if command -v "$candidate" >/dev/null 2>&1; then
+    JAVA_CMD="$(command -v "$candidate")"
+    return 0
+  fi
+  return 1
+}
+
+if [ -n "$configured_java_home" ]; then
+  try_java "$configured_java_home/bin/java" || true
+fi
+[ -z "$JAVA_CMD" ] && [ -n "$JAVA_HOME" ] && try_java "$JAVA_HOME/bin/java" || true
+[ -z "$JAVA_CMD" ] && try_java java || true
+
+if [ -z "$JAVA_CMD" ]; then
+  for p in \
+    /usr/bin/java \
+    /usr/lib/jvm/*/bin/java \
+    /usr/java/*/bin/java \
+    /opt/java*/bin/java \
+    /opt/jdk*/bin/java \
+    /opt/*java*/bin/java \
+    /var/java*/bin/java \
+    /var/jdk*/bin/java \
+    /var/*java*/bin/java \
+    /data/java*/bin/java \
+    /data/jdk*/bin/java \
+    /data/*java*/bin/java \
+    /srv/java*/bin/java \
+    /srv/jdk*/bin/java \
+    /srv/*java*/bin/java \
+    /app/java*/bin/java \
+    /app/jdk*/bin/java; do
+    try_java "$p" && break
+  done
+fi
+
+if [ -z "$JAVA_CMD" ]; then
+  found="$(find /opt /usr/lib/jvm /usr/java /var /data /srv /app -maxdepth 5 -type f -path '*/bin/java' -perm /111 2>/dev/null | head -n 1)"
+  [ -n "$found" ] && try_java "$found" || true
+fi
+
+if [ -z "$JAVA_CMD" ]; then
+  echo "Java not found. Provide java_home in the deployment request or set JAVA_HOME/PATH for the agent service."
+  exit 1
+fi
+
+line="$("$JAVA_CMD" -version 2>&1 | head -n 1)"
+version="$(printf '%%s\n' "$line" | awk -F '"' '{print $2}')"
+[ -n "$version" ] || version="$line"
+printf '%%s via %%s\n' "$version" "$JAVA_CMD"
+case "$version" in
+  17.*) exit 0 ;;
+  *) exit 1 ;;
+esac`, shellQuote(javaHome))
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
+func firstNonBlank(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func (e *Engine) checkKRaftConnectivity(ctx context.Context, t *api.Task) (*api.TaskResult, error) {

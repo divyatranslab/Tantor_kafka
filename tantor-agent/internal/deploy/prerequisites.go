@@ -71,7 +71,7 @@ systemctl enable --now chronyd >/dev/null
 systemctl is-active --quiet chronyd
 echo 'chronyd active'`)
 
-	out, errOut, err := e.exec.Run(ctx, "bash", "-o", "pipefail", "-c", `value=$(java -version 2>&1 | head -1); echo "$value"; echo "$value" | grep -Eq 'version \"17\.'`)
+	out, errOut, err := e.exec.Run(ctx, "bash", "-c", javaValidationScript(t))
 	if err != nil {
 		failed++
 		logs.WriteString(fmt.Sprintf("[FAIL] Java Version - Java 17.x is required for Kafka; no automatic Java switch was performed (%s %s)\n", out, errOut))

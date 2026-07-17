@@ -255,9 +255,17 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 			log("Warning: Downloaded JMX artifact is not a valid jar; keeping existing jar if present")
 			os.Remove(tmpJmx)
 		} else {
-			d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath)
-			d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath)
-			jmxInstalled = true
+			if _, errOut, err := d.exec.RunSudo(ctx, "mv", tmpJmx, jmxJarPath); err != nil {
+				log("Warning: Failed to install JMX exporter jar at %s: %v %s", jmxJarPath, err, strings.TrimSpace(errOut))
+				os.Remove(tmpJmx)
+			} else if _, errOut, err := d.exec.RunSudo(ctx, "chmod", "644", jmxJarPath); err != nil {
+				log("Warning: Failed to make JMX exporter jar readable at %s: %v %s", jmxJarPath, err, strings.TrimSpace(errOut))
+			} else if !isUsableJar(jmxJarPath) {
+				log("Warning: Installed JMX artifact is not readable or not a valid jar at %s", jmxJarPath)
+			} else {
+				log("JMX exporter jar installed at %s", jmxJarPath)
+				jmxInstalled = true
+			}
 		}
 	}
 
@@ -373,14 +381,20 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 						firstNonEmpty(t.Parameters["host_hostname"], d.cfg.Agent.HostID),
 						firstNonEmpty(t.Parameters["host_ip"], "IP unknown"), nodeID, err, technicalOutput)
 				}
-				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, "", false); err != nil {
+					return logs.String(), fmt.Errorf("formatted storage cluster identity validation failed: %w", err)
+				}
+				if err := validateMetaProperties(ctx, d, []string{paths.MetaPropertiesDir}, clusterUUID, nodeID, true); err != nil {
 					return logs.String(), fmt.Errorf("formatted storage identity validation failed: %w", err)
 				}
 				log("KRaft storage formatted successfully")
 			} else if err != nil {
 				return logs.String(), fmt.Errorf("failed to inspect KRaft metadata: %w", err)
 			} else {
-				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, "", false); err != nil {
+					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
+				}
+				if err := validateMetaProperties(ctx, d, []string{paths.MetaPropertiesDir}, clusterUUID, nodeID, true); err != nil {
 					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
 				}
 				log("Existing KRaft metadata matches cluster ID %s and node ID %s; skipping format", clusterUUID, nodeID)
@@ -446,7 +460,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		time.Sleep(5 * time.Second)
 		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
 		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:"+listenerPort}, " "))
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:" + listenerPort}, " "))
 		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 		if err != nil {
 			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
@@ -1215,7 +1229,7 @@ func mergeCustomKafkaProperties(base string, overrides map[string]string) string
 	return out.String()
 }
 
-func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, expectedClusterID, expectedNodeID string) error {
+func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, expectedClusterID, expectedNodeID string, validateNodeID bool) error {
 	seen := make(map[string]bool)
 	for _, dir := range dirs {
 		if dir == "" || seen[dir] {
@@ -1250,7 +1264,7 @@ func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, exp
 		if values["cluster.id"] != "" && values["cluster.id"] != expectedClusterID {
 			return fmt.Errorf("Invalid cluster.id in: %s. Expected new cluster ID %q, but read old cluster ID %q.", metaPropsPath, expectedClusterID, values["cluster.id"])
 		}
-		if values["node.id"] != "" && values["node.id"] != expectedNodeID {
+		if validateNodeID && values["node.id"] != "" && values["node.id"] != expectedNodeID {
 			return fmt.Errorf("Invalid node.id in: %s. Expected new node ID %q, but read old node ID %q.", metaPropsPath, expectedNodeID, values["node.id"])
 		}
 	}

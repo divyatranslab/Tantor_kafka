@@ -48,7 +48,7 @@ public class Cluster {
     @Column(name = "updated_by", nullable = false)
     private String updatedBy;
 
-    @Column(name = "\"user\"")
+    @Transient // "user" column was dropped in V59; kept for API/backward compatibility only.
     private String user;
 
     @Column(name = "role")

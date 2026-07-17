@@ -91,7 +91,6 @@ public class HostStatusService {
             if ("ONLINE".equalsIgnoreCase(host.getStatus()) && "OFFLINE".equalsIgnoreCase(effectiveStatus(host))) {
                 log.info("Marking host {} as OFFLINE in database due to missed heartbeats", host.getId());
                 host.setStatus("OFFLINE");
-                host.setAgentStatus("OFFLINE");
                 hostRepository.save(host);
             }
         }
