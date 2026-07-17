@@ -462,3 +462,38 @@ export function Monitoring() {
     </div>
   );
 }
+
+const boundedPercent = (value?: number | null) => {
+  if (!hasValue(value)) return 0;
+  return Math.max(0, Math.min(100, Number(value)));
+};
+
+function ResourceBar({ label, value, detail, tone = 'blue' }: {
+  label: string;
+  value?: number | null;
+  detail?: string;
+  tone?: 'blue' | 'green' | 'purple';
+}) {
+  const percent = boundedPercent(value);
+  return (
+    <div className="monitoring-resource-row">
+      <div className="monitoring-resource-row-header">
+        <span>{label}{detail ? ` (${detail})` : ''}</span>
+        <strong>{hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}</strong>
+      </div>
+      <div className="monitoring-resource-track">
+        <div className={`monitoring-resource-fill ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function BrokerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="monitoring-broker-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
