@@ -386,6 +386,7 @@ export function Clusters() {
                           <div className="env-cell">
                             <span className="cluster-meta-value tag">{cluster.environment || 'unknown'}</span>
                             <small>{cluster.nodeCount || cluster.hosts?.length || 0} node{(cluster.nodeCount || cluster.hosts?.length || 0) === 1 ? '' : 's'}</small>
+                          </div>
                         </td>
                         <td>
                           {cluster.mode === 'EXTERNAL' ? (
