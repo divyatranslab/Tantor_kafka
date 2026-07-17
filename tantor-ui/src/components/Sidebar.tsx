@@ -18,7 +18,6 @@ import {
 } from 'lucide-react';
 import './Sidebar.css';
 import { useAuth } from '../contexts/AuthContext';
-import { usePermissions } from '../hooks/usePermissions';
 
 type NavItem = {
   icon?: any;
@@ -51,9 +50,10 @@ const navSections: NavSection[] = [
   },
 ];
 
+const hiddenNavPaths = new Set(['/user-management', '/commands', '/ldap-settings', '/admin']);
+
 export function Sidebar() {
   const { decodedToken, logout } = useAuth();
-  const { isAdmin } = usePermissions();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     Clusters: true,
   });
@@ -110,7 +110,7 @@ export function Sidebar() {
           <div key={section.label} className="nav-section">
             {section.label && <span className="nav-section-label">{section.label}</span>}
             {section.items
-              .filter(item => isAdmin || (item.path !== '/user-management' && item.path !== '/ldap-settings'))
+              .filter(item => !item.path || !hiddenNavPaths.has(item.path))
               .map(item => renderItem(item))}
           </div>
         ))}

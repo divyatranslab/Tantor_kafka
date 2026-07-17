@@ -21,6 +21,7 @@ import jakarta.annotation.PreDestroy;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -414,6 +415,23 @@ public class KafkaAdminService {
         } catch (ExecutionException e) {
             refreshAdminClient(clusterId);
             return "";
+        }
+    }
+
+    public boolean isClusterReachable(UUID clusterId, long timeoutSeconds) {
+        AdminClient client = getAdminClient(clusterId);
+        long boundedTimeout = Math.max(1, timeoutSeconds);
+        try {
+            String id = client.describeCluster().clusterId().get(boundedTimeout, TimeUnit.SECONDS);
+            return id != null && !id.isBlank();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            refreshAdminClient(clusterId);
+            return false;
+        } catch (Exception e) {
+            refreshAdminClient(clusterId);
+            log.warn("Kafka health check failed for cluster {}: {}", clusterId, e.getMessage());
+            return false;
         }
     }
 

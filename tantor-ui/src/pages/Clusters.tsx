@@ -36,9 +36,14 @@ interface ClusterInfo {
   totalHostsCount?: number;
   telemetry?: string;
   lastAgentHeartbeat?: string;
+  kafkaHealth?: string;
+  agentHealth?: string;
+  monitoringHealth?: string;
+  overallHealth?: string;
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
+  kafkaHealthChecking?: boolean;
 }
 
 export function Clusters() {
@@ -53,12 +58,69 @@ export function Clusters() {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/ui/clusters');
-      if (res.ok) setClusters(await res.json());
+      if (res.ok) {
+        const data: ClusterInfo[] = await res.json();
+        const visibleData = data.map(cluster => cluster.mode === 'EXTERNAL'
+          ? { ...cluster, kafkaHealthChecking: true }
+          : cluster
+        );
+        setClusters(visibleData);
+        refreshExternalKafkaHealth(visibleData);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshExternalKafkaHealth = (items: ClusterInfo[]) => {
+    items
+      .filter(cluster => cluster.mode === 'EXTERNAL')
+      .forEach(cluster => {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 7000);
+        fetch(`/api/v1/ui/clusters/${cluster.id}`, { signal: controller.signal })
+          .then(res => res.ok ? res.json() : Promise.reject(new Error('Kafka health request failed')))
+          .then((fresh: ClusterInfo) => {
+            setClusters(prev => prev.map(current => current.id === cluster.id
+              ? {
+                  ...current,
+                  kafkaHealthChecking: false,
+                  kafkaHealth: fresh.kafkaHealth,
+                  agentHealth: fresh.agentHealth,
+                  monitoringHealth: fresh.monitoringHealth,
+                  overallHealth: fresh.overallHealth,
+                  runtimeHealth: fresh.runtimeHealth,
+                  runtimeStatusLabel: fresh.runtimeStatusLabel,
+                  runtimeStatusReason: fresh.runtimeStatusReason,
+                  managementLevel: fresh.managementLevel,
+                  accessLabel: fresh.accessLabel,
+                  telemetry: fresh.telemetry,
+                  managedHostsCount: fresh.managedHostsCount,
+                  totalHostsCount: fresh.totalHostsCount,
+                  lastAgentHeartbeat: fresh.lastAgentHeartbeat,
+                  hosts: fresh.hosts,
+                  nodeCount: fresh.nodeCount,
+                }
+              : current
+            ));
+          })
+          .catch(() => {
+            setClusters(prev => prev.map(current => current.id === cluster.id
+              ? {
+                  ...current,
+                  kafkaHealthChecking: false,
+                  runtimeHealth: 'OFFLINE',
+                  overallHealth: 'OFFLINE',
+                  runtimeStatusLabel: 'Kafka Offline',
+                  runtimeStatusReason: 'Kafka live check timed out or failed.',
+                }
+              : current
+            ));
+          })
+          .finally(() => window.clearTimeout(timeout));
+      });
   };
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
@@ -112,6 +174,7 @@ export function Clusters() {
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
   const statusLabel = (c: ClusterInfo) => {
+    if (c.kafkaHealthChecking) return 'Checking Kafka...';
     if (c.runtimeStatusLabel) return c.runtimeStatusLabel;
     if (c.mode === 'EXTERNAL') {
       if (c.status === 'SUCCESS') return 'Connected';
@@ -123,6 +186,7 @@ export function Clusters() {
   };
 
   const statusClass = (c: ClusterInfo) => {
+    if (c.kafkaHealthChecking) return 'checking';
     const runtime = (c.runtimeHealth || '').toLowerCase();
     if (runtime) return runtime;
     if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'external' : (c.status || 'external').toLowerCase();
@@ -164,6 +228,38 @@ export function Clusters() {
     if (cluster.mode !== 'EXTERNAL') return 'Full access';
     if (cluster.managementLevel === 'AGENT_MANAGED') return 'Fully managed';
     return 'Metadata available';
+  };
+
+  const managementClass = (cluster: ClusterInfo) => {
+    const label = `${cluster.managementLevel || ''} ${cluster.accessLabel || ''}`.toLowerCase();
+    return label.includes('bootstrap') || label.includes('metadata') ? 'metadata' : 'managed';
+  };
+
+  const agentHealthLabel = (cluster: ClusterInfo) => {
+    if (cluster.mode !== 'EXTERNAL') return '';
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'Agent connected';
+      case 'PARTIAL':
+        return 'Agent partial';
+      case 'NOT_CONNECTED':
+        return 'Agent not connected';
+      default:
+        return 'Agent not connected';
+    }
+  };
+
+  const agentHealthClass = (cluster: ClusterInfo) => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'connected';
+      case 'PARTIAL':
+        return 'partial';
+      case 'NOT_CONNECTED':
+        return 'not-connected';
+      default:
+        return 'not-connected';
+    }
   };
 
   const sourceLabel = (cluster: ClusterInfo) =>
@@ -290,7 +386,6 @@ export function Clusters() {
                           <div className="env-cell">
                             <span className="cluster-meta-value tag">{cluster.environment || 'unknown'}</span>
                             <small>{cluster.nodeCount || cluster.hosts?.length || 0} node{(cluster.nodeCount || cluster.hosts?.length || 0) === 1 ? '' : 's'}</small>
-                          </div>
                         </td>
                         <td>
                           {cluster.mode === 'EXTERNAL' ? (
@@ -312,8 +407,8 @@ export function Clusters() {
                         </td>
                         <td>
                           <span className="heartbeat-text">
-                            {cluster.mode === 'EXTERNAL'
-                              ? formatHeartbeat(cluster.lastAgentHeartbeat)
+                            {cluster.mode === 'EXTERNAL' 
+                              ? formatHeartbeat(cluster.lastAgentHeartbeat) 
                               : formatHeartbeat(host?.lastHeartbeat)}
                           </span>
                         </td>
@@ -322,14 +417,19 @@ export function Clusters() {
                             <span className={`source-pill ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
                               {sourceLabel(cluster)}
                             </span>
-                            <span className={`access-pill ${cluster.managementLevel === 'BOOTSTRAP_ONLY' ? 'metadata' : 'managed'}`}>
+                            <span className={`access-pill ${managementClass(cluster)}`}>
                               {managementLabel(cluster)}
                             </span>
-                            <span
+                            {cluster.mode === 'EXTERNAL' && (
+                              <span className={`agent-pill ${agentHealthClass(cluster)}`}>
+                                {agentHealthLabel(cluster)}
+                              </span>
+                            )}
+                            <span 
                               className={`cluster-status-badge ${statusClass(cluster)}`}
                               title={cluster.runtimeStatusReason || (cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined)}
                             >
-                              {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
+                              {(cluster.kafkaHealthChecking || (inProgress(cluster.status) && cluster.mode !== 'EXTERNAL')) && (
                                 <RefreshCw size={11} className="spin" />
                               )}
                               {statusLabel(cluster)}

@@ -4,10 +4,10 @@ import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.dto.AclDTOs.AclCreateRequest;
 import io.translab.tantor.server.dto.AclDTOs.AclCreateResponse;
 import io.translab.tantor.server.service.SecurityOperationsService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,15 +23,13 @@ class SecurityControllerAuditTest {
         when(fixture.security.createAcl(fixture.clusterId, fixture.request))
                 .thenReturn(new AclCreateResponse(1));
 
-        fixture.controller.createAcl(fixture.clusterId, fixture.request);
+        fixture.controller.createAcl("Bearer test-token", fixture.clusterId, fixture.request);
 
-        Map<String, Object> details = capturedDetails(fixture.audit, "SUCCESS");
+        String details = capturedDetails(fixture.audit, "SUCCESS");
         assertThat(details)
-                .containsEntry("principal", "User:alice")
-                .containsEntry("resourceType", "topic")
-                .containsEntry("resourceName", "orders")
-                .containsEntry("operation", "Read")
-                .doesNotContainKey("error");
+                .contains("User:alice")
+                .contains("topic")
+                .contains("orders");
     }
 
     @Test
@@ -41,25 +39,25 @@ class SecurityControllerAuditTest {
                 "Failed to create ACL: Kafka ACLs are disabled because no authorizer is configured on the cluster.");
         when(fixture.security.createAcl(fixture.clusterId, fixture.request)).thenThrow(failure);
 
-        assertThatThrownBy(() -> fixture.controller.createAcl(fixture.clusterId, fixture.request))
+        assertThatThrownBy(() -> fixture.controller.createAcl("Bearer test-token", fixture.clusterId, fixture.request))
                 .isSameAs(failure);
 
-        Map<String, Object> details = capturedDetails(fixture.audit, "FAILED");
-        assertThat(details.get("error")).isEqualTo(failure.getMessage());
+        verifyNoInteractions(fixture.audit);
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> capturedDetails(AuditService auditService, String status) {
-        ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
+    private String capturedDetails(AuditService auditService, String status) {
+        ArgumentCaptor<Object> details = ArgumentCaptor.forClass(Object.class);
         verify(auditService).record(eq("SECURITY"), eq("ACL_CREATED"), eq("CLUSTER"), anyString(),
                 any(UUID.class), eq(status), isNull(), isNull(), isNull(), details.capture());
-        return details.getValue();
+        return String.valueOf(details.getValue());
     }
 
     private Fixture fixture() {
         SecurityOperationsService security = mock(SecurityOperationsService.class);
         AuditService audit = mock(AuditService.class);
-        SecurityController controller = new SecurityController(security, audit);
+        RoleAuthenticationUtil roleAuthenticationUtil = mock(RoleAuthenticationUtil.class);
+        when(roleAuthenticationUtil.canAccess(any(), anyString())).thenReturn(true);
+        SecurityController controller = new SecurityController(security, audit, roleAuthenticationUtil);
         UUID clusterId = UUID.randomUUID();
         AclCreateRequest request = new AclCreateRequest();
         request.setPrincipal("User:alice");

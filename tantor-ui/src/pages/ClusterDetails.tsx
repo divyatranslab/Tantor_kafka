@@ -16,6 +16,10 @@ interface ClusterInfo {
   kafkaClusterId?: string;
   originType?: string;
   installDirectory?: string;
+  kafkaHealth?: string;
+  agentHealth?: string;
+  monitoringHealth?: string;
+  overallHealth?: string;
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
@@ -84,6 +88,30 @@ export function ClusterDetails() {
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
   const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
   const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
+  const agentLabel = (() => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'Agent connected';
+      case 'PARTIAL':
+        return 'Agent partial';
+      case 'NOT_CONNECTED':
+        return 'Agent not connected';
+      default:
+        return 'Agent not connected';
+    }
+  })();
+  const agentClass = (() => {
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'connected';
+      case 'PARTIAL':
+        return 'partial';
+      case 'NOT_CONNECTED':
+        return 'not-connected';
+      default:
+        return 'not-connected';
+    }
+  })();
 
   if (isLogsView) {
     return (
@@ -151,6 +179,18 @@ export function ClusterDetails() {
             <span className="breadcrumb-separator">&gt;</span>
             <span className="breadcrumb-active">{cluster.name}</span>
           </div>
+          <div className="cluster-health-stack">
+            <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+              <div className="status-dot"></div> {runtimeLabel}
+            </div>
+            {cluster.mode === 'EXTERNAL' && (
+              <div className={`agent-status-badge ${agentClass}`}>
+                {agentLabel}
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
 
           <div className="cluster-header-main">
             <div className="cluster-header-left">

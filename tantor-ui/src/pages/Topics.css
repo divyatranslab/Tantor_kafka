@@ -62,7 +62,12 @@
 .topic-button.primary:hover:not(:disabled) { filter: brightness(0.94); }
 .topic-button.secondary { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border-default); }
 .topic-button.secondary:hover:not(:disabled) { background: var(--bg-raised); }
+.topic-button.secondary.live-active { color: var(--accent-primary); background: var(--accent-light); border-color: var(--accent-border); }
 .topic-button.destructive { color: white; background: #b42318; }
+
+.spin-slow {
+  animation: spin 1.8s linear infinite;
+}
 
 .topics-toolbar {
   display: flex;

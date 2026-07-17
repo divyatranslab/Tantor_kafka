@@ -396,9 +396,9 @@ export function Monitoring() {
                   <span>System resources</span>
                 </div>
                 <ResourceBar label="Broker CPU" value={overview?.brokerCpuPercent} tone="blue" />
-                <ResourceBar label="System CPU" value={overview?.systemCpuPercent} tone="green" />
+                <ResourceBar label="System CPU" value={overview?.systemCpuPercent} detail={overview?.systemCpuPercent == null ? 'No samples' : undefined} tone="green" />
                 <ResourceBar label="JVM Heap" value={overview?.jvmHeapUsedPercent} tone="purple" />
-                <ResourceBar label="Host Memory" value={overview?.hostMemoryUsedPercent} detail="Agent heartbeat" tone="blue" />
+                <ResourceBar label="Host Memory" value={overview?.hostMemoryUsedPercent} detail={overview?.hostMemoryUsedPercent == null ? 'Agent metric unavailable' : 'Agent heartbeat'} tone="blue" />
               </section>
 
               <section className="monitoring-broker-panel">

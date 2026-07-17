@@ -30,6 +30,7 @@ public class BrokerMetricsCacheService {
     private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
     private final ExternalClusterService externalClusterService;
+    private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate = new RestTemplateBuilder()
             .setConnectTimeout(Duration.ofSeconds(2))
@@ -89,7 +90,7 @@ public class BrokerMetricsCacheService {
         Host host = hostRepository.findById(svc.getHostId()).orElse(null);
         if (host == null) return null;
 
-        boolean heartbeatOk = host.getAgentStatus() != null && "ONLINE".equalsIgnoreCase(host.getAgentStatus());
+        boolean heartbeatOk = "ONLINE".equalsIgnoreCase(hostStatusService.agentConnectivityStatus(host));
         
         BrokerSummaryDto.BrokerSummaryDtoBuilder builder = BrokerSummaryDto.builder()
             .brokerId(svc.getNodeId())

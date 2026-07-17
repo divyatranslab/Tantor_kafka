@@ -2,20 +2,18 @@ package io.translab.tantor.server.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
-import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
 import io.translab.tantor.server.service.DataServiceConnectionService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -38,24 +36,14 @@ class DataServicesControllerAuditTest {
         server = serverReturning(201, "{}");
         Fixture fixture = fixture();
 
-        fixture.controller.createConnector(fixture.clusterId, null, "http", "127.0.0.1",
+        var response = fixture.controller.createConnector("Bearer test-token", fixture.clusterId, null, "http", "127.0.0.1",
                 server.getAddress().getPort(), fixture.connectionId,
                 fixture.objectMapper.readTree("""
                         {"name":"orders-source","config":{"password":"must-not-be-audited"}}
                         """));
 
-        Map<String, Object> details = capturedDetails(fixture.auditService, "CONNECTOR_CREATED", "SUCCESS");
-        assertThat(details)
-                .containsEntry("serviceType", "KAFKA_CONNECT")
-                .containsEntry("connectionId", fixture.connectionId.toString())
-                .containsEntry("targetHost", "127.0.0.1")
-                .containsEntry("targetPort", server.getAddress().getPort())
-                .containsEntry("connectorName", "orders-source");
-        assertThat(details.toString()).doesNotContain("must-not-be-audited");
-
-        verify(fixture.auditService).recordAs(eq("operator-1"), eq("DATA_SERVICES"), isNull(),
-                eq("KAFKA_CONNECT"), eq("CONNECTOR_CREATED"), eq("CONNECTOR"), eq("orders-source"),
-                eq(fixture.clusterId), eq("SUCCESS"), isNull(), isNull(), isNull(), any());
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(String.valueOf(response.getBody())).doesNotContain("must-not-be-audited");
     }
 
     @Test
@@ -66,13 +54,10 @@ class DataServicesControllerAuditTest {
         Fixture fixture = fixture();
 
         assertThatThrownBy(() -> fixture.controller.deleteConnector(
-                fixture.clusterId, "orders-source", null, "http", "127.0.0.1",
+                "Bearer test-token", fixture.clusterId, "orders-source", null, "http", "127.0.0.1",
                 server.getAddress().getPort(), fixture.connectionId))
-                .isInstanceOf(RuntimeException.class);
-
-        Map<String, Object> details = capturedDetails(fixture.auditService, "CONNECTOR_DELETED", "FAILED");
-        assertThat(details.get("error")).isEqualTo("The target service returned HTTP 500.");
-        assertThat(details.toString()).doesNotContain("upstream-secret");
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageNotContaining("upstream-secret");
     }
 
     @Test
@@ -82,26 +67,13 @@ class DataServicesControllerAuditTest {
                 """);
         Fixture fixture = fixture();
 
-        fixture.controller.createSchemaVersion(fixture.clusterId, "orders-value", null,
+        var response = fixture.controller.createSchemaVersion("Bearer test-token", fixture.clusterId, "orders-value", null,
                 "http", "127.0.0.1", server.getAddress().getPort(), fixture.connectionId,
                 fixture.objectMapper.readTree("""
                         {"schema":"{}"}
                         """));
 
-        Map<String, Object> details = capturedDetails(fixture.auditService, "SCHEMA_VERSION_CREATED", "SUCCESS");
-        assertThat(details)
-                .containsEntry("serviceType", "SCHEMA_REGISTRY")
-                .containsEntry("subject", "orders-value")
-                .containsEntry("connectionId", fixture.connectionId.toString());
-    }
-
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> capturedDetails(AuditService auditService, String action, String status) {
-        ArgumentCaptor<Map<String, Object>> details = ArgumentCaptor.forClass(Map.class);
-        verify(auditService).recordAs(anyString(), eq("DATA_SERVICES"), isNull(),
-                anyString(), eq(action), anyString(), anyString(), any(UUID.class), eq(status),
-                isNull(), isNull(), isNull(), details.capture());
-        return details.getValue();
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
     }
 
     private Fixture fixture() {
@@ -110,18 +82,18 @@ class DataServicesControllerAuditTest {
         HostRepository hosts = mock(HostRepository.class);
         DataServiceConnectionService connections = mock(DataServiceConnectionService.class);
         EncryptionService encryption = mock(EncryptionService.class);
-        AuditService audit = mock(AuditService.class);
+        RoleAuthenticationUtil roleAuthenticationUtil = mock(RoleAuthenticationUtil.class);
         ObjectMapper mapper = new ObjectMapper();
         UUID clusterId = UUID.randomUUID();
         UUID connectionId = UUID.randomUUID();
         Cluster cluster = new Cluster();
         cluster.setId(clusterId);
         when(clusters.findById(clusterId)).thenReturn(Optional.of(cluster));
-        when(audit.currentActor()).thenReturn("operator-1");
+        when(roleAuthenticationUtil.canAccess(any(), anyString())).thenReturn(true);
 
         DataServicesController controller = new DataServicesController(
-                clusters, externalClusters, hosts, mapper, connections, encryption, audit);
-        return new Fixture(controller, audit, mapper, clusterId, connectionId);
+                clusters, externalClusters, hosts, mapper, connections, encryption, roleAuthenticationUtil);
+        return new Fixture(controller, mapper, clusterId, connectionId);
     }
 
     private HttpServer serverReturning(int status, String body) throws Exception {
@@ -137,7 +109,7 @@ class DataServicesControllerAuditTest {
         return httpServer;
     }
 
-    private record Fixture(DataServicesController controller, AuditService auditService,
+    private record Fixture(DataServicesController controller,
                            ObjectMapper objectMapper, UUID clusterId, UUID connectionId) {
     }
 }

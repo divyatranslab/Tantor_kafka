@@ -57,6 +57,8 @@ export function Topics() {
   const { canManage } = usePermissions();
   const [data, setData] = useState<PaginatedResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -98,9 +100,10 @@ export function Topics() {
   ];
 
 
-  const fetchTopics = useCallback(async () => {
+  const fetchTopics = useCallback(async (quiet = false) => {
     if (!id) return;
-    setLoading(true);
+    if (quiet) setRefreshing(true);
+    else setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
@@ -115,12 +118,18 @@ export function Topics() {
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load topics');
     } finally {
-      setLoading(false);
+      if (quiet) setRefreshing(false);
+      else setLoading(false);
     }
   }, [id, includeInternal, page, search, size]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch synchronizes Kafka data
   useEffect(() => { fetchTopics(); }, [fetchTopics]);
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = window.setInterval(() => fetchTopics(true), 15000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, fetchTopics]);
   useEffect(() => {
     const close = () => setOpenMenu(null);
     window.addEventListener('click', close);
@@ -260,6 +269,16 @@ export function Topics() {
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
+          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing}>
+            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} /> Refresh
+          </button>
+          <button
+            className={`topic-button secondary ${autoRefresh ? 'live-active' : ''}`}
+            onClick={() => setAutoRefresh(current => !current)}
+            title="Refresh topics every 15 seconds"
+          >
+            <RefreshCw size={16} className={autoRefresh ? 'spin-slow' : ''} /> Live 15s
+          </button>
           <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>

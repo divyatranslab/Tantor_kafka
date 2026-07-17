@@ -8,7 +8,6 @@ export function Hosts() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
@@ -24,7 +23,6 @@ export function Hosts() {
   };
 
   const deleteHost = async (id: string) => {
-    setOpenMenuHostId(null);
     if (!canManage) return;
     if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
     try {
@@ -41,23 +39,6 @@ export function Hosts() {
     }
   };
 
-  const setHostAvailability = async (host: any, available: boolean) => {
-    setOpenMenuHostId(null);
-    if (!canManage) return;
-    try {
-      const action = available ? 'mark-available' : 'mark-unavailable';
-      const res = await fetch(`/api/v1/ui/hosts/${host.id}/${action}`, { method: 'POST' });
-      if (res.ok) {
-        fetchHosts();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        alert(body.message || 'Failed to update host availability.');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Network error while updating host availability.');
-    }
-  };
   useEffect(() => {
     fetchHosts();
     const t = setInterval(fetchHosts, 5000);
@@ -148,7 +129,7 @@ export function Hosts() {
   };
 
   return (
-    <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
+    <div className="hosts-page animate-fade-in">
       <header className="page-header flex-between">
         <div>
           <h1>Hosts</h1>
@@ -210,8 +191,10 @@ export function Hosts() {
           <tbody>
             {loading && activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={9}>
-                  <div className="empty-state">Loading connected agents...</div>
+                <td colSpan={10}>
+                  <div className="empty-state">
+                    {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
+                  </div>
                 </td>
               </tr>
             ) : activeHosts.map(host => {
@@ -220,8 +203,6 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
-              const discoveryAgent = host.agentType === 'KAFKA_DISCOVERY';
-
               return (
                 <tr key={host.id}>
                   <td>
