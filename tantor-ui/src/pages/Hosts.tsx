@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
+import { RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './Hosts.css';
 
@@ -8,7 +8,6 @@ export function Hosts() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
@@ -24,7 +23,6 @@ export function Hosts() {
   };
 
   const deleteHost = async (id: string) => {
-    setOpenMenuHostId(null);
     if (!canManage) return;
     if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
     try {
@@ -41,23 +39,6 @@ export function Hosts() {
     }
   };
 
-  const setHostAvailability = async (host: any, available: boolean) => {
-    setOpenMenuHostId(null);
-    if (!canManage) return;
-    try {
-      const action = available ? 'mark-available' : 'mark-unavailable';
-      const res = await fetch(`/api/v1/ui/hosts/${host.id}/${action}`, { method: 'POST' });
-      if (res.ok) {
-        fetchHosts();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        alert(body.message || 'Failed to update host availability.');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Network error while updating host availability.');
-    }
-  };
   useEffect(() => {
     fetchHosts();
     const t = setInterval(fetchHosts, 5000);
@@ -148,7 +129,7 @@ export function Hosts() {
   };
 
   return (
-    <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
+    <div className="hosts-page animate-fade-in">
       <header className="page-header flex-between">
         <div>
           <h1>Infrastructure fleet</h1>
@@ -179,13 +160,12 @@ export function Hosts() {
               <th>Agent</th>
               <th>CPU</th>
               <th>Memory</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={8}>
                   <div className="empty-state">
                     {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
@@ -197,8 +177,6 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
-              const discoveryAgent = host.agentType === 'KAFKA_DISCOVERY';
-
               return (
                 <tr key={host.id}>
                   <td>
@@ -246,34 +224,6 @@ export function Hosts() {
                       </div>
                       <span>{mem}%</span>
                     </div>
-                  </td>
-                  <td>
-                    {discoveryAgent ? (
-                      <span className="discovery-managed-label">Managed from External Clusters</span>
-                    ) : canManage ? (
-                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
-                      <button
-                        className="btn icon-only"
-                        title="Node actions"
-                        onClick={() => setOpenMenuHostId(openMenuHostId === host.id ? null : host.id)}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                      {openMenuHostId === host.id && (
-                        <div className="host-action-menu">
-                          {host.status === 'OCCUPIED_INTERNAL' ? (
-                            <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
-                          ) : host.status === 'AVAILABLE' ? (
-                            <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
-                          ) : (
-                            <div className="menu-info">Externally Managed</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    ) : (
-                      <span className="discovery-managed-label">View only</span>
-                    )}
                   </td>
                 </tr>
               );

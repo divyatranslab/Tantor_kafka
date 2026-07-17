@@ -428,15 +428,15 @@ export function Clusters() {
                             </button>
                             {openMenuId === cluster.id && (
                               <div className="cluster-action-menu">
-                                <button onClick={() => triggerRollingRestart(cluster)} disabled={!isClickable(cluster)}>
+                                <button onClick={() => triggerRollingRestart(cluster)} disabled>
                                   <RotateCcw size={14} />
                                   Rolling restart
                                 </button>
-                                <button onClick={() => navigate(`/clusters/${cluster.id}/config`)} disabled={!isClickable(cluster)}>
+                                <button onClick={() => navigate(`/clusters/${cluster.id}/config`)} disabled>
                                   <Settings size={14} />
                                   Configuration change
                                 </button>
-                                <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled={!isClickable(cluster)}>
+                                <button onClick={() => navigate(`/cluster-deployment?mode=add&clusterId=${cluster.id}`)} disabled>
                                   <ServerCog size={14} />
                                   Add node
                                 </button>
