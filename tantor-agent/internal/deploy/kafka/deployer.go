@@ -446,7 +446,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		time.Sleep(5 * time.Second)
 		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
 		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:"+listenerPort}, " "))
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:" + listenerPort}, " "))
 		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 		if err != nil {
 			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
@@ -1053,8 +1053,8 @@ func (d *Deployer) generateZooKeeperConfigs(ctx context.Context, t *api.Task, in
 
 	if role == "zookeeper" || role == "broker_zookeeper" {
 		zkDataDir := zookeeperDataDir(t)
-		if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", zkDataDir); err != nil {
-			return fmt.Errorf("failed to create ZooKeeper data directory: %w (%s)", err, errOut)
+		if err := d.ensureDirectory(ctx, zkDataDir); err != nil {
+			return fmt.Errorf("failed to create ZooKeeper data directory: %w", err)
 		}
 		clientPort := strings.TrimSpace(t.Parameters["zookeeper_port"])
 		if clientPort == "" {
@@ -1641,7 +1641,28 @@ func (d *Deployer) writeTemplateToSudoFile(ctx context.Context, tmplStr string, 
 	return d.writeStringToSudoFile(ctx, buf.String(), dest)
 }
 
+func (d *Deployer) ensureDirectory(ctx context.Context, dir string) error {
+	if d.exec == nil {
+		return os.MkdirAll(dir, 0755)
+	}
+	if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", dir); err != nil {
+		return fmt.Errorf("%w (%s)", err, errOut)
+	}
+	return nil
+}
+
 func (d *Deployer) writeStringToSudoFile(ctx context.Context, content string, dest string) error {
+	if d.exec == nil {
+		if err := d.ensureDirectory(ctx, filepath.Dir(dest)); err != nil {
+			return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(dest), err)
+		}
+		content = strings.ReplaceAll(content, "\r\n", "\n")
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		return os.WriteFile(dest, []byte(content), 0644)
+	}
+
 	if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", filepath.Dir(dest)); err != nil {
 		return fmt.Errorf("failed to create dir %s: %w (%s)", filepath.Dir(dest), err, errOut)
 	}
