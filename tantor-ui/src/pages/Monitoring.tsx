@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Server, Check } from 'lucide-react';
+import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './Monitoring.css';
 
@@ -53,20 +53,6 @@ interface MonitoringSample {
   systemCpu: number | null;
 }
 
-interface Host {
-  id: string;
-  hostname: string;
-  status: string;
-  hostIp?: string;
-  resourceType?: string;
-  cpuUsagePct?: number | null;
-  memTotalMb?: number | null;
-  memUsedMb?: number | null;
-  diskTotalGb?: number | null;
-  diskUsedGb?: number | null;
-  clusterId?: string;
-}
-
 const formatNumber = (value?: number | null, digits = 0) => {
   if (value === undefined || value === null || Number.isNaN(value)) return '0';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
@@ -89,75 +75,35 @@ const hasValue = (value?: number | null) => value !== undefined && value !== nul
 
 const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
-const generateInitialHistory = (): MonitoringSample[] => {
-  const now = new Date();
-  return Array.from({ length: 12 }).map((_, i) => {
-    const t = new Date(now.getTime() - (12 - i) * 10000);
-    return {
-      time: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      brokers: null,
-      topics: null,
-      partitions: null,
-      underReplicated: null,
-      lag: null,
-      messagesIn: 200 + (Math.random() - 0.5) * 20,
-      bytesIn: null,
-      bytesOut: null,
-      heap: 8.0 + Math.random() * 1.5,
-      hostMemory: 78.4 + Math.random() * 1.0,
-      brokerCpu: 0.8 + Math.random() * 0.4,
-      systemCpu: 1.0 + Math.random() * 0.5,
-    };
-  });
-};
-
 export function Monitoring() {
+  const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
-  const [hosts, setHosts] = useState<Host[]>([]);
-  const [selectedHostId, setSelectedHostId] = useState('');
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
-  const [history, setHistory] = useState<MonitoringSample[]>(() => generateInitialHistory());
+  const [history, setHistory] = useState<MonitoringSample[]>([]);
 
   // 1. Load clusters and hosts on mount
   const loadInitialData = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch all clusters
-      const clustersRes = await fetch('/api/v1/monitoring/clusters');
+      const clustersRes = await fetch(`/api/v1/monitoring/clusters?type=${selectedType}`);
       let clusterList: MonitoringCluster[] = [];
       if (clustersRes.ok) {
         clusterList = await clustersRes.json();
         setClusters(clusterList);
       }
 
-      // Fetch all hosts
-      const hostsRes = await fetch('/api/v1/ui/hosts');
-      let hostList: Host[] = [];
-      if (hostsRes.ok) {
-        hostList = await hostsRes.json();
-        setHosts(hostList);
-      }
-
-      // Set default selected cluster
-      if (clusterList.length > 0) {
-        const firstCluster = clusterList[0];
-        setSelectedClusterId(firstCluster.id);
-
-        // Filter hosts for this cluster or default to first host
-        const clusterHosts = hostList.filter(h => h.clusterId === firstCluster.id);
-        if (clusterHosts.length > 0) {
-          setSelectedHostId(clusterHosts[0].id);
-        } else if (hostList.length > 0) {
-          setSelectedHostId(hostList[0].id);
-        }
-      }
+      setSelectedClusterId(current =>
+        clusterList.some(cluster => cluster.id === current)
+          ? current
+          : (clusterList[0]?.id || '')
+      );
     } catch (err: any) {
       console.error(err);
       setError('Failed to load initial monitoring data.');
@@ -167,8 +113,10 @@ export function Monitoring() {
   };
 
   useEffect(() => {
+    setOverview(null);
+    setHistory([]);
     loadInitialData();
-  }, []);
+  }, [selectedType]);
 
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {
@@ -182,12 +130,6 @@ export function Monitoring() {
         setOverview(data);
       }
 
-      // 2. Fetch latest Host System Metrics (CPU, Memory, Disk)
-      const hostsRes = await fetch('/api/v1/ui/hosts');
-      if (hostsRes.ok) {
-        const hostData = await hostsRes.json();
-        setHosts(hostData);
-      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -197,7 +139,7 @@ export function Monitoring() {
 
   useEffect(() => {
     if (selectedClusterId) {
-      setHistory(generateInitialHistory());
+      setHistory([]);
       loadOverview();
     }
   }, [selectedClusterId, loadOverview]);
@@ -236,27 +178,12 @@ export function Monitoring() {
     return () => window.clearInterval(timer);
   }, [autoRefresh, refreshInterval, loadOverview, selectedClusterId]);
 
-  // Selected entities helper
+  // Selected cluster helper
   const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
-  const selectedHost = useMemo(() => hosts.find(h => h.id === selectedHostId) || hosts[0], [hosts, selectedHostId]);
-
-  // Create mock default data if none exists so the dashboard is beautifully populated
-  const displayHostName = selectedHost?.hostname || 'broker-1';
-  const displayHostIp = selectedHost?.hostIp || '192.168.3.191';
-  const displayHostRole = selectedHost?.resourceType || 'broker';
-  const displayHostNode = selectedHost ? `Node ${hosts.indexOf(selectedHost) + 1}` : 'Node 2';
-  const displayHostStatus = selectedHost?.status || 'ONLINE';
-
-  const displayCpuUsage = overview?.systemCpuPercent ?? selectedHost?.cpuUsagePct ?? 1.0;
-  const displayMemUsed = selectedHost?.memUsedMb ?? 1358;
-  const displayMemTotal = selectedHost?.memTotalMb ?? 15759;
-  const displayMemPercent = (displayMemUsed / (displayMemTotal || 1)) * 100;
-  const displayDiskUsedPct = selectedHost ? (selectedHost.diskUsedGb && selectedHost.diskTotalGb ? (selectedHost.diskUsedGb / selectedHost.diskTotalGb) * 100 : 48) : 48;
-  const displayDiskFreeGb = selectedHost ? (selectedHost.diskTotalGb && selectedHost.diskUsedGb ? selectedHost.diskTotalGb - selectedHost.diskUsedGb : 8.6) : 8.6;
 
   // Mock initial history if empty to generate pretty graphs immediately
   const graphHistory = history;
-  const clusterTitle = overview?.name || selectedCluster?.name || displayHostName;
+  const clusterTitle = overview?.name || selectedCluster?.name || 'Select a cluster';
   const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
   const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
   const jmxHealthy = overview?.jmxUp === 1;
@@ -270,6 +197,9 @@ export function Monitoring() {
     selectedCluster?.warning,
     ...(overview?.warnings || []),
   ].filter((message): message is string => Boolean(message && message.trim()));
+  const clusterTypeLabel = overview?.originType || selectedCluster?.originType || selectedType;
+  const displayCpuUsage = overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
+  const displayMemoryUsage = overview?.jvmHeapUsedPercent ?? overview?.hostMemoryUsedPercent;
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -285,6 +215,18 @@ export function Monitoring() {
 
         {/* Controls */}
         <div className="controls-area">
+          <select
+            className="tantor-select"
+            value={selectedType}
+            onChange={event => {
+              setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
+              setSelectedClusterId('');
+            }}
+          >
+            <option value="INTERNAL">Internal</option>
+            <option value="EXTERNAL">External</option>
+          </select>
+
           {/* Cluster Selection */}
           {clusters.length > 0 && (
             <select
@@ -292,25 +234,10 @@ export function Monitoring() {
               value={selectedClusterId}
               onChange={e => {
                 setSelectedClusterId(e.target.value);
-                const clusterHosts = hosts.filter(h => h.clusterId === e.target.value);
-                if (clusterHosts.length > 0) setSelectedHostId(clusterHosts[0].id);
               }}
             >
               {clusters.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          )}
-
-          {/* Broker/Host Selection */}
-          {hosts.length > 0 && (
-            <select
-              className="tantor-select"
-              value={selectedHostId}
-              onChange={e => setSelectedHostId(e.target.value)}
-            >
-              {hosts.filter(h => h.clusterId === selectedClusterId || !h.clusterId).map(h => (
-                <option key={h.id} value={h.id}>{h.hostname}</option>
               ))}
             </select>
           )}
@@ -373,13 +300,7 @@ export function Monitoring() {
           <p className="broker-meta">
             Exporter target: {exporterTarget || 'Not configured'}
             <span className="separator">|</span>
-            {overview?.originType || selectedCluster?.originType || displayHostRole}
-            {selectedHost && (
-              <>
-                <span className="separator">|</span>
-                {displayHostName} ({displayHostIp}) <span className="separator">|</span> {displayHostNode}
-              </>
-            )}
+            {clusterTypeLabel}
           </p>
         </div>
         <div className="monitoring-status-group">
@@ -390,10 +311,6 @@ export function Monitoring() {
           <span className={`monitoring-connection-pill ${jmxHealthy ? 'up' : 'warn'}`}>
             <span className="status-dot"></span>
             {jmxLabel}
-          </span>
-          <span className={`monitoring-connection-pill ${displayHostStatus === 'ONLINE' ? 'up' : 'down'}`}>
-            <span className="status-dot"></span>
-            {displayHostStatus === 'ONLINE' ? 'Kafka running' : 'Kafka stopped'}
           </span>
         </div>
       </div>
@@ -413,7 +330,7 @@ export function Monitoring() {
             <div className="chart-box-header">
               <span>CPU Usage</span>
               <span className="chart-stat-value green">
-                {displayCpuUsage.toFixed(1)}%
+                {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : '-'}
               </span>
             </div>
             <div className="chart-body-container">
@@ -434,7 +351,7 @@ export function Monitoring() {
             <div className="chart-box-header">
               <span>Memory Usage</span>
               <span className="chart-stat-value green">
-                {(overview?.jvmHeapUsedPercent ?? displayMemPercent).toFixed(1)}%
+                {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : '-'}
               </span>
             </div>
             <div className="chart-body-container">
@@ -455,7 +372,7 @@ export function Monitoring() {
             <div className="chart-box-header">
               <span>Messages In</span>
               <span className="chart-stat-value red">
-                {(overview?.messagesInPerSecond ?? 238.8).toFixed(1)}/s
+                {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : '-'}
               </span>
             </div>
             <div className="chart-body-container">
