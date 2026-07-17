@@ -1180,6 +1180,50 @@
   background: currentColor;
 }
 
+.monitoring-status-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.monitoring-connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 1.9rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.monitoring-connection-pill .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.monitoring-connection-pill.up {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.monitoring-connection-pill.warn {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.monitoring-connection-pill.down {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
 /* Performance section */
 .performance-section-card {
   background: #ffffff;

@@ -256,6 +256,20 @@ export function Monitoring() {
 
   // Mock initial history if empty to generate pretty graphs immediately
   const graphHistory = history;
+  const clusterTitle = overview?.name || selectedCluster?.name || displayHostName;
+  const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
+  const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
+  const jmxHealthy = overview?.jmxUp === 1;
+  const kafkaExporterLabel = overview
+    ? (kafkaExporterHealthy ? 'KAFKA_EXPORTER UP' : 'KAFKA_EXPORTER REQUIRED')
+    : 'KAFKA_EXPORTER';
+  const jmxLabel = overview
+    ? (jmxHealthy ? 'JMX UP' : 'JMX REQUIRED')
+    : 'JMX';
+  const warningMessages = [
+    selectedCluster?.warning,
+    ...(overview?.warnings || []),
+  ].filter((message): message is string => Boolean(message && message.trim()));
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -341,17 +355,46 @@ export function Monitoring() {
         </div>
       )}
 
+      {warningMessages.length > 0 && (
+        <div className="monitoring-warning-list">
+          {warningMessages.map(message => (
+            <div className="monitoring-warning" key={message}>
+              <AlertTriangle size={16} />
+              <span>{message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Broker Details Header Card */}
       <div className="broker-details-card">
         <div className="broker-info">
-          <h2>{displayHostName}</h2>
+          <h2>{clusterTitle}</h2>
           <p className="broker-meta">
-            {displayHostIp} <span className="separator">|</span> {displayHostRole} <span className="separator">|</span> {displayHostNode}
+            Exporter target: {exporterTarget || 'Not configured'}
+            <span className="separator">|</span>
+            {overview?.originType || selectedCluster?.originType || displayHostRole}
+            {selectedHost && (
+              <>
+                <span className="separator">|</span>
+                {displayHostName} ({displayHostIp}) <span className="separator">|</span> {displayHostNode}
+              </>
+            )}
           </p>
         </div>
-        <div className={`status-pill ${displayHostStatus === 'ONLINE' ? 'online' : 'offline'}`}>
-          <span className="status-dot"></span>
-          <span>{displayHostStatus === 'ONLINE' ? 'Kafka running' : 'Kafka stopped'}</span>
+        <div className="monitoring-status-group">
+          <span className={`monitoring-connection-pill ${kafkaExporterHealthy ? 'up' : 'warn'}`}>
+            <span className="status-dot"></span>
+            {kafkaExporterLabel}
+          </span>
+          <span className={`monitoring-connection-pill ${jmxHealthy ? 'up' : 'warn'}`}>
+            <span className="status-dot"></span>
+            {jmxLabel}
+          </span>
+          <span className={`monitoring-connection-pill ${displayHostStatus === 'ONLINE' ? 'up' : 'down'}`}>
+            <span className="status-dot"></span>
+            {displayHostStatus === 'ONLINE' ? 'Kafka running' : 'Kafka stopped'}
+          </span>
         </div>
       </div>
 
