@@ -184,14 +184,12 @@ export function Hosts() {
               <th style={{ width: '160px' }}>Agent</th>
               <th style={{ width: '140px' }}>CPU</th>
               <th style={{ width: '140px' }}>Memory</th>
-              <th></th>
-              <th style={{ width: '50px', textAlign: 'center', position: 'sticky', right: 0, background: '#F9F9F9', zIndex: 2 }}></th>
             </tr>
           </thead>
           <tbody>
             {loading && activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={10}>
+                <td colSpan={8}>
                   <div className="empty-state">
                     {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
@@ -244,39 +242,6 @@ export function Hosts() {
                         <div className="bar-fill normal" style={{ width: `${mem}%` }} />
                       </div>
                     </div>
-                  </td>
-                  <td></td>
-                  <td style={{ textAlign: 'center', position: 'sticky', right: 0, background: '#FFFFFF', zIndex: 1 }}>
-                    {discoveryAgent ? (
-                      <span className="discovery-managed-label">Managed from External Clusters</span>
-                    ) : canManage ? (
-                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()} style={{ display: 'inline-block' }}>
-                      <button
-                        style={{ border: 'none', background: 'transparent', padding: '8px', cursor: 'pointer', color: '#818181', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                        title="Node actions"
-                        onClick={() => setOpenMenuHostId(openMenuHostId === host.id ? null : host.id)}
-                      >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <circle cx="12" cy="6" r="1.5" fill="#818181"/>
-                          <circle cx="12" cy="12" r="1.5" fill="#818181"/>
-                          <circle cx="12" cy="18" r="1.5" fill="#818181"/>
-                        </svg>
-                      </button>
-                      {openMenuHostId === host.id && (
-                        <div className="host-action-menu">
-                          {host.status === 'OCCUPIED_INTERNAL' ? (
-                            <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
-                          ) : host.status === 'AVAILABLE' ? (
-                            <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
-                          ) : (
-                            <div className="menu-info">Externally Managed</div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    ) : (
-                      <span className="discovery-managed-label">View only</span>
-                    )}
                   </td>
                 </tr>
               );

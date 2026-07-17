@@ -189,8 +189,7 @@ export function ClusterDetails() {
               </div>
             )}
           </div>
-        </div>
-      </header>
+        </header>
 
           <div className="cluster-header-main">
             <div className="cluster-header-left">
@@ -210,7 +209,6 @@ export function ClusterDetails() {
               <div className="status-dot"></div> {runtimeLabel}
             </div>
           </div>
-        </header>
 
         <div className="cluster-tabs">
           <nav>
