@@ -43,6 +43,7 @@ interface ClusterInfo {
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
+  kafkaHealthChecking?: boolean;
 }
 
 export function Clusters() {
@@ -56,12 +57,69 @@ export function Clusters() {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/ui/clusters');
-      if (res.ok) setClusters(await res.json());
+      if (res.ok) {
+        const data: ClusterInfo[] = await res.json();
+        const visibleData = data.map(cluster => cluster.mode === 'EXTERNAL'
+          ? { ...cluster, kafkaHealthChecking: true }
+          : cluster
+        );
+        setClusters(visibleData);
+        refreshExternalKafkaHealth(visibleData);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const refreshExternalKafkaHealth = (items: ClusterInfo[]) => {
+    items
+      .filter(cluster => cluster.mode === 'EXTERNAL')
+      .forEach(cluster => {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 7000);
+        fetch(`/api/v1/ui/clusters/${cluster.id}`, { signal: controller.signal })
+          .then(res => res.ok ? res.json() : Promise.reject(new Error('Kafka health request failed')))
+          .then((fresh: ClusterInfo) => {
+            setClusters(prev => prev.map(current => current.id === cluster.id
+              ? {
+                  ...current,
+                  kafkaHealthChecking: false,
+                  kafkaHealth: fresh.kafkaHealth,
+                  agentHealth: fresh.agentHealth,
+                  monitoringHealth: fresh.monitoringHealth,
+                  overallHealth: fresh.overallHealth,
+                  runtimeHealth: fresh.runtimeHealth,
+                  runtimeStatusLabel: fresh.runtimeStatusLabel,
+                  runtimeStatusReason: fresh.runtimeStatusReason,
+                  managementLevel: fresh.managementLevel,
+                  accessLabel: fresh.accessLabel,
+                  telemetry: fresh.telemetry,
+                  managedHostsCount: fresh.managedHostsCount,
+                  totalHostsCount: fresh.totalHostsCount,
+                  lastAgentHeartbeat: fresh.lastAgentHeartbeat,
+                  hosts: fresh.hosts,
+                  nodeCount: fresh.nodeCount,
+                }
+              : current
+            ));
+          })
+          .catch(() => {
+            setClusters(prev => prev.map(current => current.id === cluster.id
+              ? {
+                  ...current,
+                  kafkaHealthChecking: false,
+                  runtimeHealth: 'OFFLINE',
+                  overallHealth: 'OFFLINE',
+                  runtimeStatusLabel: 'Kafka Offline',
+                  runtimeStatusReason: 'Kafka live check timed out or failed.',
+                }
+              : current
+            ));
+          })
+          .finally(() => window.clearTimeout(timeout));
+      });
   };
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
@@ -115,6 +173,7 @@ export function Clusters() {
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
   const statusLabel = (c: ClusterInfo) => {
+    if (c.kafkaHealthChecking) return 'Checking Kafka...';
     if (c.runtimeStatusLabel) return c.runtimeStatusLabel;
     if (c.mode === 'EXTERNAL') {
       if (c.status === 'SUCCESS') return 'Connected';
@@ -126,6 +185,7 @@ export function Clusters() {
   };
 
   const statusClass = (c: ClusterInfo) => {
+    if (c.kafkaHealthChecking) return 'checking';
     const runtime = (c.runtimeHealth || '').toLowerCase();
     if (runtime) return runtime;
     if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'external' : (c.status || 'external').toLowerCase();
@@ -349,7 +409,7 @@ export function Clusters() {
                             className={`cluster-status-badge ${statusClass(cluster)}`}
                             title={cluster.runtimeStatusReason}
                           >
-                            {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
+                            {(cluster.kafkaHealthChecking || (inProgress(cluster.status) && cluster.mode !== 'EXTERNAL')) && (
                               <RefreshCw size={11} className="spin" />
                             )}
                             {statusLabel(cluster)}

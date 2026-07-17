@@ -1859,6 +1859,16 @@ public class ClusterController {
             List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents,
             boolean liveKafkaCheck
     ) {
+        return externalHealthView(cluster, nodes, knownDiscoveryAgents, liveKafkaCheck, null);
+    }
+
+    private ExternalHealthView externalHealthView(
+            ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents,
+            boolean liveKafkaCheck,
+            String kafkaHealthOverride
+    ) {
         List<io.translab.tantor.server.domain.ExternalClusterNode> safeNodes = nodes == null ? List.of() : nodes;
         List<String> hosts = safeNodes.stream()
                 .map(io.translab.tantor.server.domain.ExternalClusterNode::getHost)
@@ -1904,7 +1914,9 @@ public class ClusterController {
             }
         }
 
-        String kafkaHealth = externalKafkaHealth(cluster, safeNodes, liveKafkaCheck);
+        String kafkaHealth = kafkaHealthOverride != null
+                ? kafkaHealthOverride
+                : externalKafkaHealth(cluster, safeNodes, liveKafkaCheck);
         String overallHealth = "OFFLINE".equals(kafkaHealth) ? "OFFLINE"
                 : "DEGRADED".equals(kafkaHealth) ? "DEGRADED"
                 : "UNKNOWN".equals(kafkaHealth) ? "UNKNOWN"

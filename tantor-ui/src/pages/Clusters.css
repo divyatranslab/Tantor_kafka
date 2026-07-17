@@ -620,7 +620,8 @@
 .cluster-status-badge.pending,
 .cluster-status-badge.running,
 .cluster-status-badge.validating,
-.cluster-status-badge.deleting {
+.cluster-status-badge.deleting,
+.cluster-status-badge.checking {
   background: #e6f1fb;
   color: #185FA5;
   border: 0.5px solid #b5d4f4;
@@ -629,7 +630,8 @@
 .cluster-status-badge.pending::before,
 .cluster-status-badge.running::before,
 .cluster-status-badge.validating::before,
-.cluster-status-badge.deleting::before {
+.cluster-status-badge.deleting::before,
+.cluster-status-badge.checking::before {
   display: none;
 }
 
