@@ -129,7 +129,7 @@ public class ClusterController {
             m.put("kafkaClusterId", c.getKafkaClusterId());
             m.put("config", new HashMap<>());
             List<io.translab.tantor.server.domain.ExternalClusterNode> clusterNodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            ExternalHealthView health = externalHealthView(c, clusterNodes, discoveryAgents);
+            ExternalHealthView health = externalHealthView(c, clusterNodes, discoveryAgents, false);
 
             m.put("managementLevel", health.managementLevel());
             m.put("sourceLabel", "External");
@@ -216,7 +216,7 @@ public class ClusterController {
             m.put("sourceLabel", "External");
 
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            ExternalHealthView health = externalHealthView(c, nodes, discoveryAgentRepository.findAll());
+            ExternalHealthView health = externalHealthView(c, nodes, discoveryAgentRepository.findAll(), true);
             List<Map<String, Object>> hosts = externalClusterHosts(c, nodes);
             m.put("managementLevel", health.managementLevel());
             m.put("accessLabel", health.managementLevel());
@@ -1856,7 +1856,8 @@ public class ClusterController {
     private ExternalHealthView externalHealthView(
             ExternalCluster cluster,
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
-            List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents
+            List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents,
+            boolean liveKafkaCheck
     ) {
         List<io.translab.tantor.server.domain.ExternalClusterNode> safeNodes = nodes == null ? List.of() : nodes;
         List<String> hosts = safeNodes.stream()
@@ -1903,7 +1904,7 @@ public class ClusterController {
             }
         }
 
-        String kafkaHealth = externalKafkaHealth(cluster, safeNodes);
+        String kafkaHealth = externalKafkaHealth(cluster, safeNodes, liveKafkaCheck);
         String overallHealth = "OFFLINE".equals(kafkaHealth) ? "OFFLINE"
                 : "DEGRADED".equals(kafkaHealth) ? "DEGRADED"
                 : "UNKNOWN".equals(kafkaHealth) ? "UNKNOWN"
@@ -1970,9 +1971,23 @@ public class ClusterController {
 
     private String externalKafkaHealth(
             ExternalCluster cluster,
-            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            boolean liveKafkaCheck
     ) {
         if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
+            return "UNKNOWN";
+        }
+        if (!liveKafkaCheck) {
+            if ("FAILED".equalsIgnoreCase(cluster.getStatus()) || Boolean.FALSE.equals(cluster.getIsRunning())) {
+                return "OFFLINE";
+            }
+            if ("SUCCESS".equalsIgnoreCase(cluster.getStatus())
+                    || "DEGRADED".equalsIgnoreCase(cluster.getStatus())
+                    || (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank())
+                    || (cluster.getBrokerCount() != null && cluster.getBrokerCount() > 0)
+                    || !nodes.isEmpty()) {
+                return "HEALTHY";
+            }
             return "UNKNOWN";
         }
         return kafkaAdminService.isClusterReachable(cluster.getId(), externalKafkaHealthTimeoutSeconds)
