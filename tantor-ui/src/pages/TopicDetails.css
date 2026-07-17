@@ -334,7 +334,7 @@
 .message-fetch-meta span { gap: 0.3rem; }
 
 .messages-table tbody > tr:not(.message-expanded) { cursor: pointer; }
-.messages-table tbody > tr:not(.message-expanded):hover { background: #faf9f5; }
+.messages-table tbody > tr:not(.message-expanded):hover { background: #F9F9F9; }
 .messages-table th:first-child,
 .messages-table td:first-child { width: 38px; padding-right: 0; }
 .preview-cell { max-width: 310px; overflow: hidden; color: var(--text-primary) !important; text-overflow: ellipsis; }
@@ -585,4 +585,703 @@
   .statistics-heading { align-items: flex-start; flex-direction: column; }
   .message-stats,
   .size-stats { grid-template-columns: 1fr 1fr; }
+}
+
+.topic-overview-mock-container {
+  background: #FAFAFA;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.topic-overview-mock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.mock-card {
+  background: #FFFFFF;
+  border: 1px solid #EAEAEA;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mock-card-label {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+  color: #818181;
+}
+.mock-card-value {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  color: #23252D;
+  font-weight: 600;
+}
+.mock-topics-table {
+  border: 1px solid #EAEAEA;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* -- Figma Topic Details Styles Overrides -- */
+.overview-tab .topic-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+}
+
+.overview-tab .topic-metric-grid article {
+  background: #FFFFFF !important;
+  border: 1px solid #EAEAEA !important;
+  border-radius: 12px !important;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.03) !important;
+  padding: 16px 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  gap: 4px !important;
+  min-height: auto !important;
+}
+
+.overview-tab .topic-metric-grid article span {
+  font-size: 13px !important;
+  color: #818181 !important;
+  margin-bottom: 0 !important;
+}
+
+.overview-tab .topic-metric-grid article strong {
+  font-size: 20px !important;
+  color: #332849 !important;
+  font-weight: 600 !important;
+}
+
+/* -- Peach Info Banner -- */
+.overview-tab .overview-note {
+  background: #FFF8EE !important;
+  border: 1px solid #FFE7C4 !important;
+  border-radius: 8px !important;
+  color: #B25E00 !important;
+  font-size: 13px !important;
+  padding: 12px 16px !important;
+  margin: 16px 0 24px 0 !important;
+}
+
+.overview-tab .overview-note svg {
+  color: #FF9F1C !important;
+  margin-top: 1px;
+}
+
+/* -- Table Header Formatting -- */
+.overview-tab .detail-table-wrap {
+  border: 1px solid #EAEAEA !important;
+  border-radius: 12px !important;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02) !important;
+}
+
+.overview-tab .detail-table th {
+  background: #FFFFFF !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
+  color: #818181 !important;
+  font-size: 13px !important;
+  border-bottom: 1px solid #EAEAEA !important;
+  letter-spacing: normal !important;
+  padding: 12px 16px !important;
+}
+
+.overview-tab .detail-table td {
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  color: #332849 !important;
+  border-bottom: 1px solid #F4F4F4 !important;
+}
+
+/* -- Figma Header Button Override -- */
+.topic-detail-button.primary {
+  background: #3E1363 !important;
+  border-color: #3E1363 !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+}
+
+.topic-detail-button.primary:hover {
+  background: #2e0e4b !important;
+  border-color: #2e0e4b !important;
+}
+
+/* -- Figma Segmented Tab Navigation -- */
+.topic-detail-tabs {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 0px !important;
+  width: 613px !important;
+  height: 35px !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  margin: 16px 0 0 0 !important;
+}
+
+.topic-detail-tabs button {
+  flex: 1 !important;
+  height: 35px !important;
+  min-height: 35px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px 32px !important;
+  border: none !important;
+  border-right: 1px solid #CCCCCC !important;
+  background: #FFFFFF !important;
+  color: #818181 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  border-radius: 0 !important;
+  cursor: pointer !important;
+  transition: all 0.15s !important;
+}
+
+.topic-detail-tabs button:last-child {
+  border-right: none !important;
+}
+
+.topic-detail-tabs button::after {
+  display: none !important; /* Remove bottom active line indicator */
+}
+
+/* Active tab style */
+.topic-detail-tabs button.active {
+  background: #FCF0F3 !important; /* light pink background */
+  color: #3E1363 !important; /* purple text */
+  font-weight: 500 !important;
+}
+
+.topic-detail-tabs button:hover:not(.active) {
+  background: #F9F9F9 !important;
+  color: #332849 !important;
+}
+
+/* -- Figma Expanded Message Detail Row Overrides -- */
+.message-expanded td {
+  background: #FCF0F3 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 0 !important;
+}
+
+.message-expanded td > div {
+  background: #FCF0F3 !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0px !important; /* No vertical divider line */
+  height: 82px !important;
+  align-items: center !important;
+}
+
+.message-expanded section {
+  background: #FCF0F3 !important;
+  padding: 14px 16px !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 4px !important;
+}
+
+.message-expanded h4 {
+  margin: 0 !important;
+  text-transform: none !important; /* Title Case */
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
+}
+
+.message-expanded pre {
+  margin: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* -- Figma Messages Table Header Overrides -- */
+.messages-table thead tr {
+  height: 52px !important;
+}
+
+.messages-table th {
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important; /* Remove uppercase */
+  letter-spacing: normal !important;
+}
+
+/* Make sure the first empty th for expand button also matches background */
+.messages-table th:first-child {
+  background: #F9F9F9 !important;
+  width: 48px !important;
+}
+
+/* -- Inline Offset Expand Chevron Styles -- */
+.offset-cell-wrapper {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.expand-chevron-inline {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #818181 !important;
+  cursor: pointer !important;
+  width: 16px !important;
+  height: 16px !important;
+  user-select: none !important;
+}
+
+.messages-table th:first-child,
+.messages-table td:first-child {
+  width: auto !important;
+  padding-right: 16px !important;
+}
+
+/* -- Figma Consumers Table Overrides -- */
+.consumers-table thead tr {
+  height: 54px !important;
+}
+
+.consumers-table th {
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.consumers-table tbody tr {
+  height: 52px !important;
+}
+
+.consumers-table td {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+}
+
+/* -- Figma Settings Table Overrides -- */
+.settings-table thead tr {
+  height: 54px !important;
+}
+
+.settings-table th {
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.settings-table tbody tr {
+  height: 52px !important;
+}
+
+.settings-table td {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+}
+
+/* Edit action column width */
+.settings-table th:last-child,
+.settings-table td:last-child {
+  width: 64px !important;
+  text-align: center !important;
+}
+
+.settings-table .setting-actions button {
+  background: transparent !important;
+  border: none !important;
+  color: #818181 !important;
+  cursor: pointer !important;
+}
+
+.settings-table .setting-actions button:hover {
+  color: #3E1363 !important;
+}
+
+/* Settings tab toolbar layout alignment */
+.tab-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-bottom: 16px !important;
+}
+
+.tab-toolbar label {
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 12px !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  background: #FFFFFF !important;
+  flex: 1 !important;
+  gap: 8px !important;
+}
+
+.tab-toolbar label input {
+  border: none !important;
+  outline: none !important;
+  font-size: 14px !important;
+  font-family: 'Satoshi', sans-serif !important;
+}
+
+.tab-toolbar button {
+  height: 40px !important;
+  width: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  background: #FFFFFF !important;
+  cursor: pointer !important;
+  color: #818181 !important;
+}
+
+.tab-toolbar button:hover {
+  background: #F9F9F9 !important;
+  color: #3E1363 !important;
+}
+
+/* -- Figma Statistics Tab Overrides -- */
+.statistics-figma-heading {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 8px !important;
+  width: 100% !important;
+}
+
+.restart-analysis-btn {
+  background: #FFFFFF !important;
+  border: 1px solid #3E1363 !important;
+  border-radius: 6px !important;
+  padding: 6px 8px !important;
+  color: #3E1363 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.restart-analysis-btn:hover {
+  background: #FCF0F3 !important;
+}
+
+.statistics-banner-container {
+  background: #FAFAFA !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  margin-bottom: 24px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.statistics-banner-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+
+.stat-card-white {
+  background: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  flex-grow: 1 !important;
+  box-sizing: border-box !important;
+}
+
+.stat-card-label {
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #818181 !important;
+}
+
+.stat-card-value {
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #332849 !important;
+}
+
+.statistics-table thead tr {
+  height: 54px !important;
+}
+
+.statistics-table th {
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.statistics-table tbody tr {
+  height: 52px !important;
+}
+
+.statistics-table td {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+}
+
+/* -- Figma Toolbar Search Bar & Refresh Button -- */
+.message-toolbar label {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 6px 8px !important;
+  gap: 8px !important;
+  width: 612px !important;
+  height: 36px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+}
+
+.message-toolbar label svg {
+  color: #818181 !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.message-toolbar label input {
+  border: none !important;
+  outline: none !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
+  width: 100% !important;
+}
+
+.message-toolbar label input::placeholder {
+  color: #818181 !important;
+}
+
+.message-toolbar button.message-refresh-btn {
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px !important;
+  width: 40px !important;
+  height: 40px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  color: #818181 !important;
+  transition: all 0.2s ease !important;
+}
+
+.message-toolbar button.message-refresh-btn:hover {
+  background: #F9F9F9 !important;
+  color: #3E1363 !important;
+}
+
+/* -- Figma Confirm Modal Overrides -- */
+.figma-confirm-modal {
+  overflow: hidden !important;
+  border-radius: 16px !important;
+  border: none !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15) !important;
+  background: #FFFFFF !important;
+}
+
+.confirm-modal-banner {
+  height: 72px !important;
+  background: radial-gradient(circle at 90% -20%, #FFB64D 0%, transparent 55%), radial-gradient(circle at 60% -40%, #FFE59E 0%, transparent 60%), rgba(223, 126, 57, 0.15) !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  padding: 0 24px !important;
+  box-sizing: border-box !important;
+  border-radius: 16px 16px 0px 0px !important;
+}
+
+.confirm-modal-close-btn {
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: #818181 !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+}
+
+.confirm-modal-body {
+  padding: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  box-sizing: border-box !important;
+}
+
+.confirm-modal-title-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.confirm-modal-title-row h2 {
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 24px !important;
+  line-height: 32px !important;
+  color: #332849 !important;
+  margin: 0 !important;
+}
+
+.confirm-modal-desc {
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  color: #818181 !important;
+  margin: 0 !important;
+}
+
+.confirm-modal-topic-name {
+  font-family: 'Satoshi', sans-serif !important;
+  color: #332849 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 19px !important;
+}
+
+.confirm-modal-footer {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
+}
+
+.confirm-btn-outline {
+  box-sizing: border-box !important;
+  height: 49px !important;
+  padding: 0 32px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #DF678B !important;
+  border-radius: 8px !important;
+  color: #DF678B !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.confirm-btn-outline:hover {
+  background: #FFF3E6 !important;
+}
+
+.confirm-btn-filled {
+  height: 49px !important;
+  padding: 0 32px !important;
+  background: #3E1363 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: #FFFFFF !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.confirm-btn-filled:hover {
+  background: #2D0D4B !important;
 }

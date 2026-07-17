@@ -1,4 +1,5 @@
 .clusters-page {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -10,24 +11,34 @@
   min-width: 0;
 }
 
-.page-header.flex-between {
+.white-card {
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.clusters-header.flex-between {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
+  padding: 24px 24px 16px 24px;
 }
 
-.page-header h1 {
-  font-size: 18px;
-  font-weight: 650;
-  color: #1a1a18;
+.clusters-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #332849;
   margin: 0 0 4px;
   letter-spacing: 0;
 }
 
-.page-header p {
-  font-size: 13px;
-  color: #6f6d67;
+.clusters-header p {
+  font-size: 14px;
+  color: #818181;
   margin: 0;
 }
 
@@ -180,24 +191,25 @@
 }
 
 .clusters-table th {
-  height: 42px;
-  padding: 0 14px;
-  background: #fbfaf8;
-  border-bottom: 0.5px solid #e8e6e1;
-  color: #686760;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0;
+  height: 52px;
+  padding: 14px 16px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #CCCCCC;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
   text-align: left;
 }
 
 .clusters-table td {
-  height: 78px;
-  padding: 12px 14px;
-  border-bottom: 0.5px solid #f0eeea;
-  color: #1a1a18;
-  font-size: 12.5px;
+  height: 52px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #CCCCCC;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
   vertical-align: middle;
 }
 
@@ -259,8 +271,22 @@
   width: 96px;
 }
 
-.btn.icon-only {
+.btn-primary-action.add-cluster-btn {
+  background: #3E1363;
+  color: #FFFFFF;
+  border: none;
+}
+
+.btn-primary-action.add-cluster-btn:hover {
+  filter: brightness(0.9);
+}
+
+.btn.outline-icon {
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  color: #505050;
   width: 32px;
+  height: 32px;
   padding: 0;
 }
 
@@ -546,38 +572,30 @@
 .cluster-status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 10px;
   min-height: 24px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  line-height: 1;
-  font-weight: 650;
+  padding: 4px 8px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
   white-space: nowrap;
 }
 
-.source-pill.internal {
-  background: #e6f1fb;
-  color: #185FA5;
-  border: 0.5px solid #b5d4f4;
-}
-
+.source-pill.internal,
 .source-pill.external {
-  background: #f5f4f1;
-  color: #5f5e5a;
-  border: 0.5px solid #e2e0db;
+  background: rgba(22, 171, 194, 0.25);
+  color: #16ABC2;
+  border: none;
 }
 
-.access-pill.managed {
-  background: #e9f7ed;
-  color: #146c2e;
-  border: 0.5px solid #bde6c8;
-}
-
+.access-pill.managed,
 .access-pill.metadata {
-  background: #fff6df;
-  color: #7a5407;
-  border: 0.5px solid #f0d796;
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
+  border: none;
 }
 
 .cluster-status-badge::before {

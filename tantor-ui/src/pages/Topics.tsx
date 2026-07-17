@@ -103,15 +103,12 @@ export function Topics() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        page: String(page),
-        size: String(size),
-        search,
-        includeInternal: String(includeInternal)
-      });
-      const response = await fetch('/api/v1/clusters/' + id + '/topics?' + params);
-      if (!response.ok) throw new Error(await apiError(response));
-      setData(await response.json());
+      const res = await fetch(`/api/v1/clusters/${id}/topics?showInternal=${includeInternal}&page=${page - 1}&size=${size}&search=${encodeURIComponent(search)}`);
+      if (!res.ok) {
+        throw new Error(`Failed to load topics: ${res.statusText}`);
+      }
+      const jsonData = await res.json();
+      setData(jsonData);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load topics');
     } finally {
@@ -253,24 +250,6 @@ export function Topics() {
 
   return (
     <section className="topics-page animate-fade-in">
-      <div className="topics-title-row">
-        <div>
-          <p className="topics-eyebrow">Kafka resources</p>
-          <h2>Topics</h2>
-          <p>Browse, inspect, and manage the streams in this cluster.</p>
-        </div>
-        <div className="topics-title-actions">
-          <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
-            <Download size={16} /> Export CSV
-          </button>
-          {canManage && (
-            <button className="topic-button primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add a topic
-            </button>
-          )}
-        </div>
-      </div>
-
       <div className="topics-toolbar">
         <label className="topic-search">
           <Search size={18} />
@@ -284,18 +263,29 @@ export function Topics() {
           />
           {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
         </label>
-        <label className="internal-toggle">
-          <input
-            type="checkbox"
-            checked={includeInternal}
-            onChange={event => {
-              setIncludeInternal(event.target.checked);
-              setPage(0);
-            }}
-          />
-          <span aria-hidden="true" />
-          Show internal topics
-        </label>
+        
+        <div className="topics-toolbar-right">
+          <label className="internal-toggle">
+            <input
+              type="checkbox"
+              checked={includeInternal}
+              onChange={event => {
+                setIncludeInternal(event.target.checked);
+                setPage(0);
+              }}
+            />
+            <span aria-hidden="true" />
+            Show internal topics
+          </label>
+          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
+            <Download size={16} /> Export CSV
+          </button>
+          {canManage && (
+            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add Topic
+            </button>
+          )}
+        </div>
       </div>
 
       {canManage && selected.size > 0 && (
@@ -322,12 +312,16 @@ export function Topics() {
         <table className="topics-table">
           <thead>
             <tr>
-              {canManage && <th className="check-column"><input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} /></th>}
-              <th>Topic name</th>
-              <th>Partitions</th>
-              <th>Out of sync replicas</th>
-              <th>Replication factor</th>
-              <th>Messages</th>
+              <th className="th-topic-name">
+                <div className="table-header-with-checkbox">
+                  {canManage && <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} />}
+                  Topic Name
+                </div>
+              </th>
+              <th>Partiation</th>
+              <th>Out of Sync Replica</th>
+              <th>Replication Factor</th>
+              <th>Message</th>
               {canManage && <th aria-label="Actions" />}
             </tr>
           </thead>
@@ -335,22 +329,30 @@ export function Topics() {
             {loading && !data ? (
               <tr><td colSpan={canManage ? 7 : 6}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
             ) : !data?.content.length ? (
-              <tr><td colSpan={canManage ? 7 : 6}>
+              <tr><td colSpan={canManage ? 6 : 5} className="empty-state-cell">
                 <div className="topic-empty">
-                  <Database size={34} />
+                  <div className="figma-empty-illustration">
+                    <div className="illustration-card">
+                      <div className="icon-bar grey"></div><div className="icon-bar purple"></div>
+                    </div>
+                    <div className="illustration-card">
+                      <div className="icon-bar grey"></div><div className="icon-bar purple"></div>
+                    </div>
+                    <div className="illustration-card">
+                      <div className="icon-bar grey"></div><div className="icon-bar purple"></div>
+                    </div>
+                  </div>
                   <strong>No topics found</strong>
                   <span>{search ? 'Try a different search.' : 'Create a topic to start streaming messages.'}</span>
                 </div>
               </td></tr>
             ) : data.content.map(topic => (
               <tr key={topic.name} onClick={() => navigate('/clusters/' + id + '/topics/' + encodeURIComponent(topic.name))}>
-                {canManage && (
-                  <td className="check-column" onClick={event => event.stopPropagation()}>
-                    <input type="checkbox" checked={selected.has(topic.name)} onChange={() => toggleTopic(topic.name)} />
-                  </td>
-                )}
                 <td>
                   <div className="topic-name-cell">
+                    {canManage && (
+                      <input type="checkbox" checked={selected.has(topic.name)} onChange={event => { event.stopPropagation(); toggleTopic(topic.name); }} onClick={event => event.stopPropagation()} />
+                    )}
                     {topic.internal && <span className="internal-badge">IN</span>}
                     <strong>{topic.name}</strong>
                   </div>
@@ -406,9 +408,9 @@ export function Topics() {
 
       {canManage && showCreate && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
-          <div className="topic-modal create-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+          <div className="topic-modal create-topic-modal figma-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header className="create-topic-header">
-              <div className="create-topic-header-text">
+              <div className="modal-title-area">
                 <h2>Create Resource</h2>
                 <h3>Add a topic</h3>
                 <p>Configure the topic and its Kafka-level retention and delivery settings.</p>
@@ -419,99 +421,103 @@ export function Topics() {
             </header>
 
             <form onSubmit={createTopic} className="create-topic-form">
-              <div className="create-topic-section">
-                <div className="section-header-row">
-                  <h4>Cluster Details</h4>
-                  <div className="custom-toggle-wrap">
-                    <label className="switch">
+              <div className="figma-topic-modal-body">
+                <div className="form-section-header">
+                  <span>Cluster Details</span>
+                  <div className="custom-toggle-area">
+                    <label className="cd-toggle-switch">
                       <input
                         type="checkbox"
                         checked={newTopic.customConfigs}
                         onChange={e => setNewTopic(curr => ({ ...curr, customConfigs: e.target.checked }))}
                       />
-                      <span className="slider round"></span>
+                      <span className="cd-toggle-slider"></span>
                     </label>
-                    <span className="custom-toggle-label">Custom</span>
+                    <span className="toggle-label">Custom</span>
                   </div>
                 </div>
 
-                <div className="form-field-full">
-                  <label>Topic name *</label>
-                  <input
-                    autoFocus
-                    required
-                    value={newTopic.name}
-                    onChange={e => setNewTopic(curr => ({ ...curr, name: e.target.value }))}
-                    placeholder="orders.created"
-                  />
+                <div className="form-grid-row">
+                  <label className="figma-form-field full-width">
+                    <span>Topic name *</span>
+                    <input
+                      autoFocus
+                      required
+                      value={newTopic.name}
+                      onChange={e => setNewTopic(curr => ({ ...curr, name: e.target.value }))}
+                      placeholder="orders.created"
+                    />
+                  </label>
                 </div>
-              </div>
 
-              <div className="create-topic-section">
-                <div className="form-fields-grid">
-                  <div className="form-field">
-                    <label>Number of partitions *</label>
+                <div className="form-grid-row-2">
+                  <label className="figma-form-field">
+                    <span>Number of partitions *</span>
                     <input
                       type="number"
                       min={1}
                       required
                       value={newTopic.partitions}
                       onChange={e => setNewTopic(curr => ({ ...curr, partitions: Number(e.target.value) }))}
+                      placeholder="1"
                     />
-                  </div>
+                  </label>
 
-                  <div className="form-field">
-                    <label>Cleanup policy</label>
-                    <CustomSelect
+                  <label className="figma-form-field">
+                    <span>Cleanup policy</span>
+                    <select
                       value={newTopic.cleanupPolicy}
-                      onChange={val => setNewTopic(curr => ({ ...curr, cleanupPolicy: val }))}
-                      options={cleanupPolicyOptions}
-                      width="100%"
-                    />
-                  </div>
+                      onChange={e => setNewTopic(curr => ({ ...curr, cleanupPolicy: e.target.value }))}
+                    >
+                      {cleanupPolicyOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
 
-                <div className="form-fields-grid">
-                  <div className="form-field">
-                    <label>Minimum in-sync replicas</label>
+                <div className="form-grid-row-2">
+                  <label className="figma-form-field">
+                    <span>Minimum in-sync replicas</span>
                     <input
-                      type="text"
-                      placeholder="Use broker default"
                       value={newTopic.minInsyncReplicas}
                       onChange={e => setNewTopic(curr => ({ ...curr, minInsyncReplicas: e.target.value }))}
+                      placeholder="Use broker default"
                     />
-                  </div>
+                  </label>
 
-                  <div className="form-field">
-                    <label>Replication factor *</label>
+                  <label className="figma-form-field">
+                    <span>Replication factor *</span>
                     <input
                       type="number"
                       min={1}
                       required
                       value={newTopic.replicationFactor}
                       onChange={e => setNewTopic(curr => ({ ...curr, replicationFactor: Number(e.target.value) }))}
+                      placeholder="1"
                     />
-                  </div>
+                  </label>
                 </div>
 
-                <div className="form-field-full">
-                  <label>Time to retain data (milliseconds)</label>
-                  <input
-                    type="text"
-                    placeholder="Use broker default"
-                    value={newTopic.retentionMs}
-                    onChange={e => setNewTopic(curr => ({ ...curr, retentionMs: e.target.value }))}
-                  />
+                <div className="form-grid-row">
+                  <label className="figma-form-field full-width">
+                    <span>Time to retain data (milliseconds)</span>
+                    <input
+                      value={newTopic.retentionMs}
+                      onChange={e => setNewTopic(curr => ({ ...curr, retentionMs: e.target.value }))}
+                      placeholder="Use broker default"
+                    />
+                  </label>
                 </div>
 
                 <div className="quick-options-container">
-                  <span className="quick-options-title">Quick options:</span>
-                  <div className="quick-options-pills">
+                  <span className="quick-options-label">Quick options:</span>
+                  <div className="quick-options-row">
                     {quickOptions.map(opt => (
                       <button
                         key={opt.label}
                         type="button"
-                        className={`quick-option-pill ${newTopic.retentionMs === opt.ms ? 'active' : ''}`}
+                        className={`quick-option-btn ${newTopic.retentionMs === opt.ms ? 'active' : ''}`}
                         onClick={() => setNewTopic(curr => ({ ...curr, retentionMs: opt.ms }))}
                       >
                         {opt.label}
@@ -520,34 +526,32 @@ export function Topics() {
                   </div>
                 </div>
 
-                <div className="form-fields-grid">
-                  <div className="form-field">
-                    <label>Max partition size</label>
+                <div className="form-grid-row-2">
+                  <label className="figma-form-field">
+                    <span>Max partition size</span>
                     <input
-                      type="text"
-                      placeholder="Not set"
                       value={newTopic.maxPartitionSize}
                       onChange={e => setNewTopic(curr => ({ ...curr, maxPartitionSize: e.target.value }))}
+                      placeholder="Not set"
                     />
-                  </div>
+                  </label>
 
-                  <div className="form-field">
-                    <label>Maximum message size (bytes)</label>
+                  <label className="figma-form-field">
+                    <span>Maximum message size (bytes)</span>
                     <input
-                      type="text"
-                      placeholder="Use broker default"
                       value={newTopic.maxMessageBytes}
                       onChange={e => setNewTopic(curr => ({ ...curr, maxMessageBytes: e.target.value }))}
+                      placeholder="Use broker default"
                     />
-                  </div>
+                  </label>
                 </div>
               </div>
 
               <footer className="create-topic-footer">
-                <button type="button" className="topic-button secondary cancel-btn" onClick={() => setShowCreate(false)}>
+                <button type="button" className="topic-button outline cancel-btn" onClick={() => setShowCreate(false)}>
                   Cancel
                 </button>
-                <button className="topic-button primary create-btn" disabled={creating}>
+                <button className="topic-button filled create-btn" disabled={creating}>
                   {creating ? 'Creating…' : 'Create topic'}
                 </button>
               </footer>

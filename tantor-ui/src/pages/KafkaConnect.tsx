@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './DataServiceTabs.css';
 
@@ -346,13 +346,13 @@ export function KafkaConnect() {
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
   return (
-    <div className="data-services-page animate-fade-in">
-      <div className="ds-header">
-        <h2>Kafka Connect</h2>
-        <div className="ds-actions">
+    <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
+      <div className="ds-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', width: '100%' }}>
+        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#5B327F', margin: 0 }}>Kafka Connect</h2>
+        <div className="ds-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* ── Instance switcher ── */}
           {savedConnections.length > 0 && (
-            <div className="ds-compat-control">
+            <div className="ds-compat-control" style={{ marginRight: '8px' }}>
               <span>Instance</span>
               <select
                 value={selectedConnectionId ?? ''}
@@ -380,38 +380,139 @@ export function KafkaConnect() {
             </div>
           )}
 
-          <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
-            <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
-          </button>
           {canManage && (
-            <>
-              <button className="ds-button primary" onClick={() => setShowCreate(true)}>
-                <Plus size={16} /> Create Connector
-              </button>
-              {/* Edit selected connection */}
-              <button
-                className="ds-icon-button"
-                onClick={() => openConnectionModal(selectedConn ?? undefined)}
-                disabled={!selectedConn}
-                title="Edit selected connection"
-              >
-                <MoreVertical size={18} />
-              </button>
-              {/* Delete selected connection */}
-              <button
-                className="ds-icon-button"
-                onClick={handleDeleteConnection}
-                disabled={!selectedConn}
-                title="Delete connection"
-                style={{ color: 'var(--color-danger, #e88080)' }}
-              >
-                <Trash2 size={18} />
-              </button>
-              {/* Add new connection */}
-              <button className="ds-button" onClick={() => openConnectionModal()} title="Add new KC instance">
-                <Settings size={16} /> Add Connection
-              </button>
-            </>
+            <button 
+              type="button"
+              onClick={() => setShowCreate(true)}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#FFFFFF',
+                border: '1px solid #CCCCCC',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              title="Upload JSON configurations"
+            >
+              <FileDown size={16} style={{ color: '#818181' }} />
+            </button>
+          )}
+
+          {canManage && (
+            <button 
+              className="ds-button" 
+              onClick={() => openConnectionModal()} 
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                height: '38px',
+                padding: '0 16px',
+                background: '#FFFFFF',
+                border: '1px solid #CCCCCC',
+                borderRadius: '8px',
+                color: '#332849',
+                fontFamily: 'Satoshi, sans-serif',
+                fontWeight: 500,
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              <Settings size={16} style={{ color: '#332849' }} /> Add Connection
+            </button>
+          )}
+
+          {canManage && (
+            <button 
+              className="ds-button primary" 
+              onClick={() => setShowCreate(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                height: '38px',
+                padding: '0 16px',
+                background: '#332849',
+                border: 'none',
+                borderRadius: '8px',
+                color: '#FFFFFF',
+                fontFamily: 'Satoshi, sans-serif',
+                fontWeight: 500,
+                fontSize: '14px',
+                cursor: 'pointer'
+              }}
+            >
+              <Plus size={16} color="#FFFFFF" /> Create Connector
+            </button>
+          )}
+
+          {canManage && (
+            <button
+              className="ds-icon-button"
+              onClick={handleDeleteConnection}
+              disabled={!selectedConn}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#FFFFFF',
+                border: '1px solid #CCCCCC',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                opacity: selectedConn ? 1 : 0.5
+              }}
+              title="Delete connection"
+            >
+              <Trash2 size={16} style={{ color: '#818181' }} />
+            </button>
+          )}
+
+          <button 
+            className="ds-button" 
+            onClick={load} 
+            disabled={loading}
+            style={{
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#FFFFFF',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#818181' }} />
+          </button>
+
+          {canManage && (
+            <button
+              className="ds-icon-button"
+              onClick={() => openConnectionModal(selectedConn ?? undefined)}
+              disabled={!selectedConn}
+              style={{
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#FFFFFF',
+                border: 'none',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                opacity: selectedConn ? 1 : 0.5
+              }}
+              title="Edit selected connection"
+            >
+              <MoreVertical size={18} style={{ color: '#818181' }} />
+            </button>
           )}
         </div>
       </div>
@@ -419,29 +520,332 @@ export function KafkaConnect() {
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div className="ds-panel ds-fetch-prompt">
-          <p>Kafka Connect data is not loaded automatically.</p>
-          <button className="ds-button primary" onClick={load} disabled={loading}>
-            <RefreshCw size={16} /> Fetch Kafka Connect for this cluster
-          </button>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          minHeight: '350px',
+          textAlign: 'center',
+          background: 'transparent',
+          border: 'none'
+        }}>
+          <div style={{ width: '185px', height: '185px', position: 'relative', marginBottom: '16px' }}>
+            {/* Document Lines Container (Holds the 3 cards) */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              padding: '0px',
+              gap: '3.91px',
+              position: 'absolute',
+              width: '109.44px',
+              height: '78.17px',
+              left: '37.48px',
+              top: '59.81px'
+            }}>
+              {/* CARD 1 */}
+              <div style={{
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                padding: '7.81px 11.72px',
+                gap: '10.42px',
+                width: '109.44px',
+                height: '23.45px',
+                background: '#FFFFFF',
+                border: '1.30282px solid #D4DCE7',
+                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
+                borderRadius: '2.60563px'
+              }}>
+                {/* Document Line Group */}
+                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
+                  {/* Left Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ display: 'flex', flexDirection: 'row', gap: '3.99px', width: '31.1px', height: '1.3px' }}>
+                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                    </div>
+                  </div>
+                  {/* Right Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 2 */}
+              <div style={{
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                padding: '7.81px 11.72px',
+                gap: '10.42px',
+                width: '109.44px',
+                height: '23.45px',
+                background: '#FFFFFF',
+                border: '1.30282px solid #D4DCE7',
+                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
+                borderRadius: '2.60563px'
+              }}>
+                {/* Document Line Group */}
+                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
+                  {/* Left Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                  </div>
+                  {/* Right Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* CARD 3 */}
+              <div style={{
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                padding: '7.81px 11.72px',
+                gap: '10.42px',
+                width: '109.44px',
+                height: '23.45px',
+                background: '#FFFFFF',
+                border: '1.30282px solid #D4DCE7',
+                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
+                borderRadius: '2.60563px'
+              }}>
+                {/* Document Line Group */}
+                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
+                  {/* Left Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                  </div>
+                  {/* Right Column */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
+                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
+                    <div style={{ display: 'flex', flexDirection: 'row', gap: '3.99px', width: '31.1px', height: '1.3px' }}>
+                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Lines Container (Bottom grey lines) */}
+            <div style={{
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              padding: '0px',
+              gap: '3.91px',
+              position: 'absolute',
+              width: '80.77px',
+              height: '1.3px',
+              left: '51.81px',
+              top: '147.1px'
+            }}>
+              <div style={{ width: '10.42px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+              <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+              <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
+            </div>
+          </div>
+          <h3 style={{
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: 500,
+            fontSize: '16px',
+            color: '#332849',
+            margin: '0 0 4px 0'
+          }}>
+            Kafka Connect data is not loaded automatically.
+          </h3>
+          <span 
+            onClick={load}
+            style={{
+              fontFamily: 'Satoshi, sans-serif',
+              fontWeight: 400,
+              fontSize: '14px',
+              color: '#818181',
+              cursor: 'pointer',
+              textDecoration: 'none'
+            }}
+          >
+            Fetch Kafka Connect for this cluster
+          </span>
         </div>
       ) : <>
-      <div className="ds-metrics">
-        <div className="ds-metric-card total"><span>Total Connectors</span><strong>{summary?.connectorCount ?? 0}</strong></div>
-        <div className="ds-metric-card running"><span>Running Connectors</span><strong>{summary?.runningConnectors ?? 0}</strong></div>
-        <div className="ds-metric-card paused"><span>Paused Connectors</span><strong>{summary?.pausedConnectors ?? 0}</strong></div>
-        <div className="ds-metric-card failed"><span>Failed Connectors</span><strong>{summary?.failedConnectors ?? 0}</strong></div>
+      <div className="ds-metrics" style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: '24px',
+        gap: '16px',
+        background: 'linear-gradient(273.74deg, #FAE1E8 38.03%, #DF678B 80.94%, #3E1363 99.36%)',
+        borderRadius: '8px',
+        marginBottom: '24px',
+        boxSizing: 'border-box'
+      }}>
+        {/* Total Connectors */}
+        <div style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '16px',
+          width: '258.5px',
+          height: '111px',
+          background: '#FFFFFF',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#C5EAF0', borderRadius: '44px', boxSizing: 'border-box' }}>
+              <Database size={24} style={{ color: '#16ABC2', flex: 'none' }} />
+            </div>
+            <span style={{ width: '123px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Total Connectors</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
+            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.connectorCount ?? 0}</strong>
+          </div>
+        </div>
+
+        {/* Running Connectors */}
+        <div style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '16px',
+          width: '258.5px',
+          height: '111px',
+          background: '#FFFFFF',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#EBD4F7', borderRadius: '44px', boxSizing: 'border-box' }}>
+              <Plug size={24} style={{ color: '#8E77BB', flex: 'none' }} />
+            </div>
+            <span style={{ width: '182.5px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Running Connectors</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
+            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.runningConnectors ?? 0}</strong>
+          </div>
+        </div>
+
+        {/* Paused Connectors */}
+        <div style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '16px',
+          width: '258.5px',
+          height: '111px',
+          background: '#FFFFFF',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#DEF0D6', borderRadius: '44px', boxSizing: 'border-box' }}>
+              <Pause size={24} style={{ color: '#E08E40', flex: 'none' }} />
+            </div>
+            <span style={{ width: '142px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Paused Connectors</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
+            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.pausedConnectors ?? 0}</strong>
+          </div>
+        </div>
+
+        {/* Failed Connectors */}
+        <div style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '16px',
+          width: '258.5px',
+          height: '111px',
+          background: '#FFFFFF',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#DEF0D6', borderRadius: '44px', boxSizing: 'border-box' }}>
+              <X size={24} style={{ color: '#EF4D5F', flex: 'none' }} />
+            </div>
+            <span style={{ width: '132px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Failed Connectors</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
+            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.failedConnectors ?? 0}</strong>
+          </div>
+        </div>
       </div>
 
-      <div className="ds-tabs">
-        <button className={`ds-tab ${activeTab === 'clusters' ? 'active' : ''}`} onClick={() => setActiveTab('clusters')}>
-          <Plug size={16} /> Clusters
+      <div className="ds-tabs" style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #CCCCCC', marginBottom: '20px' }}>
+        <button 
+          onClick={() => setActiveTab('clusters')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'clusters' ? '2px solid #5B327F' : '2px solid transparent',
+            color: activeTab === 'clusters' ? '#5B327F' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'clusters' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Clusters
         </button>
-        <button className={`ds-tab ${activeTab === 'connectors' ? 'active' : ''}`} onClick={() => setActiveTab('connectors')}>
-          <Plug size={16} /> Connectors
+        <button 
+          onClick={() => setActiveTab('connectors')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'connectors' ? '2px solid #5B327F' : '2px solid transparent',
+            color: activeTab === 'connectors' ? '#5B327F' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'connectors' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Connectors
         </button>
-        <button className={`ds-tab ${activeTab === 'plugins' ? 'active' : ''}`} onClick={() => setActiveTab('plugins')}>
-          <Plug size={16} /> Plugins
+        <button 
+          onClick={() => setActiveTab('plugins')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'plugins' ? '2px solid #5B327F' : '2px solid transparent',
+            color: activeTab === 'plugins' ? '#5B327F' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'plugins' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Plugins
         </button>
       </div>
 
@@ -533,17 +937,18 @@ export function KafkaConnect() {
       {/* ── Connection modal ── */}
       {canManage && showConnection && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ds-modal ds-connection-modal">
-            <div className="ds-modal-header">
+          <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: '12px', background: '#FFFFFF', padding: '24px', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
+            <div className="ds-modal-header" style={{ border: 'none', padding: '0 0 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3>{editingConnectionId ? 'Edit Connection' : 'Add Kafka Connect Connection'}</h3>
-                <span className="ds-muted-line">{formConnectionName || 'New connection'}</span>
+                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#332849', margin: 0 }}>Add Kafka Connect Connection</h3>
+                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', marginTop: '4px', display: 'block' }}>New connection</span>
               </div>
-              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close">
-                <X size={16} />
+              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#818181' }}>
+                <X size={20} />
               </button>
             </div>
-            <div className="ds-form ds-compact-form">
+            
+            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: '#F9F9F9', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
               {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
               {selectedConn?.status && editingConnectionId && (
                 <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
@@ -552,84 +957,208 @@ export function KafkaConnect() {
                   {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
                 </div>
               )}
-              <div className="ds-field">
-                <label>Connection Name</label>
+              
+              <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Connection Name</label>
                 <input
                   value={formConnectionName}
                   onChange={e => setFormConnectionName(e.target.value)}
                   placeholder="e.g. ETL Kafka Connect"
                   required
+                  style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
                 />
               </div>
-              <div className="ds-form-grid three">
-                <div className="ds-field">
-                  <label>Protocol</label>
-                  <select value={protocol} onChange={e => setProtocol(e.target.value)}>
-                    <option value="http">http://</option>
-                    <option value="https">https://</option>
-                  </select>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Protocol</label>
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      value={protocol} 
+                      onChange={e => setProtocol(e.target.value)}
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="http">http://</option>
+                      <option value="https">https://</option>
+                    </select>
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
-                <div className="ds-field">
-                  <label>Host / IP</label>
-                  <input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.161" required />
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Host / IP</label>
+                  <input 
+                    value={customIp} 
+                    onChange={e => setCustomIp(e.target.value)} 
+                    placeholder="192.168.3.161" 
+                    required 
+                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                  />
                 </div>
-                <div className="ds-field">
-                  <label>Port</label>
-                  <input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8083" required />
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Port</label>
+                  <input 
+                    type="number" 
+                    value={customPort} 
+                    onChange={e => setCustomPort(e.target.value)} 
+                    placeholder="8083" 
+                    required 
+                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                  />
                 </div>
               </div>
-              <div className="ds-form-grid two">
-                <div className="ds-field">
-                  <label>Certificate Type</label>
-                  <select value={certType} onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}>
-                    <option value="PEM">PEM</option>
-                    <option value="PKCS12_JKS">PKCS12 / JKS</option>
-                  </select>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate Type</label>
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      value={certType} 
+                      onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="PEM">PEM</option>
+                      <option value="PKCS12_JKS">PKCS12 / JKS</option>
+                    </select>
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
-                <div className="ds-field">
-                  <label>Certificate / Truststore</label>
-                  <label className="ds-upload-control">
-                    <Upload size={16} /> {certFileName || 'Upload file'}
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate / Truststore</label>
+                  <label 
+                    className="ds-upload-control"
+                    style={{
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      height: '40px',
+                      background: '#FFFFFF',
+                      border: '1px solid #7F56D9',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontSize: '14px',
+                      color: '#7F56D9',
+                      fontWeight: 500
+                    }}
+                  >
+                    <FileDown size={16} style={{ color: '#7F56D9' }} /> {certFileName || 'Choose file'}
                     <input
                       type="file"
                       accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx,.jks'}
                       onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }}
+                      style={{ display: 'none' }}
                     />
                   </label>
-                  {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> {certFileName}</span>}
+                  {certFileName && <span className="ds-secret-note" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '12px', color: '#36AD8F', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}><CheckCircle size={14} /> {certFileName}</span>}
                 </div>
               </div>
+
               {certType === 'PKCS12_JKS' && (
-                <div className="ds-field">
-                  <label>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
-                  <input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" />
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      type="password" 
+                      value={certPassword} 
+                      onChange={e => setCertPassword(e.target.value)} 
+                      placeholder="Password" 
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
               )}
-              <div className="ds-default-toggle-row">
-                <label className="ds-toggle-switch" htmlFor="kc-is-default">
+
+              <div className="ds-default-toggle-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+                <label className="ds-toggle-switch" htmlFor="kc-is-default" style={{ position: 'relative', display: 'inline-block', width: '33px', height: '18px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="kc-is-default"
                     checked={formIsDefault}
                     onChange={e => setFormIsDefault(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
                   />
-                  <span className="ds-toggle-track">
-                    <span className="ds-toggle-thumb" />
+                  <span className="ds-toggle-track" style={{
+                    boxSizing: 'border-box',
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: '1.5px',
+                    width: '33px',
+                    height: '18px',
+                    background: formIsDefault ? '#3E1363' : '#ADADAD',
+                    border: formIsDefault ? '0.75px solid #3E1363' : '0.75px solid #ADADAD',
+                    borderRadius: '9px',
+                    transition: 'background-color 0.2s, border-color 0.2s'
+                  }}>
+                    <span className="ds-toggle-thumb" style={{
+                      width: '13.5px',
+                      height: '13.5px',
+                      background: '#FFFFFF',
+                      borderRadius: '50%',
+                      position: 'absolute',
+                      left: formIsDefault ? '16.5px' : '1.5px',
+                      transition: 'left 0.2s',
+                      transform: 'none'
+                    }} />
                   </span>
                 </label>
-                <label htmlFor="kc-is-default" className="ds-toggle-label">
+                <label htmlFor="kc-is-default" className="ds-toggle-label" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', cursor: 'pointer' }}>
                   Set as default connection for this cluster
                 </label>
               </div>
             </div>
-            <div className="ds-modal-footer">
-              <button className="ds-button" onClick={() => setShowConnection(false)} disabled={connectSaving}>Cancel</button>
+
+            <div className="ds-modal-footer" style={{ border: 'none', padding: '0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                className="ds-button" 
+                onClick={() => setShowConnection(false)} 
+                disabled={connectSaving}
+                style={{
+                  height: '38px',
+                  padding: '0 20px',
+                  background: '#FFFFFF',
+                  border: '1px solid #CCCCCC',
+                  borderRadius: '8px',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#332849',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
               <button
                 className="ds-button primary"
                 onClick={handleSaveConnection}
                 disabled={connectSaving || !customIp.trim() || !customPort.trim()}
+                style={{
+                  height: '38px',
+                  padding: '0 20px',
+                  background: '#3E1363',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  opacity: (connectSaving || !customIp.trim() || !customPort.trim()) ? 0.6 : 1
+                }}
               >
-                {connectSaving ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />} Save & Connect
+                {connectSaving ? <RefreshCw size={16} className="spin" style={{ marginRight: '8px' }} /> : null} Save & Connect
               </button>
             </div>
           </div>

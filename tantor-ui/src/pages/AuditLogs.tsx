@@ -301,11 +301,11 @@ export function AuditLogs() {
           <div>
             <select value={status} onChange={e => setStatus(e.target.value)}>
               <option value="ALL">All</option>
-              <option>SUCCESS</option>
-              <option>FAILED</option>
-              <option>ATTEMPTED</option>
-              <option>SCHEDULED</option>
-              <option>REQUESTED</option>
+              <option value="SUCCESS">Success</option>
+              <option value="FAILED">Failed</option>
+              <option value="ATTEMPTED">Attempted</option>
+              <option value="SCHEDULED">Scheduled</option>
+              <option value="REQUESTED">Requested</option>
             </select>
           </div>
         </div>

@@ -75,10 +75,9 @@ export function ClusterOverview() {
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/clusters/${id}/overview`);
+      const res = await fetch(`/api/v1/clusters/${id}/overview`);
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to fetch cluster overview');
+        throw new Error('Failed to fetch cluster overview');
       }
       setOverview(await res.json());
       setError(null);
@@ -149,23 +148,41 @@ export function ClusterOverview() {
       {overview.warnings?.map(warning => <Notice key={warning} kind="warning" text={warning} />)}
 
       <section className="overview-section">
-        <div className="section-header-row">
-          <h2>Cluster Identity</h2>
-          <button className="overview-export" type="button" onClick={exportCsv}>
-            <Download size={16} />
-            Export CSV
-          </button>
-        </div>
-        <div className="overview-band">
-          <div className="overview-grid uptime">
-            <OverviewTile label="Kafka Cluster ID" value={overview.kafkaClusterId || '-'} />
-            <OverviewTile label="Cluster type" value={overview.originType || '-'} />
+        <div className="overview-card">
+          <div className="section-header-row">
+            <h2>Cluster Identity</h2>
+            <button className="overview-export" type="button" onClick={exportCsv}>
+              <Download size={16} />
+              Export CSV
+            </button>
+          </div>
+          <div className="overview-grid identity-grid">
+            <div className="overview-item">
+              <div className="overview-label">Kafka cluster ID</div>
+              <div className="overview-value">{overview.kafkaClusterId || '-'}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Cluster type</div>
+              <div className="overview-value">{overview.originType || '-'}</div>
+            </div>
             {overview.originType !== 'EXTERNAL' && (
               <>
-                <OverviewTile label="Install directory" value={overview.installDirectory || '-'} />
-                <OverviewTile label="Config directory" value={overview.configDirectory || '-'} />
-                <OverviewTile label="Data directory" value={overview.dataDirectory || '-'} />
-                <OverviewTile label="Log directory" value={overview.logDirectory || '-'} />
+                <div className="overview-item">
+                  <div className="overview-label">Install directory</div>
+                  <div className="overview-value">{overview.installDirectory || '-'}</div>
+                </div>
+                <div className="overview-item">
+                  <div className="overview-label">Config directory</div>
+                  <div className="overview-value">{overview.configDirectory || '-'}</div>
+                </div>
+                <div className="overview-item">
+                  <div className="overview-label">Data directory</div>
+                  <div className="overview-value">{overview.dataDirectory || '-'}</div>
+                </div>
+                <div className="overview-item">
+                  <div className="overview-label">Log directory</div>
+                  <div className="overview-value">{overview.logDirectory || '-'}</div>
+                </div>
               </>
             )}
           </div>
@@ -173,65 +190,92 @@ export function ClusterOverview() {
       </section>
 
       <section className="overview-section">
-        <h2>Uptime</h2>
-        <div className="overview-band">
-          <div className="overview-grid uptime">
-            <OverviewTile icon={<Server size={18} />} label="Broker Count" value={uptime.brokerCount} />
-            <OverviewTile icon={<ShieldCheck size={18} />} label="Active Controller" value={uptime.activeController ?? '-'} />
-            <OverviewTile icon={<Database size={18} />} label="Version" value={uptime.version || '-'} />
+        <div className="overview-card">
+          <div className="section-header-row">
+            <h2>Uptime</h2>
+          </div>
+          <div className="overview-grid uptime-grid">
+            <div className="overview-item">
+              <div className="overview-label">Broker Count</div>
+              <div className="overview-value">{(uptime.brokerCount || 0).toString().padStart(2, '0')}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Active Controller</div>
+              <div className="overview-value">{uptime.activeController ?? '-'}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Version</div>
+              <div className="overview-value">{uptime.version || '-'}</div>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="overview-section">
-        <h2>Partitions</h2>
-        <div className="overview-band">
-          <div className="overview-grid partitions">
-            <OverviewTile healthy={partitions.online === partitions.total} label="Online" value={`${partitions.online} of ${partitions.total}`} />
-            <OverviewTile healthy={partitions.underReplicated === 0} label="URP" value={partitions.underReplicated} />
-            <OverviewTile healthy={partitions.inSyncReplicas === partitions.totalReplicas} label="In Sync Replicas" value={`${partitions.inSyncReplicas} of ${partitions.totalReplicas}`} />
-            <OverviewTile healthy={partitions.outOfSyncReplicas === 0} label="Out Of Sync Replicas" value={partitions.outOfSyncReplicas} />
-            <OverviewTile label="Controller Type" value={uptime.controllerType || '-'} />
+        <div className="overview-card">
+          <div className="section-header-row">
+            <h2>Partitions</h2>
           </div>
+          <div className="overview-grid partitions-grid">
+            <div className="overview-item">
+              <div className="overview-label">Online <span className="status-dot green"></span></div>
+              <div className="overview-value">{partitions.online} of {partitions.total}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">URP <span className="status-dot green"></span></div>
+              <div className="overview-value">{partitions.underReplicated}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">In Sync Replicas <span className="status-dot green"></span></div>
+              <div className="overview-value">{partitions.inSyncReplicas} of {partitions.totalReplicas}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Out Of Sync Replicas <span className="status-dot green"></span></div>
+              <div className="overview-value">{partitions.outOfSyncReplicas}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Controller Type</div>
+              <div className="overview-value">{uptime.controllerType || '-'}</div>
+            </div>
+          </div>
+        </div>
 
-          <div className="overview-table-wrap">
-            <table className="data-table overview-table">
-              <thead>
-                <tr>
-                  <th>Broker ID</th>
-                  <th>Disk usage</th>
-                  <th>In Sync Replicas</th>
-                  <th>Replicas</th>
-                  <th>Replicas skew</th>
-                  <th>Leaders</th>
-                  <th>Leaders skew</th>
-                  <th>Port</th>
-                  <th>Host</th>
+        <div className="overview-table-wrap">
+          <table className="data-table overview-table">
+            <thead>
+              <tr>
+                <th>Broker ID</th>
+                <th>Disk usage</th>
+                <th>In sync replicas</th>
+                <th>Replicas</th>
+                <th>Replicas skew</th>
+                <th>Leaders</th>
+                <th>Leaders skew</th>
+                <th>Port</th>
+                <th>Host</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.brokers.map(broker => (
+                <tr key={broker.brokerId}>
+                  <td>
+                    <div className="overview-broker-id">
+                      <CheckCircle2 size={16} color="#069B68" />
+                      <span>{broker.brokerId}</span>
+                    </div>
+                  </td>
+                  <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
+                  <td>{broker.inSyncReplicas}</td>
+                  <td>{broker.replicas}</td>
+                  <td>{formatSkew(broker.replicaSkewPct)}</td>
+                  <td>{broker.leaders}</td>
+                  <td>{formatSkew(broker.leaderSkewPct)}</td>
+                  <td>{broker.port ? broker.port : '-'}</td>
+                  <td>{broker.host}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {overview.brokers.map(broker => (
-                  <tr key={broker.brokerId}>
-                    <td>
-                      <div className="overview-broker-id">
-                        <CheckCircle2 size={15} />
-                        <span>{broker.brokerId}</span>
-                        {broker.controller && <span className="controller-badge" title="Controller">C</span>}
-                      </div>
-                    </td>
-                    <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
-                    <td>{broker.inSyncReplicas}</td>
-                    <td>{broker.replicas}</td>
-                    <td>{formatSkew(broker.replicaSkewPct)}</td>
-                    <td>{broker.leaders}</td>
-                    <td>{formatSkew(broker.leaderSkewPct)}</td>
-                    <td>{broker.port ? broker.port : '-'}</td>
-                    <td className="font-mono">{broker.host}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 

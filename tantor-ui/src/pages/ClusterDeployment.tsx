@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   FileText,
   Upload,
+  Download,
   Loader2,
   MoreVertical,
   Network,
@@ -1265,28 +1266,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-
-  return (
-    <div className="cluster-deploy-page animate-fade-in">
-      <header className="cd-header">
-        <div>
-          <h1>
-            <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => window.history.back()} />
-            {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
-          </h1>
-          <p>{stage === 'details'
-            ? isAddNodeMode
-              ? 'External cluster details are loaded. Select new nodes and roles to add.'
-              : 'Define the cluster, select nodes, and choose roles.'
-            : 'Run prerequisites across every selected node before deployment.'}</p>
-        </div>
-        <div className="cd-header-side">
-          <div className="cd-stage-tabs" aria-label="Deployment progress">
-            <span className={stage === 'details' ? 'active' : ''}>Details</span>
-            <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+  const mainContent = (
+    <div className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}>
+      {(!onClose || stage === 'preview') && (
+        <header className="cd-header">
+          <div>
+            <h1>
+              <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => {
+                if (stage === 'preview') {
+                  setStage('details');
+                } else {
+                  window.history.back();
+                }
+              }} />
+              {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
+            </h1>
+            <p>{stage === 'details'
+              ? isAddNodeMode
+                ? 'External cluster details are loaded. Select new nodes and roles to add.'
+                : 'Define the cluster, select nodes, and choose roles.'
+              : 'Run prerequisites across every selected node before deployment.'}</p>
           </div>
-        </div>
-      </header>
+          <div className="cd-header-side">
+            <div className="cd-stage-tabs" aria-label="Deployment progress">
+              <span className={stage === 'details' ? 'active' : ''}>Details</span>
+              <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+            </div>
+          </div>
+        </header>
+      )}
 
       {stage === 'details' ? (
         <div className="cd-layout">
@@ -1302,29 +1310,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             <div className="cd-panel-title">
               <h2>Cluster Details</h2>
               <div className="cd-header-toggle">
-                <span>Default</span>
+                <span className={clusterConfigMode === 'default' ? 'active' : ''}>Default</span>
                 <label className="cd-toggle-switch">
                   <input type="checkbox" checked={clusterConfigMode === 'custom'} onChange={() => selectClusterConfigMode(clusterConfigMode === 'default' ? 'custom' : 'default')} disabled={isAddNodeMode} />
                   <span className="cd-toggle-slider"></span>
                 </label>
-                <span>Custom</span>
+                <span className={clusterConfigMode === 'custom' ? 'active' : ''}>Custom</span>
               </div>
             </div>
             {clusterConfigMode === 'custom' && !isAddNodeMode && (
               <div className="cd-custom-import">
-                <div>
-                  <strong>Import custom cluster configuration</strong>
-                  <p>Use the CSV template for cluster paths and server.properties, broker.properties, and controller.properties. Host details are not imported.</p>
+                <div className="cd-custom-import-row">
+                  <div className="cd-custom-import-info">
+                    <strong>Install Customs Cluster configurations</strong>
+                    <p>Use the CSV template to import cluster paths and properties. Host details aren't imported.</p>
+                  </div>
+                  <div className="cd-custom-import-actions">
+                    <label className="cd-custom-btn-upload">
+                      <Upload size={16} /> Upload CSV
+                      <input type="file" accept=".csv,text/csv" hidden onChange={event => {
+                        const selected = event.target.files?.[0];
+                        if (selected) void importCustomCsv(selected);
+                        event.target.value = '';
+                      }} />
+                    </label>
+                    <button type="button" className="cd-custom-btn-download" onClick={downloadCustomTemplate}>
+                      <Download size={16} /> Download examples
+                    </button>
+                  </div>
                 </div>
-                <label className="cd-secondary-btn compact">
-                  <Upload size={14} /> Upload CSV
-                  <input type="file" accept=".csv,text/csv" hidden onChange={event => {
-                    const selected = event.target.files?.[0];
-                    if (selected) void importCustomCsv(selected);
-                    event.target.value = '';
-                  }} />
-                </label>
-                <button type="button" className="cd-secondary-btn compact" onClick={downloadCustomTemplate}>Download example</button>
                 {customImportSummary && <span className="cd-import-summary">{customImportSummary}</span>}
               </div>
             )}
@@ -1778,6 +1792,36 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       )}
     </div>
   );
+
+  if (onClose) {
+    if (stage === 'preview') {
+      return (
+        <div className="cd-preview-fullscreen-container animate-fade-in">
+          {mainContent}
+        </div>
+      );
+    }
+    return (
+      <div className="cd-modal-backdrop" onMouseDown={onClose}>
+        <div className="cd-deployment-modal-container" onMouseDown={e => e.stopPropagation()}>
+          <header className="cd-deployment-modal-header">
+            <div>
+              <h2>Create New Cluster</h2>
+              <p>Configure and deploy a Kafka cluster to your hosts</p>
+            </div>
+            <button className="cd-modal-close-btn" onClick={onClose} title="Close">
+              <X size={20} />
+            </button>
+          </header>
+          <div className="cd-deployment-modal-body">
+            {mainContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return mainContent;
 }
 
 function PropertyTable({

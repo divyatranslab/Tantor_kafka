@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { ClusterDeployment } from './ClusterDeployment';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -48,6 +49,7 @@ export function Clusters() {
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
+  const [showCreateClusterModal, setShowCreateClusterModal] = useState(false);
 
   const fetchClusters = async () => {
     setLoading(true);
@@ -172,20 +174,18 @@ export function Clusters() {
   useEffect(() => { fetchClusters(); }, []);
 
   const renderHeader = () => (
-    <header className="page-header flex-between">
+    <header className="clusters-header flex-between">
       <div>
         <h1>Cluster</h1>
         <p>Deploy and manage your Tantor Kafka environments</p>
       </div>
       <div className="header-actions">
-        <button className="btn icon-only outline refresh-btn" onClick={fetchClusters} title="Refresh">
-          <RefreshCw size={20} className={loading ? 'spin' : ''} />
+        <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
+          <Plus size={16} /> Add Cluster
         </button>
-        {canManage && (
-          <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
-            <Plus size={20} /> Add Cluster
-          </button>
-        )}
+        <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
+          <RefreshCw size={16} className={loading ? 'spin' : ''} />
+        </button>
       </div>
     </header>
   );
@@ -204,37 +204,28 @@ export function Clusters() {
           </div>
         </div>
       ) : (
-        <>
+        <section className="clusters-inventory white-card">
           {renderHeader()}
           {loading ? (
-            <div className="state-center">
-              <RefreshCw size={24} className="spin" style={{ color: '#378ADD' }} />
+            <div className="state-center loading-state">
+              <RefreshCw size={24} className="spin" style={{ color: '#3E1363' }} />
               <p>Loading clusters...</p>
             </div>
           ) : (
-        <section className="clusters-inventory">
-          <div className="clusters-inventory-header">
-            <div>
-              <span className="section-eyebrow">Cluster inventory</span>
-              <h2>Kafka clusters</h2>
-            </div>
-            <span className="inventory-count">{clusters.length} total</span>
-          </div>
-
-          <div className="clusters-table-wrap">
-            <table className="clusters-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Kafka Cluster ID</th>
-                  <th>Host / IP</th>
-                  <th>Environment</th>
-                  <th>Disk</th>
-                  <th>Last heartbeat</th>
-                  <th>Source / Access</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
+            <div className="clusters-table-wrap">
+              <table className="clusters-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Kafka Cluster ID</th>
+                    <th>Host/IP</th>
+                    <th>Envoirement</th>
+                    <th>Disk</th>
+                    <th>Last checked</th>
+                    <th>Source</th>
+                    <th aria-label="Action" />
+                  </tr>
+                </thead>
               <tbody>
                 {clusters.map(cluster => {
                   const host = primaryHost(cluster);
@@ -312,15 +303,6 @@ export function Clusters() {
                           <span className={`access-pill ${cluster.managementLevel === 'BOOTSTRAP_ONLY' ? 'metadata' : 'managed'}`}>
                             {managementLabel(cluster)}
                           </span>
-                          <span 
-                            className={`cluster-status-badge ${statusClass(cluster)}`}
-                            title={cluster.runtimeStatusReason || (cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined)}
-                          >
-                            {inProgress(cluster.status) && cluster.mode !== 'EXTERNAL' && (
-                              <RefreshCw size={11} className="spin" />
-                            )}
-                            {statusLabel(cluster)}
-                          </span>
                         </div>
                       </td>
                       <td>
@@ -364,9 +346,8 @@ export function Clusters() {
               </tbody>
             </table>
           </div>
-        </section>
           )}
-        </>
+        </section>
       )}
 
       {showDeploymentModal && (
@@ -392,7 +373,7 @@ export function Clusters() {
                     <h3>Create your Cluster</h3>
                     <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); setShowCreateClusterModal(true); }}>Create</button>
                 </div>
                 
                 <div className="cd-deployment-card">
@@ -409,6 +390,10 @@ export function Clusters() {
             </div>
           </div>
         </div>
+      )}
+
+      {showCreateClusterModal && (
+        <ClusterDeployment onClose={() => { setShowCreateClusterModal(false); fetchClusters(); }} />
       )}
     </div>
   );
