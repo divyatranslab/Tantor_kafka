@@ -47,6 +47,8 @@ interface ClusterInfo {
   kafkaHealthChecking?: boolean;
 }
 
+const EXTERNAL_HEALTH_REFRESH_MS = 15000;
+
 export function Clusters() {
   const navigate = useNavigate();
   const { canManage } = usePermissions();
@@ -76,9 +78,19 @@ export function Clusters() {
     }
   };
 
-  const refreshExternalKafkaHealth = (items: ClusterInfo[]) => {
-    items
-      .filter(cluster => cluster.mode === 'EXTERNAL')
+  const refreshExternalKafkaHealth = (items: ClusterInfo[], showChecking = true) => {
+    const externalClusters = items.filter(cluster => cluster.mode === 'EXTERNAL');
+    if (externalClusters.length === 0) return;
+
+    if (showChecking) {
+      const externalIds = new Set(externalClusters.map(cluster => cluster.id));
+      setClusters(prev => prev.map(cluster => externalIds.has(cluster.id)
+        ? { ...cluster, kafkaHealthChecking: true }
+        : cluster
+      ));
+    }
+
+    externalClusters
       .forEach(cluster => {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 7000);
@@ -104,6 +116,7 @@ export function Clusters() {
                   lastAgentHeartbeat: fresh.lastAgentHeartbeat,
                   hosts: fresh.hosts,
                   nodeCount: fresh.nodeCount,
+                  status: fresh.status || current.status,
                 }
               : current
             ));
@@ -113,6 +126,7 @@ export function Clusters() {
               ? {
                   ...current,
                   kafkaHealthChecking: false,
+                  kafkaHealth: 'OFFLINE',
                   runtimeHealth: 'OFFLINE',
                   overallHealth: 'OFFLINE',
                   runtimeStatusLabel: 'Kafka Offline',
@@ -244,6 +258,8 @@ export function Clusters() {
         return 'Agent connected';
       case 'PARTIAL':
         return 'Agent partial';
+      case 'NOT_INSTALLED':
+        return 'Agent not installed';
       case 'NOT_CONNECTED':
         return 'Agent not connected';
       default:
@@ -257,6 +273,8 @@ export function Clusters() {
         return 'connected';
       case 'PARTIAL':
         return 'partial';
+      case 'NOT_INSTALLED':
+        return 'not-installed';
       case 'NOT_CONNECTED':
         return 'not-connected';
       default:
@@ -268,6 +286,15 @@ export function Clusters() {
     cluster.sourceLabel || (cluster.mode === 'EXTERNAL' ? 'External' : 'Internal managed');
 
   useEffect(() => { fetchClusters(); }, []);
+
+  useEffect(() => {
+    const externalClusters = clusters.filter(cluster => cluster.mode === 'EXTERNAL');
+    if (externalClusters.length === 0) return;
+    const timer = window.setInterval(() => {
+      refreshExternalKafkaHealth(externalClusters, true);
+    }, EXTERNAL_HEALTH_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [clusters]);
 
   const renderHeader = () => (
     <header className="clusters-header flex-between">

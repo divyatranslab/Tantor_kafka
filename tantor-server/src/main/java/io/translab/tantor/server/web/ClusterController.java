@@ -1883,15 +1883,17 @@ public class ClusterController {
                 .filter(agent -> cluster.getId().equals(agent.getClusterId()))
                 .toList();
         OffsetDateTime maxHeartbeat = null;
-        long managedHostsCount = 0;
+        long reportingHostsCount = 0;
+        long freshHostsCount = 0;
         for (String host : hosts) {
-            Optional<io.translab.tantor.server.domain.DiscoveryAgent> agent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
-            if (agent.isPresent()) {
-                managedHostsCount++;
+            Optional<io.translab.tantor.server.domain.DiscoveryAgent> freshAgent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
+            if (freshAgent.isPresent()) {
+                freshHostsCount++;
             }
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> lastReportingAgent =
-                    agent.isPresent() ? agent : matchingAgent(host, cluster.getId(), linkedAgents, allAgents);
+                    freshAgent.isPresent() ? freshAgent : matchingAgent(host, cluster.getId(), linkedAgents, allAgents);
             if (lastReportingAgent.isPresent()) {
+                reportingHostsCount++;
                 OffsetDateTime heartbeat = lastReportingAgent.get().getLastHeartbeat();
                 if (heartbeat != null && (maxHeartbeat == null || heartbeat.isAfter(maxHeartbeat))) {
                     maxHeartbeat = heartbeat;
@@ -1901,15 +1903,20 @@ public class ClusterController {
 
         String telemetry = "None";
         String managementLevel = "Bootstrap only";
-        String agentHealth = "NOT_CONNECTED";
-        if (managedHostsCount > 0) {
-            if (managedHostsCount == totalHostsCount || totalHostsCount == 0) {
+        String agentHealth = reportingHostsCount > 0 ? "NOT_CONNECTED" : "NOT_INSTALLED";
+        if (reportingHostsCount > 0) {
+            if (reportingHostsCount == totalHostsCount || totalHostsCount == 0) {
                 telemetry = "Full";
                 managementLevel = "Fully managed";
-                agentHealth = "CONNECTED";
             } else {
                 telemetry = "Partial";
                 managementLevel = "Partially managed";
+            }
+        }
+        if (freshHostsCount > 0) {
+            if (freshHostsCount == totalHostsCount || totalHostsCount == 0) {
+                agentHealth = "CONNECTED";
+            } else {
                 agentHealth = "PARTIAL";
             }
         }
@@ -1927,7 +1934,7 @@ public class ClusterController {
             case "HEALTHY" -> "Kafka Online";
             default -> "Unknown";
         };
-        String reason = externalHealthReason(kafkaHealth, agentHealth, managedHostsCount, totalHostsCount);
+        String reason = externalHealthReason(kafkaHealth, agentHealth, freshHostsCount, totalHostsCount);
 
         return new ExternalHealthView(
                 kafkaHealth,
@@ -1938,7 +1945,7 @@ public class ClusterController {
                 reason,
                 telemetry,
                 managementLevel,
-                managedHostsCount,
+                freshHostsCount,
                 totalHostsCount,
                 maxHeartbeat
         );
@@ -2019,6 +2026,9 @@ public class ClusterController {
         }
         if ("PARTIAL".equals(agentHealth)) {
             return "Kafka is reachable; discovery agent is fresh for " + managedHostsCount + " of " + totalHostsCount + " host(s).";
+        }
+        if ("NOT_INSTALLED".equals(agentHealth)) {
+            return "Kafka is reachable; no discovery agent has reported for this cluster.";
         }
         return "Kafka is reachable; discovery agent heartbeat is missing or stale.";
     }

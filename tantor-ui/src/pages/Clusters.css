@@ -735,6 +735,7 @@
 }
 
 .agent-pill.not-linked,
+.agent-pill.not-installed,
 .agent-pill.not-connected {
   background: #f5f4f1;
   color: #5f5e5a;
