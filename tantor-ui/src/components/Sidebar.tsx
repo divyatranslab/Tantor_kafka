@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Activity,
   Bell,
   ChevronDown,
   ChevronRight,
@@ -41,7 +40,6 @@ const navSections: NavSection[] = [
       { icon: Server, label: 'Hosts', path: '/hosts' },
       { icon: LineChart, label: 'Monitoring', path: '/monitoring' },
       { icon: Bell, label: 'Alerts', path: '/alerts' },
-      { icon: Activity, label: 'Activity', path: '/activity' },
       { icon: ShieldAlert, label: 'Audits', path: '/audit' },
       { icon: PlayCircle, label: 'Jobs', path: '/jobs' },
       { icon: Settings, label: 'LDAP', path: '/ldap-settings' },
