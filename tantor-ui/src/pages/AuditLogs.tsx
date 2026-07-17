@@ -143,8 +143,8 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
 
   return (
     <div className="custom-select-wrapper" onClick={e => e.stopPropagation()}>
-      <div 
-        className={`custom-select-trigger ${isOpen ? 'open' : ''}`} 
+      <div
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(prev => !prev)}
       >
         <span>{selectedOption ? selectedOption.label : value}</span>
@@ -157,8 +157,8 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
       {isOpen && (
         <div className="custom-select-options">
           {options.map(opt => (
-            <div 
-              key={opt.value} 
+            <div
+              key={opt.value}
               className={`custom-select-option ${opt.value === value ? 'selected' : ''}`}
               onClick={() => {
                 onChange(opt.value);
@@ -178,7 +178,7 @@ export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Draft filter state
   const [search, setSearch] = useState('');
   const [resourceId, setResourceId] = useState('');
@@ -226,7 +226,7 @@ export function AuditLogs() {
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
-  
+
   const filtered = useMemo(() => events.filter(event => {
     if (appliedFilters.category !== 'ALL' && event.category !== appliedFilters.category) return false;
     if (appliedFilters.status !== 'ALL' && event.status !== appliedFilters.status) return false;
@@ -341,19 +341,19 @@ export function AuditLogs() {
       <div className="audit-filters-row-2">
         <div className="filter-group">
           <label>Event</label>
-          <CustomDropdown 
-            value={category} 
+          <CustomDropdown
+            value={category}
             options={[
               { label: 'All Event', value: 'ALL' },
               ...categories.map(item => ({ label: title(item), value: item }))
-            ]} 
-            onChange={setCategory} 
+            ]}
+            onChange={setCategory}
           />
         </div>
         <div className="filter-group">
           <label>Status</label>
-          <CustomDropdown 
-            value={status} 
+          <CustomDropdown
+            value={status}
             options={[
               { label: 'All', value: 'ALL' },
               { label: 'SUCCESS', value: 'SUCCESS' },
@@ -361,19 +361,19 @@ export function AuditLogs() {
               { label: 'ATTEMPTED', value: 'ATTEMPTED' },
               { label: 'SCHEDULED', value: 'SCHEDULED' },
               { label: 'REQUESTED', value: 'REQUESTED' }
-            ]} 
-            onChange={setStatus} 
+            ]}
+            onChange={setStatus}
           />
         </div>
         <div className="filter-group">
           <label>Actors</label>
-          <CustomDropdown 
-            value={actor} 
+          <CustomDropdown
+            value={actor}
             options={[
               { label: 'All', value: 'ALL' },
               ...actors.map(item => ({ label: item, value: item }))
-            ]} 
-            onChange={setActor} 
+            ]}
+            onChange={setActor}
           />
         </div>
         <div className="filter-group">
@@ -398,7 +398,7 @@ export function AuditLogs() {
       </div>
       {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap">
+          : <div className="audit-table-wrap">
             <table className="audit-table">
               <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
               <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
@@ -425,18 +425,18 @@ function AuditRow({ event }: { event: AuditEvent }) {
   const created = timeOf(event);
   const createdDate = created ? new Date(created) : null;
   const details = detailLabel(event);
-  
+
   const formattedTime = createdDate && !Number.isNaN(createdDate.getTime())
     ? `${String(createdDate.getDate()).padStart(2, '0')}/${String(createdDate.getMonth() + 1).padStart(2, '0')}/${createdDate.getFullYear()} | ${createdDate.toLocaleTimeString('en-GB', { hour12: false })}`
     : '-';
-    
+
   return <tr>
-      <td><div className="audit-time"><span>{formattedTime}</span></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
-      <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
-      <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
-      <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
-      <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
-      <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
-    </tr>
+    <td><div className="audit-time"><span>{formattedTime}</span></div></td>
+    <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
+    <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
+    <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
+    <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
+    <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
+    <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
+  </tr>
 }

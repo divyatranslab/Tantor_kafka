@@ -116,7 +116,7 @@ export function Monitoring() {
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [hosts, setHosts] = useState<Host[]>([]);
   const [selectedHostId, setSelectedHostId] = useState('');
-  
+
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,7 +149,7 @@ export function Monitoring() {
       if (clusterList.length > 0) {
         const firstCluster = clusterList[0];
         setSelectedClusterId(firstCluster.id);
-        
+
         // Filter hosts for this cluster or default to first host
         const clusterHosts = hostList.filter(h => h.clusterId === firstCluster.id);
         if (clusterHosts.length > 0) {
@@ -273,9 +273,9 @@ export function Monitoring() {
         <div className="controls-area">
           {/* Cluster Selection */}
           {clusters.length > 0 && (
-            <select 
-              className="tantor-select" 
-              value={selectedClusterId} 
+            <select
+              className="tantor-select"
+              value={selectedClusterId}
               onChange={e => {
                 setSelectedClusterId(e.target.value);
                 const clusterHosts = hosts.filter(h => h.clusterId === e.target.value);
@@ -290,9 +290,9 @@ export function Monitoring() {
 
           {/* Broker/Host Selection */}
           {hosts.length > 0 && (
-            <select 
-              className="tantor-select" 
-              value={selectedHostId} 
+            <select
+              className="tantor-select"
+              value={selectedHostId}
               onChange={e => setSelectedHostId(e.target.value)}
             >
               {hosts.filter(h => h.clusterId === selectedClusterId || !h.clusterId).map(h => (
@@ -312,7 +312,7 @@ export function Monitoring() {
 
           {/* Interval Selection */}
           <div className="interval-pill-container">
-            <select 
+            <select
               className="interval-select-element"
               value={refreshInterval}
               onChange={e => setRefreshInterval(Number(e.target.value))}
@@ -325,9 +325,9 @@ export function Monitoring() {
           </div>
 
           {/* Manual Refresh Button */}
-          <button 
-            className="manual-refresh-button" 
-            onClick={() => loadOverview()} 
+          <button
+            className="manual-refresh-button"
+            onClick={() => loadOverview()}
             disabled={loading}
           >
             <RefreshCw size={18} className={loading ? 'spin' : ''} />
