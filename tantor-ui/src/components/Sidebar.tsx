@@ -17,7 +17,6 @@ import {
   Users,
 } from 'lucide-react';
 import './Sidebar.css';
-import tantorLogo from '../assets/tantor-logo.png';
 import { useAuth } from '../contexts/AuthContext';
 
 type NavItem = {
@@ -34,36 +33,19 @@ type NavSection = {
 
 const navSections: NavSection[] = [
   {
-    label: 'Overview',
+    label: '',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-      {
-        icon: Network,
-        label: 'Clusters',
-        subItems: [
-          { label: 'All Clusters', path: '/clusters' },
-        ],
-      },
+      { icon: Package, label: 'Artifacts', path: '/artifacts' },
+      { icon: Network, label: 'Cluster', path: '/clusters' },
       { icon: Server, label: 'Hosts', path: '/hosts' },
-    ],
-  },
-  {
-    label: 'Observability',
-    items: [
       { icon: LineChart, label: 'Monitoring', path: '/monitoring' },
       { icon: Bell, label: 'Alerts', path: '/alerts' },
-    ],
-  },
-  {
-    label: 'Management',
-    items: [
-      { icon: Users, label: 'User Management', path: '/user-management' },
+      { icon: Activity, label: 'Activity', path: '/activity' },
       { icon: ShieldAlert, label: 'Audits', path: '/audit' },
-      { icon: Activity, label: 'Jobs', path: '/jobs' },
-      { icon: PlayCircle, label: 'Commands', path: '/commands' },
-      { icon: Package, label: 'Artifacts', path: '/artifacts' },
-      { icon: Settings, label: 'LDAP Settings', path: '/ldap-settings' },
-      { icon: Settings, label: 'Administration', path: '/admin' },
+      { icon: PlayCircle, label: 'Jobs', path: '/jobs' },
+      { icon: Settings, label: 'LDAP', path: '/ldap-settings' },
+      { icon: Users, label: 'User Management', path: '/user-management' },
     ],
   },
 ];
@@ -113,9 +95,8 @@ export function Sidebar() {
         to={item.path!}
         end={item.path === '/dashboard'}
         className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        style={{ paddingLeft: `${18 + depth * 22}px` }}
       >
-        {item.icon && <item.icon size={15} className="nav-item-icon" />}
+        {item.icon && <item.icon size={20} className="nav-item-icon" />}
         {!item.icon && <span className="nav-item-dot" />}
         <span>{item.label}</span>
       </NavLink>
@@ -124,19 +105,10 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        <img
-          src={tantorLogo}
-          alt="Tantor"
-          className="sidebar-logo"
-        />
-        <span className="sidebar-tagline">Stream Intelligence</span>
-      </div>
-
       <nav className="sidebar-nav">
         {navSections.map(section => (
           <div key={section.label} className="nav-section">
-            <span className="nav-section-label">{section.label}</span>
+            {section.label && <span className="nav-section-label">{section.label}</span>}
             {section.items
               .filter(item => !item.path || !hiddenNavPaths.has(item.path))
               .map(item => renderItem(item))}

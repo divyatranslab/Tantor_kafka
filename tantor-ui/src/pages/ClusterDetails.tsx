@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import './ClusterDetails.css';
 
@@ -30,6 +30,18 @@ export function ClusterDetails() {
   const navigate = useNavigate();
   const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     fetch(`/api/v1/ui/clusters/${id}`)
@@ -131,16 +143,17 @@ export function ClusterDetails() {
     );
   }
 
+
   const tabs = [
     { to: `/clusters/${id}/overview`, icon: LineChart, label: 'Overview', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/nodes`, icon: Network, label: 'Nodes', disabled: false },
     { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
-    { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: false },
     { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
-    { to: `/clusters/${id}/security`, icon: Shield, label: 'ACL', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/security`, icon: Shield, label: 'ACLs', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
   ];
 
@@ -151,25 +164,20 @@ export function ClusterDetails() {
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }
 
+  // The first 9 items are visible in the main navbar
+  const visibleTabs = tabs.slice(0, 9);
+  // The rest are in the dropdown
+  const dropdownTabs = tabs.slice(9);
+  const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
+
   return (
     <div className="cluster-details-page animate-fade-in">
-      <header className="page-header">
-        <div className="breadcrumb">
-          <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer', color: 'var(--text-secondary)' }}>Clusters</span>
-          <span style={{ margin: '0 8px' }}>/</span>
-          <span style={{ fontWeight: 600 }}>{cluster.name}</span>
-        </div>
-
-        <div className="cluster-header-main">
-          <div className="cluster-header-left">
-            <div className="icon-wrap">
-              <Network size={28} />
-            </div>
-            <div>
-              <h1>{cluster.name}</h1>
-              <p>Kafka {cluster.kafkaVersion} · {cluster.nodeCount} nodes · {cluster.originType || (cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL')}</p>
-              <p className="cluster-identity-line">Kafka Cluster ID: <code>{cluster.kafkaClusterId || 'Pending discovery'}</code> · Install directory: <code>{cluster.installDirectory || '-'}</code></p>
-            </div>
+      <div className="cluster-details-card">
+        <header className="page-header" style={{ borderBottom: 'none', padding: '0 0 16px 0', marginBottom: '20px' }}>
+          <div className="breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#818181', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', marginBottom: '12px' }}>
+            <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer' }}>Cluster</span>
+            <span style={{ color: '#818181', display: 'flex', alignItems: 'center' }}><ChevronRight size={14} /></span>
+            <span style={{ color: '#332849', fontWeight: 500 }}>{cluster.name}</span>
           </div>
           <div className="cluster-health-stack">
             <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
@@ -181,36 +189,102 @@ export function ClusterDetails() {
               </div>
             )}
           </div>
+        </header>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+            <button 
+              onClick={() => navigate('/clusters')} 
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                cursor: 'pointer', 
+                padding: 0, 
+                display: 'flex', 
+                alignItems: 'center', 
+                color: '#818181' 
+              }}
+            >
+              <ChevronLeft size={24} style={{ strokeWidth: 1.5 }} />
+            </button>
+            <h1 style={{ 
+              fontFamily: 'Satoshi, sans-serif', 
+              fontWeight: 500, 
+              fontSize: '24px', 
+              color: '#332849', 
+              margin: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              {cluster.name}
+              <Info size={22} style={{ color: '#CCCCCC', cursor: 'pointer', strokeWidth: 1.5 }} />
+            </h1>
+          </div>
+
+        <div className="cluster-tabs">
+          <nav>
+            <div className="cluster-tabs-scroll-wrapper">
+              {visibleTabs.map(tab => {
+                if (tab.disabled) {
+                  return (
+                    <div key={tab.to} className="disabled-tab" title="Requires active cluster">
+                      {tab.label}
+                    </div>
+                  );
+                }
+                return (
+                  <NavLink
+                    key={tab.to}
+                    to={tab.to}
+                    className={({ isActive }) => isActive ? 'active' : ''}
+                  >
+                    {tab.label}
+                  </NavLink>
+                );
+              })}
+            </div>
+
+            {dropdownTabs.length > 0 && (
+              <div className="cluster-tabs-dropdown-container" ref={dropdownRef}>
+                <button
+                  type="button"
+                  className={`cluster-tabs-dropdown-trigger ${isDropdownActive ? 'active' : ''} ${isDropdownOpen ? 'open' : ''}`}
+                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                  aria-label="More navigation links"
+                >
+                  <ChevronDown size={18} />
+                </button>
+                {isDropdownOpen && (
+                  <div className="cluster-tabs-dropdown-menu">
+                    {dropdownTabs.map(tab => {
+                      if (tab.disabled) {
+                        return (
+                          <div key={tab.to} className="disabled-dropdown-item" title="Requires active cluster">
+                            {tab.label}
+                          </div>
+                        );
+                      }
+                      return (
+                        <NavLink
+                          key={tab.to}
+                          to={tab.to}
+                          className={({ isActive }) => isActive ? 'dropdown-item active' : 'dropdown-item'}
+                          onClick={() => setIsDropdownOpen(false)}
+                        >
+                          {tab.label}
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </nav>
         </div>
-      </header>
 
-      <div className="cluster-tabs">
-        <nav>
-          {tabs.map(tab => {
-            if (tab.disabled) {
-              return (
-                <div key={tab.to} className="disabled-tab" title="Requires active cluster">
-                  <tab.icon size={16} />
-                  {tab.label}
-                </div>
-              );
-            }
-            return (
-              <NavLink
-                key={tab.to}
-                to={tab.to}
-                className={({ isActive }) => isActive ? 'active' : ''}
-              >
-                <tab.icon size={16} />
-                {tab.label}
-              </NavLink>
-            );
-          })}
-        </nav>
-      </div>
-
-      <div className="cluster-content mt-6">
-        <Outlet />
+        <div className="cluster-content">
+          <Outlet />
+        </div>
       </div>
     </div>
   );

@@ -1,52 +1,38 @@
-import { useLocation } from 'react-router-dom';
-import { Server } from 'lucide-react';
-import { useCluster } from '../contexts/ClusterContext';
+import { useMemo } from 'react';
+import { Search, BookOpen, Bell } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 import './TopNavbar.css';
+import tantorLogo from '../assets/Tantor-pink-logo.png';
 
 export function TopNavbar() {
-  const { clusters, activeClusterId, setActiveClusterId, loading } = useCluster();
-  const location = useLocation();
-  
-  if (location.pathname !== '/schema-registry' && location.pathname !== '/kafka-connect') {
-    return null;
-  }
+  const { decodedToken } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="top-navbar">
-        <div className="navbar-right">
-          <span className="loading-text">Loading clusters...</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (clusters.length === 0) {
-    return (
-      <div className="top-navbar">
-        <div className="navbar-right">
-          <span className="no-cluster-text">No active clusters</span>
-        </div>
-      </div>
-    );
-  }
+  // Resolve the first letter of the username
+  const userInitial = useMemo(() => {
+    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'User';
+    return rawName.charAt(0).toUpperCase();
+  }, [decodedToken]);
 
   return (
     <div className="top-navbar">
+      <div className="navbar-left">
+        <div className="logo-container">
+          <img src={tantorLogo} alt="Tantor" className="header-logo" />
+        </div>
+      </div>
       <div className="navbar-right">
-        <div className="cluster-selector">
-          <Server size={16} className="cluster-icon" />
-          <select
-            className="cluster-dropdown"
-            value={activeClusterId || ''}
-            onChange={(e) => setActiveClusterId(e.target.value)}
-          >
-            {clusters.map((cluster) => (
-              <option key={cluster.id} value={cluster.id}>
-                {cluster.name}
-              </option>
-            ))}
-          </select>
+        <div className="search-container">
+          <Search size={18} className="search-icon" />
+          <input type="text" placeholder="Search" className="search-input" />
+        </div>
+        <button className="nav-action-btn" title="Documentation">
+          <BookOpen size={20} />
+        </button>
+        <button className="nav-action-btn" title="Notifications">
+          <Bell size={20} />
+        </button>
+        <div className="profile-badge">
+          <span>{userInitial}</span>
         </div>
       </div>
     </div>
