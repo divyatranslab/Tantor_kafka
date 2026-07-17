@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   FileText,
   Upload,
+  Download,
   Loader2,
   MoreVertical,
   Network,
@@ -16,6 +17,7 @@ import {
   Search,
   Server,
   Settings2,
+  Trash2,
   X,
   XCircle,
 } from 'lucide-react';
@@ -399,6 +401,18 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [validatingKraft, setValidatingKraft] = useState(false);
   const [kraftValidation, setKraftValidation] = useState<KraftValidationReport | null>(null);
   const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
+  
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setNodeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openRoleMenuHostId, setOpenRoleMenuHostId] = useState<string | null>(null);
@@ -933,16 +947,33 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const confirmNodeSelection = () => {
-    setSelectedNodeIds(draftNodeIds);
-    setRolesByHost(prev => {
-      const next: Record<string, RoleChoice> = {};
-      draftNodeIds.forEach(id => {
-        next[id] = roleOptions.some(role => role.id === prev[id]) ? prev[id] : defaultRoleForMode;
-      });
-      return next;
-    });
     setPrereqResults({});
     setNodeDropdownOpen(false);
+  };
+
+  const toggleNodeSelection = (hostId: string) => {
+    setSelectedNodeIds(prev => {
+      const isSelected = prev.includes(hostId);
+      let nextSelected;
+      if (isSelected) {
+        nextSelected = prev.filter(id => id !== hostId);
+      } else {
+        nextSelected = [...prev, hostId];
+      }
+      
+      setRolesByHost(rolesPrev => {
+        const nextRoles = { ...rolesPrev };
+        if (!isSelected) {
+          nextRoles[hostId] = defaultRoleForMode;
+        } else {
+          delete nextRoles[hostId];
+        }
+        return nextRoles;
+      });
+      
+      return nextSelected;
+    });
+    setPrereqResults({});
   };
 
   const removeNode = (hostId: string) => {
@@ -1235,28 +1266,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-
-  return (
-    <div className="cluster-deploy-page animate-fade-in">
-      <header className="cd-header">
-        <div>
-          <h1>
-            <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => window.history.back()} />
-            {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
-          </h1>
-          <p>{stage === 'details'
-            ? isAddNodeMode
-              ? 'External cluster details are loaded. Select new nodes and roles to add.'
-              : 'Define the cluster, select nodes, and choose roles.'
-            : 'Run prerequisites across every selected node before deployment.'}</p>
-        </div>
-        <div className="cd-header-side">
-          <div className="cd-stage-tabs" aria-label="Deployment progress">
-            <span className={stage === 'details' ? 'active' : ''}>Details</span>
-            <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+  const mainContent = (
+    <div className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}>
+      {(!onClose || stage === 'preview') && (
+        <header className="cd-header">
+          <div>
+            <h1>
+              <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => {
+                if (stage === 'preview') {
+                  setStage('details');
+                } else {
+                  window.history.back();
+                }
+              }} />
+              {stage === 'details' ? (isAddNodeMode ? 'Add Node to Cluster' : 'Create Kafka Cluster') : (isAddNodeMode ? 'Preview Node Addition' : 'Preview Deployment')}
+            </h1>
+            <p>{stage === 'details'
+              ? isAddNodeMode
+                ? 'External cluster details are loaded. Select new nodes and roles to add.'
+                : 'Define the cluster, select nodes, and choose roles.'
+              : 'Run prerequisites across every selected node before deployment.'}</p>
           </div>
-        </div>
-      </header>
+          <div className="cd-header-side">
+            <div className="cd-stage-tabs" aria-label="Deployment progress">
+              <span className={stage === 'details' ? 'active' : ''}>Details</span>
+              <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+            </div>
+          </div>
+        </header>
+      )}
 
       {stage === 'details' ? (
         <div className="cd-layout">
@@ -1272,29 +1310,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             <div className="cd-panel-title">
               <h2>Cluster Details</h2>
               <div className="cd-header-toggle">
-                <span>Default</span>
+                <span className={clusterConfigMode === 'default' ? 'active' : ''}>Default</span>
                 <label className="cd-toggle-switch">
                   <input type="checkbox" checked={clusterConfigMode === 'custom'} onChange={() => selectClusterConfigMode(clusterConfigMode === 'default' ? 'custom' : 'default')} disabled={isAddNodeMode} />
                   <span className="cd-toggle-slider"></span>
                 </label>
-                <span>Custom</span>
+                <span className={clusterConfigMode === 'custom' ? 'active' : ''}>Custom</span>
               </div>
             </div>
             {clusterConfigMode === 'custom' && !isAddNodeMode && (
               <div className="cd-custom-import">
-                <div>
-                  <strong>Import custom cluster configuration</strong>
-                  <p>Use the CSV template for cluster paths and server.properties, broker.properties, and controller.properties. Host details are not imported.</p>
+                <div className="cd-custom-import-row">
+                  <div className="cd-custom-import-info">
+                    <strong>Install Customs Cluster configurations</strong>
+                    <p>Use the CSV template to import cluster paths and properties. Host details aren't imported.</p>
+                  </div>
+                  <div className="cd-custom-import-actions">
+                    <label className="cd-custom-btn-upload">
+                      <Upload size={16} /> Upload CSV
+                      <input type="file" accept=".csv,text/csv" hidden onChange={event => {
+                        const selected = event.target.files?.[0];
+                        if (selected) void importCustomCsv(selected);
+                        event.target.value = '';
+                      }} />
+                    </label>
+                    <button type="button" className="cd-custom-btn-download" onClick={downloadCustomTemplate}>
+                      <Download size={16} /> Download examples
+                    </button>
+                  </div>
                 </div>
-                <label className="cd-secondary-btn compact">
-                  <Upload size={14} /> Upload CSV
-                  <input type="file" accept=".csv,text/csv" hidden onChange={event => {
-                    const selected = event.target.files?.[0];
-                    if (selected) void importCustomCsv(selected);
-                    event.target.value = '';
-                  }} />
-                </label>
-                <button type="button" className="cd-secondary-btn compact" onClick={downloadCustomTemplate}>Download example</button>
                 {customImportSummary && <span className="cd-import-summary">{customImportSummary}</span>}
               </div>
             )}
@@ -1386,12 +1430,11 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </button>
             </div>
 
-            <div className="cd-node-picker">
+            <div className="cd-node-picker" ref={dropdownRef}>
               <button className="cd-node-trigger" onClick={() => {
-                setDraftNodeIds(selectedNodeIds);
                 setNodeDropdownOpen(open => !open);
               }}>
-                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select node'}</span>
+                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
                 <ChevronDown size={16} />
               </button>
               {nodeDropdownOpen && (
@@ -1403,26 +1446,22 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   <div className="cd-node-options">
                     {filteredHosts.map(host => {
                       const disabled = host.status !== 'AVAILABLE' || host.available === false;
-                      const checked = draftNodeIds.includes(host.id);
+                      const checked = selectedNodeIds.includes(host.id);
                       return (
                         <button
                           key={host.id}
                           className={`cd-node-option ${checked ? 'checked' : ''}`}
                           disabled={disabled}
-                          onClick={() => setDraftNodeIds(prev => checked ? prev.filter(id => id !== host.id) : [...prev, host.id])}
+                          onClick={() => toggleNodeSelection(host.id)}
                         >
-                          <span className="cd-checkbox">{checked && <Check size={12} />}</span>
-                          <span>
+                          <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
+                          <span className="cd-node-info">
                             <strong>{host.hostname}</strong>
-                            <small>{displayIp(host)} {disabled ? `- ${host.available === false ? 'Kafka Already Deployed' : host.status}` : ''}</small>
+                            <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
                           </span>
                         </button>
                       );
                     })}
-                  </div>
-                  <div className="cd-node-menu-footer">
-                    <button onClick={() => setNodeDropdownOpen(false)}>Cancel</button>
-                    <button className="primary" onClick={confirmNodeSelection}>OK</button>
                   </div>
                 </div>
               )}
@@ -1432,23 +1471,21 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               {selectedHosts.length === 0 ? (
                 <div className="cd-empty">No nodes selected yet.</div>
               ) : selectedHosts.map(host => (
-                <div className="cd-selected-node" key={host.id}>
-                  <div className="cd-node-main">
-                    <Server size={16} />
-                    <div>
-                      <strong>{host.hostname}</strong>
-                      <span>{displayIp(host)}</span>
+                <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', border: 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                    <div className="cd-node-main" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+                      <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', lineHeight: '19px', color: '#332849', margin: 0 }}>{host.hostname}</strong>
+                      <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181', margin: 0 }}>{displayIp(host)} - /srv/tantor-agent/tantor-agent-linux</span>
                     </div>
-                  </div>
-                  <div className="cd-role-menu-wrap" style={{ flexGrow: 1, display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ position: 'relative' }}>
-                      <button
-                        className="cd-secondary-btn compact cd-role-menu-trigger"
-                        onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
-                      >
-                        <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ')}</span>
-                        <MoreVertical size={14} />
-                      </button>
+                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="cd-role-menu-wrap" style={{ position: 'relative' }}>
+                        <button
+                          className="cd-figma-action-btn"
+                          onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                        >
+                          <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                          <MoreVertical size={14} />
+                        </button>
                       {openRoleMenuHostId === host.id && (
                         <div className="cd-role-menu">
                           {roleOptions.filter(r => r.id !== 'separate').map(role => {
@@ -1493,59 +1530,16 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                         </div>
                       )}
                     </div>
-                    
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
-                        <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
-                          <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Broker Port</span>
-                          <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).listenerPort} onChange={e => updateHostPort(host.id, 'listenerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
-                        </label>
-                      )}
-                      
-                      {deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
-                        <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
-                          <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>Controller Port</span>
-                          <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).controllerPort} onChange={e => updateHostPort(host.id, 'controllerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
-                        </label>
-                      )}
-                      
-                      {deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
-                        <>
-                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
-                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Client Port</span>
-                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).controllerPort} onChange={e => updateHostPort(host.id, 'controllerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
-                          </label>
-                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
-                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Peer Port</span>
-                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).zookeeperPeerPort} onChange={e => updateHostPort(host.id, 'zookeeperPeerPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
-                          </label>
-                          <label className="cd-field" style={{ margin: 0, minWidth: '100px' }}>
-                            <span style={{ fontSize: '0.75rem', marginBottom: '2px' }}>ZK Election Port</span>
-                            <input type="number" style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }} value={getHostPorts(host.id).zookeeperElectionPort} onChange={e => updateHostPort(host.id, 'zookeeperElectionPort', Number(e.target.value))} min={1024} max={65535} disabled={isAddNodeMode} />
-                          </label>
-                        </>
-                      )}
-                      
-                      <button className="cd-secondary-btn compact" onClick={() => checkHostPorts(host.id)} disabled={portCheckResults[host.id]?.status === 'RUNNING'} title="Check if assigned ports are available">
-                        {portCheckResults[host.id]?.status === 'RUNNING' ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
-                        Check Ports
-                      </button>
-                      
-                      {portCheckResults[host.id] && portCheckResults[host.id].status !== 'IDLE' && portCheckResults[host.id].status !== 'QUEUED' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: portCheckResults[host.id].status === 'SUCCESS' ? 'var(--success-color)' : portCheckResults[host.id].status === 'RUNNING' ? 'var(--text-color)' : 'var(--danger-color)' }}>
-                          {portCheckResults[host.id].status === 'SUCCESS' ? <CheckCircle2 size={14} /> : portCheckResults[host.id].status === 'RUNNING' ? '' : <XCircle size={14} />}
-                          {portCheckResults[host.id].status === 'SUCCESS' ? 'Available' : portCheckResults[host.id].status === 'RUNNING' ? 'Checking...' : portCheckResults[host.id].errorMsg || 'In Use'}
-                        </span>
-                      )}
-                    </div>
+                    <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
+                      <FileText size={14} />
+                      Configuration
+                    </button>
+                    <button className="cd-figma-icon-btn" onClick={() => removeNode(host.id)} title="Remove node" style={{ width: '24px', height: '24px', padding: 0 }}>
+                      <Trash2 size={16} />
+                    </button>
                   </div>
-                  <button className="cd-secondary-btn compact" onClick={() => setConfigModalHostId(host.id)}>
-                    <FileText size={14} />
-                    Configuration
-                  </button>
-                  <button className="cd-icon-btn" onClick={() => removeNode(host.id)} title="Remove node">
-                    <X size={15} />
-                  </button>
+                  </div>
+
                 </div>
               ))}
             </div>
@@ -1565,10 +1559,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           {deploymentMode === 'kraft' && !isAddNodeMode && kraftValidation && (
             <section className="cd-panel cd-kraft-validation">
               <div className="cd-panel-title">
-                <Network size={18} />
                 <h2>KRaft Topology Validation</h2>
                 <span className={`cd-validation-state ${kraftValidation.valid ? 'valid' : 'invalid'}`}>
-                  {kraftValidation.valid ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                  {!kraftValidation.valid && <XCircle size={14} />}
                   {kraftValidation.valid ? 'Topology valid' : 'Changes required'}
                 </span>
               </div>
@@ -1626,7 +1619,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           )}
           <section className="cd-panel">
             <div className="cd-panel-title">
-              <Network size={18} />
               <h2>Nodes Selected for Deployment</h2>
             </div>
             <div className="cd-preview-list">
@@ -1636,11 +1628,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 return (
                   <div className="cd-preview-row" key={host.id}>
                     <div className="cd-node-main">
-                      <Server size={16} />
-                      <div>
-                        <strong>{host.hostname}</strong>
-                        <span>{displayIp(host)}</span>
-                      </div>
+                      <strong>{host.hostname}</strong>
+                      <span>{displayIp(host)}</span>
                     </div>
                     <div className="cd-role-copy">
                       <strong>{role?.label}</strong>
@@ -1665,9 +1654,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
           <section className="cd-panel">
             <div className="cd-panel-title">
-              <CheckCircle2 size={18} />
               <h2>Prerequisites</h2>
-              <button className="cd-primary-btn small" disabled={checkingPrereqs || selectedHosts.length === 0 || pathErrors.length > 0 || configBlockingIssues.length > 0 || (kraftValidation?.errors.length || 0) > 0} onClick={checkPrerequisites}>
+              <button className="cd-prereqs-check-btn" disabled={checkingPrereqs || selectedHosts.length === 0 || pathErrors.length > 0 || configBlockingIssues.length > 0 || (kraftValidation?.errors.length || 0) > 0} onClick={checkPrerequisites}>
                 {checkingPrereqs ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                 Check prerequisites on all nodes
               </button>
@@ -1703,9 +1691,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Back to details</button>
+            <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Cancel</button>
             <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
-              {deploying ? <Loader2 size={15} className="spin" /> : <Play size={15} />}
+              {deploying && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>
           </div>
@@ -1736,9 +1724,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 return (
                   <div className="cd-node-config-editor" key={kind}>
                     <div className="cd-node-config-top">
-                      <div>
-                        <h3>{configFileName(kind)}</h3>
-                        <p>Fill the node-specific values for this service.</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: 0 }}>
+                        <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', color: '#332849', margin: 0 }}>{configFileName(kind)}</h3>
+                        <p style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#332849', margin: 0 }}>Fill the node-specific values for this service.</p>
                       </div>
                       <div className="cd-config-controls">
                         <label className="cd-heap-field">
@@ -1760,10 +1748,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   </div>
                 );
               })}
-            </div>
-
-            <div className="cd-config-modal-footer">
-              <button className="cd-secondary-btn" onClick={() => setConfigModalHostId(null)}>Done</button>
             </div>
           </div>
         </div>
@@ -1799,14 +1783,45 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 onChange={(key, value) => updateCommonConfigValue(commonConfigKind, key, value)}
               />
             </div>
-            <div className="cd-config-modal-footer">
-              <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)}>Done</button>
+            <div className="cd-config-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: 'none', padding: '16px 24px', boxShadow: '0px -4px 9px rgba(0, 0, 0, 0.1)' }}>
+              <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)} style={{ border: '1px solid #8E77BB', color: '#8E77BB', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', fontSize: '14px', fontWeight: 500 }}>Cancel</button>
+              <button className="cd-primary-btn" onClick={() => setCommonConfigOpen(false)} style={{ background: '#CBC0E0', color: '#FFFFFF', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '14px', fontWeight: 500 }}>Save</button>
             </div>
           </div>
         </div>
       )}
     </div>
   );
+
+  if (onClose) {
+    if (stage === 'preview') {
+      return (
+        <div className="cd-preview-fullscreen-container animate-fade-in">
+          {mainContent}
+        </div>
+      );
+    }
+    return (
+      <div className="cd-modal-backdrop" onMouseDown={onClose}>
+        <div className="cd-deployment-modal-container" onMouseDown={e => e.stopPropagation()}>
+          <header className="cd-deployment-modal-header">
+            <div>
+              <h2>Create New Cluster</h2>
+              <p>Configure and deploy a Kafka cluster to your hosts</p>
+            </div>
+            <button className="cd-modal-close-btn" onClick={onClose} title="Close">
+              <X size={20} />
+            </button>
+          </header>
+          <div className="cd-deployment-modal-body">
+            {mainContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return mainContent;
 }
 
 function PropertyTable({
@@ -1825,9 +1840,9 @@ function PropertyTable({
       <table className="cd-property-table">
         <thead>
           <tr>
-            <th>Key</th>
-            <th>Value</th>
-            <th>Action</th>
+            <th style={{ width: hostIp ? '33.33%' : '64%' }}>Key</th>
+            <th style={{ width: hostIp ? '33.33%' : '36%' }}>Value</th>
+            {hostIp && <th style={{ width: '33.33%' }}>Action</th>}
           </tr>
         </thead>
         <tbody>
@@ -1838,24 +1853,30 @@ function PropertyTable({
                 {row.required && <small><b>*</b> Required</small>}
               </td>
               <td>
-                <input
-                  value={row.value}
-                  onChange={e => onChange(row.key, e.target.value)}
-                  placeholder={row.required ? 'Required before preview' : ''}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                  <input
+                    value={row.value}
+                    onChange={e => onChange(row.key, e.target.value)}
+                    placeholder={row.required ? 'Required before preview' : ''}
+                    style={{ flex: 1 }}
+                  />
+                  {!hostIp && (
+                    <button type="button" className="cd-icon-btn" style={{ padding: '0', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center' }} onClick={() => {
+                      const next = window.prompt(`Edit ${row.key}`, row.value);
+                      if (next !== null) onChange(row.key, next);
+                    }}>
+                      <MoreVertical size={24} color="#818181" />
+                    </button>
+                  )}
+                </div>
               </td>
-              <td>
-                {hostIp && row.key.includes('host') ? (
-                  <button type="button" onClick={onUseHostIp}>Use {hostIp}</button>
-                ) : (
-                  <button type="button" onClick={() => {
-                    const next = window.prompt(`Edit ${row.key}`, row.value);
-                    if (next !== null) onChange(row.key, next);
-                  }}>
-                    Edit
+              {hostIp && (
+                <td style={{ textAlign: 'right' }}>
+                  <button type="button" onClick={onUseHostIp} style={{ background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                    Use {hostIp}
                   </button>
-                )}
-              </td>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -1867,7 +1888,7 @@ function PropertyTable({
 function StatusBadge({ status }: { status: PrereqStatus }) {
   const normalized = status || 'IDLE';
   const icon = normalized === 'SUCCESS'
-    ? <CheckCircle2 size={13} />
+    ? null
     : normalized === 'FAILED'
       ? <XCircle size={13} />
       : normalized === 'REBOOT_REQUIRED'

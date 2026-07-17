@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, Info, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import './ClusterDetails.css';
 
@@ -150,7 +150,7 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
-    { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: false },
     { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/security`, icon: Shield, label: 'ACLs', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
@@ -173,11 +173,11 @@ export function ClusterDetails() {
   return (
     <div className="cluster-details-page animate-fade-in">
       <div className="cluster-details-card">
-        <header className="page-header">
-          <div className="breadcrumb">
-            <span onClick={() => navigate('/clusters')} className="breadcrumb-link">Cluster</span>
-            <span className="breadcrumb-separator">&gt;</span>
-            <span className="breadcrumb-active">{cluster.name}</span>
+        <header className="page-header" style={{ borderBottom: 'none', padding: '0 0 16px 0', marginBottom: '20px' }}>
+          <div className="breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#818181', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', marginBottom: '12px' }}>
+            <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer' }}>Cluster</span>
+            <span style={{ color: '#818181', display: 'flex', alignItems: 'center' }}><ChevronRight size={14} /></span>
+            <span style={{ color: '#332849', fontWeight: 500 }}>{cluster.name}</span>
           </div>
           <div className="cluster-health-stack">
             <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
@@ -191,23 +191,34 @@ export function ClusterDetails() {
           </div>
         </header>
 
-          <div className="cluster-header-main">
-            <div className="cluster-header-left">
-              <button className="cluster-back-btn" onClick={() => navigate('/clusters')} aria-label="Go back to clusters">
-                <ChevronLeft size={20} />
-              </button>
-              <h1 className="cluster-title">{cluster.name}</h1>
-              <div className="cluster-info-tooltip-wrap">
-                <Info size={16} className="cluster-info-icon" />
-                <div className="cluster-info-tooltip">
-                  <p className="tooltip-line">{cluster.name} · Kafka {cluster.kafkaVersion} · {cluster.nodeCount} node{cluster.nodeCount === 1 ? '' : 's'} · {cluster.originType || (cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL')}</p>
-                  <p className="tooltip-line">Kafka Cluster ID: {cluster.kafkaClusterId || 'Pending discovery'} · Install directory: {cluster.installDirectory || '-'}</p>
-                </div>
-              </div>
-            </div>
-            <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-              <div className="status-dot"></div> {runtimeLabel}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+            <button 
+              onClick={() => navigate('/clusters')} 
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                cursor: 'pointer', 
+                padding: 0, 
+                display: 'flex', 
+                alignItems: 'center', 
+                color: '#818181' 
+              }}
+            >
+              <ChevronLeft size={24} style={{ strokeWidth: 1.5 }} />
+            </button>
+            <h1 style={{ 
+              fontFamily: 'Satoshi, sans-serif', 
+              fontWeight: 500, 
+              fontSize: '24px', 
+              color: '#332849', 
+              margin: 0,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              {cluster.name}
+              <Info size={22} style={{ color: '#CCCCCC', cursor: 'pointer', strokeWidth: 1.5 }} />
+            </h1>
           </div>
 
         <div className="cluster-tabs">

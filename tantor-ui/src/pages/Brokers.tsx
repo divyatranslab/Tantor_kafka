@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Server, Cpu, Activity,
-  AlertCircle, CheckCircle2, XCircle
+  AlertCircle, CheckCircle2, XCircle,
+  Database, Share2, Search
 } from 'lucide-react';
 import './Brokers.css';
 
@@ -35,13 +36,9 @@ export function Brokers() {
 
   const fetchBrokers = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/clusters/${id}/brokers`);
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.message || 'Failed to fetch broker metrics');
-      }
-      const data = await res.json();
-      setBrokers(data.brokers || []);
+      const res = await fetch(`/api/v1/clusters/${id}/brokers`);
+      if (!res.ok) throw new Error('Failed to fetch brokers');
+      setBrokers(await res.json());
       setError(null);
     } catch (e: any) {
       setError(e.message);
@@ -71,7 +68,7 @@ export function Brokers() {
   const getHealthIcon = (health: string) => {
     switch (health) {
       case 'HEALTHY':
-        return <CheckCircle2 className="text-green" size={15} />;
+        return <AlertCircle style={{ color: '#E08E40' }} size={16} />;
       case 'DEGRADED':
         return <AlertCircle className="text-yellow" size={15} />;
       case 'OFFLINE':
@@ -133,49 +130,61 @@ export function Brokers() {
     <div className="brokers-dashboard animate-fade-in">
 
       {/* ── Overview KPI cards ── */}
-      <div className="brokers-overview">
-        <div className="metric-card">
-          <div className="metric-icon blue"><Activity size={18} /></div>
-          <div className="metric-info">
+      <div className="brokers-overview-gradient">
+        <div className="metric-card figma-card">
+          <div className="card-header">
+            <div className="metric-icon figma-icon-blue"><Database size={16} /></div>
             <span className="label">Total Ingestion</span>
+          </div>
+          <div className="card-body">
             <span className="value">{formatBytes(agg.totalBytesIn)}/s</span>
             <span className="subtext">{agg.totalMsgIn.toFixed(0)} msg/s</span>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon green"><Server size={18} /></div>
-          <div className="metric-info">
-            <span className="label">Active Brokers</span>
-            <span className="value">{brokers.length - agg.offline} / {brokers.length}</span>
-            <span className="subtext">{agg.offline} offline node{agg.offline !== 1 ? 's' : ''}</span>
+        <div className="metric-card figma-card">
+          <div className="card-header">
+            <div className="metric-icon figma-icon-purple"><Share2 size={16} /></div>
+            <span className="label">Active Broker</span>
+          </div>
+          <div className="card-body">
+            <span className="value">{brokers.length - agg.offline}/{brokers.length}</span>
+            <span className="subtext">{agg.offline} Offline Nodes</span>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon purple"><Cpu size={18} /></div>
-          <div className="metric-info">
-            <span className="label">Avg Cluster CPU</span>
+        <div className="metric-card figma-card">
+          <div className="card-header">
+            <div className="metric-icon figma-icon-green"><CheckCircle2 size={16} /></div>
+            <span className="label">Avg. Cluster CPU</span>
+          </div>
+          <div className="card-body">
             <span className="value">{agg.avgCpu.toFixed(1)}%</span>
-            <span className="subtext">Across {brokers.length} node{brokers.length !== 1 ? 's' : ''}</span>
+            <span className="subtext">{brokers.length} Across Node{brokers.length !== 1 ? 's' : ''}</span>
           </div>
         </div>
       </div>
 
       {/* ── Controls ── */}
-      <div className="brokers-controls">
-        <input
-          type="text"
-          placeholder="Search hostname or ID…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="search-input"
-        />
-        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
-          <option value="All">All Roles</option>
-          <option value="Broker">Broker Only</option>
-          <option value="Controller">Controller Only</option>
-        </select>
+      <div className="brokers-list-header">
+        <h2 className="brokers-list-title">Brokers List</h2>
+        <div className="brokers-controls figma-controls">
+          <div className="search-wrapper">
+            <Search size={16} className="search-icon" />
+            <input
+              type="text"
+              placeholder="Search hostname or ID..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="search-input"
+            />
+          </div>
+          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="role-select">
+            <option value="All">All Roles</option>
+            <option value="Broker">Broker Only</option>
+            <option value="Controller">Controller Only</option>
+          </select>
+        </div>
       </div>
 
       {/* ── Error ── */}
@@ -187,25 +196,25 @@ export function Brokers() {
           <thead>
             <tr>
               <th onClick={() => handleSort('brokerId')} className="sortable">
-                ID{sortIndicator('brokerId')}
+                ID
               </th>
               <th onClick={() => handleSort('hostname')} className="sortable">
-                Hostname{sortIndicator('hostname')}
+                Host Name
               </th>
               <th>Role</th>
               <th onClick={() => handleSort('cpuUsagePct')} className="sortable">
-                CPU{sortIndicator('cpuUsagePct')}
+                CPU
               </th>
               <th onClick={() => handleSort('memoryUsedMb')} className="sortable">
-                RAM{sortIndicator('memoryUsedMb')}
+                RAM
               </th>
               <th onClick={() => handleSort('diskUsedGb')} className="sortable">
-                Disk{sortIndicator('diskUsedGb')}
+                Disk
               </th>
               <th onClick={() => handleSort('messagesInPerSec')} className="sortable">
-                Msg/s{sortIndicator('messagesInPerSec')}
+                Msg/S
               </th>
-              <th>Heartbeat</th>
+              <th>Last Update</th>
             </tr>
           </thead>
           <tbody>
@@ -233,7 +242,7 @@ export function Brokers() {
 
                 {/* CPU */}
                 <td>
-                  <div className="metric-cell">
+                  <div className="metric-cell figma-metric">
                     <span className="metric-val">{broker.cpuUsagePct.toFixed(1)}%</span>
                     <ProgressBar value={broker.cpuUsagePct} max={100} />
                   </div>
@@ -241,7 +250,7 @@ export function Brokers() {
 
                 {/* RAM */}
                 <td>
-                  <div className="metric-cell">
+                  <div className="metric-cell figma-metric">
                     <span className="metric-val">
                       {formatBytes(broker.memoryUsedMb * 1024 * 1024)}
                     </span>
@@ -251,7 +260,7 @@ export function Brokers() {
 
                 {/* Disk */}
                 <td>
-                  <div className="metric-cell">
+                  <div className="metric-cell figma-metric">
                     <span className="metric-val">{broker.diskUsedGb} GB</span>
                     <ProgressBar value={broker.diskUsedGb} max={broker.diskTotalGb} />
                   </div>

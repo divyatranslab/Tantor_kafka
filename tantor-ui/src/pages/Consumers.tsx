@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Users, Search, ChevronLeft, ChevronRight, X, CheckCircle, AlertTriangle, Clock, XCircle, ArrowUpDown } from 'lucide-react';
+import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
 
 interface ConsumerGroupSummaryDto {
@@ -64,12 +64,12 @@ export function Consumers() {
     setError(null);
     try {
       const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
-      if (res.ok) {
-        setData(await res.json());
-      } else {
+      if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        setError(errorData.message || `Consumer groups are not available yet (HTTP ${res.status})`);
+        throw new Error(errorData.message || `Failed to load consumer groups (HTTP ${res.status})`);
       }
+      const json = await res.json();
+      setData(json);
     } catch (e: any) {
       console.error(e);
       setError(e.message || 'Failed to load consumer groups');
@@ -80,9 +80,7 @@ export function Consumers() {
 
   useEffect(() => {
     fetchGroups();
-    const interval = setInterval(fetchGroups, 10000); // Auto-refresh every 10s
-    return () => clearInterval(interval);
-  }, [id, page, size, searchQuery, sortBy]);
+  }, [id, page, searchQuery, sortBy]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,28 +109,70 @@ export function Consumers() {
     }
   };
 
-  const HealthIcon = ({ health }: { health: string }) => {
-    switch (health) {
-      case 'HEALTHY': return <CheckCircle size={14} />;
-      case 'WARNING': return <AlertTriangle size={14} />;
-      case 'CRITICAL': return <XCircle size={14} />;
-      default: return <Clock size={14} />;
-    }
-  };
+
 
   return (
-    <div className="consumers-tab animate-fade-in">
-      <div className="consumers-header">
-        <h2>Consumer Groups</h2>
-        <form onSubmit={handleSearchSubmit} className="search-bar">
-          <Search size={18} color="var(--text-secondary)" />
-          <input
-            type="text"
-            placeholder="Search by Group ID..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-          />
-        </form>
+    <div className="consumers-tab animate-fade-in" style={{ width: '100%' }}>
+      <div className="consumers-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
+        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#5B327F', margin: 0 }}>Consumer Groups</h2>
+        <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>
+          <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
+            <label style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: '6px 8px',
+              gap: '8px',
+              width: '612px',
+              height: '36px',
+              background: '#FFFFFF',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px'
+            }}>
+              <Search size={16} style={{ color: '#818181' }} />
+              <input
+                type="text"
+                placeholder="Search key or value"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  color: '#23252D',
+                  width: '100%',
+                  background: 'transparent'
+                }}
+              />
+            </label>
+          </form>
+          <button 
+            type="button"
+            onClick={fetchGroups} 
+            disabled={loading} 
+            style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              width: '40px',
+              height: '40px',
+              background: '#FFFFFF',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: '#818181'
+            }}
+            aria-label="Refresh consumer groups"
+          >
+            <RefreshCw className={loading ? 'spin' : ''} size={15} />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -152,44 +192,57 @@ export function Consumers() {
           </div>
         ) : (
           <>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th onClick={() => handleSort('groupId')}>Group ID <ArrowUpDown size={12} style={{display:'inline', marginLeft:'4px', verticalAlign:'middle'}}/></th>
-                  <th onClick={() => handleSort('state')}>State <ArrowUpDown size={12} style={{display:'inline', marginLeft:'4px', verticalAlign:'middle'}}/></th>
-                  <th>Members</th>
-                  <th onClick={() => handleSort('totalLag')}>Total Lag <ArrowUpDown size={12} style={{display:'inline', marginLeft:'4px', verticalAlign:'middle'}}/></th>
-                  <th>Health</th>
-                  <th>Last Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data?.content.map(g => (
-                  <tr key={g.groupId} className="clickable" onClick={() => handleRowClick(g.groupId)}>
-                    <td style={{ fontWeight: 500 }}>{g.groupId}</td>
-                    <td>
-                      <span className="status-badge" style={g.state === 'Stable' ? {} : { backgroundColor: '#fefce8', color: '#a16207', borderColor: '#fef08a' }}>
-                        <div className="status-dot" style={g.state === 'Stable' ? {} : { backgroundColor: '#eab308' }}></div>
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <div className="figma-table" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+                {/* Header Row */}
+                <div className="figma-table-header" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '54px', background: '#F9F9F9', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('groupId')}>
+                    <span>Group ID</span> <ArrowUp size={14} style={{ marginLeft: '4px' }} />
+                  </div>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('state')}>
+                    <span>State</span>
+                  </div>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
+                    <span>Members</span>
+                  </div>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('totalLag')}>
+                    <span>Total Lag</span>
+                  </div>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
+                    <span>Health</span>
+                  </div>
+                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
+                    <span>Last Updated</span>
+                  </div>
+                </div>
+
+                {/* Table Body */}
+                <div className="figma-table-body" style={{ display: 'flex', flexDirection: 'column' }}>
+                  {data?.content.map(g => (
+                    <div key={g.groupId} className="figma-table-row table-row-hover clickable" onClick={() => handleRowClick(g.groupId)} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '52px', background: '#FFFFFF', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {g.groupId}
+                      </div>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
                         {g.state}
-                      </span>
-                    </td>
-                    <td>{g.membersCount}</td>
-                    <td style={{ fontWeight: 600, color: g.totalLag > 0 ? '#b91c1c' : 'inherit' }}>
-                      {g.totalLag.toLocaleString()}
-                    </td>
-                    <td>
-                      <span className={`health-badge health-${g.health}`}>
-                        <HealthIcon health={g.health} />
-                        {g.health}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>
-                      {new Date(g.lastUpdated).toLocaleTimeString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </div>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                        {g.membersCount}
+                      </div>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                        {g.totalLag}
+                      </div>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                        {g.health.charAt(0) + g.health.slice(1).toLowerCase()}
+                      </div>
+                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#818181', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                        {new Date(g.lastUpdated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
             {/* Pagination Controls */}
             {data && data.totalPages > 1 && (

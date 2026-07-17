@@ -347,7 +347,7 @@ export function JobStatusPage() {
                       className="step-progress-fill"
                       style={{ 
                         width: `${progressPercentage}%`, 
-                        background: '#818181', 
+                        background: progressPercentage === 100 ? '#36AD8F' : '#818181', 
                         height: '100%', 
                         borderRadius: '4px',
                         transition: 'width 0.5s ease'

@@ -22,6 +22,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 24px;
 }
 
 .breadcrumb-link {
@@ -43,7 +44,6 @@
 }
 
 .cluster-header-main {
-  margin-top: 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -52,8 +52,7 @@
 .cluster-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
-  position: relative;
+  gap: 12px;
 }
 
 .cluster-back-btn {
@@ -92,25 +91,37 @@
   font-weight: 700;
   font-size: 24px;
   line-height: 32px;
-  color: #282F49;
+  color: #23252D;
   margin: 0;
 }
 
-/* Tooltip implementation */
-.cluster-info-tooltip-wrap {
-  position: relative;
+.cluster-header-subtitle {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  color: #818181;
+  margin-top: 8px;
+  margin-bottom: 24px;
+}
+
+.status-badge {
   display: inline-flex;
   align-items: center;
-  cursor: pointer;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
 }
 
-.cluster-info-icon {
-  color: #A1A1AA;
-  transition: color 0.15s;
+.status-badge.success {
+  background: #E1F8E1;
+  color: #069B68;
 }
 
-.cluster-info-tooltip-wrap:hover .cluster-info-icon {
-  color: #282F49;
+.status-dot {
+  display: none;
 }
 
 .cluster-info-tooltip {
@@ -238,7 +249,6 @@
 
 .cluster-tabs {
   margin-top: 24px;
-  border-bottom: 1px solid #ECECF1;
 }
 
 .cluster-tabs nav {
@@ -265,17 +275,23 @@
 
 .cluster-tabs nav a,
 .disabled-tab {
+  box-sizing: border-box;
   text-decoration: none;
   font-family: 'Satoshi', sans-serif;
   display: flex;
+  justify-content: center;
   align-items: center;
-  padding: 10px 20px 12px 20px;
+  padding: 8px 16px;
+  gap: 8px;
+  height: 38px;
   border-bottom: 3px solid transparent;
   color: #818181;
   transition: all 0.2s ease;
-  font-size: 20px;
-  font-weight: 5000;
+  font-size: 16px;
+  font-weight: 500;
   white-space: nowrap;
+  margin-bottom: -1px;
+  flex: 1;
 }
 
 .disabled-tab {
@@ -284,16 +300,14 @@
 }
 
 .cluster-tabs nav a:hover {
-  color: #252d4a;
+  color: #3E1363;
 }
 
 .cluster-tabs nav a.active {
   color: #3E1363;
-  background-color: #FFF0F3;
-  border-bottom-color: #DF678B;
-  border-top-left-radius: 8px;
-  border-top-right-radius: 8px;
-  font-weight: 600;
+  background-color: #FCF0F3;
+  border-bottom: 3px solid #DF678B;
+  border-radius: 8px 8px 0px 0px;
 }
 
 .cluster-tabs-dropdown-container {
