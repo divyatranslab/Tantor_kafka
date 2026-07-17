@@ -82,8 +82,10 @@ export function ClusterDetails() {
         return 'Agent connected';
       case 'PARTIAL':
         return 'Agent partial';
+      case 'NOT_CONNECTED':
+        return 'Agent not connected';
       default:
-        return 'Agent not linked';
+        return 'Agent not connected';
     }
   })();
   const agentClass = (() => {
@@ -92,8 +94,10 @@ export function ClusterDetails() {
         return 'connected';
       case 'PARTIAL':
         return 'partial';
+      case 'NOT_CONNECTED':
+        return 'not-connected';
       default:
-        return 'not-linked';
+        return 'not-connected';
     }
   })();
 

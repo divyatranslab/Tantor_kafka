@@ -65,6 +65,12 @@ public class ClusterController {
     @Value("${tantor.artifact-repo.url:http://localhost:8081}")
     private String artifactRepoUrl;
 
+    @Value("${tantor.discovery-agent.heartbeat-timeout-seconds:45}")
+    private long discoveryAgentHeartbeatTimeoutSeconds;
+
+    @Value("${tantor.external-clusters.kafka-health-timeout-seconds:5}")
+    private long externalKafkaHealthTimeoutSeconds;
+
     @GetMapping
     public List<Map<String, Object>> listClusters() {
         List<Map<String, Object>> result = new ArrayList<>();
@@ -1871,7 +1877,11 @@ public class ClusterController {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> agent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
             if (agent.isPresent()) {
                 managedHostsCount++;
-                OffsetDateTime heartbeat = agent.get().getLastHeartbeat();
+            }
+            Optional<io.translab.tantor.server.domain.DiscoveryAgent> lastReportingAgent =
+                    agent.isPresent() ? agent : matchingAgent(host, cluster.getId(), linkedAgents, allAgents);
+            if (lastReportingAgent.isPresent()) {
+                OffsetDateTime heartbeat = lastReportingAgent.get().getLastHeartbeat();
                 if (heartbeat != null && (maxHeartbeat == null || heartbeat.isAfter(maxHeartbeat))) {
                     maxHeartbeat = heartbeat;
                 }
@@ -1880,7 +1890,7 @@ public class ClusterController {
 
         String telemetry = "None";
         String managementLevel = "Bootstrap only";
-        String agentHealth = "NOT_LINKED";
+        String agentHealth = "NOT_CONNECTED";
         if (managedHostsCount > 0) {
             if (managedHostsCount == totalHostsCount || totalHostsCount == 0) {
                 telemetry = "Full";
@@ -1901,7 +1911,7 @@ public class ClusterController {
         String statusLabel = switch (overallHealth) {
             case "OFFLINE" -> "Kafka Offline";
             case "DEGRADED" -> "Kafka Degraded";
-            case "HEALTHY" -> "Connected";
+            case "HEALTHY" -> "Kafka Online";
             default -> "Unknown";
         };
         String reason = externalHealthReason(kafkaHealth, agentHealth, managedHostsCount, totalHostsCount);
@@ -1919,6 +1929,21 @@ public class ClusterController {
                 totalHostsCount,
                 maxHeartbeat
         );
+    }
+
+    private Optional<io.translab.tantor.server.domain.DiscoveryAgent> matchingAgent(
+            String host,
+            UUID clusterId,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents
+    ) {
+        return linkedAgents.stream()
+                .filter(agent -> matchesDiscoveryAgent(agent, host))
+                .findFirst()
+                .or(() -> allAgents.stream()
+                        .filter(agent -> matchesDiscoveryAgent(agent, host))
+                        .filter(agent -> agent.getClusterId() == null || agent.getClusterId().equals(clusterId))
+                        .findFirst());
     }
 
     private Optional<io.translab.tantor.server.domain.DiscoveryAgent> matchingFreshAgent(
@@ -1940,31 +1965,19 @@ public class ClusterController {
         return agent != null
                 && "ONLINE".equalsIgnoreCase(agent.getStatus())
                 && agent.getLastHeartbeat() != null
-                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(180));
+                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(discoveryAgentFreshnessSeconds()));
     }
 
     private String externalKafkaHealth(
             ExternalCluster cluster,
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
     ) {
-        if ("FAILED".equalsIgnoreCase(cluster.getStatus())) {
-            return "OFFLINE";
+        if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
+            return "UNKNOWN";
         }
-        if (Boolean.FALSE.equals(cluster.getIsRunning())
-                && nodes.stream().noneMatch(node -> node.getLastSeen() != null
-                && node.getLastSeen().isAfter(OffsetDateTime.now().minusSeconds(180)))) {
-            return "OFFLINE";
-        }
-        if (cluster.getKafkaClusterId() != null && !cluster.getKafkaClusterId().isBlank()) {
-            return "HEALTHY";
-        }
-        if (cluster.getBrokerCount() != null && cluster.getBrokerCount() > 0) {
-            return "HEALTHY";
-        }
-        if (!nodes.isEmpty()) {
-            return "HEALTHY";
-        }
-        return "UNKNOWN";
+        return kafkaAdminService.isClusterReachable(cluster.getId(), externalKafkaHealthTimeoutSeconds)
+                ? "HEALTHY"
+                : "OFFLINE";
     }
 
     private String externalHealthReason(String kafkaHealth, String agentHealth, long managedHostsCount, long totalHostsCount) {
@@ -1980,7 +1993,11 @@ public class ClusterController {
         if ("PARTIAL".equals(agentHealth)) {
             return "Kafka is reachable; discovery agent is fresh for " + managedHostsCount + " of " + totalHostsCount + " host(s).";
         }
-        return "Kafka is reachable; discovery agent management is not linked or heartbeat is stale.";
+        return "Kafka is reachable; discovery agent heartbeat is missing or stale.";
+    }
+
+    private long discoveryAgentFreshnessSeconds() {
+        return Math.max(15, discoveryAgentHeartbeatTimeoutSeconds);
     }
 
     private void putExternalHealth(Map<String, Object> target, ExternalHealthView health) {
@@ -2222,10 +2239,10 @@ public class ClusterController {
 
         for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream()
-                    .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) && matchesDiscoveryAgent(agent, node.getHost()))
+                    .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, node.getHost()))
                     .findFirst()
                     .or(() -> allAgents.stream()
-                            .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) && matchesDiscoveryAgent(agent, node.getHost()))
+                            .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, node.getHost()))
                             .filter(agent -> agent.getClusterId() == null || agent.getClusterId().equals(cluster.getId()))
                             .findFirst());
 
@@ -2248,8 +2265,9 @@ public class ClusterController {
 
             if (agentMatch.isEmpty()) {
                 allAgents.stream()
-                        .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()))
-                        .filter(agent -> agent.getLastHeartbeat() != null && java.time.Duration.between(agent.getLastHeartbeat(), now).getSeconds() <= 120)
+                        .filter(this::isFreshOnlineAgent)
+                        .filter(agent -> agent.getLastHeartbeat() != null
+                                && java.time.Duration.between(agent.getLastHeartbeat(), now).getSeconds() <= discoveryAgentFreshnessSeconds())
                         .filter(agent -> matchesDiscoveryAgent(agent, node.getHost()))
                         .filter(agent -> agent.getClusterId() == null || !agent.getClusterId().equals(cluster.getId()))
                         .findFirst()

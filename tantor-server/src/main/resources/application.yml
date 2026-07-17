@@ -49,6 +49,10 @@ tantor:
     jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
   hosts:
     heartbeat-timeout-seconds: ${TANTOR_HOST_HEARTBEAT_TIMEOUT_SECONDS:90}
+  discovery-agent:
+    heartbeat-timeout-seconds: ${TANTOR_DISCOVERY_AGENT_HEARTBEAT_TIMEOUT_SECONDS:45}
+  external-clusters:
+    kafka-health-timeout-seconds: ${TANTOR_EXTERNAL_KAFKA_HEALTH_TIMEOUT_SECONDS:5}
   rolling-restart:
     max-disk-used-percent: ${TANTOR_ROLLING_RESTART_MAX_DISK_USED_PERCENT:85}
     max-consumer-lag: ${TANTOR_ROLLING_RESTART_MAX_CONSUMER_LAG:1000000}
