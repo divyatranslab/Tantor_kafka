@@ -129,7 +129,8 @@
   border: 1px solid #fde68a;
 }
 
-.agent-status-badge.not-linked {
+.agent-status-badge.not-linked,
+.agent-status-badge.not-connected {
   background-color: #f5f4f1;
   color: #5f5e5a;
   border: 1px solid #e2e0db;
