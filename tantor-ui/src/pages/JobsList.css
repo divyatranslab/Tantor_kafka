@@ -4,11 +4,13 @@
   align-items: flex-start;
   gap: 24px;
   background: #FFFFFF;
-  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   padding: 24px;
-  max-width: 1168px;
-  width: 100%;
-  margin: 0 auto;
+  min-height: calc(100vh - 120px);
+  margin: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
 }
 
 
@@ -205,4 +207,14 @@
   padding: 40px !important;
   color: #818181;
   font-size: 14px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }

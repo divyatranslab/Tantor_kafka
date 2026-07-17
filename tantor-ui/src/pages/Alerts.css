@@ -2,11 +2,17 @@
 @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&display=swap');
 
 .alerts-container {
-  min-height: 100%;
-  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   background: #FFFFFF;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
+  padding: 24px;
+  min-height: calc(100vh - 120px);
+  margin: 20px;
   box-sizing: border-box;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
 }
 
 .alerts-wrapper {
@@ -71,13 +77,17 @@
 }
 
 .alerts-status-badge.needs-attention {
-  background: rgba(224, 142, 64, 0.2);
-  color: #E08E40;
+  background: #ffedd5;
+  color: #ea580c;
+  font-weight: 600;
+  border: 1px solid rgba(234, 88, 12, 0.15);
 }
 
 .alerts-status-badge.healthy {
-  background: rgba(42, 199, 146, 0.2);
-  color: #069B68;
+  background: #dcfce7;
+  color: #15803d;
+  font-weight: 600;
+  border: 1px solid rgba(21, 128, 61, 0.15);
 }
 
 .alerts-subtitle {
@@ -88,6 +98,13 @@
   font-size: 14px;
   line-height: 19px;
   color: #818181;
+}
+
+.alerts-header-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
 }
 
 /* Refresh Button */
@@ -119,6 +136,7 @@
 
 .spin {
   animation: spin-anim 0.8s linear infinite;
+  transform-origin: center;
 }
 
 @keyframes spin-anim {

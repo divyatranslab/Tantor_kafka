@@ -5,6 +5,15 @@ import {
 } from 'lucide-react';
 import './Alerts.css';
 
+const CustomRefreshIcon = ({ size = 20, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M 12 5 A 7 7 0 0 1 17 17" />
+    <path d="M 18 13 L 17 17 L 21 16" />
+    <path d="M 12 19 A 7 7 0 0 1 7 7" />
+    <path d="M 6 11 L 7 7 L 3 8" />
+  </svg>
+);
+
 interface AlertRow {
   id: string;
   severity: string;
@@ -65,10 +74,10 @@ export function Alerts() {
           {/* Right side actions */}
           <div className="alerts-header-actions">
             <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
-              {alerts.length ? 'Live system needs attention' : 'All systems healthy'}
+              {alerts.length ? 'Live system needs attention' : 'Live system healthy'}
             </span>
             <button className="alerts-refresh-btn" onClick={fetchAlerts} aria-label="Refresh alerts">
-              <RefreshCw size={24} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
+              <CustomRefreshIcon size={24} color="#818181" className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
             </button>
           </div>
         </header>

@@ -3,11 +3,17 @@
 .audit-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px 24px;
+  gap: 24px;
+  background: #FFFFFF;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+  min-height: calc(100vh - 120px);
+  margin: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
   font-family: 'Inter', system-ui, sans-serif;
   color: #111827;
-  background: #ffffff;
 }
 
 /* Header */
@@ -65,6 +71,7 @@
 
 .spin {
   animation: spin 1s linear infinite;
+  transform-origin: center;
 }
 
 @keyframes spin {
@@ -260,6 +267,17 @@
   opacity: 1;
   gap: 10px;
   cursor: pointer;
+  transition: all 0.2s;
+}
+
+.audit-filters-actions .btn-refresh:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.audit-filters-actions .btn-refresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .audit-filters-actions .btn-reset {
@@ -309,7 +327,37 @@
   color: #332849;
 }
 
-.filter-group select, .filter-group input {
+.filter-group select {
+  width: 100%;
+  height: 40px;
+  padding: 10px 40px 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23707070' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") no-repeat right 16px center;
+  background-size: 16px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  color: #332849;
+  outline: none;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.filter-group select:hover {
+  border-color: #cbd5e1;
+}
+
+.filter-group select:focus {
+  border-color: #3E1363;
+  box-shadow: 0 0 0 3px rgba(62, 19, 99, 0.1);
+}
+
+.filter-group input {
   width: 100%;
   height: 40px;
   padding: 10px 16px;
@@ -322,6 +370,10 @@
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;
+}
+
+.filter-group input:focus {
+  border-color: #3E1363;
 }
 
 /* Event Ledger */
@@ -640,4 +692,104 @@
     justify-content: flex-end;
   }
 }
+
+/* Custom React Dropdown Component Styles */
+.custom-select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  color: #332849;
+  cursor: pointer;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.custom-select-trigger:hover {
+  border-color: #cbd5e1;
+}
+
+.custom-select-trigger.open {
+  border-color: #3E1363;
+  box-shadow: 0 0 0 3px rgba(62, 19, 99, 0.1);
+}
+
+.custom-select-arrow {
+  display: flex;
+  align-items: center;
+  transition: transform 0.25s ease;
+}
+
+.custom-select-trigger.open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 1000;
+  padding: 4px 0;
+  box-sizing: border-box;
+}
+
+/* Custom Scrollbar for dropdown options */
+.custom-select-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-select-options::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.custom-select-options::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.custom-select-option {
+  padding: 10px 16px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  color: #332849;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.custom-select-option:hover {
+  background: #f8fafc;
+}
+
+.custom-select-option.selected {
+  background: #f1f5f9;
+  font-weight: 500;
+  color: #3E1363;
+}
+
 

@@ -124,11 +124,61 @@ const detailLabel = (event: AuditEvent) => {
   return title(event.status || 'Captured');
 };
 
+interface CustomDropdownProps {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (val: string) => void;
+}
+
+function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClose = () => setIsOpen(false);
+    window.addEventListener('click', handleClose);
+    return () => window.removeEventListener('click', handleClose);
+  }, [isOpen]);
+
+  return (
+    <div className="custom-select-wrapper" onClick={e => e.stopPropagation()}>
+      <div
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
+        onClick={() => setIsOpen(prev => !prev)}
+      >
+        <span>{selectedOption ? selectedOption.label : value}</span>
+        <span className="custom-select-arrow">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#707070" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </div>
+      {isOpen && (
+        <div className="custom-select-options">
+          {options.map(opt => (
+            <div
+              key={opt.value}
+              className={`custom-select-option ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  
+
   // Draft filter state
   const [search, setSearch] = useState('');
   const [resourceId, setResourceId] = useState('');
@@ -176,7 +226,7 @@ export function AuditLogs() {
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
-  
+
   const filtered = useMemo(() => events.filter(event => {
     if (appliedFilters.category !== 'ALL' && event.category !== appliedFilters.category) return false;
     if (appliedFilters.status !== 'ALL' && event.status !== appliedFilters.status) return false;
@@ -281,7 +331,9 @@ export function AuditLogs() {
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">
-          <button className="btn-refresh" onClick={fetchLogs} title="Refresh"><CustomRefreshIcon size={20} /></button>
+          <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
+            <CustomRefreshIcon size={20} className={loading ? 'spin' : ''} />
+          </button>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
         </div>
@@ -289,34 +341,40 @@ export function AuditLogs() {
       <div className="audit-filters-row-2">
         <div className="filter-group">
           <label>Event</label>
-          <div>
-            <select value={category} onChange={e => setCategory(e.target.value)}>
-              <option value="ALL">All Event</option>
-              {categories.map(item => <option key={item} value={item}>{title(item)}</option>)}
-            </select>
-          </div>
+          <CustomDropdown
+            value={category}
+            options={[
+              { label: 'All Event', value: 'ALL' },
+              ...categories.map(item => ({ label: title(item), value: item }))
+            ]}
+            onChange={setCategory}
+          />
         </div>
         <div className="filter-group">
           <label>Status</label>
-          <div>
-            <select value={status} onChange={e => setStatus(e.target.value)}>
-              <option value="ALL">All</option>
-              <option value="SUCCESS">Success</option>
-              <option value="FAILED">Failed</option>
-              <option value="ATTEMPTED">Attempted</option>
-              <option value="SCHEDULED">Scheduled</option>
-              <option value="REQUESTED">Requested</option>
-            </select>
-          </div>
+          <CustomDropdown
+            value={status}
+            options={[
+              { label: 'All', value: 'ALL' },
+              { label: 'SUCCESS', value: 'SUCCESS' },
+              { label: 'FAILED', value: 'FAILED' },
+              { label: 'ATTEMPTED', value: 'ATTEMPTED' },
+              { label: 'SCHEDULED', value: 'SCHEDULED' },
+              { label: 'REQUESTED', value: 'REQUESTED' }
+            ]}
+            onChange={setStatus}
+          />
         </div>
         <div className="filter-group">
           <label>Actors</label>
-          <div>
-            <select value={actor} onChange={e => setActor(e.target.value)}>
-              <option value="ALL">All</option>
-              {actors.map(item => <option key={item}>{item}</option>)}
-            </select>
-          </div>
+          <CustomDropdown
+            value={actor}
+            options={[
+              { label: 'All', value: 'ALL' },
+              ...actors.map(item => ({ label: item, value: item }))
+            ]}
+            onChange={setActor}
+          />
         </div>
         <div className="filter-group">
           <label>From</label>
@@ -340,7 +398,7 @@ export function AuditLogs() {
       </div>
       {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
         : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap">
+          : <div className="audit-table-wrap">
             <table className="audit-table">
               <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
               <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
@@ -367,18 +425,18 @@ function AuditRow({ event }: { event: AuditEvent }) {
   const created = timeOf(event);
   const createdDate = created ? new Date(created) : null;
   const details = detailLabel(event);
-  
+
   const formattedTime = createdDate && !Number.isNaN(createdDate.getTime())
     ? `${String(createdDate.getDate()).padStart(2, '0')}/${String(createdDate.getMonth() + 1).padStart(2, '0')}/${createdDate.getFullYear()} | ${createdDate.toLocaleTimeString('en-GB', { hour12: false })}`
     : '-';
-    
+
   return <tr>
-      <td><div className="audit-time"><span>{formattedTime}</span></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
-      <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
-      <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
-      <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
-      <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
-      <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
-    </tr>
+    <td><div className="audit-time"><span>{formattedTime}</span></div></td>
+    <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong></div></div></td>
+    <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
+    <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
+    <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
+    <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
+    <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
+  </tr>
 }
