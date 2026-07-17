@@ -201,9 +201,23 @@
 .cluster-tabs nav {
   display: flex;
   align-items: center;
-  gap: 48px;
+  justify-content: space-between;
   width: 100%;
   position: relative;
+  overflow: visible;
+}
+
+.cluster-tabs-scroll-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  overflow-x: auto;
+  flex-grow: 1;
+  scrollbar-width: none; /* Firefox */
+}
+
+.cluster-tabs-scroll-wrapper::-webkit-scrollbar {
+  display: none; /* Safari and Chrome */
 }
 
 .cluster-tabs nav a,

@@ -174,24 +174,26 @@ export function ClusterDetails() {
 
         <div className="cluster-tabs">
           <nav>
-            {visibleTabs.map(tab => {
-              if (tab.disabled) {
+            <div className="cluster-tabs-scroll-wrapper">
+              {visibleTabs.map(tab => {
+                if (tab.disabled) {
+                  return (
+                    <div key={tab.to} className="disabled-tab" title="Requires active cluster">
+                      {tab.label}
+                    </div>
+                  );
+                }
                 return (
-                  <div key={tab.to} className="disabled-tab" title="Requires active cluster">
+                  <NavLink
+                    key={tab.to}
+                    to={tab.to}
+                    className={({ isActive }) => isActive ? 'active' : ''}
+                  >
                     {tab.label}
-                  </div>
+                  </NavLink>
                 );
-              }
-              return (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  className={({ isActive }) => isActive ? 'active' : ''}
-                >
-                  {tab.label}
-                </NavLink>
-              );
-            })}
+              })}
+            </div>
 
             {dropdownTabs.length > 0 && (
               <div className="cluster-tabs-dropdown-container" ref={dropdownRef}>
