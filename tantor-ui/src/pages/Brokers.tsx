@@ -26,13 +26,13 @@ interface Broker {
 
 export function Brokers() {
   const { id } = useParams<{ id: string }>();
-  const [brokers, setBrokers]     = useState<Broker[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
+  const [brokers, setBrokers] = useState<Broker[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof Broker>('brokerId');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [roleFilter, setRoleFilter] = useState<string>('All');
-  const [search, setSearch]       = useState('');
+  const [search, setSearch] = useState('');
 
   const fetchBrokers = async () => {
     try {
@@ -95,10 +95,10 @@ export function Brokers() {
     });
 
   const agg = {
-    totalMsgIn:   brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
+    totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
     totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
-    avgCpu:       brokers.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (brokers.length || 1),
-    offline:      brokers.filter(b => b.brokerHealth === 'OFFLINE').length,
+    avgCpu: brokers.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (brokers.length || 1),
+    offline: brokers.filter(b => b.brokerHealth === 'OFFLINE').length,
   };
 
   const formatBytes = (bytes: number) => {

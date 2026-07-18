@@ -300,7 +300,7 @@ export function Topics() {
           />
           {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
         </label>
-        
+
         <div className="topics-toolbar-right">
           <label className="internal-toggle">
             <input

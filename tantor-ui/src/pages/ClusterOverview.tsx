@@ -345,7 +345,7 @@ export function ClusterOverview() {
                       <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
                       <td>
                         {p.hasTelemetry ? (
-                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
+                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14} /> Managed</span>
                         ) : (
                           <span className="text-muted text-sm">Bootstrap metadata</span>
                         )}

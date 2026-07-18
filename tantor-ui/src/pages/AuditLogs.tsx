@@ -392,32 +392,30 @@ export function AuditLogs() {
     </section>
 
     {error && <div className="audit-warning">{error}</div>}
-    <section className="audit-ledger">
-      <div className="audit-ledger-head">
-        <div><History size={15} /><strong>Event Ledger</strong></div>
-      </div>
-      {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
-        : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-          : <div className="audit-table-wrap">
-            <table className="audit-table">
-              <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
-              <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
-            </table>
-            <div className="audit-pagination">
-              <span className="pagination-info">{startResult} to {endResult} of results</span>
-              <div className="pagination-controls">
-                <span>Show per page</span>
-                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                </select>
-                <button className="page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}><ChevronLeft size={14} /></button>
-                <button className="page-btn" disabled={currentPage * pageSize >= totalResults} onClick={() => setCurrentPage(p => p + 1)}><ChevronRight size={14} /></button>
-              </div>
+
+    <h3 className="audit-section-title-custom">Event Ledger</h3>
+
+    {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
+      : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
+        : <div className="audit-table-wrap">
+          <table className="audit-table">
+            <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
+            <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
+          </table>
+          <div className="audit-pagination">
+            <span className="pagination-info">{startResult} to {endResult} of results</span>
+            <div className="pagination-controls">
+              <span>Show per page</span>
+              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+              <button className="page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}><ChevronLeft size={14} /></button>
+              <button className="page-btn" disabled={currentPage * pageSize >= totalResults} onClick={() => setCurrentPage(p => p + 1)}><ChevronRight size={14} /></button>
             </div>
-          </div>}
-    </section>
+          </div>
+        </div>}
   </div>;
 }
 

@@ -56,12 +56,11 @@
   background: #FFFFFF;
   border-radius: 12px;
   box-shadow: 0px 10px 40px rgba(0, 0, 0, 0.06);
-  z-index: 100;
+  z-index: 9999;
   padding: 12px 8px;
   box-sizing: border-box;
-  max-height: 240px;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  max-height: none;
+  overflow: visible;
 }
 
 /* Custom Scrollbar for Options dropdown */
