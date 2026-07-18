@@ -1289,8 +1289,28 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </div>
           <div className="cd-header-side">
             <div className="cd-stage-tabs" aria-label="Deployment progress">
-              <span className={stage === 'details' ? 'active' : ''}>Details</span>
-              <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+              <span 
+                className={stage === 'details' ? 'active' : ''} 
+                onClick={() => setStage('details')} 
+                style={{ cursor: 'pointer' }}
+              >
+                Details
+              </span>
+              <span 
+                className={`${stage === 'preview' ? 'active' : ''} ${!canPreview ? 'disabled' : ''}`} 
+                onClick={() => {
+                  if (canPreview) {
+                    if (stage === 'details') {
+                      openPreview();
+                    } else {
+                      setStage('preview');
+                    }
+                  }
+                }} 
+                style={{ cursor: canPreview ? 'pointer' : 'not-allowed', opacity: canPreview ? 1 : 0.5 }}
+              >
+                Preview
+              </span>
             </div>
           </div>
         </header>

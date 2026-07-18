@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { ClusterDeployment } from './ClusterDeployment';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -56,7 +55,6 @@ export function Clusters() {
   const [loading, setLoading] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
-  const [showCreateClusterModal, setShowCreateClusterModal] = useState(false);
 
   const fetchClusters = async () => {
     setLoading(true);
@@ -510,7 +508,7 @@ export function Clusters() {
                     <h3>Create your Cluster</h3>
                     <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); setShowCreateClusterModal(true); }}>Create</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
                 </div>
                 
                 <div className="cd-deployment-card">
@@ -527,10 +525,6 @@ export function Clusters() {
             </div>
           </div>
         </div>
-      )}
-
-      {showCreateClusterModal && (
-        <ClusterDeployment onClose={() => { setShowCreateClusterModal(false); fetchClusters(); }} />
       )}
     </div>
   );
