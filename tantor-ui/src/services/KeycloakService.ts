@@ -69,7 +69,7 @@ export const getValidToken = async () => {
 };
 
 export const installAuthenticatedFetch = () => {
-  if (!isAuthEnabled() || authenticatedFetchInstalled) return;
+  if (authenticatedFetchInstalled) return;
 
   nativeFetch = window.fetch.bind(window);
   authenticatedFetchInstalled = true;
@@ -80,9 +80,16 @@ export const installAuthenticatedFetch = () => {
     const headers = new Headers(init?.headers || request?.headers);
 
     if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-      const token = await getValidToken();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      if (isAuthEnabled()) {
+        const token = await getValidToken();
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+      } else {
+        // When auth is disabled locally, supply a mock administrative token header so backend RoleAuthenticationUtil can decode it
+        // The mock token payload below corresponds to: {"preferred_username":"shaukat","roles":["admin"]}
+        const mockJwt = "eyJhbGciOiJIUzI1NiJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzaGF1a2F0Iiwicm9sZXMiOlsiYWRtaW4iXX0.mocksignature";
+        headers.set('Authorization', `Bearer ${mockJwt}`);
       }
     }
 

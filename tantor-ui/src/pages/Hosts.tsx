@@ -13,6 +13,25 @@ const CustomRefreshIcon = ({ size = 20, color = "#818181", className = "" }: { s
 );
 
 
+export function Hosts() {
+  const { canManage } = usePermissions();
+  const [hosts, setHosts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showEnrollModal, setShowEnrollModal] = useState(false);
+  const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
+  const [connectingAgents, setConnectingAgents] = useState(false);
+  const [manualLoading, setManualLoading] = useState(false);
+  const [activeMenuHostId, setActiveMenuHostId] = useState<string | null>(null);
+
+  // Close menu when clicking anywhere else
+  useEffect(() => {
+    const handleGlobalClick = () => {
+      setActiveMenuHostId(null);
+    };
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
+  }, []);
+
   const fetchHosts = async (manual = false) => {
     if (manual) setManualLoading(true);
     setLoading(true);
