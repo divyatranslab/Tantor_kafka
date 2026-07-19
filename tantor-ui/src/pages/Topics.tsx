@@ -261,8 +261,7 @@ export function Topics() {
     <section className="topics-page animate-fade-in">
       <div className="topics-title-row">
         <div>
-          <p className="topics-eyebrow">Kafka resources</p>
-          <h2 className="cluster-section-heading">Topics</h2>
+          <h2>Topics</h2>
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
@@ -276,12 +275,12 @@ export function Topics() {
           >
             <RefreshCw size={16} className={autoRefresh ? 'spin-slow' : ''} /> Live 15s
           </button>
-          <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
+          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>
           {canManage && (
-            <button className="topic-button primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add a topic
+            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add Topic
             </button>
           )}
         </div>
@@ -300,7 +299,7 @@ export function Topics() {
           />
           {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
         </label>
-        
+
         <div className="topics-toolbar-right">
           <label className="internal-toggle">
             <input
@@ -314,14 +313,6 @@ export function Topics() {
             <span aria-hidden="true" />
             Show internal topics
           </label>
-          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
-            <Download size={16} /> Export CSV
-          </button>
-          {canManage && (
-            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add Topic
-            </button>
-          )}
         </div>
       </div>
 

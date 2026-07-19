@@ -665,46 +665,47 @@ export function SchemaRegistry() {
       {/* ── LIST VIEW ─────────────────────────────────────────── */}
       {view === 'list' && (
         <>
-          <div className="ds-header ds-sr-header">
-            <h2 className="cluster-section-heading">Schema Registry</h2>
-            <div className="ds-actions">
-              <div className="ds-selectors-group">
+          <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
+            <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div className="ds-selectors-group" style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
                 {/* ── Instance Selector ── */}
-                <div className="ds-compat-control">
-                  <span>Instance Selector</span>
-                  <CustomSelect
-                    className="ds-instance-select"
-                    value={selectedConnectionId ?? ''}
-                    onChange={val => setSelectedConnectionId(val || null)}
-                    disabled={savedConnections.length === 0}
-                    options={
-                      savedConnections.length > 0
-                        ? savedConnections.map(c => ({
-                            value: c.id,
-                            label: `${c.connectionName}${c.isDefault ? ' (default)' : ''}`
-                          }))
-                        : [{ value: '', label: 'Default connection' }]
-                    }
-                  />
-                  {selectedConn && (
-                    <span
-                      className="ds-instance-status-dot"
-                      style={{
-                        display: 'inline-block',
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        background: connStatusColor(selectedConn.status),
-                        marginLeft: 4
-                      }}
-                      title={selectedConn.status}
+                <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance Selector</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CustomSelect
+                      className="ds-instance-select"
+                      value={selectedConnectionId ?? ''}
+                      onChange={val => setSelectedConnectionId(val || null)}
+                      disabled={savedConnections.length === 0}
+                      options={
+                        savedConnections.length > 0
+                          ? savedConnections.map(c => ({
+                              value: c.id,
+                              label: `${c.connectionName}${c.isDefault ? ' (default)' : ''}`
+                            }))
+                          : [{ value: '', label: 'Default connection' }]
+                      }
                     />
-                  )}
+                    {selectedConn && (
+                      <span
+                        className="ds-instance-status-dot"
+                        style={{
+                          display: 'inline-block',
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: connStatusColor(selectedConn.status),
+                          marginLeft: 4
+                        }}
+                        title={selectedConn.status}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 {/* ── Global Compatibility Selector ── */}
-                <div className="ds-compat-control" style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  <span>Global Compatibility Selector</span>
+                <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Global Compatibility Selector</span>
                   <CustomSelect
                     className="ds-compat-select"
                     value={globalCompatibility}
@@ -712,19 +713,41 @@ export function SchemaRegistry() {
                     disabled={!canManage}
                     options={compatibilityOptions.map(o => ({ value: o, label: o }))}
                   />
-                  {canManage && (
-                    <button className="ds-icon-button" onClick={() => saveGlobalCompatibility(globalCompatibility)} disabled={saving} title="Save global compatibility" style={{ border: '1px solid #dedbd4', borderRadius: '8px', width: '38px', height: '38px', minWidth: '38px', marginLeft: '6px' }}>
-                      <FileDown size={16} />
-                    </button>
-                  )}
                 </div>
               </div>
 
-              <div className="ds-buttons-group">
+              <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* ── Buttons ── */}
                 {canManage && (
+                  <button 
+                    onClick={() => saveGlobalCompatibility(globalCompatibility)} 
+                    disabled={saving}
+                    style={{
+                      boxSizing: 'border-box',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '8px 16px',
+                      gap: '8px',
+                      height: '35px',
+                      background: '#FFFFFF',
+                      border: '1px solid #3E1363',
+                      borderRadius: '8px',
+                      color: '#3E1363',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontWeight: 500,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <Save size={16} /> Save
+                  </button>
+                )}
+
+                {canManage && (
                   <button className="ds-button add-connection" onClick={() => openConnectionModal()}>
-                    <Settings size={16} /> Add Connection
+                    <Plus size={16} /> Add Connection
                   </button>
                 )}
 
@@ -735,17 +758,17 @@ export function SchemaRegistry() {
                 )}
 
                 {canManage && (
-                  <button className="ds-icon-button icon-gray" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection">
+                  <button className="ds-icon-button icon-gray" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection" style={{ width: '35px', height: '35px' }}>
                     <Trash2 size={16} />
                   </button>
                 )}
 
-                <button className="ds-icon-button icon-gray" onClick={load} disabled={loading} title="Refresh">
+                <button className="ds-icon-button icon-gray" onClick={load} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
                 </button>
 
                 {canManage && (
-                  <button className="ds-icon-button no-border" onClick={() => selectedConn && openConnectionModal(selectedConn)} disabled={!selectedConn} title="Edit connection">
+                  <button className="ds-icon-button icon-gray" onClick={() => selectedConn && openConnectionModal(selectedConn)} disabled={!selectedConn} title="Edit connection" style={{ width: '35px', height: '35px' }}>
                     <MoreVertical size={16} />
                   </button>
                 )}
@@ -756,32 +779,31 @@ export function SchemaRegistry() {
           {error && <div className="ds-alert">{error}</div>}
 
           {!hasFetched ? (
-            <div className="ds-fetch-prompt">
-              {/* Stacked Cards Illustration SVG */}
-              <svg width="120" height="90" viewBox="0 0 120 90" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: '12px' }}>
-                {/* Back Card */}
-                <rect x="15" y="10" width="90" height="48" rx="6" fill="#F4F2FF" stroke="#E2E0FD" strokeWidth="1.5" />
-                <rect x="25" y="18" width="40" height="4" rx="2" fill="#8F8CFF" />
-                <rect x="75" y="18" width="20" height="4" rx="2" fill="#C7C5FF" />
-                <rect x="25" y="28" width="55" height="4" rx="2" fill="#E2E0FD" />
-                <rect x="25" y="38" width="30" height="4" rx="2" fill="#E2E0FD" />
-
-                {/* Middle Card */}
-                <rect x="10" y="24" width="100" height="48" rx="6" fill="#FFFFFF" stroke="#E8E6E1" strokeWidth="1.5" />
-                <rect x="20" y="32" width="50" height="4" rx="2" fill="#5747C9" fillOpacity="0.4" />
-                <rect x="80" y="32" width="20" height="4" rx="2" fill="#5747C9" fillOpacity="0.2" />
-                <rect x="20" y="42" width="65" height="4" rx="2" fill="#F3F0F0" />
-                <rect x="20" y="52" width="40" height="4" rx="2" fill="#F3F0F0" />
-
-                {/* Front Card */}
-                <rect x="5" y="38" width="110" height="48" rx="6" fill="#FFFFFF" stroke="#3E1363" strokeWidth="1.5" strokeOpacity="0.15" />
-                <rect x="15" y="46" width="35" height="4" rx="2" fill="#3E1363" fillOpacity="0.6" />
-                <rect x="85" y="46" width="20" height="4" rx="2" fill="#3E1363" fillOpacity="0.3" />
-                <rect x="15" y="56" width="80" height="4" rx="2" fill="#F3F0F0" />
-                <rect x="15" y="66" width="50" height="4" rx="2" fill="#F3F0F0" />
-              </svg>
-              <p>Schema Registry data is not loaded automatically.</p>
-              <button type="button" className="ds-fetch-link" onClick={load} disabled={loading}>
+            <div className="ds-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
+              <p style={{ fontSize: '15px', color: '#475569', marginBottom: '8px' }}>Schema Registry data is not loaded automatically.</p>
+              <button 
+                type="button" 
+                onClick={load} 
+                disabled={loading}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '42px',
+                  padding: '0 24px',
+                  borderRadius: '8px',
+                  background: '#3E1363',
+                  color: '#fff',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  marginTop: '12px'
+                }}
+              >
+                {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
                 {loading ? 'Fetching Schema Registry...' : 'Fetch Schema Registry for this cluster'}
               </button>
             </div>
@@ -790,7 +812,23 @@ export function SchemaRegistry() {
             <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
-            <div className="ds-metric-card"><span>REST Endpoint</span><strong style={{ fontSize: 16 }}>{summary?.connection || '-'}</strong></div>
+            <div className="ds-metric-card">
+              <span>REST Endpoint</span>
+              <strong style={{ fontSize: 16 }}>
+                {summary?.connection ? (
+                  <a 
+                    href={summary.connection} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    style={{ color: '#3E1363', textDecoration: 'underline' }}
+                  >
+                    {summary.connection}
+                  </a>
+                ) : (
+                  '-'
+                )}
+              </strong>
+            </div>
           </div>
 
           <div className="ds-panel">

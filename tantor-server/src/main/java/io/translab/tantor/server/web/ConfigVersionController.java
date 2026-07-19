@@ -25,6 +25,7 @@ public class ConfigVersionController {
     private final ClusterRepository clusterRepository;
     private final ConfigVersionService configVersionService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
 
     @PostMapping("/services/{serviceId}/versions/preview")
     public ResponseEntity<?> preview(
@@ -134,6 +135,17 @@ public class ConfigVersionController {
     }
 
     private ClusterServiceAssignment findService(Cluster cluster, UUID serviceId) {
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            return externalClusterNodeRepository.findById(serviceId).map(node -> {
+                ClusterServiceAssignment csa = new ClusterServiceAssignment();
+                csa.setId(node.getId());
+                csa.setCluster(cluster);
+                csa.setHostId(node.getHost());
+                csa.setNodeId(node.getNodeId());
+                csa.setRole(Boolean.TRUE.equals(node.getIsBroker()) ? "Broker" : "Controller");
+                return csa;
+            }).orElse(null);
+        }
         if (cluster.getServices() == null) return null;
         return cluster.getServices().stream().filter(service -> serviceId.equals(service.getId())).findFirst().orElse(null);
     }

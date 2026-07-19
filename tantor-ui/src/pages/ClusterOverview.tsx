@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { AlertTriangle, Download } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, Download, Server, ShieldCheck } from 'lucide-react';
 import './ClusterOverview.css';
 
 interface OverviewSummary {
@@ -238,8 +238,10 @@ export function ClusterOverview() {
               <div className="overview-value">{uptime.controllerType || '-'}</div>
             </div>
           </div>
-          <div className="overview-table-wrap overview-brokers-table">
-            <table className="overview-table">
+        </div>
+
+        <div className="overview-table-wrap">
+          <table className="data-table overview-table">
             <thead>
               <tr>
                 <th>Broker ID</th>
@@ -256,8 +258,13 @@ export function ClusterOverview() {
             <tbody>
               {overview.brokers.map(broker => (
                 <tr key={broker.brokerId}>
-                  <td>{broker.brokerId}</td>
-                  <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
+                  <td>
+                    <div className="overview-broker-id">
+                      <CheckCircle2 size={16} color="#069B68" />
+                      <span>{broker.brokerId}</span>
+                    </div>
+                  </td>
+                  <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
                   <td>{broker.inSyncReplicas}</td>
                   <td>{broker.replicas}</td>
                   <td>{formatSkew(broker.replicaSkewPct)}</td>
@@ -268,17 +275,16 @@ export function ClusterOverview() {
                 </tr>
               ))}
             </tbody>
-            </table>
-          </div>
+          </table>
         </div>
       </section>
 
       {overview.controllers && overview.controllers.length > 0 && (
         <section className="overview-section">
+          <h2>Controller Voters</h2>
           <div className="overview-band">
-            <h2>Controller Voters</h2>
             <div className="overview-table-wrap">
-              <table className="overview-table">
+              <table className="data-table overview-table">
                 <thead>
                   <tr>
                     <th>Node ID</th>
@@ -289,7 +295,12 @@ export function ClusterOverview() {
                 <tbody>
                   {overview.controllers.map(c => (
                     <tr key={c.nodeId}>
-                      <td>{c.nodeId}</td>
+                      <td>
+                        <div className="overview-broker-id">
+                          <CheckCircle2 size={15} />
+                          <span>{c.nodeId}</span>
+                        </div>
+                      </td>
                       <td className="font-mono">{c.host}</td>
                       <td>{c.port ? c.port : '-'}</td>
                     </tr>
@@ -303,10 +314,13 @@ export function ClusterOverview() {
 
       {overview.originType === 'EXTERNAL' && overview.nodePaths && (
         <section className="overview-section">
+          <h2>Paths & Directories</h2>
           <div className="overview-band">
-            <h2>Paths &amp; Directories</h2>
+            <div className="text-muted text-sm mb-2" style={{ marginBottom: '12px', fontFamily: 'Satoshi, sans-serif', color: '#818181' }}>
+              Path details available for {overview.nodePaths.filter(p => p.hasTelemetry).length} of {overview.nodePaths.length} nodes
+            </div>
             <div className="overview-table-wrap">
-              <table className="overview-table">
+              <table className="data-table overview-table">
                 <thead>
                   <tr>
                     <th>Node ID</th>
@@ -324,14 +338,14 @@ export function ClusterOverview() {
                     <tr key={p.nodeId}>
                       <td>{p.nodeId}</td>
                       <td className="font-mono">{p.host}</td>
-                      <td>{p.role}</td>
+                      <td><span className="role-badge">{p.role}</span></td>
                       <td>{p.installDir || <span className="text-muted">Not reported</span>}</td>
                       <td>{p.config || <span className="text-muted">Not reported</span>}</td>
                       <td>{p.dataDir || <span className="text-muted">Not reported</span>}</td>
                       <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
                       <td>
                         {p.hasTelemetry ? (
-                          <span className="text-green text-sm">Managed</span>
+                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14} /> Managed</span>
                         ) : (
                           <span className="text-muted text-sm">Bootstrap metadata</span>
                         )}
@@ -353,6 +367,21 @@ function Notice({ kind, text }: { kind: 'error' | 'warning'; text: string }) {
     <div className={`overview-alert ${kind}`}>
       <AlertTriangle size={17} />
       <span>{text}</span>
+    </div>
+  );
+}
+
+function OverviewTile({ icon, label, value, healthy }: { icon?: React.ReactNode; label: string; value: React.ReactNode; healthy?: boolean }) {
+  return (
+    <div className="overview-tile">
+      <div className="overview-tile-label">
+        {label}
+        {healthy !== undefined && <span className={healthy ? 'status-dot ok' : 'status-dot warn'} />}
+      </div>
+      <div className="overview-tile-main">
+        {icon && <span className="overview-tile-icon">{icon}</span>}
+        <span>{value}</span>
+      </div>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 
 import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useCluster } from '../contexts/ClusterContext';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -43,7 +44,16 @@ export function ClusterDetails() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const { setActiveClusterId } = useCluster();
+
+  // Sync the global active cluster context whenever this page loads
   useEffect(() => {
+    if (id) setActiveClusterId(id);
+  }, [id, setActiveClusterId]);
+
+  useEffect(() => {
+    // Clear stale data when switching clusters to prevent flash of old data
+    setCluster(null);
     fetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(setCluster)

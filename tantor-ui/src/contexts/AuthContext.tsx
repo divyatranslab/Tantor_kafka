@@ -107,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!authEnabled) {
+      installAuthenticatedFetch();
       setIsInitializing(false);
       setIsAuthenticated(true);
       setDecodedToken(devDecodedToken());
