@@ -83,11 +83,7 @@ export function ConfigEditor() {
     return <div className="state-center"><Loader2 className="spin" /> Loading cluster configuration...</div>;
   }
 
-  if ((cluster?.mode || '').toUpperCase() !== 'EXTERNAL') {
-    return <InternalConfigEditor />;
-  }
-
-  return <ExternalConfigEditor />;
+  return <InternalConfigEditor />;
 }
 
 function ExternalConfigEditor() {

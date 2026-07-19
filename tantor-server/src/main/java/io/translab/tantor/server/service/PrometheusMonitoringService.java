@@ -166,9 +166,6 @@ public class PrometheusMonitoringService {
                 addInternalTargets(targets, cluster);
             }
         }
-        for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
-            addExternalJmxTargets(targets, cluster);
-        }
         return targets;
     }
 
@@ -188,20 +185,6 @@ public class PrometheusMonitoringService {
             summary.setKafkaExporterTarget(exporterTarget(cluster).orElse(null));
             summary.setJmxAvailable(hasJmxTargets(cluster));
             summary.setWarning(monitoringWarning(cluster));
-            result.add(summary);
-        }
-        for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
-            if (!normalizedType.isBlank() && !normalizedType.equals("EXTERNAL")) {
-                continue;
-            }
-            MonitoringClusterSummary summary = new MonitoringClusterSummary();
-            summary.setId(cluster.getId());
-            summary.setName(cluster.getName());
-            summary.setOriginType("EXTERNAL");
-            summary.setMonitoringEnabled(true);
-            summary.setKafkaExporterTarget(null);
-            summary.setJmxAvailable(hasJmxTargets(cluster));
-            summary.setWarning(null);
             result.add(summary);
         }
         return result;

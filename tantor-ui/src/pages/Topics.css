@@ -62,7 +62,7 @@
 .topic-button.primary:hover:not(:disabled) { filter: brightness(0.94); }
 .topic-button.secondary { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border-default); }
 .topic-button.secondary:hover:not(:disabled) { background: var(--bg-raised); }
-.topic-button.secondary.live-active { color: var(--accent-primary); background: var(--accent-light); border-color: var(--accent-border); }
+.topic-button.secondary.live-active { color: #3E1363; background: #F3E8FF; border-color: #3E1363; }
 .topic-button.destructive { color: white; background: #b42318; }
 
 .spin-slow {
@@ -521,7 +521,7 @@
   font-family: 'Satoshi', sans-serif;
   font-size: 13px;
   font-weight: 500;
-  color: #E25B7F; /* Pink accent color from Figma for Add a topic subtitle */
+  color: #3E1363; /* Purple accent color matching the theme */
   margin: 0 0 4px 0;
 }
 
@@ -568,6 +568,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 18px;
 }
 
 .figma-topic-modal .custom-toggle-area .toggle-label {
@@ -575,6 +576,9 @@
   font-size: 12px;
   color: #332849;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
 }
 
 .figma-topic-modal .form-grid-row {
@@ -774,4 +778,25 @@
     width: 100%;
     height: 34px;
   }
+}
+
+/* -- Custom Toggle Overrides for Topics Create Modal -- */
+.figma-topic-modal .cd-toggle-switch {
+  width: 34px !important;
+  height: 20px !important;
+}
+
+.figma-topic-modal .cd-toggle-slider {
+  border-radius: 10px !important;
+}
+
+.figma-topic-modal .cd-toggle-slider:before {
+  height: 16px !important;
+  width: 16px !important;
+  left: 2px !important;
+  bottom: 1px !important;
+}
+
+.figma-topic-modal .cd-toggle-switch input:checked + .cd-toggle-slider:before {
+  transform: translateX(14px) !important;
 }

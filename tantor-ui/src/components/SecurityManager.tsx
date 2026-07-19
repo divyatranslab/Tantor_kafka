@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Shield, Plus, Trash2, RefreshCw, Loader2, Search, Check,
+  Shield, Plus, Trash2, RefreshCw, Loader2, Search, Check, AlertCircle,
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
@@ -132,144 +132,415 @@ export default function SecurityManager({ clusterId }: Props) {
   });
 
   return (
-    <div className="security-manager">
-      <div className="section-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
-        <div>
-          <h2><Shield size={20} style={{display:'inline',marginRight:8,verticalAlign:'text-bottom'}} /> Access Control Lists (ACLs)</h2>
-          <p className="mono-muted">Manage fine-grained permissions for Kafka resources.</p>
+    <div className="security-manager" style={{ padding: '0px 10px' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '1rem',
+        marginBottom: '1.25rem',
+        marginTop: '0.5rem'
+      }}>
+        {/* Left side: Filters */}
+        <div style={{ display: 'flex', gap: '1rem', flex: 1 }}>
+          <div style={{ position: 'relative', flex: 1, maxWidth: '240px' }}>
+            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+            <input 
+              type="text" 
+              placeholder="Filter by principle..." 
+              value={aclFilterPrincipal} 
+              onChange={e => setAclFilterPrincipal(e.target.value)} 
+              style={{
+                width: '100%',
+                padding: '10px 12px 10px 36px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                fontSize: '14px',
+                fontFamily: 'Satoshi, Inter, sans-serif',
+                outline: 'none',
+                color: '#332849'
+              }}
+            />
+          </div>
+          <div style={{ position: 'relative', flex: 1, maxWidth: '240px' }}>
+            <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+            <input 
+              type="text" 
+              placeholder="Filter by resources..." 
+              value={aclFilterResource} 
+              onChange={e => setAclFilterResource(e.target.value)} 
+              style={{
+                width: '100%',
+                padding: '10px 12px 10px 36px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                fontSize: '14px',
+                fontFamily: 'Satoshi, Inter, sans-serif',
+                outline: 'none',
+                color: '#332849'
+              }}
+            />
+          </div>
         </div>
-        <div className="header-actions">
-          <button onClick={fetchAcls} disabled={aclsLoading} className="btn-secondary">
-            <RefreshCw size={16} className={aclsLoading ? 'spin' : ''} /> Refresh
+
+        {/* Right side: Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button 
+            onClick={fetchAcls} 
+            disabled={aclsLoading} 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '42px',
+              height: '42px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              background: '#fff',
+              cursor: 'pointer',
+              color: '#475569',
+              transition: 'all 0.2s'
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
           </button>
           {canManage && (
-            <button onClick={() => setShowCreateAcl(true)} className="btn-primary">
+            <button 
+              onClick={() => setShowCreateAcl(true)} 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                height: '42px',
+                padding: '0 20px',
+                borderRadius: '8px',
+                background: '#3E1363',
+                color: '#fff',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
               <Plus size={16} /> Add ACL
             </button>
           )}
         </div>
       </div>
 
-      {aclsError && <div className="error-banner">{aclsError}</div>}
-
-      {canManage && showCreateAcl && (
-        <div className="create-panel" style={{background:'#f9fafb',padding:'1.5rem',borderRadius:8,marginBottom:'1.5rem',border:'1px solid #e5e7eb'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
-            <h3 style={{margin:0,fontSize:'1.1rem'}}>Add New ACL Binding</h3>
-            <button onClick={() => setShowCreateAcl(false)} style={{background:'none',border:'none',cursor:'pointer'}}>✕</button>
-          </div>
-          <form onSubmit={handleCreateAcl}>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'1rem',marginBottom:'1rem'}}>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Principal (Username)</label>
-                <input 
-                  type="text" 
-                  value={aclPrincipal} 
-                  onChange={e => setAclPrincipal(e.target.value)} 
-                  placeholder="e.g. alice" 
-                  required 
-                  style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}
-                />
-              </div>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Host</label>
-                <input 
-                  type="text" 
-                  value={aclHost} 
-                  onChange={e => setAclHost(e.target.value)} 
-                  placeholder="*" 
-                  required 
-                  style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}
-                />
-              </div>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Resource Type</label>
-                <select value={aclResourceType} onChange={e => setAclResourceType(e.target.value)} style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}>
-                  {RESOURCE_TYPES.map(rt => <option key={rt} value={rt}>{rt.toUpperCase()}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Resource Name</label>
-                <input 
-                  type="text" 
-                  value={aclResourceName} 
-                  onChange={e => setAclResourceName(e.target.value)} 
-                  placeholder="e.g. * or topic_name" 
-                  required 
-                  style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}
-                />
-              </div>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Pattern Type</label>
-                <select value={aclPatternType} onChange={e => setAclPatternType(e.target.value)} style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}>
-                  <option value="literal">LITERAL</option>
-                  <option value="prefixed">PREFIXED</option>
-                </select>
-              </div>
-              <div>
-                <label style={{display:'block',marginBottom:4,fontWeight:500,fontSize:'0.9rem'}}>Permission</label>
-                <select value={aclPermission} onChange={e => setAclPermission(e.target.value)} style={{width:'100%',padding:'0.5rem',borderRadius:4,border:'1px solid #d1d5db'}}>
-                  <option value="Allow">ALLOW</option>
-                  <option value="Deny">DENY</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{marginBottom:'1.5rem'}}>
-              <label style={{display:'block',marginBottom:8,fontWeight:500,fontSize:'0.9rem'}}>Operations</label>
-              <div style={{display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
-                {OPERATIONS.map(op => (
-                  <button 
-                    type="button" 
-                    key={op} 
-                    onClick={() => toggleAclOperation(op)}
-                    style={{
-                      padding:'0.25rem 0.75rem',
-                      borderRadius:16,
-                      fontSize:'0.85rem',
-                      border: aclOperations.includes(op) ? '1px solid #3b82f6' : '1px solid #d1d5db',
-                      background: aclOperations.includes(op) ? '#eff6ff' : '#fff',
-                      color: aclOperations.includes(op) ? '#1d4ed8' : '#374151',
-                      cursor:'pointer'
-                    }}
-                  >
-                    {aclOperations.includes(op) && <Check size={12} style={{display:'inline',marginRight:4}}/>}
-                    {op}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button type="submit" disabled={aclCreating} style={{padding:'0.5rem 1rem',background:'#2563eb',color:'white',border:'none',borderRadius:4,cursor:'pointer',display:'flex',alignItems:'center',gap:'0.5rem'}}>
-              {aclCreating ? <Loader2 size={16} className="spin" /> : <Plus size={16} />} 
-              Create ACL
-            </button>
-          </form>
+      {aclsError && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          background: '#FFF9EB',
+          border: '1px solid #FFE0B2',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          color: '#B78103',
+          fontSize: '14px',
+          fontWeight: 500,
+          marginBottom: '1.25rem',
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          <AlertCircle size={18} style={{ color: '#F5A623' }} />
+          <span>Failed to load ACLs</span>
         </div>
       )}
 
-      <div style={{display:'flex',gap:'1rem',marginBottom:'1rem'}}>
-        <div style={{position:'relative',flex:1,maxWidth:300}}>
-          <Search size={16} style={{position:'absolute',left:10,top:10,color:'#9ca3af'}} />
-          <input 
-            type="text" 
-            placeholder="Filter by Principal..." 
-            value={aclFilterPrincipal} 
-            onChange={e => setAclFilterPrincipal(e.target.value)} 
-            style={{width:'100%',padding:'0.5rem 0.5rem 0.5rem 2rem',borderRadius:4,border:'1px solid #d1d5db'}}
-          />
+      {canManage && showCreateAcl && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '680px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '20px 24px',
+              borderBottom: '1px solid #f1f5f9'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>Add New ACL Binding</h3>
+              <button 
+                onClick={() => setShowCreateAcl(false)} 
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '20px',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleCreateAcl} style={{ padding: '24px' }}>
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '8px',
+                padding: '20px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '16px',
+                marginBottom: '20px'
+              }}>
+                {/* Principle (Username) */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Principle (Username)</label>
+                  <input 
+                    type="text" 
+                    value={aclPrincipal} 
+                    onChange={e => setAclPrincipal(e.target.value)} 
+                    placeholder="e.g. alice" 
+                    required 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Host */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Host</label>
+                  <input 
+                    type="text" 
+                    value={aclHost} 
+                    onChange={e => setAclHost(e.target.value)} 
+                    placeholder="192.168.3.222" 
+                    required 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Resource Type */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Resource Type</label>
+                  <select 
+                    value={aclResourceType} 
+                    onChange={e => setAclResourceType(e.target.value)} 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none',
+                      appearance: 'none',
+                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 12px center',
+                      backgroundSize: '16px'
+                    }}
+                  >
+                    {RESOURCE_TYPES.map(rt => <option key={rt} value={rt}>{rt.charAt(0).toUpperCase() + rt.slice(1)}</option>)}
+                  </select>
+                </div>
+
+                {/* Resource Name */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Resource Name</label>
+                  <input 
+                    type="text" 
+                    value={aclResourceName} 
+                    onChange={e => setAclResourceName(e.target.value)} 
+                    placeholder="e.g. topics_name" 
+                    required 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Pattern Type */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Pattern Type</label>
+                  <select 
+                    value={aclPatternType} 
+                    onChange={e => setAclPatternType(e.target.value)} 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none',
+                      appearance: 'none',
+                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 12px center',
+                      backgroundSize: '16px'
+                    }}
+                  >
+                    <option value="literal">Literal</option>
+                    <option value="prefixed">Prefixed</option>
+                  </select>
+                </div>
+
+                {/* Permission */}
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Permission</label>
+                  <select 
+                    value={aclPermission} 
+                    onChange={e => setAclPermission(e.target.value)} 
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      fontSize: '14px',
+                      background: '#fff',
+                      color: '#332849',
+                      outline: 'none',
+                      appearance: 'none',
+                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 12px center',
+                      backgroundSize: '16px'
+                    }}
+                  >
+                    <option value="Allow">Allow</option>
+                    <option value="Deny">Deny</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Operations */}
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '8px',
+                padding: '20px',
+                marginBottom: '24px'
+              }}>
+                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 600, fontSize: '14px', color: '#3E1363' }}>Operations</label>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {OPERATIONS.map(op => {
+                    const isSelected = aclOperations.includes(op);
+                    return (
+                      <button 
+                        type="button" 
+                        key={op} 
+                        onClick={() => toggleAclOperation(op)}
+                        style={{
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontSize: '13px',
+                          fontWeight: 500,
+                          border: '1px solid #e2e8f0',
+                          background: isSelected ? '#3E1363' : '#fff',
+                          color: isSelected ? '#fff' : '#64748b',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {op}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Modal Footer Actions */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '12px',
+                borderTop: '1px solid #f1f5f9',
+                paddingTop: '20px',
+                marginTop: '10px'
+              }}>
+                <button 
+                  type="button" 
+                  onClick={() => setShowCreateAcl(false)} 
+                  style={{
+                    height: '38px',
+                    padding: '0 20px',
+                    borderRadius: '8px',
+                    border: '1px solid #3E1363',
+                    background: '#fff',
+                    color: '#3E1363',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={aclCreating} 
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    height: '38px',
+                    padding: '0 20px',
+                    borderRadius: '8px',
+                    background: '#3E1363',
+                    color: '#fff',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {aclCreating && <Loader2 size={14} className="spin" />}
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-        <div style={{position:'relative',flex:1,maxWidth:300}}>
-          <Search size={16} style={{position:'absolute',left:10,top:10,color:'#9ca3af'}} />
-          <input 
-            type="text" 
-            placeholder="Filter by Resource..." 
-            value={aclFilterResource} 
-            onChange={e => setAclFilterResource(e.target.value)} 
-            style={{width:'100%',padding:'0.5rem 0.5rem 0.5rem 2rem',borderRadius:4,border:'1px solid #d1d5db'}}
-          />
-        </div>
-      </div>
+      )}
 
       <div className="table-container" style={{overflowX:'auto',border:'1px solid #e5e7eb',borderRadius:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',textAlign:'left'}}>

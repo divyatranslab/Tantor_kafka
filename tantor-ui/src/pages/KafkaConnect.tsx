@@ -55,6 +55,52 @@ const connectorTemplate = `{
   }
 }`;
 
+interface CustomSelectProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+      <div 
+        className="ds-custom-select-trigger" 
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+      >
+        <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
+        <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+      
+      {isOpen && (
+        <>
+          <div className="ds-custom-select-overlay" onClick={() => setIsOpen(false)} />
+          <div className="ds-custom-select-dropdown">
+            {options.map(opt => (
+              <div
+                key={opt.value}
+                className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+              >
+                {opt.label}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
@@ -347,23 +393,27 @@ export function KafkaConnect() {
 
   return (
     <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
-      <div className="ds-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', width: '100%' }}>
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#5B327F', margin: 0 }}>Kafka Connect</h2>
-        <div className="ds-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* ── Instance switcher ── */}
-          {savedConnections.length > 0 && (
-            <div className="ds-compat-control" style={{ marginRight: '8px' }}>
-              <span>Instance</span>
-              <select
+      <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
+        <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+          
+          {/* ── Instance Selector ── */}
+          <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CustomSelect
+                className="ds-instance-select"
                 value={selectedConnectionId ?? ''}
-                onChange={e => setSelectedConnectionId(e.target.value || null)}
-              >
-                {savedConnections.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.connectionName}{c.isDefault ? ' (default)' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={val => setSelectedConnectionId(val || null)}
+                disabled={savedConnections.length === 0}
+                options={
+                  savedConnections.length > 0
+                    ? savedConnections.map(c => ({
+                        value: c.id,
+                        label: `${c.connectionName}${c.isDefault ? ' (default)' : ''}`
+                      }))
+                    : [{ value: '', label: 'Default connection' }]
+                }
+              />
               {selectedConn && (
                 <span
                   style={{
@@ -372,327 +422,207 @@ export function KafkaConnect() {
                     height: 8,
                     borderRadius: '50%',
                     background: connStatusColor(selectedConn.status),
-                    flexShrink: 0
+                    marginLeft: 4
                   }}
                   title={selectedConn.status}
                 />
               )}
             </div>
-          )}
+          </div>
 
-          {canManage && (
+          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* ── Buttons ── */}
+            {canManage && (
+              <button 
+                type="button"
+                onClick={() => setShowCreate(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#FFFFFF',
+                  border: '1px solid #3E1363',
+                  borderRadius: '8px',
+                  color: '#3E1363',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title="Upload JSON configurations"
+              >
+                <FileDown size={16} style={{ color: '#3E1363' }} /> Save
+              </button>
+            )}
+
+            {canManage && (
+              <button 
+                className="ds-button" 
+                onClick={() => openConnectionModal()} 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#FFFFFF',
+                  border: '1px solid #3E1363',
+                  borderRadius: '8px',
+                  color: '#3E1363',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Settings size={16} style={{ color: '#3E1363' }} /> Add Connection
+              </button>
+            )}
+
+            {canManage && (
+              <button 
+                className="ds-button primary" 
+                onClick={() => setShowCreate(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#3E1363',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#FFFFFF',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Plus size={16} color="#FFFFFF" /> Create Connector
+              </button>
+            )}
+
+            {canManage && (
+              <button
+                className="ds-icon-button icon-gray"
+                onClick={handleDeleteConnection}
+                disabled={!selectedConn}
+                style={{
+                  width: '35px',
+                  height: '35px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#FFFFFF',
+                  border: '1px solid #D2D2D7',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  opacity: selectedConn ? 1 : 0.5
+                }}
+                title="Delete connection"
+              >
+                <Trash2 size={16} style={{ color: '#71717A' }} />
+              </button>
+            )}
+
             <button 
-              type="button"
-              onClick={() => setShowCreate(true)}
+              className="ds-icon-button icon-gray" 
+              onClick={load} 
+              disabled={loading}
               style={{
-                width: '38px',
-                height: '38px',
+                width: '35px',
+                height: '35px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 background: '#FFFFFF',
-                border: '1px solid #CCCCCC',
+                border: '1px solid #D2D2D7',
                 borderRadius: '8px',
                 cursor: 'pointer'
               }}
-              title="Upload JSON configurations"
+              title="Refresh"
             >
-              <FileDown size={16} style={{ color: '#818181' }} />
+              <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#71717A' }} />
             </button>
-          )}
 
-          {canManage && (
-            <button 
-              className="ds-button" 
-              onClick={() => openConnectionModal()} 
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                height: '38px',
-                padding: '0 16px',
-                background: '#FFFFFF',
-                border: '1px solid #CCCCCC',
-                borderRadius: '8px',
-                color: '#332849',
-                fontFamily: 'Satoshi, sans-serif',
-                fontWeight: 500,
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}
-            >
-              <Settings size={16} style={{ color: '#332849' }} /> Add Connection
-            </button>
-          )}
-
-          {canManage && (
-            <button 
-              className="ds-button primary" 
-              onClick={() => setShowCreate(true)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                height: '38px',
-                padding: '0 16px',
-                background: '#332849',
-                border: 'none',
-                borderRadius: '8px',
-                color: '#FFFFFF',
-                fontFamily: 'Satoshi, sans-serif',
-                fontWeight: 500,
-                fontSize: '14px',
-                cursor: 'pointer'
-              }}
-            >
-              <Plus size={16} color="#FFFFFF" /> Create Connector
-            </button>
-          )}
-
-          {canManage && (
-            <button
-              className="ds-icon-button"
-              onClick={handleDeleteConnection}
-              disabled={!selectedConn}
-              style={{
-                width: '38px',
-                height: '38px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#FFFFFF',
-                border: '1px solid #CCCCCC',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                opacity: selectedConn ? 1 : 0.5
-              }}
-              title="Delete connection"
-            >
-              <Trash2 size={16} style={{ color: '#818181' }} />
-            </button>
-          )}
-
-          <button 
-            className="ds-button" 
-            onClick={load} 
-            disabled={loading}
-            style={{
-              width: '38px',
-              height: '38px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: '#FFFFFF',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-            title="Refresh"
-          >
-            <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#818181' }} />
-          </button>
-
-          {canManage && (
-            <button
-              className="ds-icon-button"
-              onClick={() => openConnectionModal(selectedConn ?? undefined)}
-              disabled={!selectedConn}
-              style={{
-                width: '38px',
-                height: '38px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: '#FFFFFF',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                opacity: selectedConn ? 1 : 0.5
-              }}
-              title="Edit selected connection"
-            >
-              <MoreVertical size={18} style={{ color: '#818181' }} />
-            </button>
-          )}
+            {canManage && (
+              <button
+                className="ds-icon-button icon-gray"
+                onClick={() => openConnectionModal(selectedConn ?? undefined)}
+                disabled={!selectedConn}
+                style={{
+                  width: '35px',
+                  height: '35px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#FFFFFF',
+                  border: '1px solid #D2D2D7',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  opacity: selectedConn ? 1 : 0.5
+                }}
+                title="Edit connection"
+              >
+                <MoreVertical size={16} style={{ color: '#71717A' }} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '350px',
-          textAlign: 'center',
-          background: 'transparent',
-          border: 'none'
-        }}>
-          <div style={{ width: '185px', height: '185px', position: 'relative', marginBottom: '16px' }}>
-            {/* Document Lines Container (Holds the 3 cards) */}
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-start',
-              padding: '0px',
-              gap: '3.91px',
-              position: 'absolute',
-              width: '109.44px',
-              height: '78.17px',
-              left: '37.48px',
-              top: '59.81px'
-            }}>
-              {/* CARD 1 */}
-              <div style={{
-                boxSizing: 'border-box',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                padding: '7.81px 11.72px',
-                gap: '10.42px',
-                width: '109.44px',
-                height: '23.45px',
-                background: '#FFFFFF',
-                border: '1.30282px solid #D4DCE7',
-                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
-                borderRadius: '2.60563px'
-              }}>
-                {/* Document Line Group */}
-                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
-                  {/* Left Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ display: 'flex', flexDirection: 'row', gap: '3.99px', width: '31.1px', height: '1.3px' }}>
-                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                    </div>
-                  </div>
-                  {/* Right Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* CARD 2 */}
-              <div style={{
-                boxSizing: 'border-box',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                padding: '7.81px 11.72px',
-                gap: '10.42px',
-                width: '109.44px',
-                height: '23.45px',
-                background: '#FFFFFF',
-                border: '1.30282px solid #D4DCE7',
-                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
-                borderRadius: '2.60563px'
-              }}>
-                {/* Document Line Group */}
-                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
-                  {/* Left Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                  </div>
-                  {/* Right Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* CARD 3 */}
-              <div style={{
-                boxSizing: 'border-box',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                padding: '7.81px 11.72px',
-                gap: '10.42px',
-                width: '109.44px',
-                height: '23.45px',
-                background: '#FFFFFF',
-                border: '1.30282px solid #D4DCE7',
-                boxShadow: '0px 5.21127px 7.68662px rgba(0, 22, 93, 0.08)',
-                borderRadius: '2.60563px'
-              }}>
-                {/* Document Line Group */}
-                <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '85.99px', height: '7.82px' }}>
-                  {/* Left Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                  </div>
-                  {/* Right Column */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '3.91px', width: '31.27px', height: '7.82px' }}>
-                    <div style={{ width: '19.54px', height: '2.61px', background: '#B3A4D1', borderRadius: '0.651408px' }} />
-                    <div style={{ display: 'flex', flexDirection: 'row', gap: '3.99px', width: '31.1px', height: '1.3px' }}>
-                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                      <div style={{ width: '13.56px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Document Lines Container (Bottom grey lines) */}
-            <div style={{
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'flex-start',
-              padding: '0px',
-              gap: '3.91px',
-              position: 'absolute',
-              width: '80.77px',
-              height: '1.3px',
-              left: '51.81px',
-              top: '147.1px'
-            }}>
-              <div style={{ width: '10.42px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-              <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-              <div style={{ width: '31.27px', height: '1.3px', background: '#CCCCCC', borderRadius: '0.260563px' }} />
-            </div>
-          </div>
-          <h3 style={{
-            fontFamily: 'Satoshi, sans-serif',
-            fontWeight: 500,
-            fontSize: '16px',
-            color: '#332849',
-            margin: '0 0 4px 0'
-          }}>
-            Kafka Connect data is not loaded automatically.
-          </h3>
-          <span 
-            onClick={load}
+        <div className="ds-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', width: '100%' }}>
+          <p style={{ fontSize: '15px', color: '#475569', marginBottom: '8px' }}>Kafka Connect data is not loaded automatically.</p>
+          <button 
+            type="button" 
+            onClick={load} 
+            disabled={loading}
             style={{
-              fontFamily: 'Satoshi, sans-serif',
-              fontWeight: 400,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              height: '42px',
+              padding: '0 24px',
+              borderRadius: '8px',
+              background: '#3E1363',
+              color: '#fff',
+              fontWeight: 500,
               fontSize: '14px',
-              color: '#818181',
+              border: 'none',
               cursor: 'pointer',
-              textDecoration: 'none'
+              transition: 'all 0.2s',
+              marginTop: '12px'
             }}
           >
-            Fetch Kafka Connect for this cluster
-          </span>
+            {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
+            {loading ? 'Fetching Kafka Connect...' : 'Fetch Kafka Connect for this cluster'}
+          </button>
         </div>
       ) : <>
       <div className="ds-metrics" style={{
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
-        padding: '24px',
+        padding: '0 0 24px 0',
         gap: '16px',
-        background: 'linear-gradient(273.74deg, #FAE1E8 38.03%, #DF678B 80.94%, #3E1363 99.36%)',
-        borderRadius: '8px',
+        background: 'transparent',
+        borderRadius: '0',
         marginBottom: '24px',
-        boxSizing: 'border-box'
+        boxSizing: 'border-box',
+        width: '100%'
       }}>
         {/* Total Connectors */}
         <div style={{
@@ -701,22 +631,14 @@ export function KafkaConnect() {
           flexDirection: 'column',
           alignItems: 'flex-start',
           padding: '16px',
-          gap: '16px',
-          width: '258.5px',
-          height: '111px',
+          gap: '8px',
           background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
           borderRadius: '8px',
           flex: '1 1 0px'
         }}>
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#C5EAF0', borderRadius: '44px', boxSizing: 'border-box' }}>
-              <Database size={24} style={{ color: '#16ABC2', flex: 'none' }} />
-            </div>
-            <span style={{ width: '123px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Total Connectors</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
-            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.connectorCount ?? 0}</strong>
-          </div>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Total Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.connectorCount ?? 0}</strong>
         </div>
 
         {/* Running Connectors */}
@@ -726,22 +648,14 @@ export function KafkaConnect() {
           flexDirection: 'column',
           alignItems: 'flex-start',
           padding: '16px',
-          gap: '16px',
-          width: '258.5px',
-          height: '111px',
+          gap: '8px',
           background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
           borderRadius: '8px',
           flex: '1 1 0px'
         }}>
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#EBD4F7', borderRadius: '44px', boxSizing: 'border-box' }}>
-              <Plug size={24} style={{ color: '#8E77BB', flex: 'none' }} />
-            </div>
-            <span style={{ width: '182.5px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Running Connectors</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
-            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.runningConnectors ?? 0}</strong>
-          </div>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Running Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.runningConnectors ?? 0}</strong>
         </div>
 
         {/* Paused Connectors */}
@@ -751,22 +665,14 @@ export function KafkaConnect() {
           flexDirection: 'column',
           alignItems: 'flex-start',
           padding: '16px',
-          gap: '16px',
-          width: '258.5px',
-          height: '111px',
+          gap: '8px',
           background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
           borderRadius: '8px',
           flex: '1 1 0px'
         }}>
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#DEF0D6', borderRadius: '44px', boxSizing: 'border-box' }}>
-              <Pause size={24} style={{ color: '#E08E40', flex: 'none' }} />
-            </div>
-            <span style={{ width: '142px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Paused Connectors</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
-            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.pausedConnectors ?? 0}</strong>
-          </div>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Paused Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.pausedConnectors ?? 0}</strong>
         </div>
 
         {/* Failed Connectors */}
@@ -776,22 +682,14 @@ export function KafkaConnect() {
           flexDirection: 'column',
           alignItems: 'flex-start',
           padding: '16px',
-          gap: '16px',
-          width: '258.5px',
-          height: '111px',
+          gap: '8px',
           background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
           borderRadius: '8px',
           flex: '1 1 0px'
         }}>
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px', width: '100%', height: '36px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: '6px', gap: '8px', width: '36px', height: '36px', background: '#DEF0D6', borderRadius: '44px', boxSizing: 'border-box' }}>
-              <X size={24} style={{ color: '#EF4D5F', flex: 'none' }} />
-            </div>
-            <span style={{ width: '132px', height: '22px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', lineHeight: '22px', color: '#332849' }}>Failed Connectors</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '27px' }}>
-            <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '20px', lineHeight: '27px', color: '#332849' }}>{summary?.failedConnectors ?? 0}</strong>
-          </div>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Failed Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.failedConnectors ?? 0}</strong>
         </div>
       </div>
 
@@ -801,8 +699,8 @@ export function KafkaConnect() {
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'clusters' ? '2px solid #5B327F' : '2px solid transparent',
-            color: activeTab === 'clusters' ? '#5B327F' : '#818181',
+            borderBottom: activeTab === 'clusters' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'clusters' ? '#3E1363' : '#818181',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'clusters' ? 500 : 400,
             fontSize: '14px',
@@ -818,8 +716,8 @@ export function KafkaConnect() {
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'connectors' ? '2px solid #5B327F' : '2px solid transparent',
-            color: activeTab === 'connectors' ? '#5B327F' : '#818181',
+            borderBottom: activeTab === 'connectors' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'connectors' ? '#3E1363' : '#818181',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'connectors' ? 500 : 400,
             fontSize: '14px',
@@ -835,8 +733,8 @@ export function KafkaConnect() {
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'plugins' ? '2px solid #5B327F' : '2px solid transparent',
-            color: activeTab === 'plugins' ? '#5B327F' : '#818181',
+            borderBottom: activeTab === 'plugins' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'plugins' ? '#3E1363' : '#818181',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'plugins' ? 500 : 400,
             fontSize: '14px',
@@ -862,7 +760,20 @@ export function KafkaConnect() {
                   <td>{cluster.version}</td>
                   <td>{cluster.connectors}</td>
                   <td>{cluster.runningTasks}</td>
-                  <td>{summary?.connection || '-'}</td>
+                  <td>
+                    {summary?.connection ? (
+                      <a 
+                        href={summary.connection} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: '#3E1363', textDecoration: 'underline' }}
+                      >
+                        {summary.connection}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -135,6 +135,8 @@ public class ConfigController {
             Map<String, Object> staticFile = new HashMap<>();
             staticFile.put("id", "ext_" + topoNode.get("nodeId"));
             staticFile.put("nodeId", topoNode.get("nodeId"));
+            staticFile.put("serviceId", node.getId().toString());
+            staticFile.put("hostId", node.getHost());
             staticFile.put("label", role + " Properties (" + node.getHost() + ")");
             staticFile.put("path", configPath);
             staticFile.put("role", role);

@@ -1783,3 +1783,8 @@
   font-weight: 600;
   margin-right: 6px;
 }
+
+.ds-instance-select,
+.ds-compat-select {
+  width: 250px !important;
+}

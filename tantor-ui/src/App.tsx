@@ -1,4 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Hosts } from './pages/Hosts';
@@ -32,6 +33,33 @@ import { ClusterSecurity } from './pages/ClusterSecurity';
 import { usePermissions } from './hooks/usePermissions';
 import './App.css';
 
+/** Guard component: redirects External clusters away from Deployment Logs */
+function DeploymentLogsGuard() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [checked, setChecked] = useState(false);
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    if (!id) { setChecked(true); setAllowed(false); return; }
+    fetch(`/api/v1/ui/clusters/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.mode === 'EXTERNAL') {
+          navigate(`/clusters/${id}/overview`, { replace: true });
+        } else {
+          setAllowed(true);
+        }
+      })
+      .catch(() => setAllowed(true))
+      .finally(() => setChecked(true));
+  }, [id, navigate]);
+
+  if (!checked) return null;
+  if (!allowed) return null;
+  return <DeploymentLogs />;
+}
+
 function App() {
   const { isAdmin } = usePermissions();
 
@@ -51,7 +79,6 @@ function App() {
               <Route path="/cluster-deployment" element={<ClusterDeployment />} />
               <Route path="/external-clusters" element={<ExternalClusters />} />
               <Route path="/clusters/:id" element={<ClusterDetails />}>
-                <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="overview" element={<ClusterOverview />} />
                 <Route path="nodes" element={<ClusterNodes />} />
                 <Route path="brokers" element={<Brokers />} />
@@ -61,7 +88,7 @@ function App() {
                 <Route path="consumers" element={<Consumers />} />
                 <Route path="config" element={<ConfigEditor />} />
                 <Route path="actions" element={<ClusterActions />} />
-                <Route path="logs" element={<DeploymentLogs />} />
+                <Route path="logs" element={<DeploymentLogsGuard />} />
                 <Route path="security" element={<ClusterSecurity />} />
                 <Route path="schema-registry" element={<SchemaRegistry />} />
                 <Route path="kafka-connect" element={<KafkaConnect />} />

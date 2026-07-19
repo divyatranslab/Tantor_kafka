@@ -111,13 +111,12 @@ export function Brokers() {
 
   const ProgressBar = ({ value, max }: { value: number; max: number }) => {
     const pct = Math.min(100, Math.max(0, (value / max) * 100));
-    const colorClass = pct > 80 ? 'bg-red' : pct > 60 ? 'bg-yellow' : 'bg-blue';
     return (
       <div
         className="progress-bar-container"
         title={`${value.toFixed(1)} / ${max.toFixed(1)}`}
       >
-        <div className={`progress-bar-fill ${colorClass}`} style={{ width: `${pct}%` }} />
+        <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
       </div>
     );
   };
@@ -133,7 +132,6 @@ export function Brokers() {
       <div className="brokers-overview-gradient">
         <div className="metric-card figma-card">
           <div className="card-header">
-            <div className="metric-icon figma-icon-blue"><Database size={16} /></div>
             <span className="label">Total Ingestion</span>
           </div>
           <div className="card-body">
@@ -144,7 +142,6 @@ export function Brokers() {
 
         <div className="metric-card figma-card">
           <div className="card-header">
-            <div className="metric-icon figma-icon-purple"><Share2 size={16} /></div>
             <span className="label">Active Broker</span>
           </div>
           <div className="card-body">
@@ -155,12 +152,11 @@ export function Brokers() {
 
         <div className="metric-card figma-card">
           <div className="card-header">
-            <div className="metric-icon figma-icon-green"><CheckCircle2 size={16} /></div>
             <span className="label">Avg. Cluster CPU</span>
           </div>
           <div className="card-body">
             <span className="value">{agg.avgCpu.toFixed(1)}%</span>
-            <span className="subtext">{brokers.length} Across Node{brokers.length !== 1 ? 's' : ''}</span>
+            <span className="subtext">0 Across Node</span>
           </div>
         </div>
       </div>
