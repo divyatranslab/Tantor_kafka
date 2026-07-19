@@ -462,8 +462,8 @@
 }
 
 /* Figma-aligned cluster detail shell */
-.cluster-details-page { padding: 20px; }
-.cluster-details-card { padding: 16px; border-radius: 8px; box-shadow: none; }
+.cluster-details-page { padding: 16px; }
+.cluster-details-card { min-height: calc(100vh - 104px); padding: 12px; border-radius: 8px; box-shadow: none; }
 .cluster-detail-header { display: flex; align-items: flex-start; justify-content: space-between; }
 .cluster-detail-header .breadcrumb { margin: 0; gap: 6px; font-size: 11px; }
 .cluster-detail-header .breadcrumb-separator { display: flex; align-items: center; }
@@ -640,13 +640,32 @@
 
 /* Compact Figma proportions with the merged health-refresh behavior. */
 .cd-details-header { margin-bottom: 0; }
-.cd-breadcrumbs { gap: 6px; margin-bottom: 10px; font-size: 11px; line-height: 16px; }
+.cd-breadcrumbs { gap: 6px; margin-bottom: 10px; font-size: 14px; line-height: 19px; }
 .cd-details-title-row { height: auto; margin-top: 0; }
 .cd-details-title-left { gap: 5px; }
 .cd-details-title-left .cluster-back-btn { padding: 0; color: #818181; }
-.cd-details-title-left h1 { display: flex; align-items: center; gap: 6px; color: #332849; font-size: 14px; line-height: 20px; font-weight: 500; }
+.cd-details-title-left h1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 100%;
+  letter-spacing: 0;
+}
 .cd-details-actions { gap: 6px; }
-.cd-status-badge { width: auto; min-width: 47px; height: 20px; padding: 3px 7px; font-size: 9px; line-height: 12px; }
+.cd-status-badge { width: auto; min-width: 47px; height: 24px; padding: 4px 8px; font-size: 12px; line-height: 16px; }
 .cd-status-badge.success { width: auto; }
+.cd-status-badge.success::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #069B68;
+}
 .cd-details-refresh-btn { width: 28px; height: 28px; padding: 5px; border-radius: 6px; }
 .cd-details-subtitle { margin-top: 4px; font-size: 11px; line-height: 16px; }

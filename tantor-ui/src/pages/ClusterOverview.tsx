@@ -238,10 +238,8 @@ export function ClusterOverview() {
               <div className="overview-value">{uptime.controllerType || '-'}</div>
             </div>
           </div>
-        </div>
-
-        <div className="overview-table-wrap overview-brokers-table">
-          <table className="overview-table">
+          <div className="overview-table-wrap overview-brokers-table">
+            <table className="overview-table">
             <thead>
               <tr>
                 <th>Broker ID</th>
@@ -270,7 +268,8 @@ export function ClusterOverview() {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
         </div>
       </section>
 

@@ -263,25 +263,8 @@ export function ClusterDetails() {
               <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
                 {runtimeLabel}
               </div>
-              <button 
-                className="cd-details-refresh-btn" 
-                onClick={() => {
-                  fetch(`/api/v1/ui/clusters/${id}`)
-                    .then(res => res.ok ? res.json() : Promise.reject())
-                    .then(setCluster)
-                    .catch(() => {});
-                }}
-                title="Refresh Health"
-              >
-                <RefreshCw size={16} />
-              </button>
             </div>
           </div>
-          
-          {/* Subtitle */}
-          <p className="cd-details-subtitle">
-            {`Kafka ${cluster.kafkaVersion || '-'} • ${cluster.nodeCount || 0} nodes • ${cluster.mode || 'INTERNAL'}`}
-          </p>
         </header>
 
         <div className="cluster-tabs">
