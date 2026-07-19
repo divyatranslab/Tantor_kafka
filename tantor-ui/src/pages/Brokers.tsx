@@ -167,7 +167,7 @@ export function Brokers() {
 
       {/* ── Controls ── */}
       <div className="brokers-list-header">
-        <h2 className="brokers-list-title">Brokers List</h2>
+        <h2 className="brokers-list-title cluster-section-heading">Brokers List</h2>
         <div className="brokers-controls figma-controls">
           <div className="search-wrapper">
             <Search size={16} className="search-icon" />

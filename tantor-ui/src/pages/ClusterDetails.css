@@ -460,3 +460,47 @@
 .cluster-content {
   margin-top: 1rem;
 }
+
+/* Figma-aligned cluster detail shell */
+.cluster-details-page { padding: 20px; }
+.cluster-details-card { padding: 16px; border-radius: 8px; box-shadow: none; }
+.cluster-detail-header { display: flex; align-items: flex-start; justify-content: space-between; }
+.cluster-detail-header .breadcrumb { margin: 0; gap: 6px; font-size: 11px; }
+.cluster-detail-header .breadcrumb-separator { display: flex; align-items: center; }
+.cluster-health-stack { gap: 4px; }
+.cluster-detail-header .status-badge { padding: 3px 7px; font-size: 9px; border: 0; }
+.cluster-detail-header .agent-status-badge { min-height: 18px; padding: 2px 7px; font-size: 9px; }
+.cluster-title-row { display: flex; align-items: center; gap: 5px; margin-top: 10px; }
+.cluster-title-row .cluster-back-btn { padding: 0; color: #818181; }
+.cluster-title-row .cluster-title { display: flex; align-items: center; gap: 6px; color: #332849; font-size: 14px; line-height: 20px; font-weight: 500; }
+.cluster-title-info { color: #bdbdbd; }
+.cluster-details-card > .cluster-tabs { margin-top: 12px; }
+.cluster-details-card .cluster-tabs-scroll-wrapper { gap: 2px; }
+.cluster-details-card .cluster-tabs nav a,
+.cluster-details-card .disabled-tab {
+  height: 38px;
+  padding: 8px 12px;
+  border-bottom-width: 2px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 100%;
+  letter-spacing: 0;
+  text-align: center;
+}
+.cluster-details-card .cluster-tabs nav a.active { border-bottom-width: 2px; border-radius: 5px 5px 0 0; }
+.cluster-details-card .cluster-tabs-dropdown-container { padding-bottom: 0; }
+.cluster-details-card .cluster-tabs-dropdown-trigger { width: 25px; height: 25px; }
+.cluster-details-card > .cluster-content { margin-top: 12px; }
+
+.cluster-content .cluster-section-heading {
+  margin: 0;
+  color: #5B327F;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 100%;
+  letter-spacing: 0;
+}

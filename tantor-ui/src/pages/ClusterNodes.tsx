@@ -73,7 +73,7 @@ export function ClusterNodes() {
   return (
     <div className="cluster-nodes-page animate-fade-in">
       <header className="page-header">
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 500, color: '#3E1363', margin: 0 }}>Cluster Nodes</h2>
+        <h2 className="cluster-section-heading">Cluster Nodes</h2>
       </header>
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">

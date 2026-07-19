@@ -262,7 +262,7 @@ export function Topics() {
       <div className="topics-title-row">
         <div>
           <p className="topics-eyebrow">Kafka resources</p>
-          <h2>Topics</h2>
+          <h2 className="cluster-section-heading">Topics</h2>
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">

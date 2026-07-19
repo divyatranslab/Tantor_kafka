@@ -666,7 +666,7 @@ export function SchemaRegistry() {
       {view === 'list' && (
         <>
           <div className="ds-header ds-sr-header">
-            <h2>Schema Registry</h2>
+            <h2 className="cluster-section-heading">Schema Registry</h2>
             <div className="ds-actions">
               <div className="ds-selectors-group">
                 {/* ── Instance Selector ── */}

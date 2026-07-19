@@ -86,32 +86,12 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
-  const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
-  const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
-  const agentLabel = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'Agent connected';
-      case 'PARTIAL':
-        return 'Agent partial';
-      case 'NOT_CONNECTED':
-        return 'Agent not connected';
-      default:
-        return 'Agent not connected';
-    }
-  })();
-  const agentClass = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'connected';
-      case 'PARTIAL':
-        return 'partial';
-      case 'NOT_CONNECTED':
-        return 'not-connected';
-      default:
-        return 'not-connected';
-    }
-  })();
+  const runtimeLabel = cluster.mode === 'EXTERNAL'
+    ? 'External'
+    : (cluster.runtimeStatusLabel || cluster.status);
+  const runtimeClass = cluster.mode === 'EXTERNAL'
+    ? 'success'
+    : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
 
   if (isLogsView) {
     return (
@@ -173,51 +153,26 @@ export function ClusterDetails() {
   return (
     <div className="cluster-details-page animate-fade-in">
       <div className="cluster-details-card">
-        <header className="page-header" style={{ borderBottom: 'none', padding: '0 0 16px 0', marginBottom: '20px' }}>
-          <div className="breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#818181', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', marginBottom: '12px' }}>
-            <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer' }}>Cluster</span>
-            <span style={{ color: '#818181', display: 'flex', alignItems: 'center' }}><ChevronRight size={14} /></span>
-            <span style={{ color: '#332849', fontWeight: 500 }}>{cluster.name}</span>
+        <header className="cluster-detail-header">
+          <div className="breadcrumb">
+            <span onClick={() => navigate('/clusters')} className="breadcrumb-link">Cluster</span>
+            <span className="breadcrumb-separator"><ChevronRight size={12} /></span>
+            <span className="breadcrumb-active">{cluster.name}</span>
           </div>
           <div className="cluster-health-stack">
             <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
               <div className="status-dot"></div> {runtimeLabel}
             </div>
-            {cluster.mode === 'EXTERNAL' && (
-              <div className={`agent-status-badge ${agentClass}`}>
-                {agentLabel}
-              </div>
-            )}
           </div>
         </header>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-            <button 
-              onClick={() => navigate('/clusters')} 
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                cursor: 'pointer', 
-                padding: 0, 
-                display: 'flex', 
-                alignItems: 'center', 
-                color: '#818181' 
-              }}
-            >
-              <ChevronLeft size={24} style={{ strokeWidth: 1.5 }} />
+          <div className="cluster-title-row">
+            <button onClick={() => navigate('/clusters')} className="cluster-back-btn" aria-label="Back to clusters">
+              <ChevronLeft size={20} strokeWidth={1.5} />
             </button>
-            <h1 style={{ 
-              fontFamily: 'Satoshi, sans-serif', 
-              fontWeight: 500, 
-              fontSize: '24px', 
-              color: '#332849', 
-              margin: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
+            <h1 className="cluster-title">
               {cluster.name}
-              <Info size={22} style={{ color: '#CCCCCC', cursor: 'pointer', strokeWidth: 1.5 }} />
+              <Info size={15} className="cluster-title-info" strokeWidth={1.5} />
             </h1>
           </div>
 

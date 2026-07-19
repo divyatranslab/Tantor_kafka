@@ -1,201 +1,28 @@
-.overview-dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 5px 0 0 0;
-  background: transparent;
-  min-height: 100%;
-}
-
-.overview-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-header-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.overview-section h2 {
-  margin: 0;
-  color: #3E1363;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 16px;
-  font-weight: 500;
-  line-height: 100%;
-  letter-spacing: 0%;
-}
-
-.overview-export {
-  border: 1px solid #3E1363;
-  background: #ffffff;
-  color: #3E1363;
-  border-radius: 4px;
-  height: 32px;
-  padding: 0 16px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 0.15s;
-}
-
-.overview-export:hover {
-  background: #FAF8FF;
-}
-
-.overview-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: #F9F9F9;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.overview-grid {
-  display: grid;
-  gap: 8px;
-}
-
-.overview-grid.identity-grid {
-  grid-template-columns: repeat(6, 1fr);
-}
-
-.overview-grid.uptime-grid {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.overview-grid.partitions-grid {
-  grid-template-columns: repeat(5, 1fr);
-}
-
-.overview-item {
-  background: #FFFFFF;
-  border-radius: 8px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 10px;
-  min-height: 81px;
-}
-
-.overview-label {
-  color: #818181;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.overview-value {
-  color: #23252D;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  word-break: break-all;
-}
-
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-left: 6px;
-}
-
-.status-dot.green {
-  background: #96CF7B;
-}
-
-.overview-table-wrap {
-  background: #ffffff;
-  border: 1px solid #CCCCCC;
-  border-radius: 8px;
-  overflow-x: auto;
-  margin-top: 24px;
-}
-
-.overview-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.overview-table th {
-  padding: 16px;
-  background: #FFFFFF;
-  border-bottom: 1px solid #CCCCCC;
-  color: #332849;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.overview-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #CCCCCC;
-  color: #23252D;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  vertical-align: middle;
-}
-
-.overview-table tr:last-child td {
-  border-bottom: none;
-}
-
-.overview-broker-id {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #23252D;
-  font-weight: 400;
-}
-
-.overview-alert {
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-}
-
-.overview-alert.error {
-  background: #fcebeb;
-  border: 1px solid #e8b4b4;
-  color: #791f1f;
-}
-
-.overview-alert.warning {
-  background: #fff7e8;
-  border: 1px solid #edd09a;
-  color: #7a4d10;
-}
-
-@media (max-width: 1100px) {
-  .overview-grid,
-  .overview-grid.partitions-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 768px) {
-  .overview-grid,
-  .overview-grid.partitions-grid {
-    grid-template-columns: 1fr;
-  }
-}
+.overview-dashboard { display: flex; flex-direction: column; gap: 12px; min-height: 100%; color: #332849; }
+.overview-section { display: flex; flex-direction: column; }
+.overview-card, .overview-band { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; background: #fafafa; border-radius: 7px; }
+.section-header-row { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.overview-section h2 { margin: 0; color: #5b327f; font: 500 16px/100% 'Satoshi', sans-serif; letter-spacing: 0; }
+.overview-export { height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #5b327f; border-radius: 5px; background: #fff; color: #5b327f; cursor: pointer; font: 500 12px/1 'Satoshi', sans-serif; }
+.overview-export:hover { background: #fcf8ff; }
+.overview-export svg { width: 12px; height: 12px; }
+.overview-grid { display: grid; gap: 6px; }
+.overview-grid.identity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.overview-grid.uptime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.overview-grid.partitions-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.overview-item { min-width: 0; min-height: 47px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; gap: 3px; box-sizing: border-box; background: #fff; border-radius: 6px; }
+.overview-label { display: flex; align-items: center; color: #8a8a8a; font: 400 12px/16px 'Satoshi', sans-serif; }
+.overview-value { overflow: hidden; color: #332849; font: 500 12px/16px 'Satoshi', sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.status-dot.green { width: 5px; height: 5px; margin-left: 5px; display: inline-block; border-radius: 50%; background: #85c96f; }
+.overview-table-wrap { width: 100%; overflow-x: auto; box-sizing: border-box; border: 1px solid #d4d4d4; border-radius: 6px; background: #fff; }
+.overview-brokers-table { margin-top: 0; }
+.overview-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.overview-table th, .overview-table td { height: 36px; padding: 0 12px; box-sizing: border-box; border-bottom: 1px solid #d4d4d4; text-align: left; white-space: nowrap; }
+.overview-dashboard .overview-table th { color: #332849; font: 500 12px/16px 'Satoshi', sans-serif; }
+.overview-dashboard .overview-table td { color: #4b4654; font: 400 12px/16px 'Satoshi', sans-serif; }
+.overview-table tr:last-child td { border-bottom: 0; }
+.overview-alert { padding: 9px 11px; display: flex; align-items: center; gap: 8px; border-radius: 7px; font: 400 11px/16px 'Satoshi', sans-serif; }
+.overview-alert.error { border: 1px solid #e8b4b4; background: #fcebeb; color: #791f1f; }
+.overview-alert.warning { border: 1px solid #edd09a; background: #fff7e8; color: #7a4d10; }
+@media (max-width: 1100px) { .overview-grid.partitions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .overview-grid.identity-grid, .overview-grid.uptime-grid, .overview-grid.partitions-grid { grid-template-columns: 1fr; } }

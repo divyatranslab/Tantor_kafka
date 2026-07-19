@@ -83,7 +83,7 @@ export function Partitions() {
   return (
     <div className="partitions-tab animate-fade-in" style={{ width: '100%' }}>
       <div className="topics-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#5B327F', margin: 0 }}>Partitions Dashboard</h2>
+        <h2 className="cluster-section-heading">Partitions Dashboard</h2>
         
         {/* -- Figma Toolbar Search Bar & Refresh Button -- */}
         <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>

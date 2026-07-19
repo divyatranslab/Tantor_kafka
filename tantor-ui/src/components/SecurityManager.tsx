@@ -135,7 +135,7 @@ export default function SecurityManager({ clusterId }: Props) {
     <div className="security-manager">
       <div className="section-header" style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
         <div>
-          <h2><Shield size={20} style={{display:'inline',marginRight:8,verticalAlign:'text-bottom'}} /> Access Control Lists (ACLs)</h2>
+          <h2 className="cluster-section-heading"><Shield size={20} style={{display:'inline',marginRight:8,verticalAlign:'text-bottom'}} /> Access Control Lists (ACLs)</h2>
           <p className="mono-muted">Manage fine-grained permissions for Kafka resources.</p>
         </div>
         <div className="header-actions">

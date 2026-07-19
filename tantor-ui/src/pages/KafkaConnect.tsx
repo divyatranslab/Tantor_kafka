@@ -348,7 +348,7 @@ export function KafkaConnect() {
   return (
     <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
       <div className="ds-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', width: '100%' }}>
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#5B327F', margin: 0 }}>Kafka Connect</h2>
+        <h2 className="cluster-section-heading">Kafka Connect</h2>
         <div className="ds-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* ── Instance switcher ── */}
           {savedConnections.length > 0 && (
