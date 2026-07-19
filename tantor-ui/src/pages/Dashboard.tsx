@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertTriangle, Bot, Database, ExternalLink,
-  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X
+  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck
 } from 'lucide-react';
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
 import './Dashboard.css';
+import { NewClusterModal } from '../components/NewClusterModal';
 
 interface DashboardSummary {
   totalHosts: number;
@@ -144,6 +146,20 @@ const STATUS_COLORS: Record<string, string> = {
   UNKNOWN: '#8b8982',
 };
 
+const renderTaskLegend = (props: any) => {
+  const { payload } = props;
+  return (
+    <div className="task-legend">
+      {payload.map((entry: any, index: number) => (
+        <span key={`item-${index}`} className="task-legend-item">
+          <i style={{ background: entry.color }} />
+          {entry.value}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 import { useAuth } from '../contexts/AuthContext';
 import { ClusterDeployment } from './ClusterDeployment';
 
@@ -223,14 +239,7 @@ export function Dashboard() {
   ], [summary]);
 
   const serviceIcon = (type: string) => {
-    if (type === 'agent') return Bot;
-    if (type === 'kafka') return Network;
-    if (type === 'external') return ExternalLink;
-    if (type === 'parcel') return Database;
-    if (type === 'task') return Activity;
-    if (type === 'cleanup') return RefreshCw;
-    if (type === 'storage') return HardDrive;
-    return ShieldCheck;
+    return FileCheck;
   };
 
   return (
@@ -274,7 +283,7 @@ export function Dashboard() {
       {error && <div className="db-banner error">{error}</div>}
 
       <section className="db-cluster-health">
-        <PanelTitle title="Cluster Health" detail={`${dashboard.clusterHealth.length} tracked clusters`} />
+        <PanelTitle title="Cluster Health" detail={<Info size={16} style={{ cursor: 'pointer', opacity: 0.7 }} />} />
         {dashboard.clusterHealth.length ? (
           <div className="db-cluster-list">
             {dashboard.clusterHealth.map(cluster => (
@@ -329,18 +338,26 @@ export function Dashboard() {
 
       <section className="db-main-grid lower">
         <article className="db-panel large">
-          <PanelTitle title="Task Activity" detail="Last seven days" />
+          <PanelTitle
+            title="Task Activity"
+            detail={
+              <select className="db-panel-select">
+                <option>Last 7 days</option>
+                <option>Last 30 days</option>
+              </select>
+            }
+          />
           <ResponsiveContainer width="100%" height={235}>
-            <AreaChart data={dashboard.taskTimeline} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
+            <LineChart data={dashboard.taskTimeline} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
               <CartesianGrid stroke="#eeeae3" vertical={false} />
               <XAxis dataKey="label" stroke="#8b8982" fontSize={11} tickLine={false} />
               <YAxis allowDecimals={false} stroke="#8b8982" fontSize={11} tickLine={false} />
               <Tooltip />
-              <Legend />
-              <Area type="monotone" dataKey="success" stackId="1" stroke="#1D9E75" fill="#dff3e8" name="Success" />
-              <Area type="monotone" dataKey="running" stackId="1" stroke="#378ADD" fill="#e4f0fb" name="Running" />
-              <Area type="monotone" dataKey="failed" stackId="1" stroke="#A32D2D" fill="#f7dddd" name="Failed" />
-            </AreaChart>
+              <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
+              <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
+              <Line type="monotone" dataKey="running" stroke="#FBC02D" strokeWidth={2} dot={false} name="Running" />
+              <Line type="monotone" dataKey="success" stroke="#1D9E75" strokeWidth={2} dot={false} name="Success" />
+            </LineChart>
           </ResponsiveContainer>
         </article>
 
@@ -348,7 +365,7 @@ export function Dashboard() {
           <PanelTitle title="Services" detail="" />
           <div className="tab-headers">
             <span className="active-tab">Running ({summary.runningServices})</span>
-            <span>Failed ({summary.failedServices})</span>
+            <span>Filled({summary.failedServices})</span>
           </div>
           <div className="tab-content">
             <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
@@ -393,7 +410,7 @@ export function Dashboard() {
         </article>
       </section>
 
-      {showDeploymentModal && (
+      {showDeploymentModal && createPortal(
         <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
           {deploymentStep === 'choice' ? (
             <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
@@ -406,24 +423,24 @@ export function Dashboard() {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
                 </button>
               </div>
-              
+
               <div className="cd-deployment-cards-wrapper">
                 <div className="cd-deployment-choice-grid">
                   <div className="cd-deployment-card">
                     <div className="cd-deployment-card-content">
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z"/>
+                        <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z" />
                       </svg>
                       <h3>Create your Cluster</h3>
                       <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                     </div>
                     <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setDeploymentStep('deploy'); }}>Create</button>
                   </div>
-                  
+
                   <div className="cd-deployment-card">
                     <div className="cd-deployment-card-content">
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z"/>
+                        <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z" />
                       </svg>
                       <h3>Existing Cluster</h3>
                       <p>Connect or discover an external Kafka cluster</p>
@@ -443,13 +460,14 @@ export function Dashboard() {
               </div>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
 }
 
-function PanelTitle({ title, detail }: { title: string; detail: string }) {
+function PanelTitle({ title, detail }: { title: string; detail?: string | React.ReactNode }) {
   return (
     <div className="db-panel-title">
       <div>
@@ -501,12 +519,11 @@ function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: st
         const Icon = iconFor(row.type);
         return (
           <div key={`${row.name}-${row.status}`} className="db-service-row">
-            <div className={`db-service-icon ${row.status.toLowerCase()}`}><Icon size={15} /></div>
+            <div className={`db-service-icon ${row.status.toLowerCase()}`}><Icon size={18} strokeWidth={2} /></div>
             <div>
               <strong>{row.name}</strong>
               <small>{row.description}</small>
             </div>
-            <span className={`db-service-state ${row.status.toLowerCase()}`}>{row.status}</span>
           </div>
         );
       })}

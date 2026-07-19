@@ -135,9 +135,11 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: 6px 8px;
+  padding: 4px 8px;
   gap: 10px;
-  height: 28px;
+  height: 24px;
+  width: fit-content;
+  min-width: 59px;
   border-radius: 100px;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
@@ -153,8 +155,8 @@
 }
 
 .badge-failed {
-  background: rgba(239, 68, 68, 0.15); /* Estimated from Figma failed color style */
-  color: #ef4444;
+  background: rgba(242, 118, 167, 0.3);
+  color: #EF4D5F;
 }
 
 .badge-in-progress {

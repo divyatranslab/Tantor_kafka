@@ -12,12 +12,18 @@
 .navbar-left {
   display: flex;
   align-items: center;
-  width: 200px; /* Aligns with sidebar boundary */
+  width: 200px;
+  /* Aligns with sidebar boundary */
 }
 
 
-.search-icon {
+.search-container .search-icon {
   color: #818181;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+  position: static !important;
 }
 
 .search-input {
@@ -41,11 +47,12 @@
 .search-container {
   display: flex;
   align-items: center;
-  background: #FAFAFA;
-  border: 1px solid #CCCCCC;
+  background: #ffffff;
+  border: 2px solid #E5E5E5;
   border-radius: 8px;
-  padding: 6px 12px;
-  width: 240px; /* Precise design search input width */
+  padding: 8px 12px;
+  width: 248px;
+  height: 40px;
   box-sizing: border-box;
   gap: 8px;
 }
@@ -92,5 +99,6 @@
   width: 140px;
   height: 29px;
   object-fit: contain;
-  filter: none; /* Removed filter so native colors of Tantor-pink-logo.png display correctly */
+  filter: none;
+  /* Removed filter so native colors of Tantor-pink-logo.png display correctly */
 }

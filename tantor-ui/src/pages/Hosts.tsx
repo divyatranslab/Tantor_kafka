@@ -1,17 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Trash2, X, Play, Settings, Plus } from 'lucide-react';
+import { RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './Hosts.css';
-
-const CustomRefreshIcon = ({ size = 20, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="M 12 5 A 7 7 0 0 1 17 17" />
-    <path d="M 18 13 L 17 17 L 21 16" />
-    <path d="M 12 19 A 7 7 0 0 1 7 7" />
-    <path d="M 6 11 L 7 7 L 3 8" />
-  </svg>
-);
-
 
 export function Hosts() {
   const { canManage } = usePermissions();
@@ -20,34 +10,16 @@ export function Hosts() {
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
-  const [manualLoading, setManualLoading] = useState(false);
-  const [activeMenuHostId, setActiveMenuHostId] = useState<string | null>(null);
 
-  // Close menu when clicking anywhere else
-  useEffect(() => {
-    const handleGlobalClick = () => {
-      setActiveMenuHostId(null);
-    };
-    window.addEventListener('click', handleGlobalClick);
-    return () => window.removeEventListener('click', handleGlobalClick);
-  }, []);
-
-  const fetchHosts = async (manual = false) => {
-    if (manual) setManualLoading(true);
+  const fetchHosts = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/ui/hosts');
-      if (res.ok) {
-        setHosts(await res.json());
-      } else {
-        setHosts([]);
-      }
+      if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
-      setHosts([]);
     }
     setLoading(false);
-    if (manual) setManualLoading(false);
   };
 
   const deleteHost = async (id: string) => {
@@ -164,8 +136,8 @@ export function Hosts() {
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
-          <button className="btn icon-only round" onClick={() => fetchHosts(true)} title="Sync inventory">
-            <CustomRefreshIcon size={18} color="#818181" className={manualLoading ? 'spin' : ''} />
+          <button className="btn icon-only round" onClick={fetchHosts} title="Sync inventory">
+            <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
           {canManage && (
             <button className="btn btn-primary-action" style={{ background: '#3E1363', borderColor: '#3E1363' }} onClick={() => setShowEnrollModal(true)}>
@@ -204,21 +176,20 @@ export function Hosts() {
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: '110px' }}>Status</th>
-              <th style={{ width: '120px' }}>Availablity</th>
-              <th style={{ width: '155px' }}>Agent name</th>
-              <th style={{ width: '155px' }}>Host name</th>
-              <th style={{ width: '115px' }}>IP address</th>
+              <th style={{ width: '100px' }}>Status</th>
+              <th style={{ width: '110px' }}>Availability</th>
+              <th style={{ width: '160px' }}>Agent name</th>
+              <th style={{ width: '160px' }}>Host name</th>
+              <th style={{ width: '120px' }}>IP address</th>
               <th style={{ width: '160px' }}>Agent</th>
-              <th style={{ width: '130px' }}>CPU</th>
-              <th style={{ width: '130px' }}>Memory</th>
-              <th style={{ width: '40px' }}></th>
+              <th style={{ width: '140px' }}>CPU</th>
+              <th style={{ width: '140px' }}>Memory</th>
             </tr>
           </thead>
           <tbody>
             {loading && activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={8}>
                   <div className="empty-state">
                     {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
@@ -230,29 +201,32 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
-              const statusKey = (host.agentStatus ?? 'offline').toLowerCase();
-              const availKey = host.availability
-                ?? (host.status === 'OFFLINE' ? 'unavailable'
-                  : host.status === 'OCCUPIED_INTERNAL' || host.status === 'OCCUPIED_EXTERNAL' ? 'occupied'
-                  : 'available');
-              const availLabel = availKey === 'unavailable' ? 'Unavailable'
-                : availKey === 'critical' ? 'Critical'
-                : availKey === 'occupied' ? 'Occupied'
-                : 'Available';
               return (
                 <tr key={host.id}>
                   <td>
-                    <span className={`host-status-badge ${statusKey}`}>
-                      <span className="status-dot" />
-                      {host.agentStatus
-                        ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase()
-                        : 'Offline'}
+                    <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
+                      {(host.agentStatus ?? 'OFFLINE').toUpperCase() === 'ONLINE' && (
+                        <span className="status-dot"></span>
+                      )}
+                      <span>
+                        {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
+                      </span>
                     </span>
                   </td>
                   <td>
-                    <span className={`availability-badge ${availKey}`}>
-                      {availLabel}
-                    </span>
+                    <div className="availability-cell">
+                      <span className={`availability-badge ${
+                        host.status === 'OFFLINE' ? 'unavailable' :
+                        host.status === 'CRITICAL' ? 'critical' :
+                        ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
+                      }`}>
+                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
+                         host.status === 'OFFLINE' ? 'Unavailable' :
+                         host.status === 'REMOVED' ? 'Removed' :
+                         host.status === 'CRITICAL' ? 'Critical' : 'Available'}
+                      </span>
+                    </div>
                   </td>
                   <td>{host.agentName ?? '-'}</td>
                   <td>{host.hostname}</td>
@@ -279,37 +253,6 @@ export function Hosts() {
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <div className="menu-anchor" onClick={e => e.stopPropagation()}>
-                      <button
-                        className="btn-row-menu"
-                        title="More actions"
-                        onClick={() => setActiveMenuHostId(activeMenuHostId === host.id ? null : host.id)}
-                      >
-                        ⋮
-                      </button>
-                      {activeMenuHostId === host.id && (
-                        <div className="host-action-menu">
-                          <button onClick={() => alert('Rolling restart triggered')}>
-                            <CustomRefreshIcon size={16} color="#818181" />
-                            Rolling restart
-                          </button>
-                          <button onClick={() => alert('Configuration change')}>
-                            <Settings size={16} />
-                            Configuration change
-                          </button>
-                          <button onClick={() => alert('Add node')}>
-                            <Plus size={16} />
-                            Add node
-                          </button>
-                          <button onClick={() => { if (window.confirm('Delete this node?')) deleteHost(host.id); }} style={{ color: '#DC2626' }}>
-                            <Trash2 size={16} />
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </td>
                 </tr>
               );
             })}
@@ -334,13 +277,13 @@ export function Hosts() {
                   <h3>No new nodes discovered</h3>
                   <p>Run the agent script on a VM to discover it.</p>
                 </div>
+                <hr className="modal-divider" />
                 <div className="modal-footer right">
-                  <button className="btn-modal-cancel" onClick={() => setShowEnrollModal(false)}>Close</button>
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
                 </div>
               </>
             ) : (
               <>
-                <hr className="modal-divider" />
                 <div className="modal-section-header">
                   <p className="modal-section-title">Discovered Nodes</p>
                   <label className="pending-select-all">
@@ -348,7 +291,6 @@ export function Hosts() {
                     <span>Select all</span>
                   </label>
                 </div>
-                <hr className="modal-divider" style={{ marginTop: 0 }} />
                 {pendingHosts.map(host => (
                   <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
                     <label className="pending-node-select" onClick={event => event.stopPropagation()}>
@@ -363,15 +305,16 @@ export function Hosts() {
                       <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                     </div>
                     <div className="pending-node-actions">
-                      <button className="btn-trash" title="Reject &amp; remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
+                      <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
                         <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
                 ))}
+                <hr className="modal-divider" />
                 <div className="modal-footer right">
-                  <button className="btn-modal-cancel" onClick={() => setShowEnrollModal(false)}>Cancel</button>
-                  <button className="btn-modal-connect" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
+                  <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
                     {connectingAgents ? 'Connecting...' : 'Connect'}
                   </button>
                 </div>
