@@ -565,7 +565,7 @@
 .availability-badge.available,
 .availability-badge.unavailable {
   background: rgba(22, 171, 194, 0.25);
-  color: #16ABC2;
+  color: #c21616;
 }
 
 .availability-badge.occupied {
