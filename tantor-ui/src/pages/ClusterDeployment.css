@@ -326,7 +326,7 @@ input:checked+.cd-toggle-slider {
 }
 
 input:checked+.cd-toggle-slider:before {
-  transform: translateX(22px);
+  transform: translateX(16px);
 }
 
 
