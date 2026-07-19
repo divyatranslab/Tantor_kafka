@@ -205,16 +205,26 @@ export function Hosts() {
                 <tr key={host.id}>
                   <td>
                     <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
-                      {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
+                      {(host.agentStatus ?? 'OFFLINE').toUpperCase() === 'ONLINE' && (
+                        <span className="status-dot"></span>
+                      )}
+                      <span>
+                        {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
+                      </span>
                     </span>
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${host.status === 'OFFLINE' ? 'unavailable' : 'available'}`}>
+                      <span className={`availability-badge ${
+                        host.status === 'OFFLINE' ? 'unavailable' :
+                        host.status === 'CRITICAL' ? 'critical' :
+                        ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
+                      }`}>
                         {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
                          host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
                          host.status === 'OFFLINE' ? 'Unavailable' :
-                         host.status === 'REMOVED' ? 'Removed' : 'Available'}
+                         host.status === 'REMOVED' ? 'Removed' :
+                         host.status === 'CRITICAL' ? 'Critical' : 'Available'}
                       </span>
                     </div>
                   </td>

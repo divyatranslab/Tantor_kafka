@@ -301,11 +301,11 @@ export function Clusters() {
         <p>Deploy and manage your Tantor Kafka environments</p>
       </div>
       <div className="header-actions">
-        <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
-          <Plus size={16} /> Add Cluster
-        </button>
         <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
+        </button>
+        <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
+          <Plus size={16} /> Add Cluster
         </button>
       </div>
     </header>

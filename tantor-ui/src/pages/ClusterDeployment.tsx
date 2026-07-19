@@ -1375,14 +1375,29 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               )}
               <label className="cd-field">
                 <span>Kafka Version</span>
-                <select value={kafkaVersion} onChange={e => changeKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
-                  {availableVersions.map(version => (
-                    <option key={version.version} value={version.version}>
-                      {version.version} ({version.size_mb} MB)
-                    </option>
-                  ))}
-                  {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
-                </select>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <select 
+                    value={kafkaVersion} 
+                    onChange={e => changeKafkaVersion(e.target.value)} 
+                    disabled={isAddNodeMode || loadingVersions || versions.length === 0}
+                    style={{
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      color: '#818181',
+                      paddingRight: '40px'
+                    }}
+                  >
+                    {availableVersions.map(version => (
+                      <option key={version.version} value={version.version}>
+                        {version.version} ({version.size_mb} MB)
+                      </option>
+                    ))}
+                    {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
+                  </select>
+                  <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: '#818181' }}>
+                    <ChevronDown size={20} />
+                  </div>
+                </div>
               </label>
               <div className="cd-field">
                 <span>Environment (optional)</span>
@@ -1450,47 +1465,48 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </button>
             </div>
 
-            <div className="cd-node-picker" ref={dropdownRef}>
-              <button className="cd-node-trigger" onClick={() => {
-                setNodeDropdownOpen(open => !open);
-              }}>
-                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
-                <ChevronDown size={16} />
-              </button>
-              {nodeDropdownOpen && (
-                <div className="cd-node-menu">
-                  <div className="cd-search">
-                    <Search size={15} />
-                    <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
+            <div className="cd-node-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch', marginBottom: '16px' }}>
+              <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '14px', fontWeight: 500, color: '#332849' }}>Select node</span>
+              <div className="cd-node-picker" ref={dropdownRef}>
+                <button className="cd-node-trigger" onClick={() => {
+                  setNodeDropdownOpen(open => !open);
+                }}>
+                  <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
+                  <ChevronDown size={16} />
+                </button>
+                {nodeDropdownOpen && (
+                  <div className="cd-node-menu">
+                    <div className="cd-search">
+                      <Search size={15} />
+                      <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
+                    </div>
+                    <div className="cd-node-options">
+                      {filteredHosts.map(host => {
+                        const disabled = host.status !== 'AVAILABLE' || host.available === false;
+                        const checked = selectedNodeIds.includes(host.id);
+                        return (
+                          <button
+                            key={host.id}
+                            className={`cd-node-option ${checked ? 'checked' : ''}`}
+                            disabled={disabled}
+                            onClick={() => toggleNodeSelection(host.id)}
+                          >
+                            <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
+                            <span className="cd-node-info">
+                              <strong>{host.hostname}</strong>
+                              <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="cd-node-options">
-                    {filteredHosts.map(host => {
-                      const disabled = host.status !== 'AVAILABLE' || host.available === false;
-                      const checked = selectedNodeIds.includes(host.id);
-                      return (
-                        <button
-                          key={host.id}
-                          className={`cd-node-option ${checked ? 'checked' : ''}`}
-                          disabled={disabled}
-                          onClick={() => toggleNodeSelection(host.id)}
-                        >
-                          <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
-                          <span className="cd-node-info">
-                            <strong>{host.hostname}</strong>
-                            <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             <div className="cd-selected-node-list">
-              {selectedHosts.length === 0 ? (
-                <div className="cd-empty">No nodes selected yet.</div>
-              ) : selectedHosts.map(host => (
+              {selectedHosts.map(host => (
                 <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', border: 'none' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                     <div className="cd-node-main" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
@@ -1891,8 +1907,8 @@ function PropertyTable({
                 </div>
               </td>
               {hostIp && (
-                <td style={{ textAlign: 'right' }}>
-                  <button type="button" onClick={onUseHostIp} style={{ background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                <td>
+                  <button type="button" onClick={onUseHostIp} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '40px', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
                     Use {hostIp}
                   </button>
                 </td>
