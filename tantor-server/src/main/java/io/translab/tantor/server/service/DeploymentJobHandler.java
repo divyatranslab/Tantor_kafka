@@ -44,13 +44,36 @@ public class DeploymentJobHandler implements JobHandler {
         List<JobStep> steps = jobService.getSteps(job.getId());
         if (steps.isEmpty()) throw new RuntimeException("Deployment job has no persisted steps.");
 
-        for (JobStep step : steps) {
-            if (step.getStatus() == JobStepStatus.SUCCESS) continue;
+        for (int i = 0; i < steps.size();) {
+            JobStep step = steps.get(i);
+            if (step.getStatus() == JobStepStatus.SUCCESS) {
+                i++;
+                continue;
+            }
             Map<String, Object> payload = readMap(step.getPayload());
+            if (isDeployOperation(payload)) {
+                List<JobStep> batchSteps = new ArrayList<>();
+                List<Map<String, Object>> batchPayloads = new ArrayList<>();
+                while (i < steps.size()) {
+                    JobStep candidate = steps.get(i);
+                    if (candidate.getStatus() == JobStepStatus.SUCCESS) {
+                        i++;
+                        continue;
+                    }
+                    Map<String, Object> candidatePayload = readMap(candidate.getPayload());
+                    if (!isDeployOperation(candidatePayload)) break;
+                    batchSteps.add(candidate);
+                    batchPayloads.add(candidatePayload);
+                    i++;
+                }
+                executeDeployBatch(job, cluster, clusterId, jobPayload, batchSteps, batchPayloads);
+                continue;
+            }
             try {
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
                     jobService.completeStep(step.getId(), taskOutput(completed));
+                    i++;
                     continue;
                 }
                 jobService.startStep(step.getId());
@@ -65,11 +88,52 @@ public class DeploymentJobHandler implements JobHandler {
                 clusterRepository.save(cluster);
                 throw e;
             }
+            i++;
         }
 
         cluster.setStatus("SUCCESS");
         clusterRepository.save(cluster);
         prometheusMonitoringService.ensureKafkaExporter(cluster.getId());
+    }
+
+    private void executeDeployBatch(
+            Job job,
+            Cluster cluster,
+            UUID clusterId,
+            Map<String, Object> jobPayload,
+            List<JobStep> steps,
+            List<Map<String, Object>> payloads
+    ) {
+        List<RunningStep> running = new ArrayList<>();
+        JobStep activeStep = null;
+        try {
+            for (int i = 0; i < steps.size(); i++) {
+                JobStep step = steps.get(i);
+                activeStep = step;
+                UUID taskId = step.getAgentTaskId();
+                if (step.getStatus() != JobStepStatus.IN_PROGRESS || taskId == null) {
+                    jobService.startStep(step.getId());
+                    taskId = startOperation(clusterId, jobPayload, payloads.get(i));
+                    jobService.attachAgentTask(step.getId(), taskId);
+                    jobService.appendLog(job.getId(), step.getName() + " dispatched to " + step.getTargetId() + ".");
+                }
+                running.add(new RunningStep(step, taskId));
+            }
+
+            for (RunningStep runningStep : running) {
+                activeStep = runningStep.step();
+                Task completed = taskAwaiter.await(runningStep.taskId());
+                jobService.completeStep(activeStep.getId(), taskOutput(completed));
+                jobService.appendLog(job.getId(), activeStep.getName() + " completed on " + activeStep.getTargetId() + ".");
+            }
+        } catch (Exception e) {
+            if (activeStep != null) {
+                jobService.failStep(activeStep.getId(), e.getMessage());
+            }
+            cluster.setStatus("FAILED");
+            clusterRepository.save(cluster);
+            throw e;
+        }
     }
 
     @Override
@@ -193,6 +257,12 @@ public class DeploymentJobHandler implements JobHandler {
         String value = stringValue(payload, "operation");
         return value.isBlank() ? "deploy" : value;
     }
+
+    private boolean isDeployOperation(Map<String, Object> payload) {
+        return "deploy".equals(operation(payload));
+    }
+
+    private record RunningStep(JobStep step, UUID taskId) {}
 
     private Map<String, Object> readMap(String json) {
         try {
