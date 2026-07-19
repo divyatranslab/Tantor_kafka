@@ -248,7 +248,7 @@
 }
 
 .cluster-tabs {
-  margin-top: 24px;
+  margin-top: 12px;
 }
 
 .cluster-tabs nav {
@@ -504,3 +504,149 @@
   line-height: 100%;
   letter-spacing: 0;
 }
+/* Redesigned Details Header */
+.cd-details-header {
+  margin-bottom: 0px;
+}
+
+.cd-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
+  margin-bottom: 12px;
+}
+
+.cd-breadcrumb-link {
+  cursor: pointer;
+  font-weight: 500;
+  color: #818181;
+  transition: color 0.15s ease;
+}
+
+.cd-breadcrumb-link:hover {
+  color: #3E1363;
+}
+
+.cd-breadcrumb-separator {
+  display: flex;
+  align-items: center;
+  color: #818181;
+}
+
+.cd-breadcrumb-current {
+  font-weight: 500;
+  color: #3E1363;
+}
+
+.cd-details-title-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  height: 40px;
+  margin-top: 4px;
+}
+
+.cd-details-title-left {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.cd-details-title-left h1 {
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 32px;
+  color: #282F49;
+  margin: 0;
+}
+
+.cd-status-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 10px;
+  height: 24px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.cd-status-badge.success {
+  width: 59px;
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
+}
+
+.cd-status-badge.warning,
+.cd-status-badge.degraded {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.cd-status-badge.failed,
+.cd-status-badge.offline {
+  background: rgba(239, 77, 95, 0.15);
+  color: #EF4D5F;
+}
+
+.cd-details-actions {
+  display: flex;
+  align-items: center;
+}
+
+.cd-details-refresh-btn {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: transparent;
+  color: #818181;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cd-details-refresh-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: #818181;
+}
+
+.cd-details-subtitle {
+  margin: 8px 0 0 0;
+  font-family: 'Satoshi', sans-serif;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
+}
+
+/* Compact Figma proportions with the merged health-refresh behavior. */
+.cd-details-header { margin-bottom: 0; }
+.cd-breadcrumbs { gap: 6px; margin-bottom: 10px; font-size: 11px; line-height: 16px; }
+.cd-details-title-row { height: auto; margin-top: 0; }
+.cd-details-title-left { gap: 5px; }
+.cd-details-title-left .cluster-back-btn { padding: 0; color: #818181; }
+.cd-details-title-left h1 { display: flex; align-items: center; gap: 6px; color: #332849; font-size: 14px; line-height: 20px; font-weight: 500; }
+.cd-details-actions { gap: 6px; }
+.cd-status-badge { width: auto; min-width: 47px; height: 20px; padding: 3px 7px; font-size: 9px; line-height: 12px; }
+.cd-status-badge.success { width: auto; }
+.cd-details-refresh-btn { width: 28px; height: 28px; padding: 5px; border-radius: 6px; }
+.cd-details-subtitle { margin-top: 4px; font-size: 11px; line-height: 16px; }

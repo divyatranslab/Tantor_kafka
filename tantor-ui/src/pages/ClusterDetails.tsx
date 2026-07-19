@@ -96,27 +96,117 @@ export function ClusterDetails() {
   if (isLogsView) {
     return (
       <div className="cluster-details-page cluster-logs-page animate-fade-in">
-        <header className="cluster-logs-header">
-          <div className="breadcrumb">
-            <span onClick={() => navigate('/clusters')}>Clusters</span>
-            <span>/</span>
-            <strong>{cluster.name}</strong>
-          </div>
-          <div className="cluster-logs-title">
-            <div className="icon-wrap"><Terminal size={20} /></div>
-            <div>
-              <h1>Deployment Logs</h1>
-              <p>{cluster.name} · Kafka {cluster.kafkaVersion} · {cluster.mode}</p>
+        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '5px', width: '1130px', height: '142px' }}>
+          {/* Breadcrumbs (Frame 1000005411) */}
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: '140px', height: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '20px' }}>
+              <span 
+                onClick={() => navigate('/clusters')} 
+                style={{ 
+                  cursor: 'pointer', 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '14px', 
+                  lineHeight: '19px', 
+                  color: '#818181' 
+                }}
+              >
+                Cluster
+              </span>
             </div>
-          <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
-            <div className="status-dot" /> {cluster.status}
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', color: '#818181' }}>
+              <ChevronRight size={14} />
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '19px' }}>
+              <span 
+                style={{ 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '14px', 
+                  lineHeight: '19px', 
+                  color: '#3E1363' 
+                }}
+              >
+                {cluster.name}
+              </span>
+            </div>
           </div>
+          
+          {/* Title Row (Frame 1000005262) */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', width: '1129px', height: '51px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '2px', width: '1129px', height: '32px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', width: '1129px', height: '32px' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '465px', height: '32px' }}>
+                  <h1 style={{ fontFamily: 'Satoshi', fontWeight: 700, fontSize: '24px', lineHeight: '32px', color: '#282F49', margin: 0 }}>
+                    Deployment Logs
+                  </h1>
+                  <div style={{
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '4px 8px',
+                    gap: '10px',
+                    width: '59px',
+                    height: '24px',
+                    background: 'rgba(42, 199, 146, 0.25)',
+                    borderRadius: '100px'
+                  }}>
+                    <span style={{
+                      fontFamily: 'Satoshi',
+                      fontWeight: 400,
+                      fontSize: '12px',
+                      lineHeight: '16px',
+                      textAlign: 'center',
+                      color: '#069B68'
+                    }}>
+                      Success
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Subtitle */}
+            <p style={{
+              fontFamily: 'Satoshi',
+              fontWeight: 400,
+              fontSize: '14px',
+              lineHeight: '19px',
+              color: '#818181',
+              margin: '0px',
+              width: '162px',
+              height: '19px'
+            }}>
+              {`${cluster.name}Kafka ${cluster.kafkaVersion}${cluster.mode ? cluster.mode.toLowerCase() : ''}`}
+            </p>
+          </div>
+
+          {/* Back button (Frame 1000005471) */}
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', margin: '0 auto', width: '1130px', height: '24px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '142px', height: '24px' }}>
+              <span 
+                onClick={() => navigate(`/clusters/${id}/overview`)} 
+                style={{ 
+                  cursor: 'pointer', 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '16px', 
+                  lineHeight: '22px',
+                  color: '#5B327F', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px' 
+                }}
+              >
+                <ChevronLeft size={24} style={{ color: '#818181' }} /> Logs (Selected)
+              </span>
+            </div>
           </div>
         </header>
-        <div className="cluster-tabs cluster-logs-tabs">
-          <nav><span className="active"><Terminal size={16} /> Logs</span></nav>
-        </div>
-        <div className="cluster-content cluster-logs-content">
+
+        <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
           <Outlet />
         </div>
       </div>
@@ -153,28 +243,46 @@ export function ClusterDetails() {
   return (
     <div className="cluster-details-page animate-fade-in">
       <div className="cluster-details-card">
-        <header className="cluster-detail-header">
-          <div className="breadcrumb">
-            <span onClick={() => navigate('/clusters')} className="breadcrumb-link">Cluster</span>
-            <span className="breadcrumb-separator"><ChevronRight size={12} /></span>
-            <span className="breadcrumb-active">{cluster.name}</span>
+        <header className="cd-details-header">
+          {/* Breadcrumbs */}
+          <div className="cd-breadcrumbs">
+            <span onClick={() => navigate('/clusters')} className="cd-breadcrumb-link">Cluster</span>
+            <span className="cd-breadcrumb-separator"><ChevronRight size={12} /></span>
+            <span className="cd-breadcrumb-current">{cluster.name}</span>
           </div>
-          <div className="cluster-health-stack">
-            <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-              <div className="status-dot"></div> {runtimeLabel}
+          
+          {/* Title Row */}
+          <div className="cd-details-title-row">
+            <div className="cd-details-title-left">
+              <button onClick={() => navigate('/clusters')} className="cluster-back-btn" aria-label="Back to clusters">
+                <ChevronLeft size={20} strokeWidth={1.5} />
+              </button>
+              <h1>{cluster.name}<Info size={15} className="cluster-title-info" strokeWidth={1.5} /></h1>
+            </div>
+            <div className="cd-details-actions">
+              <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+                {runtimeLabel}
+              </div>
+              <button 
+                className="cd-details-refresh-btn" 
+                onClick={() => {
+                  fetch(`/api/v1/ui/clusters/${id}`)
+                    .then(res => res.ok ? res.json() : Promise.reject())
+                    .then(setCluster)
+                    .catch(() => {});
+                }}
+                title="Refresh Health"
+              >
+                <RefreshCw size={16} />
+              </button>
             </div>
           </div>
+          
+          {/* Subtitle */}
+          <p className="cd-details-subtitle">
+            {`Kafka ${cluster.kafkaVersion || '-'} • ${cluster.nodeCount || 0} nodes • ${cluster.mode || 'INTERNAL'}`}
+          </p>
         </header>
-
-          <div className="cluster-title-row">
-            <button onClick={() => navigate('/clusters')} className="cluster-back-btn" aria-label="Back to clusters">
-              <ChevronLeft size={20} strokeWidth={1.5} />
-            </button>
-            <h1 className="cluster-title">
-              {cluster.name}
-              <Info size={15} className="cluster-title-info" strokeWidth={1.5} />
-            </h1>
-          </div>
 
         <div className="cluster-tabs">
           <nav>
