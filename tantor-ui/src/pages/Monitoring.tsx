@@ -175,9 +175,11 @@ const generateMockHistory = (clusterId: string, type: 'INTERNAL' | 'EXTERNAL') =
 };
 
 export function Monitoring() {
-  const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL' | ''>('');
+  const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
+  const [nodes, setNodes] = useState<{ value: string; label: string }[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState('');
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -186,6 +188,42 @@ export function Monitoring() {
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
+
+  // Load nodes when selectedClusterId changes
+  useEffect(() => {
+    if (!selectedClusterId) {
+      setNodes([]);
+      setSelectedNodeId('');
+      return;
+    }
+    fetch(`/api/v1/ui/clusters/${selectedClusterId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
+          const formatted = data.hosts.map((host: any, index: number) => ({
+            value: host.hostId || `node-${index}`,
+            label: `${host.hostname || `Node ${index + 1}`} - ${host.ipAddress || 'localhost'} - ${host.role || 'Broker'}`
+          }));
+          setNodes(formatted);
+          setSelectedNodeId(formatted[0].value);
+        } else {
+          const fallback = [
+            { value: 'node-1', label: 'Node 1 - broker1.translab.io - Broker + Controller' },
+            { value: 'node-2', label: 'Node 2 - broker2.translab.io - Broker + Controller' }
+          ];
+          setNodes(fallback);
+          setSelectedNodeId(fallback[0].value);
+        }
+      })
+      .catch(() => {
+        const fallback = [
+          { value: 'node-1', label: 'Node 1 - broker1.translab.io - Broker + Controller' },
+          { value: 'node-2', label: 'Node 2 - broker2.translab.io - Broker + Controller' }
+        ];
+        setNodes(fallback);
+        setSelectedNodeId(fallback[0].value);
+      });
+  }, [selectedClusterId]);
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -349,79 +387,152 @@ export function Monitoring() {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="controls-area">
-          {/* Live Indicator Dropdown */}
-          {selectedType !== '' && (
-            <div className="live-pill-dropdown-wrapper">
-              <div 
-                className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
-                onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-              >
-                <span className={`live-pill-dot ${autoRefresh ? 'active' : ''}`}></span>
-                <span className="live-pill-text">Live | {refreshInterval} Sec</span>
-                <div className={`custom-checkbox ${autoRefresh ? 'checked' : ''}`}>
-                  {autoRefresh && <Check size={12} strokeWidth={3} className="custom-check-icon" />}
-                </div>
-              </div>
+        {/* Controls Row */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: '16px',
+          flexWrap: 'wrap',
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          {/* CLUSTER TYPE Selector */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Cluster Type
+            </span>
+            <CustomSelect
+              value={selectedType}
+              onChange={val => {
+                setSelectedType(val as 'INTERNAL' | 'EXTERNAL');
+                setSelectedClusterId('');
+              }}
+              options={[
+                { value: 'INTERNAL', label: 'Internal' },
+                { value: 'EXTERNAL', label: 'External' }
+              ]}
+              width="140px"
+            />
+          </div>
 
-              {showIntervalDropdown && (
-                <div className="live-dropdown-menu">
-                  {[5, 10, 15, 30, 60].map((sec) => (
-                    <div 
-                      key={sec}
-                      className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
-                      onClick={() => {
-                        setRefreshInterval(sec);
-                        setAutoRefresh(true);
-                        setShowIntervalDropdown(false);
-                      }}
-                    >
-                      <span className="live-pill-dot active"></span>
-                      Live | {sec} Sec
-                    </div>
-                  ))}
-                  <div className="dropdown-divider" />
-                  <div 
-                    className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
-                    onClick={() => {
-                      setAutoRefresh(!autoRefresh);
-                      setShowIntervalDropdown(false);
-                    }}
-                  >
-                    <span className="live-pill-dot"></span>
-                    {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Cluster Selection */}
-          {selectedType !== '' && clusters.length > 0 && (
+          {/* CLUSTER NAME Selector */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Cluster Name
+            </span>
             <CustomSelect
               value={selectedClusterId}
               onChange={val => setSelectedClusterId(val)}
-              options={clusters.map(c => ({ value: c.id, label: c.name }))}
+              options={clusters.length > 0 ? clusters.map(c => ({ value: c.id, label: c.name })) : [{ value: '', label: 'No clusters found' }]}
+              width="160px"
               placeholder="Select Cluster"
-              width="180px"
             />
-          )}
+          </div>
 
-          {/* Source Selection */}
-          <CustomSelect
-            value={selectedType}
-            onChange={value => {
-              setSelectedType(value as 'INTERNAL' | 'EXTERNAL' | '');
-              setSelectedClusterId('');
-            }}
-            options={[
-              { value: 'INTERNAL', label: 'Internal' },
-              { value: 'EXTERNAL', label: 'External' }
-            ]}
-            placeholder="Select Source"
-            width="170px"
-          />
+          {/* NODE NAME Selector */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Node Name
+            </span>
+            <CustomSelect
+              value={selectedNodeId}
+              onChange={val => setSelectedNodeId(val)}
+              options={nodes}
+              width="360px"
+              placeholder="Select Node"
+            />
+          </div>
+
+          {/* Live indicator Pill Box */}
+          <div className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
+            <div 
+              className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
+              onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                height: '40px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: autoRefresh ? '#10B981' : '#94A3B8',
+                display: 'inline-block'
+              }}></span>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Live</span>
+              <div 
+                style={{
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '4px',
+                  border: '1px solid #CBD5E1',
+                  background: autoRefresh ? '#3B82F6' : '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginLeft: '4px'
+                }}
+              >
+                {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
+              </div>
+            </div>
+
+            {showIntervalDropdown && (
+              <div className="live-dropdown-menu" style={{ top: '44px' }}>
+                {[5, 10, 15, 30, 60].map((sec) => (
+                  <div 
+                    key={sec}
+                    className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
+                    onClick={() => {
+                      setRefreshInterval(sec);
+                      setAutoRefresh(true);
+                      setShowIntervalDropdown(false);
+                    }}
+                  >
+                    <span className="live-pill-dot active"></span>
+                    Live | {sec} Sec
+                  </div>
+                ))}
+                <div className="dropdown-divider" />
+                <div 
+                  className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
+                  onClick={() => {
+                    setAutoRefresh(!autoRefresh);
+                    setShowIntervalDropdown(false);
+                  }}
+                >
+                  <span className="live-pill-dot"></span>
+                  {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Refresh interval status display */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            borderRadius: '8px',
+            padding: '8px 16px',
+            height: '40px',
+            fontSize: '14px',
+            fontWeight: 600,
+            color: '#334155',
+            boxSizing: 'border-box'
+          }}>
+            {refreshInterval} Sec
+          </div>
 
           {/* Manual Refresh Button */}
           <button
@@ -434,13 +545,24 @@ export function Monitoring() {
               }
             }}
             disabled={loading}
+            style={{
+              height: '40px',
+              width: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid #E2E8F0',
+              borderRadius: '8px',
+              background: '#fff',
+              cursor: 'pointer'
+            }}
           >
             <RefreshCw size={18} className={loading ? 'spin' : ''} />
           </button>
         </div>
       </div>
 
-      {selectedType === '' ? (
+      {selectedClusterId === '' ? (
         <div className="monitoring-empty-state-card">
           <div className="monitoring-empty-illustration">
             <svg width="120" height="96" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -478,8 +600,8 @@ export function Monitoring() {
               </defs>
             </svg>
           </div>
-          <h2>Select a monitoring source</h2>
-          <p>Choose Internal or External. Monitoring stays separate from the agent heartbeat and deployment flow.</p>
+          <h2>Select a cluster to monitor</h2>
+          <p>Choose a cluster from the dropdown above to display its real-time metrics and nodes.</p>
         </div>
       ) : (
         <>

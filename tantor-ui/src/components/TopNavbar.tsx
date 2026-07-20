@@ -1,11 +1,41 @@
-import { useMemo } from 'react';
-import { Search, BookOpen, Bell } from 'lucide-react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { Search, Bell, LogOut, Info } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate, useLocation } from 'react-router-dom';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
 
+interface ClusterInfo {
+  id: string;
+  name: string;
+  mode: string;
+}
+
+interface TopicInfo {
+  name: string;
+}
+
 export function TopNavbar() {
-  const { decodedToken } = useAuth();
+  const { decodedToken, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // State
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [alertsCount, setAlertsCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [allClusters, setAllClusters] = useState<ClusterInfo[]>([]);
+  const [clusterTopics, setClusterTopics] = useState<TopicInfo[]>([]);
+
+  const profileRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  // Extract active cluster ID if in a cluster path
+  const activeClusterId = useMemo(() => {
+    const match = location.pathname.match(/\/clusters\/([^/]+)/);
+    return match ? match[1] : null;
+  }, [location.pathname]);
 
   // Resolve the first letter of the username
   const userInitial = useMemo(() => {
@@ -13,28 +43,233 @@ export function TopNavbar() {
     return rawName.charAt(0).toUpperCase();
   }, [decodedToken]);
 
+  // Fetch alerts count
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch('/api/v1/ui/alerts');
+        if (res.ok) {
+          const data = await res.json();
+          setAlertsCount(Array.isArray(data) ? data.length : 0);
+        }
+      } catch (e) {
+        console.error('Failed to fetch alerts count', e);
+      }
+    };
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch all clusters for search context
+  useEffect(() => {
+    fetch('/api/v1/ui/clusters')
+      .then(res => res.ok ? res.json() : [])
+      .then(setAllClusters)
+      .catch(console.error);
+  }, []);
+
+  // Fetch topics in current cluster for search context
+  useEffect(() => {
+    if (activeClusterId) {
+      fetch(`/api/v1/clusters/${activeClusterId}/topics`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && Array.isArray(data.content)) {
+            setClusterTopics(data.content);
+          } else {
+            // Mock topics fallback
+            setClusterTopics([
+              { name: 'anuj_test' },
+              { name: '_schema' },
+              { name: '_schemas' },
+              { name: '-employee_hyphen-topic' },
+              { name: '...employee_tpk' },
+              { name: '.employee_tpk' }
+            ]);
+          }
+        })
+        .catch(() => {
+          setClusterTopics([
+            { name: 'anuj_test' },
+            { name: '_schema' },
+            { name: '_schemas' },
+            { name: '-employee_hyphen-topic' },
+            { name: '...employee_tpk' },
+            { name: '.employee_tpk' }
+          ]);
+        });
+    } else {
+      setClusterTopics([]);
+    }
+  }, [activeClusterId]);
+
+  // Click outside handlers
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Search filter matches
+  const filteredResults = useMemo(() => {
+    if (!searchQuery.trim()) return { clusters: [], topics: [] };
+    const query = searchQuery.toLowerCase();
+    const clusters = allClusters.filter(c => c.name.toLowerCase().includes(query));
+    const topics = clusterTopics.filter(t => t.name.toLowerCase().includes(query));
+    return { clusters, topics };
+  }, [searchQuery, allClusters, clusterTopics]);
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      window.location.href = '/login';
+    } catch (e) {
+      console.error(e);
+      window.location.href = '/login';
+    }
+  };
+
   return (
-    <div className="top-navbar">
+    <div className="top-navbar" style={{ position: 'relative' }}>
       <div className="navbar-left">
-        <div className="logo-container">
+        <div className="logo-container" style={{ cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
           <img src={tantorLogo} alt="Tantor" className="header-logo" />
         </div>
       </div>
+      
       <div className="navbar-right">
-        <div className="search-container">
-          <svg className="search-icon" width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M16.1383 17.1923L9.8575 10.9113C9.3575 11.3241 8.7825 11.6472 8.1325 11.8805C7.4825 12.1138 6.81008 12.2305 6.11525 12.2305C4.40608 12.2305 2.95958 11.6388 1.77575 10.4553C0.591917 9.27175 0 7.82558 0 6.11675C0 4.40808 0.59175 2.96142 1.77525 1.77675C2.95875 0.59225 4.40492 0 6.11375 0C7.82242 0 9.26908 0.591916 10.4537 1.77575C11.6382 2.95958 12.2305 4.40608 12.2305 6.11525C12.2305 6.82942 12.1107 7.5115 11.871 8.1615C11.6312 8.8115 11.3112 9.37683 10.9113 9.8575L17.192 16.1383L16.1383 17.1923ZM6.11525 10.7308C7.40375 10.7308 8.49508 10.2836 9.38925 9.38925C10.2836 8.49508 10.7308 7.40375 10.7308 6.11525C10.7308 4.82675 10.2836 3.73542 9.38925 2.84125C8.49508 1.94692 7.40375 1.49975 6.11525 1.49975C4.82675 1.49975 3.73542 1.94692 2.84125 2.84125C1.94692 3.73542 1.49975 4.82675 1.49975 6.11525C1.49975 7.40375 1.94692 8.49508 2.84125 9.38925C3.73542 10.2836 4.82675 10.7308 6.11525 10.7308Z" fill="#818181"/>
-          </svg>
-          <input type="text" placeholder="Search" className="search-input" />
-        </div>
-        <button className="nav-action-btn" title="Documentation">
-          <BookOpen size={20} />
-        </button>
-        <button className="nav-action-btn" title="Notifications">
+
+
+        {/* Notifications Bell */}
+        <button className="nav-action-btn" title="Notifications" onClick={() => navigate('/alerts')} style={{ position: 'relative' }}>
           <Bell size={20} />
+          {alertsCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: '4px',
+              right: '4px',
+              background: '#EF4444',
+              color: '#fff',
+              borderRadius: '50%',
+              width: '8px',
+              height: '8px',
+              display: 'block'
+            }} />
+          )}
         </button>
-        <div className="profile-badge">
-          <span>{userInitial}</span>
+
+        {/* Profile Dropdown Container */}
+        <div ref={profileRef} style={{ position: 'relative' }}>
+          <div className="profile-badge" onClick={() => setIsProfileOpen(!isProfileOpen)} style={{ cursor: 'pointer' }}>
+            <span>{userInitial}</span>
+          </div>
+
+          {/* Profile Dropdown Card */}
+          {isProfileOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '48px',
+              right: 0,
+              width: '360px',
+              background: '#fff',
+              border: '1px solid #ECECF1',
+              borderRadius: '16px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
+              padding: '24px',
+              zIndex: 1000,
+              fontFamily: 'Satoshi, Inter, sans-serif'
+            }}>
+              {/* Profile Header */}
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: '#A78BFA',
+                  color: '#fff',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  fontWeight: 600,
+                  fontSize: '18px',
+                  textTransform: 'uppercase'
+                }}>
+                  {userInitial}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 600, color: '#282F49' }}>
+                    {decodedToken?.preferred_username || decodedToken?.name || 'admin'}
+                  </span>
+                  <span style={{ fontSize: '13px', color: '#64748B' }}>
+                    {decodedToken?.email || 'administrator@gmail.com'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Status Badges */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#FEF3C7', color: '#B27C1E', fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '100px' }}>
+                  👑 Pro
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#DBEAFE', color: '#1E40AF', fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '100px' }}>
+                  🛡️ Data Steward
+                </span>
+              </div>
+
+              {/* Roles Tags */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
+                {['global-admin', 'User Manager', 'admin', 'Data Auditor', 'Policy Manager', 'Data Owner', 'Connection Manager'].map(role => (
+                  <span key={role} style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: '#EFF6FF',
+                    color: '#3B82F6',
+                    border: '1px solid #DBEAFE',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    padding: '4px 10px',
+                    borderRadius: '8px'
+                  }}>
+                    🛡️ {role}
+                  </span>
+                ))}
+              </div>
+
+              {/* Divider */}
+              <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 -24px 16px -24px' }} />
+
+              {/* Footer info */}
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
+                Member since July 2026
+              </div>
+
+              {/* Sign Out Row */}
+              <div 
+                onClick={handleSignOut} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  color: '#EF4444', 
+                  fontSize: '14px', 
+                  fontWeight: 600, 
+                  cursor: 'pointer',
+                  padding: '4px 0'
+                }}
+              >
+                <LogOut size={16} />
+                Sign Out
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

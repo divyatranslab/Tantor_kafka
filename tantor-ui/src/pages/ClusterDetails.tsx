@@ -282,19 +282,36 @@ export function ClusterDetails() {
           </div>
           
           {/* Title Row */}
-          <div className="cd-details-title-row">
-            <div className="cd-details-title-left">
-              <h1>{cluster.name}</h1>
-              <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-                {runtimeLabel ? runtimeLabel.charAt(0).toUpperCase() + runtimeLabel.slice(1).toLowerCase() : ''}
-              </div>
-              {cluster.mode === 'EXTERNAL' && (
-                <div className={`cd-agent-status-badge ${agentClass}`}>
-                  {agentLabel}
-                </div>
-              )}
+          <div className="cd-details-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
+            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ChevronLeft size={24} style={{ cursor: 'pointer', color: '#332849' }} onClick={() => navigate('/clusters')} />
+              <h1 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '24px', color: '#332849' }}>{cluster.name}</h1>
+              <Info size={18} style={{ color: '#94a3b8', cursor: 'pointer' }} />
             </div>
-            <div className="cd-details-actions">
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {/* Dynamic Pill Badge */}
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: cluster.mode === 'EXTERNAL' ? '#E6F4EA' : '#F1F3F9',
+                color: cluster.mode === 'EXTERNAL' ? '#137333' : '#475569',
+                padding: '6px 14px',
+                borderRadius: '100px',
+                fontSize: '13px',
+                fontWeight: 500
+              }}>
+                <span style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: cluster.mode === 'EXTERNAL' ? '#137333' : '#475569',
+                  display: 'inline-block'
+                }} />
+                {cluster.mode === 'EXTERNAL' ? 'External' : 'Internal'}
+              </span>
+
               <button 
                 className="cd-details-refresh-btn" 
                 onClick={() => {
@@ -304,8 +321,23 @@ export function ClusterDetails() {
                     .catch(() => {});
                 }}
                 title="Refresh Health"
+                style={{
+                  boxSizing: 'border-box',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '8px',
+                  width: '40px',
+                  height: '40px',
+                  background: '#FFFFFF',
+                  border: '1px solid #CCCCCC',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  color: '#818181'
+                }}
               >
-                <RefreshCw size={24} />
+                <RefreshCw size={18} />
               </button>
             </div>
           </div>

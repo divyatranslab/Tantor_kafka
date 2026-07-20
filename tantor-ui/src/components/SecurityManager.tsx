@@ -31,16 +31,18 @@ export default function SecurityManager({ clusterId }: Props) {
   const [aclsLoading, setAclsLoading] = useState(false);
   const [aclsError, setAclsError] = useState('');
   const [showCreateAcl, setShowCreateAcl] = useState(false);
-  const [aclPrincipal, setAclPrincipal] = useState('');
-  const [aclResourceType, setAclResourceType] = useState('topic');
+  const [aclPrincipal, setAclPrincipal] = useState('http://');
+  const [aclResourceType, setAclResourceType] = useState('Topic');
   const [aclResourceName, setAclResourceName] = useState('');
-  const [aclPatternType, setAclPatternType] = useState('literal');
+  const [aclPatternType, setAclPatternType] = useState('Literal');
   const [aclOperations, setAclOperations] = useState<string[]>([]);
   const [aclPermission, setAclPermission] = useState('Allow');
-  const [aclHost, setAclHost] = useState('*');
+  const [aclHost, setAclHost] = useState('192.168.3.222');
   const [aclCreating, setAclCreating] = useState(false);
   const [aclFilterPrincipal, setAclFilterPrincipal] = useState('');
   const [aclFilterResource, setAclFilterResource] = useState('');
+  const [aclToDelete, setAclToDelete] = useState<AclEntry | null>(null);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
   const fetchAcls = useCallback(async () => {
     setAclsLoading(true);
@@ -65,7 +67,7 @@ export default function SecurityManager({ clusterId }: Props) {
     e.preventDefault();
     if (!canManage) return;
     if (aclOperations.length === 0) {
-      alert("Please select at least one operation.");
+      setAlertMessage("Please select at least one operation.");
       return;
     }
     setAclCreating(true);
@@ -87,15 +89,18 @@ export default function SecurityManager({ clusterId }: Props) {
       setAclResourceName('');
       fetchAcls();
     } catch (err: any) {
-      alert(err.response?.data?.detail || err.message || 'Failed to create ACL');
+      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to create ACL');
     } finally {
       setAclCreating(false);
     }
   };
 
-  const handleDeleteAcl = async (acl: AclEntry) => {
+  const handleDeleteAcl = (acl: AclEntry) => {
     if (!canManage) return;
-    if (!confirm(`Delete ACL for ${acl.principal} on ${acl.resourceType} ${acl.resourceName}?`)) return;
+    setAclToDelete(acl);
+  };
+
+  const confirmDeleteAcl = async (acl: AclEntry) => {
     try {
       await deleteAcl(clusterId, {
         resource_type: acl.resourceType,
@@ -108,7 +113,7 @@ export default function SecurityManager({ clusterId }: Props) {
       });
       fetchAcls();
     } catch (err: any) {
-      alert(err.response?.data?.detail || err.message || 'Failed to delete ACL');
+      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to delete ACL');
     }
   };
 
@@ -268,7 +273,7 @@ export default function SecurityManager({ clusterId }: Props) {
             background: '#fff',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '680px',
+            maxWidth: '780px',
             boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
             overflow: 'hidden'
           }}>
@@ -280,13 +285,13 @@ export default function SecurityManager({ clusterId }: Props) {
               padding: '20px 24px',
               borderBottom: '1px solid #f1f5f9'
             }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>Add New ACL Binding</h3>
+              <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 500, color: '#332849' }}>Add New ACL Binding</h3>
               <button 
                 onClick={() => setShowCreateAcl(false)} 
                 style={{
                   background: 'none',
                   border: 'none',
-                  fontSize: '20px',
+                  fontSize: '24px',
                   color: '#94a3b8',
                   cursor: 'pointer',
                   padding: '4px'
@@ -299,39 +304,49 @@ export default function SecurityManager({ clusterId }: Props) {
             {/* Modal Body */}
             <form onSubmit={handleCreateAcl} style={{ padding: '24px' }}>
               <div style={{
-                background: '#f8fafc',
+                background: '#F9F9FB',
                 borderRadius: '8px',
-                padding: '20px',
+                padding: '24px',
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '16px',
+                gap: '20px 16px',
                 marginBottom: '20px'
               }}>
                 {/* Principle (Username) */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Principle (Username)</label>
-                  <input 
-                    type="text" 
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Principle (Username)</label>
+                  <select 
                     value={aclPrincipal} 
                     onChange={e => setAclPrincipal(e.target.value)} 
-                    placeholder="e.g. alice" 
                     required 
                     style={{
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
-                      outline: 'none'
+                      outline: 'none',
+                      appearance: 'none',
+                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 12px center',
+                      backgroundSize: '16px'
                     }}
-                  />
+                  >
+                    <option value="http://">http://</option>
+                    <option value="User:*">User:*</option>
+                    <option value="User:alice">User:alice</option>
+                    <option value="User:bob">User:bob</option>
+                    <option value="User:anuj">User:anuj</option>
+                    <option value="User:admin">User:admin</option>
+                  </select>
                 </div>
 
                 {/* Host */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Host</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Host</label>
                   <input 
                     type="text" 
                     value={aclHost} 
@@ -342,7 +357,7 @@ export default function SecurityManager({ clusterId }: Props) {
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
@@ -353,7 +368,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
                 {/* Resource Type */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Resource Type</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Type</label>
                   <select 
                     value={aclResourceType} 
                     onChange={e => setAclResourceType(e.target.value)} 
@@ -361,25 +376,23 @@ export default function SecurityManager({ clusterId }: Props) {
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
+                      outline: 'none'
                     }}
                   >
-                    {RESOURCE_TYPES.map(rt => <option key={rt} value={rt}>{rt.charAt(0).toUpperCase() + rt.slice(1)}</option>)}
+                    <option value="Topic">Topic</option>
+                    <option value="Group">Group</option>
+                    <option value="Cluster">Cluster</option>
+                    <option value="TransactionalId">TransactionalId</option>
                   </select>
                 </div>
 
                 {/* Resource Name */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Resource Name</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Name</label>
                   <input 
                     type="text" 
                     value={aclResourceName} 
@@ -390,7 +403,7 @@ export default function SecurityManager({ clusterId }: Props) {
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
@@ -401,7 +414,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
                 {/* Pattern Type */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Pattern Type</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Pattern Type</label>
                   <select 
                     value={aclPatternType} 
                     onChange={e => setAclPatternType(e.target.value)} 
@@ -409,7 +422,7 @@ export default function SecurityManager({ clusterId }: Props) {
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
@@ -421,14 +434,14 @@ export default function SecurityManager({ clusterId }: Props) {
                       backgroundSize: '16px'
                     }}
                   >
-                    <option value="literal">Literal</option>
-                    <option value="prefixed">Prefixed</option>
+                    <option value="Literal">Literal</option>
+                    <option value="Prefixed">Prefixed</option>
                   </select>
                 </div>
 
                 {/* Permission */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '13px', color: '#475569' }}>Permission</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Permission</label>
                   <select 
                     value={aclPermission} 
                     onChange={e => setAclPermission(e.target.value)} 
@@ -436,7 +449,7 @@ export default function SecurityManager({ clusterId }: Props) {
                       width: '100%',
                       padding: '10px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1px solid #CCCCCC',
                       fontSize: '14px',
                       background: '#fff',
                       color: '#332849',
@@ -456,12 +469,12 @@ export default function SecurityManager({ clusterId }: Props) {
 
               {/* Operations */}
               <div style={{
-                background: '#f8fafc',
+                background: '#F9F9FB',
                 borderRadius: '8px',
-                padding: '20px',
+                padding: '24px',
                 marginBottom: '24px'
               }}>
-                <label style={{ display: 'block', marginBottom: '12px', fontWeight: 600, fontSize: '14px', color: '#3E1363' }}>Operations</label>
+                <label style={{ display: 'block', marginBottom: '16px', fontWeight: 500, fontSize: '16px', color: '#5B327F' }}>Operations</label>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {OPERATIONS.map(op => {
                     const isSelected = aclOperations.includes(op);
@@ -473,11 +486,11 @@ export default function SecurityManager({ clusterId }: Props) {
                         style={{
                           padding: '8px 16px',
                           borderRadius: '8px',
-                          fontSize: '13px',
+                          fontSize: '14px',
                           fontWeight: 500,
-                          border: '1px solid #e2e8f0',
-                          background: isSelected ? '#3E1363' : '#fff',
-                          color: isSelected ? '#fff' : '#64748b',
+                          border: '1px solid #CCCCCC',
+                          background: isSelected ? '#3E1363' : '#FFFFFF',
+                          color: isSelected ? '#FFFFFF' : '#5F6368',
                           cursor: 'pointer',
                           transition: 'all 0.15s'
                         }}
@@ -503,7 +516,7 @@ export default function SecurityManager({ clusterId }: Props) {
                   onClick={() => setShowCreateAcl(false)} 
                   style={{
                     height: '38px',
-                    padding: '0 20px',
+                    padding: '0 24px',
                     borderRadius: '8px',
                     border: '1px solid #3E1363',
                     background: '#fff',
@@ -523,7 +536,7 @@ export default function SecurityManager({ clusterId }: Props) {
                     alignItems: 'center',
                     gap: '6px',
                     height: '38px',
-                    padding: '0 20px',
+                    padding: '0 24px',
                     borderRadius: '8px',
                     background: '#3E1363',
                     color: '#fff',
@@ -592,6 +605,172 @@ export default function SecurityManager({ clusterId }: Props) {
           </tbody>
         </table>
       </div>
+
+      {aclToDelete && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '540px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+            overflow: 'hidden'
+          }}>
+            {/* Banner */}
+            <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
+              <button onClick={() => setAclToDelete(null)} className="confirm-modal-close-btn" style={{ color: '#818181', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px' }} aria-label="Close modal">
+                ✕
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
+              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
+                  localhost:5173 says
+                </h2>
+              </div>
+              
+              <p style={{ margin: 0, fontSize: '15px', color: '#5F6368', lineHeight: '1.5' }}>
+                Are you sure you want to delete this ACL binding?
+                <br />
+                <span style={{ fontWeight: 600, color: '#332849', display: 'inline-block', marginTop: '8px' }}>
+                  Delete ACL for {aclToDelete.principal} on {aclToDelete.resourceType} {aclToDelete.resourceName}?
+                </span>
+              </p>
+              
+              {/* Footer Actions */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '12px',
+                marginTop: '8px'
+              }}>
+                <button 
+                  type="button" 
+                  onClick={() => setAclToDelete(null)} 
+                  style={{
+                    height: '38px',
+                    padding: '0 24px',
+                    borderRadius: '8px',
+                    border: '1px solid #EF4D5F',
+                    background: '#fff',
+                    color: '#EF4D5F',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    const acl = aclToDelete;
+                    setAclToDelete(null);
+                    await confirmDeleteAcl(acl);
+                  }} 
+                  style={{
+                    height: '38px',
+                    padding: '0 24px',
+                    borderRadius: '8px',
+                    background: '#3E1363',
+                    color: '#fff',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {alertMessage && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1100,
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          <div style={{
+            background: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+            overflow: 'hidden'
+          }}>
+            {/* Banner */}
+            <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
+              <button onClick={() => setAlertMessage(null)} className="confirm-modal-close-btn" style={{ color: '#818181', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px' }} aria-label="Close modal">
+                ✕
+              </button>
+            </div>
+            
+            {/* Body */}
+            <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
+              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
+                  localhost:5173 says
+                </h2>
+              </div>
+              
+              <p style={{ margin: 0, fontSize: '15px', color: '#5F6368', lineHeight: '1.5' }}>
+                {alertMessage}
+              </p>
+              
+              {/* Footer Actions */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: '8px'
+              }}>
+                <button 
+                  onClick={() => setAlertMessage(null)} 
+                  style={{
+                    height: '38px',
+                    padding: '0 28px',
+                    borderRadius: '8px',
+                    background: '#3E1363',
+                    color: '#fff',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

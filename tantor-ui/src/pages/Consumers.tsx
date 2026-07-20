@@ -274,83 +274,154 @@ export function Consumers() {
 
       {/* Detail Modal */}
       {selectedGroupId && (
-        <div className="modal-overlay" onClick={() => setSelectedGroupId(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Consumer Group Details: {selectedGroupId}</h3>
-              <button onClick={() => setSelectedGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem' }}>
-                <X size={20} color="var(--text-secondary)" />
-              </button>
+        <div className="modal-overlay" onClick={() => setSelectedGroupId(null)} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.4)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          fontFamily: 'Satoshi, Inter, sans-serif'
+        }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            background: '#fff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '780px',
+            boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+            overflow: 'hidden',
+            padding: 0
+          }}>
+            {/* Modal Header */}
+            <div style={{ padding: '24px 32px 12px 32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 600, fontSize: '20px', color: '#332849' }}>Consumer Group Details</h3>
+                <button onClick={() => setSelectedGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                  <X size={20} color="#94a3b8" />
+                </button>
+              </div>
+              <span style={{ fontSize: '13px', color: '#64748b', display: 'block', marginTop: '2px' }}>{selectedGroupId}</span>
             </div>
-            <div className="modal-body">
+
+            <div className="modal-body" style={{ padding: 0 }}>
               {detailLoading ? (
-                <p>Loading details...</p>
+                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>Loading details...</div>
               ) : detailData ? (
                 <div>
-                  <div style={{ display: 'flex', gap: '2rem', marginBottom: '1.5rem', backgroundColor: 'var(--bg-primary)', padding: '1rem', borderRadius: '0.5rem' }}>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>State</span>
-                      <span style={{ fontWeight: 500 }}>{detailData.state}</span>
+                  {/* Info Cards */}
+                  <div style={{ display: 'flex', gap: '16px', padding: '0 32px 24px 32px' }}>
+                    <div style={{
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'flex-start',
+                      padding: '16px 20px',
+                      gap: '8px',
+                      width: '280px',
+                      height: '84px',
+                      background: '#F9F9FB',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px'
+                    }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>State</span>
+                      <span style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        color: detailData.state === 'Stable' ? '#10B981' : '#EF4444'
+                      }}>{detailData.state}</span>
                     </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Members</span>
-                      <span style={{ fontWeight: 500 }}>{detailData.members.length}</span>
+                    <div style={{
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'flex-start',
+                      padding: '16px 20px',
+                      gap: '8px',
+                      width: '280px',
+                      height: '84px',
+                      background: '#F9F9FB',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px'
+                    }}>
+                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Members</span>
+                      <span style={{ fontSize: '18px', fontWeight: 600, color: '#10B981' }}>{detailData.members.length}</span>
                     </div>
                   </div>
 
-                  <div className="detail-section">
-                    <h4>Members & Partitions</h4>
+                  {/* Section Title */}
+                  <div style={{ padding: '0 32px 12px 32px' }}>
+                    <h4 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 600, fontSize: '16px', color: '#5B327F' }}>Members & Partitions</h4>
+                  </div>
+
+                  {/* Members List */}
+                  <div style={{ padding: '0 32px 32px 32px', maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     {detailData.members.length === 0 ? (
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active members or assigned partitions found for this group.</p>
+                      <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>No active members or assigned partitions found for this group.</p>
                     ) : (
                       detailData.members.map((m, i) => (
-                        <div key={i} style={{ marginBottom: '1.5rem', border: '1px solid var(--border-color)', borderRadius: '0.5rem', overflow: 'hidden' }}>
-                          <div style={{ backgroundColor: '#f8fafc', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border-color)', fontSize: '0.875rem' }}>
-                            <div style={{ display: 'flex', gap: '1rem' }}>
-                              <div><strong>Member ID:</strong> {m.memberId}</div>
-                              <div><strong>Client ID:</strong> {m.clientId}</div>
-                              <div><strong>Host:</strong> {m.host}</div>
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          {/* Member Headers */}
+                          <div style={{ display: 'flex', gap: '48px', fontSize: '13px', color: '#332849' }}>
+                            <div>
+                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Member ID</div>
+                              <div style={{ fontFamily: 'monospace' }}>{m.memberId}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Client ID</div>
+                              <div>{m.clientId}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Host</div>
+                              <div>{m.host}</div>
                             </div>
                           </div>
-                          <table className="data-table" style={{ border: 'none' }}>
-                            <thead>
-                              <tr>
-                                <th style={{ backgroundColor: '#fff', borderTop: 'none' }}>Topic</th>
-                                <th style={{ backgroundColor: '#fff', borderTop: 'none' }}>Partition</th>
-                                <th style={{ backgroundColor: '#fff', borderTop: 'none' }}>Current Offset</th>
-                                <th style={{ backgroundColor: '#fff', borderTop: 'none' }}>Log End Offset</th>
-                                <th style={{ backgroundColor: '#fff', borderTop: 'none' }}>Lag</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {m.partitions.length === 0 ? (
-                                <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>No partitions assigned</td></tr>
-                              ) : (
-                                m.partitions.map((p) => (
-                                  <tr key={`${p.topic}-${p.partition}`}>
-                                    <td>{p.topic}</td>
-                                    <td>{p.partition}</td>
-                                    <td style={{ color: p.currentOffset === -1 ? 'var(--text-secondary)' : 'inherit' }}>
-                                      {p.currentOffset === -1 ? 'Unknown' : p.currentOffset.toLocaleString()}
-                                    </td>
-                                    <td style={{ color: p.logEndOffset === -1 ? 'var(--text-secondary)' : 'inherit' }}>
-                                      {p.logEndOffset === -1 ? 'Unknown' : p.logEndOffset.toLocaleString()}
-                                    </td>
-                                    <td style={{ fontWeight: 600, color: p.lag > 0 ? '#b91c1c' : 'inherit' }}>
-                                      {p.lag === -1 ? 'Unknown' : p.lag.toLocaleString()}
-                                    </td>
+
+                          {/* Partitions Table */}
+                          <div style={{ border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', fontFamily: 'Satoshi, sans-serif' }}>
+                              <thead>
+                                <tr style={{ background: '#F9F9FB', borderBottom: '1px solid #E2E8F0' }}>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Topic</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Partition</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Current Offset</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Lag</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {m.partitions.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#64748B' }}>No partitions assigned</td>
                                   </tr>
-                                ))
-                              )}
-                            </tbody>
-                          </table>
+                                ) : (
+                                  m.partitions.map((p, idx) => (
+                                    <tr key={`${p.topic}-${p.partition}`} style={{ borderBottom: idx === m.partitions.length - 1 ? 'none' : '1px solid #E2E8F0' }}>
+                                      <td style={{ padding: '12px 16px', color: '#332849' }}>{p.topic}</td>
+                                      <td style={{ padding: '12px 16px', color: '#332849' }}>{p.partition}</td>
+                                      <td style={{ padding: '12px 16px', color: '#332849' }}>
+                                        {p.currentOffset === -1 ? 'Unknown' : p.currentOffset.toLocaleString()}
+                                      </td>
+                                      <td style={{ padding: '12px 16px', fontWeight: p.lag > 0 ? 600 : 400, color: p.lag > 0 ? '#F97316' : '#332849' }}>
+                                        {p.lag === -1 ? 'Unknown' : p.lag.toLocaleString()}
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
                 </div>
               ) : (
-                <p>Failed to load group details.</p>
+                <div style={{ padding: '32px', textAlign: 'center', color: '#ef4444' }}>Failed to load group details.</div>
               )}
             </div>
           </div>

@@ -1784,7 +1784,10 @@
   margin-right: 6px;
 }
 
-.ds-instance-select,
+.ds-instance-select {
+  width: 340px !important;
+}
+
 .ds-compat-select {
   width: 250px !important;
 }

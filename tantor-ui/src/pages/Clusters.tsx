@@ -224,6 +224,18 @@ export function Clusters() {
     });
   };
 
+  const formatCreatedDate = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '-';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day} ${month}, ${hours}:${minutes}`;
+  };
+
   const primaryHost = (cluster: ClusterInfo) => cluster.hosts?.[0];
 
   const diskLabel = (host?: ClusterHost) => {
@@ -297,15 +309,18 @@ export function Clusters() {
   const renderHeader = () => (
     <header className="clusters-header flex-between">
       <div>
-        <h1>Cluster</h1>
-        <p>Deploy and manage your Tantor Kafka environments</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h1>Kafka Clusters</h1>
+          <span className="clusters-page-status-badge">Success</span>
+        </div>
+        <p className="clusters-subtitle">Deploy and manage your Tantor Kafka environments</p>
       </div>
       <div className="header-actions">
+        <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
+          {clusters.length > 0 ? 'Deploy Cluster' : '+ Add Cluster'}
+        </button>
         <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
-        </button>
-        <button className="btn btn-primary-action add-cluster-btn" onClick={() => setShowDeploymentModal(true)}>
-          <Plus size={16} /> Add Cluster
         </button>
       </div>
     </header>
@@ -313,9 +328,9 @@ export function Clusters() {
 
   return (
     <div className={`clusters-page animate-fade-in ${!loading && clusters.length === 0 ? 'is-empty' : ''}`} onClick={() => setOpenMenuId(null)}>
+      {renderHeader()}
       {(!loading && clusters.length === 0) ? (
         <div className="white-container full-empty-card">
-          {renderHeader()}
           <div className="state-center">
             <div className="empty-state-icon" />
             <h2>No clusters yet</h2>
@@ -325,26 +340,37 @@ export function Clusters() {
           </div>
         </div>
       ) : (
-        <section className="clusters-inventory white-card">
-          {renderHeader()}
-          {loading ? (
-            <div className="state-center loading-state">
-              <RefreshCw size={24} className="spin" style={{ color: '#3E1363' }} />
-              <p>Loading clusters...</p>
+        <>
+          <div className="inventory-header">
+            <div>
+              <h3>Cluster Inventory</h3>
+              <span>Kafka Clusters</span>
             </div>
-          ) : (
-            <div className="clusters-table-wrap">
-              <table className="clusters-table">
-                <thead>
+            <div className="inventory-total-badge">
+              <span>{clusters.length} Total</span>
+            </div>
+          </div>
+          <div className="inventory-divider" />
+          
+          <section className="clusters-inventory white-card">
+            {loading ? (
+              <div className="state-center loading-state">
+                <RefreshCw size={24} className="spin" style={{ color: '#3E1363' }} />
+                <p>Loading clusters...</p>
+              </div>
+            ) : (
+              <div className="clusters-table-wrap">
+                <table className="clusters-table">
+                  <thead>
                   <tr>
                     <th>Name</th>
                     <th>Kafka Cluster ID</th>
-                    <th>Host/IP</th>
-                    <th>Envoirement</th>
-                    <th>Disk</th>
-                    <th>Last checked</th>
-                    <th>Source</th>
-                    <th aria-label="Action" />
+                    <th>Broker</th>
+                    <th>DEV</th>
+                    <th>Storage</th>
+                    <th>Created</th>
+                    <th>Tags</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -360,13 +386,17 @@ export function Clusters() {
                         }}
                       >
                         <td>
-                          <div className="cluster-title-cell">
-                            <div className={`cluster-icon-wrap${cluster.mode === 'EXTERNAL' ? ' external' : ''}`}>
-                              {cluster.mode === 'EXTERNAL' ? <ExternalLink size={16} /> : <Network size={17} />}
-                            </div>
-                            <div className="cluster-title-text">
-                              <strong>{cluster.name}</strong>
-                              <span>Kafka {cluster.kafkaVersion || 'Unknown'} - {cluster.mode || 'kraft'}</span>
+                          <div className="cluster-title-cell" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {cluster.mode === 'EXTERNAL' ? (
+                              <ExternalLink size={15} style={{ color: '#3E1363', flexShrink: 0, marginTop: '1px' }} />
+                            ) : (
+                              <Network size={16} style={{ color: '#3E1363', flexShrink: 0, marginTop: '1px' }} />
+                            )}
+                            <div className="cluster-title-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                              <strong style={{ color: '#23252D', fontWeight: 600, fontSize: '13px' }}>{cluster.name}</strong>
+                              <span style={{ color: '#818181', fontSize: '12px', display: 'block', marginTop: '2px' }}>
+                                Kafka {cluster.kafkaVersion || '4.0.1'} - {cluster.mode?.toLowerCase() || 'kraft'}
+                              </span>
                             </div>
                           </div>
                         </td>
@@ -377,65 +407,45 @@ export function Clusters() {
                           </span>
                         </td>
                         <td>
-                          <div className="host-cell">
-                            <Server size={14} />
-                            <div>
-                              <strong>{host?.hostname || '-'}</strong>
-                              <span>{host?.ipAddress || cluster.bootstrapServers || '-'}</span>
-                            </div>
+                          <div className="host-cell-v2">
+                            <strong>{host?.hostname || '-'}</strong>
+                            <span>{host?.ipAddress || cluster.bootstrapServers || '-'}</span>
                           </div>
                         </td>
                         <td>
-                          <div className="env-cell">
-                            <span className="cluster-meta-value tag">{cluster.environment || 'unknown'}</span>
-                            <small>{cluster.nodeCount || cluster.hosts?.length || 0} node{(cluster.nodeCount || cluster.hosts?.length || 0) === 1 ? '' : 's'}</small>
+                          <div className="env-cell-v2">
+                            <strong>{cluster.environment?.toUpperCase() || 'DEV'}</strong>
+                            <span>{cluster.nodeCount || cluster.hosts?.length || 0} node{(cluster.nodeCount || cluster.hosts?.length || 0) === 1 ? '' : 's'}</span>
                           </div>
                         </td>
                         <td>
-                          {cluster.mode === 'EXTERNAL' ? (
-                            <div className="env-cell">
-                              <div>
-                                <span>Management: {managementLabel(cluster)}</span>
-                              </div>
-                              <small>{cluster.managedHostsCount || 0} / {cluster.totalHostsCount || cluster.nodeCount || 0} hosts</small>
-                            </div>
-                          ) : (
-                            <div className="disk-cell">
-                              <div>
-                                <HardDrive size={13} />
+                          <div className="disk-cell-progress">
+                            <div className="disk-label-text">
+                              {cluster.mode === 'EXTERNAL' ? (
+                                <span>{cluster.managedHostsCount || 0}/{cluster.totalHostsCount || cluster.nodeCount || 0} hosts</span>
+                              ) : (
                                 <span>{diskLabel(host)}</span>
-                              </div>
-                              {progress > 0 && <span className="disk-meter"><i style={{ width: `${progress}%` }} /></span>}
+                              )}
                             </div>
-                          )}
+                            <div className="progress-bar-container">
+                              <div className="progress-bar-fill" style={{ width: `${progress > 0 ? progress : 0}%` }} />
+                            </div>
+                          </div>
                         </td>
                         <td>
-                          <span className="heartbeat-text">
-                            {cluster.mode === 'EXTERNAL'
-                              ? formatHeartbeat(cluster.lastAgentHeartbeat)
-                              : formatHeartbeat(host?.lastHeartbeat)}
+                          <span className="created-text">
+                            {formatCreatedDate(cluster.createdAt)}
                           </span>
                         </td>
                         <td>
-                          <div className="source-cell">
-                            <span className={`source-pill ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
+                          <div className="tags-column-wrap">
+                            <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
                               {sourceLabel(cluster)}
                             </span>
-                            <span className={`access-pill ${managementClass(cluster)}`}>
+                            <span className={`access-pill-v2 ${managementClass(cluster)}`}>
                               {managementLabel(cluster)}
                             </span>
-                            {cluster.mode === 'EXTERNAL' && (
-                              <span className={`agent-pill ${agentHealthClass(cluster)}`}>
-                                {agentHealthLabel(cluster)}
-                              </span>
-                            )}
-                            <span
-                              className={`cluster-status-badge ${statusClass(cluster)}`}
-                              title={cluster.runtimeStatusReason || (cluster.status === 'DEGRADED' ? 'Kafka is reachable, but Discovery Agent process verification failed.' : undefined)}
-                            >
-                              {(cluster.kafkaHealthChecking || (inProgress(cluster.status) && cluster.mode !== 'EXTERNAL')) && (
-                                <RefreshCw size={11} className="spin" />
-                              )}
+                            <span className={`status-badge-v2 ${statusClass(cluster)}`}>
                               {statusLabel(cluster)}
                             </span>
                           </div>
@@ -444,32 +454,12 @@ export function Clusters() {
                           {canManage ? (
                             <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
                               <button
-                                className="btn icon-only"
-                                onClick={() => setOpenMenuId(openMenuId === cluster.id ? null : cluster.id)}
-                                title="Cluster actions"
+                                className="btn icon-only trash-btn-action"
+                                onClick={(e) => deleteCluster(e, cluster.id, cluster.name)}
+                                title="Delete cluster"
                               >
-                                <MoreVertical size={16} />
+                                <Trash2 size={15} />
                               </button>
-                              {openMenuId === cluster.id && (
-                                <div className="cluster-action-menu">
-                                  <button disabled title="Temporarily disabled">
-                                    <RotateCcw size={14} />
-                                    Rolling restart
-                                  </button>
-                                  <button disabled title="Temporarily disabled">
-                                    <Settings size={14} />
-                                    Configuration change
-                                  </button>
-                                  <button disabled title="Temporarily disabled">
-                                    <ServerCog size={14} />
-                                    Add node
-                                  </button>
-                                  <button className="danger" onClick={e => deleteCluster(e, cluster.id, cluster.name)}>
-                                    <Trash2 size={14} />
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           ) : (
                             <span className="heartbeat-text">View only</span>
@@ -483,6 +473,7 @@ export function Clusters() {
             </div>
           )}
         </section>
+        </>
       )}
 
       {showDeploymentModal && (
