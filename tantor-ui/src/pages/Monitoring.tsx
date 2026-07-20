@@ -3,6 +3,14 @@ import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from '
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import './Monitoring.css';
 
+interface MonitoringNode {
+  nodeId?: string | null;
+  hostId?: string | null;
+  hostname?: string | null;
+  hostIp?: string | null;
+  role?: string | null;
+}
+
 interface MonitoringCluster {
   id: string;
   name: string;
@@ -11,6 +19,7 @@ interface MonitoringCluster {
   kafkaExporterTarget?: string;
   jmxAvailable?: boolean;
   warning?: string;
+  nodes?: MonitoringNode[];
 }
 
 interface MonitoringOverview {
@@ -35,6 +44,8 @@ interface MonitoringOverview {
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
+  selectedNodeId?: string | null;
+  nodes?: MonitoringNode[];
 }
 
 interface MonitoringSample {
@@ -75,10 +86,20 @@ const hasValue = (value?: number | null) => value !== undefined && value !== nul
 
 const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
+const nodeValue = (node: MonitoringNode) => String(node.nodeId || '');
+
+const nodeLabel = (node: MonitoringNode) => {
+  const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
+  const host = node.hostname || node.hostIp;
+  const role = node.role;
+  return [nodeName, host, role].filter(Boolean).join(' - ');
+};
+
 export function Monitoring() {
   const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState('');
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -86,6 +107,15 @@ export function Monitoring() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
+
+  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
+  const selectedClusterNodes = useMemo(() => {
+    const overviewNodes = overview?.clusterId === selectedClusterId ? overview.nodes : undefined;
+    const nodes = overviewNodes?.length ? overviewNodes : (selectedCluster?.nodes || []);
+    return nodes.filter(node => node.nodeId);
+  }, [overview?.clusterId, overview?.nodes, selectedCluster?.nodes, selectedClusterId]);
+  const isMultiNodeCluster = selectedClusterNodes.length > 1;
+  const selectedMonitoringNode = selectedClusterNodes.find(node => nodeValue(node) === selectedNodeId);
 
   // 1. Load clusters and hosts on mount
   const loadInitialData = async () => {
@@ -115,8 +145,21 @@ export function Monitoring() {
   useEffect(() => {
     setOverview(null);
     setHistory([]);
+    setSelectedNodeId('');
     loadInitialData();
   }, [selectedType]);
+
+  useEffect(() => {
+    setSelectedNodeId(current => {
+      if (selectedClusterNodes.length <= 1) {
+        return '';
+      }
+      if (selectedClusterNodes.some(node => nodeValue(node) === current)) {
+        return current;
+      }
+      return nodeValue(selectedClusterNodes[0]);
+    });
+  }, [selectedClusterId, selectedClusterNodes]);
 
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {
@@ -124,7 +167,12 @@ export function Monitoring() {
     if (!silent) setLoading(true);
     try {
       // 1. Fetch Prometheus Metrics
-      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview`);
+      const params = new URLSearchParams();
+      if (selectedNodeId) {
+        params.set('nodeId', selectedNodeId);
+      }
+      const query = params.toString();
+      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`);
       if (res.ok) {
         const data = await res.json();
         setOverview(data);
@@ -135,7 +183,7 @@ export function Monitoring() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedClusterId]);
+  }, [selectedClusterId, selectedNodeId]);
 
   useEffect(() => {
     if (selectedClusterId) {
@@ -177,9 +225,6 @@ export function Monitoring() {
     }, refreshInterval * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, refreshInterval, loadOverview, selectedClusterId]);
-
-  // Selected cluster helper
-  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
 
   // Mock initial history if empty to generate pretty graphs immediately
   const graphHistory = history;
@@ -234,10 +279,29 @@ export function Monitoring() {
               value={selectedClusterId}
               onChange={e => {
                 setSelectedClusterId(e.target.value);
+                setSelectedNodeId('');
+                setOverview(null);
+                setHistory([]);
               }}
             >
               {clusters.map(c => (
                 <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          )}
+
+          {isMultiNodeCluster && (
+            <select
+              className="tantor-select monitoring-node-select"
+              value={selectedNodeId}
+              onChange={e => {
+                setSelectedNodeId(e.target.value);
+              }}
+            >
+              {selectedClusterNodes.map(node => (
+                <option key={nodeValue(node)} value={nodeValue(node)}>
+                  {nodeLabel(node)}
+                </option>
               ))}
             </select>
           )}
@@ -301,6 +365,12 @@ export function Monitoring() {
             Exporter target: {exporterTarget || 'Not configured'}
             <span className="separator">|</span>
             {clusterTypeLabel}
+            {selectedMonitoringNode && (
+              <>
+                <span className="separator">|</span>
+                {nodeLabel(selectedMonitoringNode)}
+              </>
+            )}
           </p>
         </div>
         <div className="monitoring-status-group">

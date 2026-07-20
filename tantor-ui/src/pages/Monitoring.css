@@ -87,6 +87,10 @@
   outline-offset: 0;
 }
 
+.monitoring-container .monitoring-node-select {
+  min-width: 14rem;
+}
+
 .monitoring-container .tantor-btn {
   height: 2.5rem;
   border: 1px solid #cbd5e1;
