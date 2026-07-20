@@ -102,7 +102,7 @@ export function Monitoring() {
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
-  const [nodes, setNodes] = useState<{value: string, label: string}[]>([]);
+  const [nodes, setNodes] = useState<{ value: string, label: string }[]>([]);
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -315,54 +315,6 @@ export function Monitoring() {
               </select>
             </label>
 
-            {/* Cluster Selection */}
-            {clusters.length > 0 && (
-              <label className="monitoring-control-field">
-                <span>Cluster name</span>
-                <select
-                  className="tantor-select"
-                  value={selectedClusterId}
-                  onChange={e => {
-                    setSelectedClusterId(e.target.value);
-                    setSelectedNodeId('');
-                    setOverview(null);
-                    setHistory([]);
-                  }}
-                >
-                  {clusters.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {isMultiNodeCluster && (
-              <label className="monitoring-control-field monitoring-node-field">
-                <span>Node name</span>
-                <select
-                  className="tantor-select monitoring-node-select"
-                  value={selectedNodeId}
-                  onChange={e => {
-                    setSelectedNodeId(e.target.value);
-                  }}
-                >
-                  {selectedClusterNodes.map(node => (
-                    <option key={nodeValue(node)} value={nodeValue(node)}>
-                      {nodeLabel(node)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            {/* Live Indicator */}
-            <div className="live-pill-container" onClick={() => setAutoRefresh(prev => !prev)}>
-              <span className={`live-pill-dot ${autoRefresh ? 'active' : ''}`}></span>
-              <span className="live-pill-text">Live</span>
-              <div className={`custom-checkbox ${autoRefresh ? 'checked' : ''}`}>
-                {autoRefresh && <Check size={12} strokeWidth={3} className="custom-check-icon" />}
-              </div>
-            </div>
 
             {/* CLUSTER NAME Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -371,7 +323,12 @@ export function Monitoring() {
               </span>
               <CustomSelect
                 value={selectedClusterId}
-                onChange={val => setSelectedClusterId(val)}
+                onChange={val => {
+                  setSelectedClusterId(val);
+                  setSelectedNodeId('');
+                  setOverview(null);
+                  setHistory([]);
+                }}
                 options={clusters.length > 0 ? clusters.map(c => ({ value: c.id, label: c.name })) : [{ value: '', label: 'No clusters found' }]}
                 width="160px"
                 placeholder="Select Cluster"
