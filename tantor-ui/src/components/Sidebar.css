@@ -99,7 +99,7 @@
 .nav-item.active {
   color: #DF678B;
   border-right: 4px solid #DF678B;
-  background: transparent;
+  background: #FAF8FF;
   font-weight: 500;
 }
 
@@ -199,7 +199,13 @@
 
 .nav-item.active-parent {
   color: #DF678B;
+  background: #FAF8FF;
+  border-right-color: #DF678B;
   font-weight: 500;
+}
+
+.nav-item.active-parent .nav-item-icon {
+  color: #DF678B;
 }
 
 @media (max-width: 700px) {

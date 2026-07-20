@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 export interface Cluster {
   id: string;
@@ -13,6 +13,10 @@ interface ClusterContextProps {
   clusters: Cluster[];
   activeClusterId: string | null;
   setActiveClusterId: (id: string | null) => void;
+  /** The mode of the currently active cluster ('EXTERNAL' or other values like 'kraft') */
+  activeClusterMode: string | null;
+  /** Convenience boolean: true when the active cluster is External */
+  isExternalCluster: boolean;
   loading: boolean;
 }
 
@@ -20,6 +24,8 @@ const ClusterContext = createContext<ClusterContextProps>({
   clusters: [],
   activeClusterId: null,
   setActiveClusterId: () => {},
+  activeClusterMode: null,
+  isExternalCluster: false,
   loading: true,
 });
 
@@ -44,8 +50,16 @@ export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ child
       .finally(() => setLoading(false));
   }, []);
 
+  const activeClusterMode = useMemo(() => {
+    if (!activeClusterId) return null;
+    const found = clusters.find(c => c.id === activeClusterId);
+    return found?.mode ?? null;
+  }, [activeClusterId, clusters]);
+
+  const isExternalCluster = activeClusterMode === 'EXTERNAL';
+
   return (
-    <ClusterContext.Provider value={{ clusters, activeClusterId, setActiveClusterId, loading }}>
+    <ClusterContext.Provider value={{ clusters, activeClusterId, setActiveClusterId, activeClusterMode, isExternalCluster, loading }}>
       {children}
     </ClusterContext.Provider>
   );

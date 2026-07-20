@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Topics.css';
 
 interface TopicSummary {
@@ -67,6 +68,7 @@ export function Topics() {
   const [includeInternal, setIncludeInternal] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [pendingAction, setPendingAction] = useState<{ kind: ActionKind; names: string[] } | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -127,11 +129,6 @@ export function Topics() {
     const timer = window.setInterval(() => fetchTopics(true), 15000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, fetchTopics]);
-  useEffect(() => {
-    const close = () => setOpenMenu(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, []);
 
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -261,13 +258,12 @@ export function Topics() {
     <section className="topics-page animate-fade-in">
       <div className="topics-title-row">
         <div>
-          <p className="topics-eyebrow">Kafka resources</p>
           <h2>Topics</h2>
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
-          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing}>
-            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} /> Refresh
+          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
+            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
           </button>
           <button
             className={`topic-button secondary ${autoRefresh ? 'live-active' : ''}`}
@@ -276,12 +272,12 @@ export function Topics() {
           >
             <RefreshCw size={16} className={autoRefresh ? 'spin-slow' : ''} /> Live 15s
           </button>
-          <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
+          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>
           {canManage && (
-            <button className="topic-button primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add a topic
+            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add Topic
             </button>
           )}
         </div>
@@ -300,7 +296,7 @@ export function Topics() {
           />
           {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
         </label>
-        
+
         <div className="topics-toolbar-right">
           <label className="internal-toggle">
             <input
@@ -314,14 +310,6 @@ export function Topics() {
             <span aria-hidden="true" />
             Show internal topics
           </label>
-          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
-            <Download size={16} /> Export CSV
-          </button>
-          {canManage && (
-            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add Topic
-            </button>
-          )}
         </div>
       </div>
 
@@ -408,15 +396,17 @@ export function Topics() {
                     aria-label={'Actions for ' + topic.name}
                     onClick={event => {
                       event.stopPropagation();
-                      setOpenMenu(current => current === topic.name ? null : topic.name);
+                      const opening = openMenu !== topic.name;
+                      setOpenMenu(opening ? topic.name : null);
+                      setMenuAnchor(opening ? event.currentTarget : null);
                     }}
                   ><MoreVertical size={18} /></button>
-                  {openMenu === topic.name && (
-                    <div className="topic-menu" onClick={event => event.stopPropagation()}>
+                  {openMenu === topic.name && menuAnchor && (
+                    <AnchoredMenu anchor={menuAnchor} className="topic-menu" onClose={() => { setOpenMenu(null); setMenuAnchor(null); }}>
                       <button onClick={() => setPendingAction({ kind: 'clear', names: [topic.name] })}>Clear messages</button>
                       <button onClick={() => setPendingAction({ kind: 'recreate', names: [topic.name] })}>Recreate topic</button>
                       <button onClick={() => setPendingAction({ kind: 'remove', names: [topic.name] })}>Remove topic</button>
-                    </div>
+                    </AnchoredMenu>
                   )}
                 </td>}
               </tr>

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
 import './JobStatusPage.css';
 
 type Job = {
@@ -122,7 +123,7 @@ export function JobStatusPage() {
   };
 
   const handleRollback = async () => {
-    if (!window.confirm('Rollback all successfully completed steps for this job?')) return;
+    if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
@@ -211,33 +212,34 @@ export function JobStatusPage() {
     }
   };
 
-  const getStepIcon = (status: string, size = 16) => {
-    switch (status) {
-      case 'SUCCESS':
-      case 'ROLLED_BACK':
-        return (
-          <svg width={size} height={size} viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="step-icon-success">
-            <mask id="mask0_1073_8355" style={{ maskType: 'alpha' }} maskUnits="userSpaceOnUse" x="0" y="0" width="20" height="20">
-              <rect width="20" height="20" fill="#D9D9D9"/>
-            </mask>
-            <g mask="url(#mask0_1073_8355)">
-              <path d="M9.99984 18.3332C8.84706 18.3332 7.76373 18.1144 6.74984 17.6769C5.73595 17.2394 4.854 16.6457 4.104 15.8957C3.354 15.1457 2.76025 14.2637 2.32275 13.2498C1.88525 12.2359 1.6665 11.1526 1.6665 9.99984C1.6665 8.84706 1.88525 7.76373 2.32275 6.74984C2.76025 5.73595 3.354 4.854 4.104 4.104C4.854 3.354 5.73595 2.76025 6.74984 2.32275C7.76373 1.88525 8.84706 1.6665 9.99984 1.6665C10.9026 1.6665 11.7568 1.79845 12.5623 2.06234C13.3679 2.32623 14.1109 2.69428 14.7915 3.1665L13.5832 4.39567C13.0554 4.06234 12.4929 3.80192 11.8957 3.61442C11.2984 3.42692 10.6665 3.33317 9.99984 3.33317C8.15262 3.33317 6.5797 3.98248 5.28109 5.28109C3.98248 6.5797 3.33317 8.15262 3.33317 9.99984C3.33317 11.8471 3.98248 13.42 5.28109 14.7186C6.5797 16.0172 8.15262 16.6665 9.99984 16.6665C11.8471 16.6665 13.42 16.0172 14.7186 14.7186C16.0172 13.42 16.6665 11.8471 16.6665 9.99984C16.6665 9.74984 16.6526 9.49984 16.6248 9.24984C16.5971 8.99984 16.5554 8.75678 16.4998 8.52067L17.854 7.1665C18.0068 7.61095 18.1248 8.06928 18.2082 8.5415C18.2915 9.01373 18.3332 9.49984 18.3332 9.99984C18.3332 11.1526 18.1144 12.2359 17.6769 13.2498C17.2394 14.2637 16.6457 15.1457 15.8957 15.8957C15.1457 16.6457 14.2637 17.2394 13.2498 17.6769C12.2359 18.1144 11.1526 18.3332 9.99984 18.3332ZM8.83317 13.8332L5.2915 10.2915L6.45817 9.12484L8.83317 11.4998L17.1665 3.14567L18.3332 4.31234L8.83317 13.8332Z" fill="#332849"/>
-            </g>
-          </svg>
-        );
-      case 'FAILED':
-      case 'ROLLBACK_FAILED':
-        return <XCircle size={size} className="step-icon-failed" />;
-      case 'IN_PROGRESS':
-      case 'ROLLING_BACK':
-        return <RefreshCw className="spin step-icon-progress" size={size} />;
-      case 'PARTIAL_SUCCESS':
-        return <AlertTriangle size={size} className="step-icon-warning" />;
-      case 'PENDING':
-      case 'ROLLBACK_PENDING':
-      default:
-        return <div className="step-icon-pending-circle" style={{ width: size, height: size }}></div>;
+  const getStepIcon = (status: string, size = 20) => {
+    const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(status);
+    const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(status);
+    const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(status);
+    
+    let bgColor = '#CCCCCC'; // Pending / Default
+    if (isCompleted) bgColor = '#1F845A';
+    else if (isFailed) bgColor = '#EF4D5F';
+    else if (isRunning) bgColor = '#3E1363';
+
+    if (isRunning) {
+      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#818181', flexShrink: 0 }} />;
     }
+
+    return (
+      <div style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '64px',
+        background: bgColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
+      }}>
+        <Check size={size - 8} color="#FFFFFF" strokeWidth={3} />
+      </div>
+    );
   };
 
   const renderLogs = (logsText: string) => {
@@ -319,56 +321,116 @@ export function JobStatusPage() {
         </div>
       </div>
 
+      {!isLogsExpanded && (
+        <h3 className="panel-title" style={{ textAlign: 'left', marginBottom: '16px', color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+      )}
       <div className={`job-main-layout ${isLogsExpanded ? 'logs-expanded' : ''}`}>
         {!isLogsExpanded && (
           <div className="job-sidebar">
-            <h3 className="panel-title" style={{ textAlign: 'left', marginBottom: '8px', color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
-            {totalSteps > 0 && (
-              <>
-                <div style={{ textAlign: 'left', fontSize: '14px', color: '#332849', marginBottom: '16px' }}>
+            <div style={{
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              padding: '16px',
+              background: '#FFFFFF',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              boxSizing: 'border-box',
+              marginLeft: '16px'
+            }}>
+              {totalSteps > 0 && (
+                <div style={{ textAlign: 'left', fontSize: '12px', lineHeight: '16px', color: '#818181', fontFamily: 'Satoshi', fontWeight: 500 }}>
                   {completedStepsCount} of {totalSteps} steps
                 </div>
-                <div className="global-progress" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#3E1363', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Check size={12} color="#FFFFFF" strokeWidth={3} />
+              )}
+              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {displaySteps.map((step, idx) => {
+                  const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
+                  const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
+                  const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);
+                  
+                  const progress = isCompleted ? 100 : isRunning ? 50 : 0;
+                  
+                  let nameColor = '#818181'; // Unstarted default
+                  let statusColor = '#818181'; // Unstarted default
+                  let barColor = '#CCCCCC'; // Unstarted default track
+                  
+                  if (isCompleted) {
+                    nameColor = '#332849';
+                    statusColor = '#1F845A';
+                    barColor = '#098C60';
+                  } else if (isFailed) {
+                    nameColor = '#332849';
+                    statusColor = '#EF4D5F';
+                    barColor = '#EF4D5F';
+                  } else if (isRunning) {
+                    nameColor = '#332849';
+                    statusColor = '#3E1363';
+                    barColor = '#3E1363';
+                  }
+
+                  return (
+                    <div key={step.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
+                      {getStepIcon(step.status, 20)}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ 
+                            fontFamily: 'Satoshi', 
+                            fontSize: '12px', 
+                            fontWeight: 500, 
+                            lineHeight: '16px',
+                            color: nameColor,
+                            width: '175px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'inline-block'
+                          }} title={getBusinessStepName(step.name)}>
+                            {getBusinessStepName(step.name)}
+                          </span>
+                          <span style={{ 
+                            fontFamily: 'Satoshi', 
+                            fontSize: '12px', 
+                            fontWeight: 500, 
+                            lineHeight: '16px',
+                            color: statusColor,
+                            width: '96px',
+                            textAlign: 'right'
+                          }}>
+                            {progress}% Completed
+                          </span>
+                        </div>
+                        <div className="step-progress-track" style={{ height: '8px', background: '#CCCCCC', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
+                          {isCompleted || isFailed || isRunning ? (
+                            <>
+                              <div 
+                                className="step-progress-fill" 
+                                style={{ 
+                                  width: `${progress}%`, 
+                                  background: barColor, 
+                                  height: '100%', 
+                                  borderRadius: progress === 100 ? '2px' : '2px 0px 0px 2px', 
+                                  transition: 'width 0.5s ease' 
+                                }} 
+                              />
+                              {progress < 100 && (
+                                <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
+                              )}
+                            </>
+                          ) : (
+                            // Not Started / Pending step progress bar: partitioned rectangle 63 and rectangle 64
+                            <>
+                              <div style={{ width: '3px', background: '#CCCCCC', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
+                              <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
+                            </>
+                          )}
+                        </div>
                       </div>
-                      <span style={{ fontSize: '14px', color: '#818181', fontWeight: 600 }}>
-                        {displaySteps.length > 0 ? getBusinessStepName(displaySteps[displaySteps.length - 1].name) : 'Initializing...'}
-                      </span>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#818181' }}>
-                      {progressPercentage}% Complete
-                    </div>
-                  </div>
-                  <div className="step-progress-track" style={{ height: '8px', background: '#F1F1F1', borderRadius: '4px' }}>
-                    <div 
-                      className="step-progress-fill"
-                      style={{ 
-                        width: `${progressPercentage}%`, 
-                        background: progressPercentage === 100 ? '#36AD8F' : '#818181', 
-                        height: '100%', 
-                        borderRadius: '4px',
-                        transition: 'width 0.5s ease'
-                      }} 
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-            <div className="steps-list">
-              {displaySteps.map((step, idx) => (
-                <div className="step-card" key={step.id} style={{ padding: '12px 16px', border: '1px solid #CCCCCC', borderRadius: '4px', background: '#FFFFFF', marginBottom: '8px' }}>
-                  <div className="step-card-header" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
-                    <span className="step-name" style={{ color: '#332849', fontSize: '14px', fontWeight: 500 }}>
-                      {idx + 1}. {getBusinessStepName(step.name)}
-                    </span>
-                    {getStepIcon(step.status, 20)}
-                  </div>
-                </div>
-              ))}
-              {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: '#818181' }}>No steps recorded</div>}
+                  );
+                })}
+                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: '#818181' }}>No steps recorded</div>}
+              </div>
             </div>
           </div>
         )}
@@ -380,7 +442,17 @@ export function JobStatusPage() {
               {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
             </div>
             <button className="btn icon-only toggle-expand-btn" onClick={() => setIsLogsExpanded(!isLogsExpanded)} title={isLogsExpanded ? "Collapse" : "Expand"}>
-              {isLogsExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              {isLogsExpanded ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M 19 10 h -5 v -5" />
+                  <path d="M 5 14 h 5 v 5" />
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M 14 5 h 5 v 5" />
+                  <path d="M 10 19 H 5 v -5" />
+                </svg>
+              )}
             </button>
           </div>
           <div className="logs-content">

@@ -79,7 +79,8 @@ export function ClusterOverview() {
       if (!res.ok) {
         throw new Error('Failed to fetch cluster overview');
       }
-      setOverview(await res.json());
+      const data = await res.json();
+      setOverview(data);
       setError(null);
     } catch (e: any) {
       setError(e.message || 'Failed to fetch cluster overview');
@@ -279,7 +280,7 @@ export function ClusterOverview() {
         </div>
       </section>
 
-      {overview.controllers && overview.controllers.length > 0 && (
+      {overview.originType === 'EXTERNAL' && overview.controllers && overview.controllers.length > 0 && (
         <section className="overview-section">
           <h2>Controller Voters</h2>
           <div className="overview-band">
@@ -345,7 +346,7 @@ export function ClusterOverview() {
                       <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
                       <td>
                         {p.hasTelemetry ? (
-                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
+                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14} /> Managed</span>
                         ) : (
                           <span className="text-muted text-sm">Bootstrap metadata</span>
                         )}

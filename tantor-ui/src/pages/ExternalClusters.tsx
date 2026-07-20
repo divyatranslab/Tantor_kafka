@@ -353,7 +353,7 @@ export function ExternalClusters() {
                     <label>Bootstrap URL</label>
                     <input
                       type="text"
-                      placeholder="192.168.1.100:9092"
+                      placeholder="Broker host and port"
                       value={form.bootstrapServers}
                       onChange={e => {
                         setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
@@ -678,9 +678,8 @@ export function ExternalClusters() {
                   <h3>Agent connectivity</h3>
                   <p>Shows discovery agents that are polling this Tantor server, even before Kafka is detected.</p>
                 </div>
-                <button className="btn" onClick={loadAgents} disabled={agentsLoading}>
+                <button className="btn" onClick={loadAgents} disabled={agentsLoading} aria-label="Refresh agents" title="Refresh">
                   <RefreshCw size={14} className={agentsLoading ? 'spin' : ''} />
-                  Refresh
                 </button>
               </div>
 

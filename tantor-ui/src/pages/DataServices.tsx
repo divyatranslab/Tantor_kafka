@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Database, Activity, Box, Server, Settings, Layers, HardDrive, CheckCircle2, X } from 'lucide-react';
+import { notifyAction } from '../components/ConfirmDialog';
 import './DataServices.css';
 
 export function DataServices() {
@@ -234,7 +235,7 @@ export function DataServices() {
                 <button 
                   className="btn-primary" 
                   onClick={async () => {
-                    alert('Deployment initialized! In a real scenario, this would trigger /api/v1/ui/clusters/deploy with the selected host ' + selectedHostId);
+                    notifyAction('Deployment initialized! In a real scenario, this would trigger /api/v1/ui/clusters/deploy with the selected host ' + selectedHostId);
                     window.location.href = '/';
                   }}
                 >

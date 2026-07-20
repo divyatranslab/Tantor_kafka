@@ -6,14 +6,13 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED !== 'false';
+export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
-const currentRedirectUri = () => window.location.href;
-const postLogoutRedirectUri = () => new URL(import.meta.env.BASE_URL || '/', window.location.origin).href;
+const dashboardRedirectUri = () => `${window.location.origin}/dashboard`;
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
@@ -25,7 +24,7 @@ export const initKeycloak = (): Promise<boolean> => {
       onLoad: 'login-required',
       pkceMethod: 'S256',
       checkLoginIframe: true,
-      redirectUri: currentRedirectUri(),
+      redirectUri: dashboardRedirectUri(),
     });
   }
 
@@ -35,22 +34,16 @@ export const initKeycloak = (): Promise<boolean> => {
 export const login = () =>
   isAuthEnabled()
     ? keycloak.login({
-        redirectUri: currentRedirectUri(),
+        redirectUri: dashboardRedirectUri(),
       })
     : Promise.resolve();
 
-export const logout = () => {
-  const redirectUri = postLogoutRedirectUri();
-  if (!isAuthEnabled()) {
-    window.location.assign(redirectUri);
-    return Promise.resolve();
-  }
-
-  // Navigate directly so logout remains tied to the user's click and cannot
-  // be swallowed by an unresolved adapter promise.
-  window.location.assign(keycloak.createLogoutUrl({ redirectUri, logoutMethod: 'GET' }));
-  return Promise.resolve();
-};
+export const logout = () =>
+  isAuthEnabled()
+    ? keycloak.logout({
+        redirectUri: window.location.origin,
+      })
+    : Promise.resolve();
 
 export const getToken = () => isAuthEnabled() ? keycloak.token : undefined;
 
@@ -76,7 +69,7 @@ export const getValidToken = async () => {
 };
 
 export const installAuthenticatedFetch = () => {
-  if (!isAuthEnabled() || authenticatedFetchInstalled) return;
+  if (authenticatedFetchInstalled) return;
 
   nativeFetch = window.fetch.bind(window);
   authenticatedFetchInstalled = true;
@@ -87,9 +80,11 @@ export const installAuthenticatedFetch = () => {
     const headers = new Headers(init?.headers || request?.headers);
 
     if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-      const token = await getValidToken();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      if (isAuthEnabled()) {
+        const token = await getValidToken();
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
       }
     }
 

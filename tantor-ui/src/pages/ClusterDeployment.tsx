@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import {
   AlertTriangle,
   Check,
@@ -383,6 +385,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
   const [hostPorts, setHostPorts] = useState<Record<string, { listenerPort: number, controllerPort: number, zookeeperPeerPort: number, zookeeperElectionPort: number }>>({});
   const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
+  const [hoveredPortCheckHostId, setHoveredPortCheckHostId] = useState<string | null>(null);
   const [numPartitions, setNumPartitions] = useState(1);
 
   const [nodeSearch, setNodeSearch] = useState('');
@@ -404,18 +407,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setNodeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openRoleMenuHostId, setOpenRoleMenuHostId] = useState<string | null>(null);
+  const [roleMenuAnchor, setRoleMenuAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     loadHosts();
@@ -459,7 +454,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       })
       .catch(error => {
         console.error(error);
-        alert('Failed to load cluster details for add-node mode.');
+        notifyAction('Failed to load cluster details for add-node mode.');
         navigate('/clusters');
       })
       .finally(() => setLoadingCluster(false));
@@ -931,7 +926,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'KRaft topology validation failed.');
+        notifyAction(body.error || body.message || 'KRaft topology validation failed.');
         return;
       }
       const report = body as KraftValidationReport;
@@ -940,7 +935,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       setStage('preview');
     } catch (error) {
       console.error(error);
-      alert('Network error while validating the KRaft topology.');
+      notifyAction('Network error while validating the KRaft topology.');
     } finally {
       setValidatingKraft(false);
     }
@@ -1046,42 +1041,126 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     return Array.from(ports);
   };
 
+  const pollPortCheck = async (hostId: string, taskId: string) => {
+    for (let i = 0; i < 90; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      if (!res.ok) continue;
+
+      const body = await res.json();
+      const status = String(body.status || 'RUNNING').toUpperCase();
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: activeStatus(status) ? 'RUNNING' : status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+          taskId,
+          logOutput: body.logOutput || prev[hostId]?.logOutput || '',
+          errorMsg: body.errorMsg || '',
+        },
+      }));
+      if (!activeStatus(status)) return;
+    }
+
+    setPortCheckResults(prev => ({
+      ...prev,
+      [hostId]: {
+        status: 'FAILED',
+        taskId,
+        logOutput: prev[hostId]?.logOutput || '',
+        errorMsg: 'Port check timed out while waiting for the host agent.',
+      },
+    }));
+  };
+
   const checkHostPorts = async (hostId: string) => {
-    setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
+    const requiredPorts = prerequisitePortsForHost(hostId);
+    if (requiredPorts.length === 0) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: { status: 'FAILED', logOutput: '', errorMsg: 'No required ports are configured for this host.' },
+      }));
+      return;
+    }
+
+    setPortCheckResults(prev => ({
+      ...prev,
+      [hostId]: { status: 'RUNNING', logOutput: 'Queuing port availability check...', errorMsg: '' },
+    }));
+
     try {
       const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: deploymentMode,
-          required_ports: prerequisitePortsForHost(hostId).join(','),
-        }),
+        body: JSON.stringify({ required_ports: requiredPorts.join(',') }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.message || 'Failed to check ports.');
-      
-      for (let i = 0; i < 30; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const pollRes = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${body.taskId}`);
-        if (!pollRes.ok) continue;
-        const pollBody = await pollRes.json();
-        const status = String(pollBody.status || 'RUNNING').toUpperCase();
-        if (!activeStatus(status)) {
-          setPortCheckResults(prev => ({
-            ...prev,
-            [hostId]: {
-              status: status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-              logOutput: pollBody.logOutput || '',
-              errorMsg: pollBody.errorMsg || (status === 'SUCCESS' ? '' : 'Ports may be in use.'),
-            }
-          }));
-          return;
+      if (!res.ok || !body.taskId) {
+        throw new Error(body.message || 'Failed to queue port availability check.');
+      }
+
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'RUNNING',
+          taskId: body.taskId,
+          logOutput: 'Port check queued. Waiting for the host agent...',
+          errorMsg: '',
+        },
+      }));
+      await pollPortCheck(hostId, body.taskId);
+    } catch (error) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'FAILED',
+          logOutput: '',
+          errorMsg: error instanceof Error ? error.message : 'Failed to check ports.',
+        },
+      }));
+    }
+  };
+
+  const getPortTooltipText = (hostId: string) => {
+    const result = portCheckResults[hostId];
+    if (!result) return 'Click to check ports';
+    if (result.status === 'RUNNING') return 'Checking ports...';
+
+    const log = result.logOutput || '';
+    const lines = log.split('\n');
+    const available: number[] = [];
+    const unavailable: number[] = [];
+
+    lines.forEach(line => {
+      const match = line.match(/Port (\d+):\s*(Available|Unavailable)/i);
+      if (match) {
+        const port = parseInt(match[1], 10);
+        if (match[2].toLowerCase() === 'available') {
+          available.push(port);
+        } else {
+          unavailable.push(port);
         }
       }
-      throw new Error('Timed out waiting for port check.');
-    } catch (e) {
-      setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'FAILED', logOutput: '', errorMsg: e instanceof Error ? e.message : 'Error checking ports.' } }));
+    });
+
+    if (result.status === 'SUCCESS') {
+      if (available.length > 0) {
+        return `Available ports:\n${available.map(p => `• Port ${p}`).join('\n')}`;
+      }
+      return 'All required ports are available';
     }
+
+    if (unavailable.length > 0 || available.length > 0) {
+      const parts: string[] = [];
+      if (unavailable.length > 0) {
+        parts.push(`Unavailable (in use):\n${unavailable.map(p => `• Port ${p}`).join('\n')}`);
+      }
+      if (available.length > 0) {
+        parts.push(`Available (free):\n${available.map(p => `• Port ${p}`).join('\n')}`);
+      }
+      return parts.join('\n\n');
+    }
+
+    return result.errorMsg || 'Failed to check ports';
   };
 
   const checkPrerequisites = async () => {
@@ -1180,7 +1259,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const fixPrerequisites = async () => {
     const failedHosts = selectedHosts.filter(host => prereqResults[host.id]?.status === 'FAILED');
     if (failedHosts.length === 0) return;
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
       `Apply privileged operating-system changes on ${failedHosts.length} host(s)? This may update limits, sysctl, THP, SELinux, time synchronization, and may require a reboot.`,
     );
     if (!confirmed) return;
@@ -1207,7 +1286,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const rebootHost = async (host: Host) => {
-    if (!window.confirm(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`)) return;
+    if (!(await confirmAction(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`))) return;
     setCheckingPrereqs(true);
     try {
       const res = await fetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
@@ -1247,7 +1326,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'Deployment failed to start.');
+        notifyAction(body.error || body.message || 'Deployment failed to start.');
         return;
       }
       if (onClose) {
@@ -1260,14 +1339,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       }
     } catch (e) {
       console.error(e);
-      alert('Network error while starting deployment.');
+      notifyAction('Network error while starting deployment.');
     } finally {
       setDeploying(false);
     }
   };
 
   const mainContent = (
-    <div className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}>
+    <div 
+      className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}
+      style={!onClose ? { maxWidth: '100%' } : {}}
+    >
       {(!onClose || stage === 'preview') && (
         <header className="cd-header">
           <div>
@@ -1289,8 +1371,28 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </div>
           <div className="cd-header-side">
             <div className="cd-stage-tabs" aria-label="Deployment progress">
-              <span className={stage === 'details' ? 'active' : ''}>Details</span>
-              <span className={stage === 'preview' ? 'active' : ''}>Preview</span>
+              <span 
+                className={stage === 'details' ? 'active' : ''} 
+                onClick={() => setStage('details')} 
+                style={{ cursor: 'pointer' }}
+              >
+                Details
+              </span>
+              <span 
+                className={`${stage === 'preview' ? 'active' : ''} ${!canPreview ? 'disabled' : ''}`} 
+                onClick={() => {
+                  if (canPreview) {
+                    if (stage === 'details') {
+                      openPreview();
+                    } else {
+                      setStage('preview');
+                    }
+                  }
+                }} 
+                style={{ cursor: canPreview ? 'pointer' : 'not-allowed', opacity: canPreview ? 1 : 0.5 }}
+              >
+                Preview
+              </span>
             </div>
           </div>
         </header>
@@ -1355,14 +1457,29 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               )}
               <label className="cd-field">
                 <span>Kafka Version</span>
-                <select value={kafkaVersion} onChange={e => changeKafkaVersion(e.target.value)} disabled={isAddNodeMode || loadingVersions || versions.length === 0}>
-                  {availableVersions.map(version => (
-                    <option key={version.version} value={version.version}>
-                      {version.version} ({version.size_mb} MB)
-                    </option>
-                  ))}
-                  {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
-                </select>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <select 
+                    value={kafkaVersion} 
+                    onChange={e => changeKafkaVersion(e.target.value)} 
+                    disabled={isAddNodeMode || loadingVersions || versions.length === 0}
+                    style={{
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      color: '#818181',
+                      paddingRight: '40px'
+                    }}
+                  >
+                    {availableVersions.map(version => (
+                      <option key={version.version} value={version.version}>
+                        {version.version} ({version.size_mb} MB)
+                      </option>
+                    ))}
+                    {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
+                  </select>
+                  <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: '#818181' }}>
+                    <ChevronDown size={20} />
+                  </div>
+                </div>
               </label>
               <div className="cd-field">
                 <span>Environment (optional)</span>
@@ -1430,64 +1547,196 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </button>
             </div>
 
-            <div className="cd-node-picker" ref={dropdownRef}>
-              <button className="cd-node-trigger" onClick={() => {
-                setNodeDropdownOpen(open => !open);
-              }}>
-                <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
-                <ChevronDown size={16} />
-              </button>
-              {nodeDropdownOpen && (
-                <div className="cd-node-menu">
-                  <div className="cd-search">
-                    <Search size={15} />
-                    <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
-                  </div>
-                  <div className="cd-node-options">
-                    {filteredHosts.map(host => {
-                      const disabled = host.status !== 'AVAILABLE' || host.available === false;
-                      const checked = selectedNodeIds.includes(host.id);
-                      return (
-                        <button
-                          key={host.id}
-                          className={`cd-node-option ${checked ? 'checked' : ''}`}
-                          disabled={disabled}
-                          onClick={() => toggleNodeSelection(host.id)}
-                        >
-                          <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
-                          <span className="cd-node-info">
-                            <strong>{host.hostname}</strong>
-                            <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+            <div className="cd-node-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch', marginBottom: '16px' }}>
+              <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '14px', fontWeight: 500, color: '#332849' }}>Select node</span>
+              <div className="cd-node-picker" ref={dropdownRef}>
+                <button className="cd-node-trigger" onClick={() => {
+                  setNodeDropdownOpen(open => !open);
+                }}>
+                  <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
+                  <ChevronDown size={16} />
+                </button>
+                {nodeDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cd-node-menu"
+                    onClose={() => setNodeDropdownOpen(false)}
+                    align="start"
+                    matchAnchorWidth
+                  >
+                    <div className="cd-search">
+                      <Search size={15} />
+                      <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
+                    </div>
+                    <div className="cd-node-options">
+                      {filteredHosts.map(host => {
+                        const disabled = host.status !== 'AVAILABLE' || host.available === false;
+                        const checked = selectedNodeIds.includes(host.id);
+                        return (
+                          <button
+                            key={host.id}
+                            className={`cd-node-option ${checked ? 'checked' : ''}`}
+                            disabled={disabled}
+                            onClick={() => toggleNodeSelection(host.id)}
+                          >
+                            <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
+                            <span className="cd-node-info">
+                              <strong>{host.hostname}</strong>
+                              <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </AnchoredMenu>
+                )}
+              </div>
             </div>
 
             <div className="cd-selected-node-list">
-              {selectedHosts.length === 0 ? (
-                <div className="cd-empty">No nodes selected yet.</div>
-              ) : selectedHosts.map(host => (
+              {selectedHosts.map(host => (
                 <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', border: 'none' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                     <div className="cd-node-main" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
                       <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', lineHeight: '19px', color: '#332849', margin: 0 }}>{host.hostname}</strong>
                       <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181', margin: 0 }}>{displayIp(host)} - /srv/tantor-agent/tantor-agent-linux</span>
                     </div>
-                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                      <button
+                        className="cd-figma-action-btn"
+                        onClick={() => checkHostPorts(host.id)}
+                        disabled={portCheckResults[host.id]?.status === 'RUNNING'}
+                        onMouseEnter={() => setHoveredPortCheckHostId(host.id)}
+                        onMouseLeave={() => setHoveredPortCheckHostId(null)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: portCheckResults[host.id]?.status === 'RUNNING' ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <span>
+                          {portCheckResults[host.id]?.status === 'RUNNING'
+                            ? 'Checking...'
+                            : portCheckResults[host.id]?.status === 'SUCCESS'
+                            ? 'Ports OK'
+                            : portCheckResults[host.id]?.status === 'FAILED'
+                            ? 'Ports Failed'
+                            : 'Check Ports'}
+                        </span>
+                        {portCheckResults[host.id]?.status === 'RUNNING' ? (
+                          <Loader2 size={12} className="spin" style={{ color: '#3E1363' }} />
+                        ) : portCheckResults[host.id]?.status === 'SUCCESS' ? (
+                          <CheckCircle2 size={14} style={{ color: '#069B68' }} />
+                        ) : portCheckResults[host.id]?.status === 'FAILED' ? (
+                          <XCircle size={14} style={{ color: '#E15252' }} />
+                        ) : (
+                          <Play size={10} fill="#3E1363" style={{ transform: 'none' }} />
+                        )}
+                      </button>
+
+                      {hoveredPortCheckHostId === host.id && portCheckResults[host.id] && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '40px',
+                            left: '0',
+                            zIndex: 1000,
+                            width: '240px',
+                            background: '#FAF8FF',
+                            border: '1px solid #CCCCCC',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            fontFamily: 'Satoshi, sans-serif',
+                            fontSize: '13px',
+                            color: '#332849',
+                            pointerEvents: 'none',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {(() => {
+                            const result = portCheckResults[host.id];
+                            const log = result.logOutput || '';
+                            const lines = log.split('\n');
+                            const available: number[] = [];
+                            const unavailable: number[] = [];
+
+                            lines.forEach(line => {
+                              const match = line.match(/Port (\d+):\s*(Available|Unavailable)/i);
+                              if (match) {
+                                const port = parseInt(match[1], 10);
+                                if (match[2].toLowerCase() === 'available') {
+                                  available.push(port);
+                                } else {
+                                  unavailable.push(port);
+                                }
+                              }
+                            });
+
+                            if (result.status === 'SUCCESS') {
+                              return (
+                                <>
+                                  <div style={{ fontWeight: 600, color: '#069B68' }}>All ports available</div>
+                                  {available.map(p => (
+                                    <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: '#069B68' }}>•</span>
+                                      <span>Port {p}</span>
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {unavailable.length > 0 && (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Unavailable (in use):</div>
+                                    {unavailable.map(p => (
+                                      <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
+                                        <span style={{ color: '#E15252' }}>•</span>
+                                        <span>Port {p}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {available.length > 0 && (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Available (free):</div>
+                                    {available.map(p => (
+                                      <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
+                                        <span style={{ color: '#069B68' }}>•</span>
+                                        <span>Port {p}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {unavailable.length === 0 && available.length === 0 && (
+                                  <div style={{ color: '#E15252' }}>{result.errorMsg || 'Failed to check ports'}</div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                       <div className="cd-role-menu-wrap" style={{ position: 'relative' }}>
                         <button
                           className="cd-figma-action-btn"
-                          onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                          onClick={event => {
+                            const opening = openRoleMenuHostId !== host.id;
+                            setOpenRoleMenuHostId(opening ? host.id : null);
+                            setRoleMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                         >
                           <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                           <MoreVertical size={14} />
                         </button>
-                      {openRoleMenuHostId === host.id && (
-                        <div className="cd-role-menu">
+                      {openRoleMenuHostId === host.id && roleMenuAnchor && (
+                        <AnchoredMenu anchor={roleMenuAnchor} className="cd-role-menu" onClose={() => { setOpenRoleMenuHostId(null); setRoleMenuAnchor(null); }}>
                           {roleOptions.filter(r => r.id !== 'separate').map(role => {
                             const currentRole = rolesByHost[host.id] || defaultRoleForMode;
                             let isActive = currentRole === role.id;
@@ -1527,7 +1776,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                               </label>
                             );
                           })}
-                        </div>
+                        </AnchoredMenu>
                       )}
                     </div>
                     <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
@@ -1547,7 +1796,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('details')}>Cancel</button>
+            <button className="cd-secondary-btn" onClick={() => onClose ? onClose() : navigate(-1)}>Cancel</button>
             <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
               {validatingKraft && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Preview add node' : validatingKraft ? 'Validating topology' : 'Preview'}
@@ -1821,6 +2070,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     );
   }
 
+  if (!onClose) {
+    return (
+      <div className="cluster-deployment-page-wrapper" style={{ padding: '24px', backgroundColor: '#F5F6FA', flex: 1, minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', boxSizing: 'border-box' }}>
+        {mainContent}
+      </div>
+    );
+  }
+
   return mainContent;
 }
 
@@ -1871,8 +2128,8 @@ function PropertyTable({
                 </div>
               </td>
               {hostIp && (
-                <td style={{ textAlign: 'right' }}>
-                  <button type="button" onClick={onUseHostIp} style={{ background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                <td>
+                  <button type="button" onClick={onUseHostIp} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '40px', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
                     Use {hostIp}
                   </button>
                 </td>
@@ -1896,5 +2153,23 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
       : normalized === 'RUNNING' || normalized === 'QUEUED'
         ? <Loader2 size={13} className="spin" />
         : null;
-  return <span className={`cd-status ${normalized.toLowerCase()}`}>{icon}{normalized}</span>;
+        
+  let text = '';
+  if (normalized === 'IDLE') {
+    text = 'Idel';
+  } else if (normalized === 'SUCCESS') {
+    text = 'Success';
+  } else if (normalized === 'FAILED') {
+    text = 'Failed';
+  } else if (normalized === 'RUNNING') {
+    text = 'Running';
+  } else if (normalized === 'QUEUED') {
+    text = 'Queued';
+  } else if (normalized === 'REBOOT_REQUIRED') {
+    text = 'Reboot Required';
+  } else {
+    text = normalized;
+  }
+  
+  return <span className={`cd-status ${normalized.toLowerCase()}`}>{icon}{text}</span>;
 }
