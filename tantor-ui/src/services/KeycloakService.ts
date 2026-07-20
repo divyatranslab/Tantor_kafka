@@ -6,7 +6,7 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
@@ -85,11 +85,6 @@ export const installAuthenticatedFetch = () => {
         if (token) {
           headers.set('Authorization', `Bearer ${token}`);
         }
-      } else {
-        // When auth is disabled locally, supply a mock administrative token header so backend RoleAuthenticationUtil can decode it
-        // The mock token payload below corresponds to: {"preferred_username":"shaukat","roles":["admin"]}
-        const mockJwt = "eyJhbGciOiJIUzI1NiJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzaGF1a2F0Iiwicm9sZXMiOlsiYWRtaW4iXX0.mocksignature";
-        headers.set('Authorization', `Bearer ${mockJwt}`);
       }
     }
 

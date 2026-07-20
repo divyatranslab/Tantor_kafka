@@ -421,31 +421,6 @@ export function SchemaRegistry() {
     setLoading(true);
     setError(null);
 
-    // Check if the selected connection matches the exact mock testing credentials
-    const isMockConnection = import.meta.env.DEV && selectedConn && 
-      selectedConn.connectionName.trim().toLowerCase() === 'test' &&
-      selectedConn.protocol === 'http' &&
-      selectedConn.host === '127.1.1.1' &&
-      selectedConn.port === 8081;
-
-    if (isMockConnection) {
-      setSummary({
-        connection: selectedConnectionId || 'default',
-        subjects: [
-          { subject: 'customers_test-value', type: 'VALUE', version: 1, id: 101, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'customers_test_SASL_PLAINTEXT-value', type: 'VALUE', version: 2, id: 102, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "SASL_Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'customers_test_SSL-value', type: 'VALUE', version: 1, id: 103, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "SSL_Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'dep_table-value', type: 'VALUE', version: 1, id: 104, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "Department",\n  "fields": [\n    { "name": "id", "type": "int" }\n  ]\n}' }
-        ],
-        totalSubjects: 4,
-        keySubjects: 0,
-        valueSubjects: 4
-      });
-      setGlobalCompatibility('BACKWARD');
-      setLoading(false);
-      return;
-    }
-
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
       const data = await res.json().catch(() => ({}));
@@ -476,43 +451,6 @@ export function SchemaRegistry() {
     setLoadingDetails(true);
     setError(null);
     setExpandedVersions(new Set());
-
-    // Check if the selected connection matches the exact mock testing credentials
-    const isMockConnection = import.meta.env.DEV && selectedConn && 
-      selectedConn.connectionName.trim().toLowerCase() === 'test' &&
-      selectedConn.protocol === 'http' &&
-      selectedConn.host === '127.1.1.1' &&
-      selectedConn.port === 8081;
-
-    if (isMockConnection) {
-      setDetails({
-        subject: item.subject,
-        latest: {
-          version: 2,
-          id: 102,
-          schemaType: item.schemaType,
-          schema: item.schema
-        },
-        versions: [
-          {
-            version: 2,
-            id: 102,
-            schemaType: item.schemaType,
-            schema: item.schema
-          },
-          {
-            version: 1,
-            id: 101,
-            schemaType: item.schemaType,
-            schema: item.schema.replace('"id", "type": "string"', '"id", "type": "int"')
-          }
-        ],
-        compatibility: 'BACKWARD'
-      });
-      setSubjectCompatibility('BACKWARD');
-      setLoadingDetails(false);
-      return;
-    }
 
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
@@ -1246,7 +1184,7 @@ export function SchemaRegistry() {
                       ]}
                     />
                   </div>
-                  <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.222" required /></div>
+                  <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="Host or IP address" required /></div>
                   <div className="ds-field"><label>Port</label><input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8081" required /></div>
                 </div>
                 <div className="ds-form-grid two">

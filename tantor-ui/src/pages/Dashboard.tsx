@@ -178,7 +178,7 @@ export function Dashboard() {
 
   // Capitalize the first letter of username
   const username = useMemo(() => {
-    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'Rajat';
+    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'User';
     return rawName.charAt(0).toUpperCase() + rawName.slice(1);
   }, [decodedToken]);
 

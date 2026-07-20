@@ -903,7 +903,7 @@ export function KafkaConnect() {
                   <input 
                     value={customIp} 
                     onChange={e => setCustomIp(e.target.value)} 
-                    placeholder="192.168.3.161" 
+                    placeholder="Host or IP address"
                     required 
                     style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
                   />

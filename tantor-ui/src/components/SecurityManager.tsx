@@ -37,7 +37,7 @@ export default function SecurityManager({ clusterId }: Props) {
   const [aclPatternType, setAclPatternType] = useState('Literal');
   const [aclOperations, setAclOperations] = useState<string[]>([]);
   const [aclPermission, setAclPermission] = useState('Allow');
-  const [aclHost, setAclHost] = useState('192.168.3.222');
+  const [aclHost, setAclHost] = useState('');
   const [aclCreating, setAclCreating] = useState(false);
   const [aclFilterPrincipal, setAclFilterPrincipal] = useState('');
   const [aclFilterResource, setAclFilterResource] = useState('');
@@ -351,7 +351,7 @@ export default function SecurityManager({ clusterId }: Props) {
                     type="text" 
                     value={aclHost} 
                     onChange={e => setAclHost(e.target.value)} 
-                    placeholder="192.168.3.222" 
+                    placeholder="* or client IP"
                     required 
                     style={{
                       width: '100%',
@@ -640,7 +640,7 @@ export default function SecurityManager({ clusterId }: Props) {
               <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
                 <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
-                  localhost:5173 says
+                  Confirm action
                 </h2>
               </div>
               
@@ -736,7 +736,7 @@ export default function SecurityManager({ clusterId }: Props) {
               <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
                 <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
-                  localhost:5173 says
+                  Notice
                 </h2>
               </div>
               

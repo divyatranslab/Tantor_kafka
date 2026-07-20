@@ -326,7 +326,7 @@ export function ClusterActions() {
                     color: '#332849'
                   }}
                 >
-                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || 'broker1.translab.io'} · {host.ipAddress}</option>)}
+                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` · ${host.ipAddress}` : ''}</option>)}
                 </select>
                 <input 
                   value={prometheusUrl} 

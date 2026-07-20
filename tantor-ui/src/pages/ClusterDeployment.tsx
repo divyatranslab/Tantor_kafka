@@ -1041,45 +1041,83 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     return Array.from(ports);
   };
 
-  const checkHostPorts = async (hostId: string) => {
-    setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
-    
-    // Simulate check local-only in UI
-    await new Promise(resolve => setTimeout(resolve, 1200));
+  const pollPortCheck = async (hostId: string, taskId: string) => {
+    for (let i = 0; i < 90; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      if (!res.ok) continue;
 
-    const reqPorts = prerequisitePortsForHost(hostId);
-    const unavailablePorts: number[] = [];
-    const availablePorts: number[] = [];
-    
-    reqPorts.forEach((port, idx) => {
-      // Mock: first port is in use (unavailable), others are free
-      if (idx === 0) {
-        unavailablePorts.push(port);
-      } else {
-        availablePorts.push(port);
-      }
-    });
+      const body = await res.json();
+      const status = String(body.status || 'RUNNING').toUpperCase();
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: activeStatus(status) ? 'RUNNING' : status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+          taskId,
+          logOutput: body.logOutput || prev[hostId]?.logOutput || '',
+          errorMsg: body.errorMsg || '',
+        },
+      }));
+      if (!activeStatus(status)) return;
+    }
 
-    const hasFailed = unavailablePorts.length > 0;
-    
-    // Generate simulated logOutput
-    let logOutput = '\n===== Kafka Port Availability Check =====\n';
-    unavailablePorts.forEach(port => {
-      logOutput += `Port ${port}: Unavailable [FAIL]\n`;
-    });
-    availablePorts.forEach(port => {
-      logOutput += `Port ${port}: Available [PASS]\n`;
-    });
-    logOutput += '===== Port Check Completed =====\n';
-    
     setPortCheckResults(prev => ({
       ...prev,
       [hostId]: {
-        status: hasFailed ? 'FAILED' : 'SUCCESS',
-        logOutput,
-        errorMsg: hasFailed ? `Port check failed: ${unavailablePorts.length} required ports are unavailable` : '',
-      }
+        status: 'FAILED',
+        taskId,
+        logOutput: prev[hostId]?.logOutput || '',
+        errorMsg: 'Port check timed out while waiting for the host agent.',
+      },
     }));
+  };
+
+  const checkHostPorts = async (hostId: string) => {
+    const requiredPorts = prerequisitePortsForHost(hostId);
+    if (requiredPorts.length === 0) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: { status: 'FAILED', logOutput: '', errorMsg: 'No required ports are configured for this host.' },
+      }));
+      return;
+    }
+
+    setPortCheckResults(prev => ({
+      ...prev,
+      [hostId]: { status: 'RUNNING', logOutput: 'Queuing port availability check...', errorMsg: '' },
+    }));
+
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ required_ports: requiredPorts.join(',') }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.taskId) {
+        throw new Error(body.message || 'Failed to queue port availability check.');
+      }
+
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'RUNNING',
+          taskId: body.taskId,
+          logOutput: 'Port check queued. Waiting for the host agent...',
+          errorMsg: '',
+        },
+      }));
+      await pollPortCheck(hostId, body.taskId);
+    } catch (error) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'FAILED',
+          logOutput: '',
+          errorMsg: error instanceof Error ? error.message : 'Failed to check ports.',
+        },
+      }));
+    }
   };
 
   const getPortTooltipText = (hostId: string) => {

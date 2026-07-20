@@ -77,104 +77,6 @@ const hasValue = (value?: number | null) => value !== undefined && value !== nul
 
 const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
-// Mock Data for Previewing
-export const USE_MOCK_DATA = false;
-
-const MOCK_CLUSTERS: Record<'INTERNAL' | 'EXTERNAL', MonitoringCluster[]> = {
-  INTERNAL: [
-    {
-      id: 'broker-1',
-      name: 'broker-1',
-      originType: 'INTERNAL',
-      monitoringEnabled: true,
-      kafkaExporterTarget: '192.168.3.191:9308',
-      jmxAvailable: true
-    }
-  ],
-  EXTERNAL: [
-    {
-      id: 'external-1',
-      name: 'External Cluster',
-      originType: 'EXTERNAL',
-      monitoringEnabled: true,
-      kafkaExporterTarget: '192.168.3.191:9308',
-      jmxAvailable: true
-    }
-  ]
-};
-
-const MOCK_OVERVIEW: Record<string, MonitoringOverview> = {
-  'broker-1': {
-    clusterId: 'broker-1',
-    name: 'broker-1',
-    originType: 'INTERNAL',
-    kafkaExporterTarget: '192.168.3.191:9308',
-    jmxAvailable: true,
-    kafkaExporterUp: 1,
-    jmxUp: 1,
-    brokerCount: 1,
-    topicCount: null,
-    partitionCount: null,
-    underReplicatedPartitions: 0,
-    consumerLag: 0,
-    messagesInPerSecond: 0.0,
-    bytesInPerSecond: 0.0,
-    bytesOutPerSecond: 0.0,
-    jvmHeapUsedPercent: 56.5,
-    brokerCpuPercent: 1.0,
-    systemCpuPercent: 0.0,
-    warnings: [],
-    hostMemoryUsedPercent: 25.9
-  },
-  'external-1': {
-    clusterId: 'external-1',
-    name: 'External Cluster',
-    originType: 'EXTERNAL',
-    kafkaExporterTarget: '192.168.3.191:9308',
-    jmxAvailable: true,
-    kafkaExporterUp: 1,
-    jmxUp: 1,
-    brokerCount: 1,
-    topicCount: 4,
-    partitionCount: 6,
-    underReplicatedPartitions: 0,
-    consumerLag: 0,
-    messagesInPerSecond: 238.8,
-    bytesInPerSecond: 0.0,
-    bytesOutPerSecond: 0.0,
-    jvmHeapUsedPercent: 56.5,
-    brokerCpuPercent: 1.0,
-    systemCpuPercent: 0.0,
-    warnings: [],
-    hostMemoryUsedPercent: 25.9
-  }
-};
-
-const generateMockHistory = (clusterId: string, type: 'INTERNAL' | 'EXTERNAL') => {
-  const samples: MonitoringSample[] = [];
-  const baseTime = new Date();
-  const overviewData = MOCK_OVERVIEW[clusterId];
-  for (let i = 10; i >= 0; i--) {
-    const time = new Date(baseTime.getTime() - i * 10000);
-    samples.push({
-      time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      brokers: 1,
-      topics: type === 'EXTERNAL' ? 4 : 0,
-      partitions: type === 'EXTERNAL' ? 6 : 0,
-      underReplicated: 0,
-      lag: 0,
-      messagesIn: type === 'EXTERNAL' ? 238.8 + (Math.random() * 2 - 1) : 0,
-      bytesIn: 0,
-      bytesOut: 0,
-      heap: 56.5 + (Math.random() * 2 - 1),
-      hostMemory: 25.9 + (Math.random() * 2 - 1),
-      brokerCpu: 1.0 + (Math.random() * 0.2 - 0.1),
-      systemCpu: 0.0
-    });
-  }
-  return samples;
-};
-
 export function Monitoring() {
   const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
@@ -204,26 +106,18 @@ export function Monitoring() {
         if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
           const formatted = data.hosts.map((host: any, index: number) => ({
             value: host.hostId || `node-${index}`,
-            label: `${host.hostname || `Node ${index + 1}`} - ${host.ipAddress || 'localhost'} - ${host.role || 'Broker'}`
+            label: [host.hostname || `Node ${index + 1}`, host.ipAddress, host.role].filter(Boolean).join(' - ')
           }));
           setNodes(formatted);
           setSelectedNodeId(formatted[0].value);
         } else {
-          const fallback = [
-            { value: 'node-1', label: 'Node 1 - broker1.translab.io - Broker + Controller' },
-            { value: 'node-2', label: 'Node 2 - broker2.translab.io - Broker + Controller' }
-          ];
-          setNodes(fallback);
-          setSelectedNodeId(fallback[0].value);
+          setNodes([]);
+          setSelectedNodeId('');
         }
       })
       .catch(() => {
-        const fallback = [
-          { value: 'node-1', label: 'Node 1 - broker1.translab.io - Broker + Controller' },
-          { value: 'node-2', label: 'Node 2 - broker2.translab.io - Broker + Controller' }
-        ];
-        setNodes(fallback);
-        setSelectedNodeId(fallback[0].value);
+        setNodes([]);
+        setSelectedNodeId('');
       });
   }, [selectedClusterId]);
 
@@ -232,12 +126,6 @@ export function Monitoring() {
     if (!selectedType) {
       setClusters([]);
       setSelectedClusterId('');
-      return;
-    }
-    if (USE_MOCK_DATA) {
-      const clusterList = MOCK_CLUSTERS[selectedType];
-      setClusters(clusterList);
-      setSelectedClusterId(clusterList[0]?.id || '');
       return;
     }
     setLoading(true);
@@ -272,20 +160,6 @@ export function Monitoring() {
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {
     if (!selectedClusterId) return;
-    if (USE_MOCK_DATA) {
-      const data = MOCK_OVERVIEW[selectedClusterId];
-      if (data) {
-        setOverview(data);
-        // Pre-populate history on first load
-        setHistory(prev => {
-          if (prev.length === 0) {
-            return generateMockHistory(selectedClusterId, selectedType as 'INTERNAL' | 'EXTERNAL');
-          }
-          return prev;
-        });
-      }
-      return;
-    }
     if (!silent) setLoading(true);
     try {
       // 1. Fetch Prometheus Metrics
@@ -300,7 +174,7 @@ export function Monitoring() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedClusterId, selectedType]);
+  }, [selectedClusterId]);
 
   useEffect(() => {
     if (selectedClusterId) {
@@ -346,10 +220,10 @@ export function Monitoring() {
   // Selected cluster helper
   const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
 
-  // Mock initial history if empty to generate pretty graphs immediately
   const graphHistory = history;
   const clusterTitle = overview?.name || selectedCluster?.name || 'Select a cluster';
   const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
+  const selectedNode = nodes.find(node => node.value === selectedNodeId);
   const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
   const jmxHealthy = overview?.jmxUp === 1;
   const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
@@ -630,7 +504,7 @@ export function Monitoring() {
                 </span>
               </h2>
               <p className="broker-meta">
-                {exporterTarget ? exporterTarget.split(':')[0] : '192.168.3.191'} | broker | Node 2
+                {[exporterTarget?.split(':')[0], selectedNode?.label].filter(Boolean).join(' | ') || 'Monitoring endpoint unavailable'}
               </p>
             </div>
             <div className="monitoring-status-right">

@@ -175,16 +175,10 @@ export function ExternalClusters() {
     setBanner('');
     setBootstrapResult(null);
     try {
-      // Force bootstrap URL to local environment if testing connection locally
-      const adjustedForm = { ...form };
-      if (adjustedForm.bootstrapServers.includes('192.168.3.208')) {
-        adjustedForm.bootstrapServers = adjustedForm.bootstrapServers.replace('192.168.3.208', '192.168.29.41');
-      }
-      
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(adjustedForm),
+        body: JSON.stringify(form),
       });
       const data = await res.json();
       setBootstrapResult(data);
@@ -360,7 +354,7 @@ export function ExternalClusters() {
                     <label>Bootstrap URL</label>
                     <input
                       type="text"
-                      placeholder="192.168.1.100:9092"
+                      placeholder="Broker host and port"
                       value={form.bootstrapServers}
                       onChange={e => {
                         setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));

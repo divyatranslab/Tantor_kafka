@@ -75,32 +75,16 @@ export function DeploymentLogs() {
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
         const nextTasks: Task[] = await tasksRes.json();
-        if (!nextTasks || nextTasks.length === 0) {
-          throw new Error('Empty tasks');
-        }
-        setTasks(nextTasks);
-        setSelectedTaskId(current => current && nextTasks.some(task => task.id === current) ? current : nextTasks[0]?.id || '');
+        const availableTasks = Array.isArray(nextTasks) ? nextTasks : [];
+        setTasks(availableTasks);
+        setSelectedTaskId(current => current && availableTasks.some(task => task.id === current) ? current : availableTasks[0]?.id || '');
       } else {
         throw new Error('Tasks request failed');
       }
     } catch (error) {
-      if (!cluster) {
-        setCluster({ status: 'SUCCESS' });
-      }
-      const mockTasks: Task[] = [
-        {
-          id: "123e4567-e89b-12d3-a456-426614174008",
-          hostId: "123e4567-e89b-12d3-a456-426614174008",
-          command: "UPDATE_KAFKA_CONFIG",
-          status: "SUCCESS",
-          logOutput: "Existing config backed up to /opt/data/kafka/config/.tantor-backups/server.properties/v3-20260711T063746.503325575Z.bak\n\nConfigs updated successfully\n\nKafka service kafka restarted",
-          errorMsg: "",
-          createdAt: "2026-07-11T12:07:41Z",
-          updatedAt: "2026-07-11T12:07:41Z"
-        }
-      ];
-      setTasks(mockTasks);
-      setSelectedTaskId("123e4567-e89b-12d3-a456-426614174008");
+      console.error('Failed to load deployment logs', error);
+      setTasks([]);
+      setSelectedTaskId('');
     } finally {
       setLoading(false);
     }
