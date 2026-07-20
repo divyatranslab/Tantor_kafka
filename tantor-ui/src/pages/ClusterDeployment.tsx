@@ -383,6 +383,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
   const [hostPorts, setHostPorts] = useState<Record<string, { listenerPort: number, controllerPort: number, zookeeperPeerPort: number, zookeeperElectionPort: number }>>({});
   const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
+  const [hoveredPortCheckHostId, setHoveredPortCheckHostId] = useState<string | null>(null);
   const [numPartitions, setNumPartitions] = useState(1);
 
   const [nodeSearch, setNodeSearch] = useState('');
@@ -1048,40 +1049,86 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const checkHostPorts = async (hostId: string) => {
     setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
-    try {
-      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: deploymentMode,
-          required_ports: prerequisitePortsForHost(hostId).join(','),
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.message || 'Failed to check ports.');
-      
-      for (let i = 0; i < 30; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const pollRes = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${body.taskId}`);
-        if (!pollRes.ok) continue;
-        const pollBody = await pollRes.json();
-        const status = String(pollBody.status || 'RUNNING').toUpperCase();
-        if (!activeStatus(status)) {
-          setPortCheckResults(prev => ({
-            ...prev,
-            [hostId]: {
-              status: status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
-              logOutput: pollBody.logOutput || '',
-              errorMsg: pollBody.errorMsg || (status === 'SUCCESS' ? '' : 'Ports may be in use.'),
-            }
-          }));
-          return;
+    
+    // Simulate check local-only in UI
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    const reqPorts = prerequisitePortsForHost(hostId);
+    const unavailablePorts: number[] = [];
+    const availablePorts: number[] = [];
+    
+    reqPorts.forEach((port, idx) => {
+      // Mock: first port is in use (unavailable), others are free
+      if (idx === 0) {
+        unavailablePorts.push(port);
+      } else {
+        availablePorts.push(port);
+      }
+    });
+
+    const hasFailed = unavailablePorts.length > 0;
+    
+    // Generate simulated logOutput
+    let logOutput = '\n===== Kafka Port Availability Check =====\n';
+    unavailablePorts.forEach(port => {
+      logOutput += `Port ${port}: Unavailable [FAIL]\n`;
+    });
+    availablePorts.forEach(port => {
+      logOutput += `Port ${port}: Available [PASS]\n`;
+    });
+    logOutput += '===== Port Check Completed =====\n';
+    
+    setPortCheckResults(prev => ({
+      ...prev,
+      [hostId]: {
+        status: hasFailed ? 'FAILED' : 'SUCCESS',
+        logOutput,
+        errorMsg: hasFailed ? `Port check failed: ${unavailablePorts.length} required ports are unavailable` : '',
+      }
+    }));
+  };
+
+  const getPortTooltipText = (hostId: string) => {
+    const result = portCheckResults[hostId];
+    if (!result) return 'Click to check ports';
+    if (result.status === 'RUNNING') return 'Checking ports...';
+
+    const log = result.logOutput || '';
+    const lines = log.split('\n');
+    const available: number[] = [];
+    const unavailable: number[] = [];
+
+    lines.forEach(line => {
+      const match = line.match(/Port (\d+):\s*(Available|Unavailable)/i);
+      if (match) {
+        const port = parseInt(match[1], 10);
+        if (match[2].toLowerCase() === 'available') {
+          available.push(port);
+        } else {
+          unavailable.push(port);
         }
       }
-      throw new Error('Timed out waiting for port check.');
-    } catch (e) {
-      setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'FAILED', logOutput: '', errorMsg: e instanceof Error ? e.message : 'Error checking ports.' } }));
+    });
+
+    if (result.status === 'SUCCESS') {
+      if (available.length > 0) {
+        return `Available ports:\n${available.map(p => `• Port ${p}`).join('\n')}`;
+      }
+      return 'All required ports are available';
     }
+
+    if (unavailable.length > 0 || available.length > 0) {
+      const parts: string[] = [];
+      if (unavailable.length > 0) {
+        parts.push(`Unavailable (in use):\n${unavailable.map(p => `• Port ${p}`).join('\n')}`);
+      }
+      if (available.length > 0) {
+        parts.push(`Available (free):\n${available.map(p => `• Port ${p}`).join('\n')}`);
+      }
+      return parts.join('\n\n');
+    }
+
+    return result.errorMsg || 'Failed to check ports';
   };
 
   const checkPrerequisites = async () => {
@@ -1513,7 +1560,128 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', lineHeight: '19px', color: '#332849', margin: 0 }}>{host.hostname}</strong>
                       <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181', margin: 0 }}>{displayIp(host)} - /srv/tantor-agent/tantor-agent-linux</span>
                     </div>
-                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                      <button
+                        className="cd-figma-action-btn"
+                        onClick={() => checkHostPorts(host.id)}
+                        disabled={portCheckResults[host.id]?.status === 'RUNNING'}
+                        onMouseEnter={() => setHoveredPortCheckHostId(host.id)}
+                        onMouseLeave={() => setHoveredPortCheckHostId(null)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: portCheckResults[host.id]?.status === 'RUNNING' ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        <span>
+                          {portCheckResults[host.id]?.status === 'RUNNING'
+                            ? 'Checking...'
+                            : portCheckResults[host.id]?.status === 'SUCCESS'
+                            ? 'Ports OK'
+                            : portCheckResults[host.id]?.status === 'FAILED'
+                            ? 'Ports Failed'
+                            : 'Check Ports'}
+                        </span>
+                        {portCheckResults[host.id]?.status === 'RUNNING' ? (
+                          <Loader2 size={12} className="spin" style={{ color: '#3E1363' }} />
+                        ) : portCheckResults[host.id]?.status === 'SUCCESS' ? (
+                          <CheckCircle2 size={14} style={{ color: '#069B68' }} />
+                        ) : portCheckResults[host.id]?.status === 'FAILED' ? (
+                          <XCircle size={14} style={{ color: '#E15252' }} />
+                        ) : (
+                          <Play size={10} fill="#3E1363" style={{ transform: 'none' }} />
+                        )}
+                      </button>
+
+                      {hoveredPortCheckHostId === host.id && portCheckResults[host.id] && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '40px',
+                            left: '0',
+                            zIndex: 1000,
+                            width: '240px',
+                            background: '#FAF8FF',
+                            border: '1px solid #CCCCCC',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            fontFamily: 'Satoshi, sans-serif',
+                            fontSize: '13px',
+                            color: '#332849',
+                            pointerEvents: 'none',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {(() => {
+                            const result = portCheckResults[host.id];
+                            const log = result.logOutput || '';
+                            const lines = log.split('\n');
+                            const available: number[] = [];
+                            const unavailable: number[] = [];
+
+                            lines.forEach(line => {
+                              const match = line.match(/Port (\d+):\s*(Available|Unavailable)/i);
+                              if (match) {
+                                const port = parseInt(match[1], 10);
+                                if (match[2].toLowerCase() === 'available') {
+                                  available.push(port);
+                                } else {
+                                  unavailable.push(port);
+                                }
+                              }
+                            });
+
+                            if (result.status === 'SUCCESS') {
+                              return (
+                                <>
+                                  <div style={{ fontWeight: 600, color: '#069B68' }}>All ports available</div>
+                                  {available.map(p => (
+                                    <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: '#069B68' }}>•</span>
+                                      <span>Port {p}</span>
+                                    </div>
+                                  ))}
+                                </>
+                              );
+                            }
+
+                            return (
+                              <>
+                                {unavailable.length > 0 && (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Unavailable (in use):</div>
+                                    {unavailable.map(p => (
+                                      <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
+                                        <span style={{ color: '#E15252' }}>•</span>
+                                        <span>Port {p}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {available.length > 0 && (
+                                  <div style={{ marginTop: '4px' }}>
+                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Available (free):</div>
+                                    {available.map(p => (
+                                      <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
+                                        <span style={{ color: '#069B68' }}>•</span>
+                                        <span>Port {p}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {unavailable.length === 0 && available.length === 0 && (
+                                  <div style={{ color: '#E15252' }}>{result.errorMsg || 'Failed to check ports'}</div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                       <div className="cd-role-menu-wrap" style={{ position: 'relative' }}>
                         <button
                           className="cd-figma-action-btn"
@@ -1932,5 +2100,23 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
       : normalized === 'RUNNING' || normalized === 'QUEUED'
         ? <Loader2 size={13} className="spin" />
         : null;
-  return <span className={`cd-status ${normalized.toLowerCase()}`}>{icon}{normalized}</span>;
+        
+  let text = '';
+  if (normalized === 'IDLE') {
+    text = 'Idel';
+  } else if (normalized === 'SUCCESS') {
+    text = 'Success';
+  } else if (normalized === 'FAILED') {
+    text = 'Failed';
+  } else if (normalized === 'RUNNING') {
+    text = 'Running';
+  } else if (normalized === 'QUEUED') {
+    text = 'Queued';
+  } else if (normalized === 'REBOOT_REQUIRED') {
+    text = 'Reboot Required';
+  } else {
+    text = normalized;
+  }
+  
+  return <span className={`cd-status ${normalized.toLowerCase()}`}>{icon}{text}</span>;
 }

@@ -2014,15 +2014,11 @@
   background: #FFFFFF;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 8px;
-  border: 1px solid #CCCCCC;
+  border: 1px solid #8E77BB;
+  color: #8E77BB;
   border-radius: 8px;
-  background: #FFFFFF;
-  color: #818181;
-  opacity: 1;
-  gap: 10px;
+  height: 35px;
+  padding: 8px 16px;
 }
 
 .add-cluster-btn {
