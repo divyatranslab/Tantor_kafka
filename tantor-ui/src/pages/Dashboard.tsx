@@ -172,6 +172,8 @@ export function Dashboard() {
   const [error, setError] = useState('');
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
   const [deploymentStep, setDeploymentStep] = useState<'choice' | 'deploy'>('choice');
+  const [serviceTab, setServiceTab] = useState<'running' | 'failed'>('running');
+  const [taskTab, setTaskTab] = useState<'success' | 'failed'>('success');
 
   // Capitalize the first letter of username
   const username = useMemo(() => {
@@ -204,37 +206,37 @@ export function Dashboard() {
     {
       label: 'Active Hosts',
       value: `${summary.activeHosts.toString().padStart(2, '0')}`,
-      detail: `0 Offline | 0 Pending`, // Hardcoded fallback or calculated as needed
+      detail: `${summary.offlineHosts} Offline | ${summary.pendingHosts} Pending`,
       icon: Server,
-      tone: summary.offlineHosts > 0 ? 'warn' : 'good',
+      tone: 'cyan',
     },
     {
       label: 'Clusters',
       value: `${summary.totalClusters.toString().padStart(2, '0')}`,
-      detail: `0 Internal | 0 External`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: Network,
-      tone: summary.failedClusters > 0 ? 'bad' : 'blue',
+      tone: 'purple',
     },
     {
       label: 'External Clusters',
       value: `${summary.externalClusters.toString().padStart(2, '0')}`,
-      detail: `0 Internal | 0 External`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: ExternalLink,
-      tone: summary.externalClusters > 0 ? 'purple' : 'muted',
+      tone: 'indigo',
     },
     {
       label: 'Failed Service',
       value: `${summary.failedServices.toString().padStart(2, '0')}`,
-      detail: `0 Failed | 0 Issues`,
+      detail: `${summary.failedServices} Failed | ${summary.failedParcels} Issues`,
       icon: AlertTriangle,
-      tone: summary.failedServices > 0 ? 'bad' : 'good',
+      tone: 'pink',
     },
     {
       label: 'Running Service',
       value: `${summary.runningServices.toString().padStart(2, '0')}`,
-      detail: `0 Active parcel`,
+      detail: `${summary.activeParcels} Active parcel`,
       icon: Activity,
-      tone: 'good',
+      tone: 'green',
     },
   ], [summary]);
 
@@ -317,7 +319,7 @@ export function Dashboard() {
                 <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
                 <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
                 <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#378ADD" barSize={16} />
+                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#16ABC2" barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -355,8 +357,8 @@ export function Dashboard() {
               <Tooltip />
               <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
               <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
-              <Line type="monotone" dataKey="running" stroke="#FBC02D" strokeWidth={2} dot={false} name="Running" />
-              <Line type="monotone" dataKey="success" stroke="#1D9E75" strokeWidth={2} dot={false} name="Success" />
+              <Line type="monotone" dataKey="running" stroke="#FFCF57" strokeWidth={2} dot={false} name="Running" />
+              <Line type="monotone" dataKey="success" stroke="#098C60" strokeWidth={2} dot={false} name="Success" />
             </LineChart>
           </ResponsiveContainer>
         </article>
@@ -364,22 +366,22 @@ export function Dashboard() {
         <article className="db-panel services-panel">
           <PanelTitle title="Services" detail="" />
           <div className="tab-headers">
-            <span className="active-tab">Running ({summary.runningServices})</span>
-            <span>Filled({summary.failedServices})</span>
+            <button type="button" className={serviceTab === 'running' ? 'active-tab' : ''} onClick={() => setServiceTab('running')}>Running ({summary.runningServices})</button>
+            <button type="button" className={serviceTab === 'failed' ? 'active-tab' : ''} onClick={() => setServiceTab('failed')}>Failed ({summary.failedServices})</button>
           </div>
           <div className="tab-content">
-            <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
+            <ServiceList rows={serviceTab === 'running' ? dashboard.runningServices : dashboard.failedServices} iconFor={serviceIcon} />
           </div>
         </article>
       </section>
 
       <section className="db-bottom-grid">
         <article className="db-panel">
-          <PanelTitle title="Activity Feed" detail="View all" />
+          <PanelTitle title={<span className="db-title-with-badge">Activity Feed <small className="db-live-badge"><i /> Live</small></span>} detail="View all" />
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
-                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}>{item.level || 'INFO'}</span>
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileCheck size={16} /></span>
                 <div>
                   <strong>{item.message}</strong>
                   <small>{formatDateTime(item.createdAt)}</small>
@@ -392,20 +394,20 @@ export function Dashboard() {
         <article className="db-panel">
           <PanelTitle title="Recent Tasks" detail="View all" />
           <div className="tab-headers">
-            <span className="active-tab">Success ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() === 'SUCCESS').length})</span>
-            <span>Failed ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() !== 'SUCCESS').length})</span>
+            <button type="button" className={taskTab === 'success' ? 'active-tab' : ''} onClick={() => setTaskTab('success')}>Success ({dashboard.recentTasks.filter(isSuccessfulTask).length})</button>
+            <button type="button" className={taskTab === 'failed' ? 'active-tab' : ''} onClick={() => setTaskTab('failed')}>Failed ({dashboard.recentTasks.filter(task => !isSuccessfulTask(task)).length})</button>
           </div>
           <div className="db-task-list">
-            {dashboard.recentTasks.length ? dashboard.recentTasks.map(task => (
+            {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
               <div key={task.id} className="db-task-row">
-                <span className={`db-task-status ${task.status?.toLowerCase()}`}>{task.status}</span>
+                <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
                 <div>
                   <strong>{prettyCommand(task.command)}</strong>
                   <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
                   {task.errorMsg && <em>{task.errorMsg}</em>}
                 </div>
               </div>
-            )) : <EmptyPanel text="No tasks have run yet." compact />}
+            )) : <EmptyPanel text={taskTab === 'success' ? 'No successful tasks found.' : 'No failed tasks found.'} compact />}
           </div>
         </article>
       </section>
@@ -467,7 +469,7 @@ export function Dashboard() {
   );
 }
 
-function PanelTitle({ title, detail }: { title: string; detail?: string | React.ReactNode }) {
+function PanelTitle({ title, detail }: { title: React.ReactNode; detail?: string | React.ReactNode }) {
   return (
     <div className="db-panel-title">
       <div>
@@ -513,6 +515,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
 }
 
 function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+  if (!rows.length) return <EmptyPanel text="No services found for this status." compact />;
   return (
     <div className="db-service-list">
       {rows.map(row => {
@@ -584,4 +587,8 @@ function formatDateTime(value?: string) {
 function prettyCommand(command?: string) {
   if (!command) return 'Task';
   return command.toLowerCase().split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function isSuccessfulTask(task: TaskRow) {
+  return ['SUCCESS', 'SUCCEEDED', 'COMPLETED', 'COMPLETED_SUCCESSFULLY'].includes(task.status?.toUpperCase() || '');
 }

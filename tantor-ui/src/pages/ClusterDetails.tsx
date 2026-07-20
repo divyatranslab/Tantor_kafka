@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCluster } from '../contexts/ClusterContext';
 import './ClusterDetails.css';
@@ -96,32 +96,14 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
-  const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
-  const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
-  const agentLabel = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'Agent connected';
-      case 'PARTIAL':
-        return 'Agent partial';
-      case 'NOT_CONNECTED':
-        return 'Agent not connected';
-      default:
-        return 'Agent not connected';
-    }
-  })();
-  const agentClass = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'connected';
-      case 'PARTIAL':
-        return 'partial';
-      case 'NOT_CONNECTED':
-        return 'not-connected';
-      default:
-        return 'not-connected';
-    }
-  })();
+  const runtimeLabel = cluster.mode === 'EXTERNAL'
+    ? 'External'
+    : cluster.status === 'SUCCESS'
+      ? 'Success'
+      : (cluster.runtimeStatusLabel || cluster.status);
+  const runtimeClass = cluster.mode === 'EXTERNAL'
+    ? 'success'
+    : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
 
   if (isLogsView) {
     return (
@@ -262,10 +244,10 @@ export function ClusterDetails() {
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }
 
-  // The first 9 items are visible in the main navbar
-  const visibleTabs = tabs.slice(0, 9);
-  // The rest are in the dropdown
-  const dropdownTabs = tabs.slice(9);
+  // Keep the active Configuration tab visible without compressing the navigation.
+  const isConfigurationPage = location.pathname === `/clusters/${id}/config`;
+  const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
+  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
   const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
 
   return (
@@ -275,74 +257,34 @@ export function ClusterDetails() {
           {/* Breadcrumbs */}
           <div className="cd-breadcrumbs">
             <span onClick={() => navigate('/clusters')} className="cd-breadcrumb-link">Cluster</span>
-            <span className="cd-breadcrumb-separator"><ChevronRight size={14} /></span>
+            <span className="cd-breadcrumb-separator"><ChevronRight size={12} /></span>
             <span className="cd-breadcrumb-current">{cluster.name}</span>
           </div>
           
           {/* Title Row */}
-          <div className="cd-details-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: '16px' }}>
-            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ChevronLeft size={24} style={{ cursor: 'pointer', color: '#332849' }} onClick={() => navigate('/clusters')} />
-              <h1 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '24px', color: '#332849' }}>{cluster.name}</h1>
-              <Info size={18} style={{ color: '#94a3b8', cursor: 'pointer' }} />
+          <div className="cd-details-title-row">
+            <div className="cd-details-title-left">
+              <h1>{cluster.name}</h1>
+              <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+                {runtimeLabel}
+              </div>
             </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {/* Dynamic Pill Badge */}
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: cluster.mode === 'EXTERNAL' ? '#E6F4EA' : '#F1F3F9',
-                color: cluster.mode === 'EXTERNAL' ? '#137333' : '#475569',
-                padding: '6px 14px',
-                borderRadius: '100px',
-                fontSize: '13px',
-                fontWeight: 500
-              }}>
-                <span style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: cluster.mode === 'EXTERNAL' ? '#137333' : '#475569',
-                  display: 'inline-block'
-                }} />
-                {cluster.mode === 'EXTERNAL' ? 'External' : 'Internal'}
-              </span>
-
-              <button 
-                className="cd-details-refresh-btn" 
-                onClick={() => {
-                  fetch(`/api/v1/ui/clusters/${id}`)
-                    .then(res => res.ok ? res.json() : Promise.reject())
-                    .then(setCluster)
-                    .catch(() => {});
-                }}
-                title="Refresh Health"
-                style={{
-                  boxSizing: 'border-box',
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '8px',
-                  width: '40px',
-                  height: '40px',
-                  background: '#FFFFFF',
-                  border: '1px solid #CCCCCC',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  color: '#818181'
-                }}
-              >
-                <RefreshCw size={18} />
-              </button>
-            </div>
+            <button
+              type="button"
+              className="cd-details-refresh-btn"
+              aria-label="Refresh cluster"
+              onClick={() => {
+                fetch(`/api/v1/ui/clusters/${id}`)
+                  .then(res => res.json())
+                  .then(setCluster)
+                  .catch(console.error);
+              }}
+            >
+              <RefreshCw size={20} strokeWidth={1.5} />
+            </button>
           </div>
-          
-          {/* Subtitle */}
           <p className="cd-details-subtitle">
-            {`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} nodes • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
+            Kafka {cluster.kafkaVersion} • {cluster.nodeCount || 0} {(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • {cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}
           </p>
         </header>
 

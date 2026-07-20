@@ -177,7 +177,7 @@ export function ClusterActions() {
     <div className="topics-tab" style={{ width: '100%' }}>
       <div className="topics-header" style={{ marginBottom: '1.5rem' }}>
         <div>
-          <h2>Cluster Actions</h2>
+          <h2 className="cluster-section-heading">Cluster Actions</h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Perform disruptive day-two operations on your cluster.</p>
         </div>
       </div>
