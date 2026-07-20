@@ -776,6 +776,38 @@
   padding: 0 32px;
 }
 
+/* Upload form keeps its title and supporting copy in one clean header block. */
+.upload-parcel-modal .upload-parcel-header {
+  align-items: flex-start;
+  gap: 20px;
+  margin: 0;
+  padding: 24px 24px 12px;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+.upload-parcel-heading {
+  min-width: 0;
+}
+
+.upload-parcel-modal .upload-parcel-heading h2 {
+  color: #282F49;
+  font-size: 1.2rem;
+  line-height: 1.3;
+}
+
+.upload-parcel-modal .modal-subtitle {
+  margin: 6px 0 0;
+  padding: 0;
+  color: #818181;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.upload-parcel-modal .modal-body {
+  padding: 16px 24px 0;
+}
+
 .modal-close {
   width: 28px;
   height: 28px;
@@ -869,7 +901,27 @@
 
 .upload-dropzone-icon {
   color: var(--text-tertiary);
-  margin-bottom: 4px;
+}
+
+.upload-dropzone-icon-shell {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #FAFAFA;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+
+.upload-parcel-modal .upload-dropzone {
+  min-height: 132px;
+  padding: 24px 16px;
+  background: #FFFFFF;
+}
+
+.upload-parcel-modal .dropzone-hint {
+  color: #282F49;
 }
 
 .dropzone-filename {

@@ -1054,15 +1054,6 @@
   margin: 0;
 }
 
-.clusters-page-status-badge {
-  background: #2AC79240;
-  color: #069B68;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 20px;
-}
-
 .clusters-subtitle {
   font-size: 14px;
   color: #818181;
@@ -2373,16 +2364,6 @@
   letter-spacing: -0.02em;
 }
 
-.clusters-surface .clusters-page-status-badge {
-  padding: 4px 11px;
-  border-radius: 999px;
-  background: rgba(42, 199, 146, 0.25);
-  color: #069B68;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 18px;
-}
-
 .clusters-surface .clusters-subtitle {
   margin: 2px 0 0;
   color: #818181;
@@ -2398,15 +2379,19 @@
 .clusters-surface .add-cluster-btn,
 .clusters-surface .deploy-cluster-btn {
   width: auto;
-  min-width: 160px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0 18px;
-  gap: 10px;
-  border-radius: 9px !important;
-  font-size: 15px;
+  min-width: 131px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: 8px !important;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 20px;
+  line-height: 19px;
+}
+
+.clusters-surface .deploy-cluster-btn {
+  min-width: 148px;
 }
 
 .clusters-surface .inventory-header {

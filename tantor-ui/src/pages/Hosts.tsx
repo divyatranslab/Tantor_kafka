@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Trash2, X } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './Hosts.css';
@@ -141,8 +141,9 @@ export function Hosts() {
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
           {canManage && (
-            <button className="btn btn-primary-action" style={{ background: '#3E1363', borderColor: '#3E1363' }} onClick={() => setShowEnrollModal(true)}>
-              + Agent Connectivity
+            <button className="btn btn-primary-action agent-connectivity-btn" onClick={() => setShowEnrollModal(true)}>
+              <Plus size={20} strokeWidth={2} aria-hidden="true" />
+              <span>Agent Connectivity</span>
             </button>
           )}
         </div>

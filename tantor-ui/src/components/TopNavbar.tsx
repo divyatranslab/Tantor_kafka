@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
@@ -17,6 +18,7 @@ interface TopicInfo {
 
 export function TopNavbar() {
   const { decodedToken, logout } = useAuth();
+  const { isAdmin } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,18 +45,7 @@ export function TopNavbar() {
     return rawName.charAt(0).toUpperCase();
   }, [decodedToken]);
 
-  const userRoles = useMemo(() => {
-    const roles = new Set<string>();
-    const addRoles = (values?: string[]) => values?.forEach(role => roles.add(role));
-
-    if (decodedToken?.role) roles.add(decodedToken.role);
-    addRoles(decodedToken?.roles);
-    addRoles(decodedToken?.realm_access?.roles);
-    Object.values(decodedToken?.resource_access || {}).forEach(resource => addRoles(resource.roles));
-    addRoles(decodedToken?.groups);
-
-    return Array.from(roles);
-  }, [decodedToken]);
+  const applicationRole = isAdmin ? 'Admin' : 'Monitoring';
 
   // Fetch alerts count
   useEffect(() => {
@@ -214,26 +205,22 @@ export function TopNavbar() {
                 </div>
               </div>
 
-              {/* Roles Tags */}
-              {userRoles.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-                  {userRoles.map(role => (
-                    <span key={role} style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      background: '#EFF6FF',
-                      color: '#3B82F6',
-                      border: '1px solid #DBEAFE',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      padding: '4px 10px',
-                      borderRadius: '8px'
-                    }}>
-                      {role}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {/* Application role: the UI exposes only Admin and Monitoring. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: '#EFF6FF',
+                  color: '#3B82F6',
+                  border: '1px solid #DBEAFE',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  padding: '4px 10px',
+                  borderRadius: '8px'
+                }}>
+                  {applicationRole}
+                </span>
+              </div>
 
               {/* Divider */}
               <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 -24px 16px -24px' }} />

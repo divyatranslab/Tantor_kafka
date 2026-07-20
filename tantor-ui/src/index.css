@@ -310,6 +310,30 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+/* Shared cluster-choice icon treatment used by every New Cluster entry point. */
+.cd-deployment-card-content .cluster-choice-icon.managed {
+  color: #818181;
+}
+
+.cd-deployment-card-content .cluster-choice-icon.existing {
+  color: #818181;
+}
+
+.cd-deployment-card-content .cluster-choice-icon {
+  transition: color var(--transition-fast);
+}
+
+.cd-deployment-card:hover .cd-deployment-card-content .cluster-choice-icon,
+.cd-deployment-card:focus-within .cd-deployment-card-content .cluster-choice-icon {
+  color: #3E1363;
+}
+
+/* Keep the choice modal header and body visually continuous—no divider seam. */
+.cd-deployment-modal > .cd-deployment-modal-header {
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
 /* Icon-only refresh controls */
 :where(
   button.refresh-btn,
@@ -663,7 +687,4 @@ body :is(
   bottom: 0;
   z-index: 2;
 }
-
-
-
 

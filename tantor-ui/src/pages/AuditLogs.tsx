@@ -49,13 +49,6 @@ const ReportIcon = () => (
   </svg>
 );
 
-const TextAdIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818181" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2.5" y="4.5" width="19" height="15" rx="1.5" />
-    <path d="M6 9h6M6 12h12M6 15h12" />
-  </svg>
-);
-
 interface AuditEvent {
   id: string;
   userName?: string;
@@ -342,7 +335,6 @@ export function AuditLogs() {
           <input placeholder="Search configs..." value={search} onChange={e => setSearch(e.target.value)} />
         </label>
         <label className="audit-resource-id">
-          <TextAdIcon />
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">

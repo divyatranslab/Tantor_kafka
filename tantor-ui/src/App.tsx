@@ -74,6 +74,7 @@ function App() {
             <main className="main-content">
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/login" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/hosts" element={<Hosts />} />
               <Route path="/clusters" element={<Clusters />} />

@@ -312,17 +312,16 @@ export function Clusters() {
     <header className="clusters-header flex-between">
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <h1>Kafka Clusters</h1>
-          <span className="clusters-page-status-badge">Success</span>
+          <h1>Clusters</h1>
         </div>
         <p className="clusters-subtitle">Deploy and manage your Tantor Kafka environments</p>
       </div>
       <div className="header-actions">
-        <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
-          {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
-        </button>
         <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
+        </button>
+        <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
+          {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
         </button>
       </div>
     </header>
@@ -506,8 +505,11 @@ export function Clusters() {
               <div className="cd-deployment-choice-grid">
                 <div className="cd-deployment-card">
                   <div className="cd-deployment-card-content">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z" />
+                    <svg className="cluster-choice-icon managed" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                      <circle cx="12" cy="4.5" r="3.25" />
+                      <path d="M12 7.75v6M5 13.75h14M5 13.75V17M19 13.75V17" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                      <rect x="2" y="17" width="6" height="5" rx="0.5" />
+                      <rect x="16" y="17" width="6" height="5" rx="0.5" />
                     </svg>
                     <h3>Create your Cluster</h3>
                     <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
@@ -517,7 +519,7 @@ export function Clusters() {
 
                 <div className="cd-deployment-card">
                   <div className="cd-deployment-card-content">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="cluster-choice-icon existing" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                       <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z" />
                     </svg>
                     <h3>Existing Cluster</h3>

@@ -12,7 +12,7 @@ let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
-const currentRedirectUri = () => window.location.href;
+const dashboardRedirectUri = () => `${window.location.origin}/dashboard`;
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
@@ -24,7 +24,7 @@ export const initKeycloak = (): Promise<boolean> => {
       onLoad: 'login-required',
       pkceMethod: 'S256',
       checkLoginIframe: true,
-      redirectUri: currentRedirectUri(),
+      redirectUri: dashboardRedirectUri(),
     });
   }
 
@@ -34,7 +34,7 @@ export const initKeycloak = (): Promise<boolean> => {
 export const login = () =>
   isAuthEnabled()
     ? keycloak.login({
-        redirectUri: currentRedirectUri(),
+        redirectUri: dashboardRedirectUri(),
       })
     : Promise.resolve();
 
