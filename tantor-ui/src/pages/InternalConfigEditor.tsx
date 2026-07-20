@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   CheckCircle2, FileText, GitCompare, History, Loader2, Plus, RefreshCw,
-  RotateCcw, Save, Server, Trash2, UploadCloud, FileCheck, Download,
+  RotateCcw, Save, Server, Trash2, UploadCloud, FileCheck, Download, X,
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
@@ -63,6 +63,13 @@ interface ConfigVersion {
   jobId?: string;
 }
 
+interface ConfigDialog {
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: () => void;
+}
+
 const editableVersionStatuses = new Set(['VALIDATED', 'APPROVED', 'FAILED']);
 
 export function InternalConfigEditor() {
@@ -82,6 +89,9 @@ export function InternalConfigEditor() {
   const approvalRequired = false;
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [versions, setVersions] = useState<ConfigVersion[]>([]);
+  const [dialog, setDialog] = useState<ConfigDialog | null>(null);
+
+  const showNotice = (message: string) => setDialog({ message, confirmLabel: 'OK' });
 
   const fetchConfigs = async () => {
     setLoading(true);
@@ -154,7 +164,7 @@ export function InternalConfigEditor() {
     if (!canManage) return;
     const key = newKey.trim();
     if (!key || !/^[A-Za-z0-9._-]+$/.test(key)) {
-      alert('Enter a valid Kafka property key.');
+      showNotice('Enter a valid Kafka property key.');
       return;
     }
     mutateDraft(current => ({ ...current, [key]: newValue }));
@@ -179,8 +189,22 @@ export function InternalConfigEditor() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || 'Unable to validate configuration.'); return; }
-      setPreview(data);
+      if (!response.ok) { showNotice(data.message || 'Unable to validate configuration.'); return; }
+      const localDiff: ConfigDiff[] = Array.from(new Set([
+        ...Object.keys(baselineProperties),
+        ...Object.keys(draftProperties),
+      ])).flatMap(key => {
+        const oldValue = baselineProperties[key];
+        const newValue = draftProperties[key];
+        if (oldValue === newValue) return [];
+        return [{
+          key,
+          type: oldValue === undefined ? 'ADDED' : newValue === undefined ? 'REMOVED' : 'MODIFIED',
+          oldValue: oldValue ?? '',
+          newValue: newValue ?? '',
+        } as ConfigDiff];
+      });
+      setPreview({ ...data, diff: Array.isArray(data.diff) && data.diff.length > 0 ? data.diff : localDiff });
     } finally {
       setWorking('');
     }
@@ -195,22 +219,16 @@ export function InternalConfigEditor() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || 'Unable to save configuration version.'); return; }
+      if (!response.ok) { showNotice(data.message || 'Unable to save configuration version.'); return; }
       await fetchVersions(selectedFile.serviceId);
-      alert(`Version v${data.configVersion} saved. The active production file has not been changed.`);
+      showNotice(`Version v${data.configVersion} saved. The active production file has not been changed.`);
     } finally {
       setWorking('');
     }
   };
 
-  const versionAction = async (version: ConfigVersion, action: 'apply' | 'rollback') => {
+  const performVersionAction = async (version: ConfigVersion, action: 'apply' | 'rollback') => {
     if (!canManage) return;
-    if (action === 'apply') {
-      const message = restart
-        ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
-        : `Apply configuration v${version.configVersion} without restarting Kafka? Static properties will not become active until a later restart.`;
-      if (!window.confirm(message)) return;
-    }
     setWorking(`${action}-${version.id}`);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
@@ -219,18 +237,33 @@ export function InternalConfigEditor() {
         body: action === 'apply' ? JSON.stringify({ restart }) : undefined,
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) { alert(data.message || `${action} failed.`); return; }
-      if (action === 'apply' && data.jobId) {
-        navigate(`/jobs/${data.jobId}`);
-        return;
-      }
+      if (!response.ok) { showNotice(data.message || `${action} failed.`); return; }
       await fetchVersions(selectedFile?.serviceId);
+      if (action === 'apply' && data.jobId) {
+        showNotice('The configuration apply job has started. View job is now available in Version History.');
+      }
       if (action === 'rollback') {
-        alert(`Rollback saved as new version v${data.configVersion}. Approve it if required, then apply it.`);
+        showNotice(`Rollback saved as new version v${data.configVersion}. Approve it if required, then apply it.`);
       }
     } finally {
       setWorking('');
     }
+  };
+
+  const versionAction = (version: ConfigVersion, action: 'apply' | 'rollback') => {
+    if (action !== 'apply') {
+      void performVersionAction(version, action);
+      return;
+    }
+    const message = restart
+      ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
+      : `Apply configuration v${version.configVersion} without restarting Kafka? Static properties will not become active until a later restart.`;
+    setDialog({
+      message,
+      cancelLabel: 'Cancel',
+      confirmLabel: 'OK',
+      onConfirm: () => { setDialog(null); void performVersionAction(version, action); },
+    });
   };
 
   const latestApplyableVersion = useMemo(() => {
@@ -307,7 +340,7 @@ export function InternalConfigEditor() {
         </button>
       </div>
 
-      <section className="node-config-section">
+      <section className="node-config-section config-selection-step">
         <div className="node-config-section-title">
           <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>1</span>
           <div><h3>Select node</h3><p>Each VM may contain one or more Kafka services.</p></div>
@@ -330,7 +363,7 @@ export function InternalConfigEditor() {
         </div>
       </section>
 
-      <section className="node-config-section">
+      <section className="node-config-section config-selection-step">
         <div className="node-config-section-title">
           <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>2</span>
           <div><h3>Select Configuration File</h3><p>Only files belonging to the selected node are shown.</p></div>
@@ -347,7 +380,7 @@ export function InternalConfigEditor() {
                 color: '#6B21A8'
               } : {}}
             >
-              <FileText size={15} /><span><strong>{file.label}</strong><small>{file.path}</small></span>
+              <Server size={16} /><span><strong>{file.label}</strong><small>{file.path}</small></span>
             </button>
           ))}
         </div>
@@ -442,47 +475,24 @@ export function InternalConfigEditor() {
           </div>
         </section>
 
-        {preview && <section className="node-config-section config-review" style={{ borderColor: '#e2e8f0', marginTop: '1.5rem' }}>
+        <section className="node-config-section config-review" style={{ borderColor: '#e2e8f0', marginTop: '1.5rem' }}>
           <div className="node-config-section-title">
             <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>3</span>
             <div><h3>Old vs New</h3><p>The server validates this exact snapshot again when the version is saved.</p></div>
           </div>
+          {preview ? <>
           {preview.errors.length > 0 && <div className="config-messages error">{preview.errors.map(message => <p key={message}>{message}</p>)}</div>}
           {preview.warnings.length > 0 && <div className="config-messages warning">{preview.warnings.map(message => <p key={message}>{message}</p>)}</div>}
-          <div className="config-diff-list" style={{ display: 'grid', gap: '12px', marginTop: '12px' }}>
+          <div className="config-diff-list">
             {preview.diff.map(item => (
-              <div key={item.key} style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '24px',
-                padding: '16px 0px',
-                borderBottom: '1px solid #f1f5f9'
-              }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '150px' }}>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>{item.type}</span>
-                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>{item.key}</span>
+              <div className="config-diff-item" key={item.key}>
+                <div className="config-diff-meta">
+                  <span>{item.type}</span>
+                  <strong>{item.key}</strong>
                 </div>
-                <div style={{ display: 'flex', gap: '16px', flex: 1 }}>
-                  <div style={{
-                    padding: '10px 14px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    background: '#fff',
-                    fontSize: '13px',
-                    color: '#332849',
-                    fontFamily: 'Consolas, monospace',
-                    flex: 1
-                  }}>{item.oldValue || 'empty'}</div>
-                  <div style={{
-                    padding: '10px 14px',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '8px',
-                    background: '#fff',
-                    fontSize: '13px',
-                    color: '#332849',
-                    fontFamily: 'Consolas, monospace',
-                    flex: 1
-                  }}>{item.newValue || 'empty'}</div>
+                <div className="config-diff-values">
+                  <div>{item.oldValue || 'empty'}</div>
+                  <div>{item.newValue || 'empty'}</div>
                 </div>
               </div>
             ))}
@@ -514,8 +524,79 @@ export function InternalConfigEditor() {
               </button>
             )}
           </div>
-        </section>}
+          </> : <p className="config-review-placeholder">Review and validate the draft to compare it with the saved configuration.</p>}
+        </section>
+
+        <section className="node-config-section config-history">
+          <div className="node-config-section-title">
+            <span>4</span>
+            <div><h3>Version History</h3><p>Backups, approvals, applies and rollback lineage remain auditable.</p></div>
+          </div>
+          {versions.length > 0 ? (
+            <div className="version-list">
+              {[...versions].sort((a, b) => b.configVersion - a.configVersion).map(version => (
+                <article key={version.id} className={version.id === activeVersion?.id ? 'active-version' : ''}>
+                  <div className="version-main">
+                    <strong>v{version.configVersion}</strong>
+                    <span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
+                    {version.rollbackVersion != null && <span className="rollback-tag">Rollback of v{version.rollbackVersion}</span>}
+                    <small>created by {version.createdBy || 'Unknown'} · {new Date(version.createdAt).toLocaleString()}</small>
+                  </div>
+                  <div className="version-actions">
+                    {version.status !== 'APPLIED' && canManage ? (
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={!!working}
+                        onClick={() => versionAction(version, 'apply')}
+                      >
+                        {working === `apply-${version.id}` ? <Loader2 size={14} className="spin" /> : <UploadCloud size={14} />} Apply
+                      </button>
+                    ) : version.status === 'APPLIED' ? (
+                      <button type="button" className="view-job highlighted" onClick={() => navigate('/jobs')}>View job</button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="version-history-empty">No saved configuration versions yet.</p>
+          )}
+        </section>
       </> : <div className="empty-state">No managed configuration file is available for this node.</div>}
+
+      {dialog && (
+        <div className="config-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="config-dialog-title">
+          <div className="config-dialog">
+            <div className="config-dialog-banner">
+              <button
+                type="button"
+                className="config-dialog-close"
+                aria-label="Close dialog"
+                onClick={() => setDialog(null)}
+              >
+                <X size={22} />
+              </button>
+            </div>
+            <div className="config-dialog-body">
+              <h3 id="config-dialog-title">{window.location.host} says</h3>
+              <p>{dialog.message}</p>
+              <div className="config-dialog-actions">
+                {dialog.cancelLabel && (
+                  <button type="button" className="cancel" onClick={() => setDialog(null)}>{dialog.cancelLabel}</button>
+                )}
+                <button
+                  type="button"
+                  className="confirm"
+                  onClick={() => dialog.onConfirm ? dialog.onConfirm() : setDialog(null)}
+                >
+                  {dialog.confirmLabel || 'OK'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

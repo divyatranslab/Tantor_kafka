@@ -475,6 +475,7 @@
 .cluster-title-row .cluster-title { display: flex; align-items: center; gap: 6px; color: #332849; font-size: 14px; line-height: 20px; font-weight: 500; }
 .cluster-title-info { color: #bdbdbd; }
 .cluster-details-card > .cluster-tabs { margin-top: 12px; }
+.cluster-details-card > .cluster-tabs { border-bottom: 1px solid #D2D2D7; }
 .cluster-details-card .cluster-tabs-scroll-wrapper { gap: 2px; }
 .cluster-details-card .cluster-tabs nav a,
 .cluster-details-card .disabled-tab {
@@ -639,7 +640,7 @@
 }
 
 /* Compact Figma proportions with the merged health-refresh behavior. */
-.cd-details-header { margin-bottom: 0; }
+.cd-details-header { margin-bottom: 0; padding-left: 4px; }
 .cd-breadcrumbs { gap: 6px; margin-bottom: 10px; font-size: 14px; line-height: 19px; }
 .cd-details-title-row { height: auto; margin-top: 0; }
 .cd-details-title-left { gap: 5px; }
@@ -648,24 +649,16 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #332849;
+  color: #282F49;
   font-family: 'Satoshi', sans-serif;
-  font-size: 16px;
+  font-size: 24px;
   font-style: normal;
-  font-weight: 500;
-  line-height: 100%;
+  font-weight: 700;
+  line-height: 32px;
   letter-spacing: 0;
 }
 .cd-details-actions { gap: 6px; }
 .cd-status-badge { width: auto; min-width: 47px; height: 24px; padding: 4px 8px; font-size: 12px; line-height: 16px; }
 .cd-status-badge.success { width: auto; }
-.cd-status-badge.success::before {
-  content: '';
-  width: 5px;
-  height: 5px;
-  flex: 0 0 5px;
-  border-radius: 50%;
-  background: #069B68;
-}
-.cd-details-refresh-btn { width: 28px; height: 28px; padding: 5px; border-radius: 6px; }
-.cd-details-subtitle { margin-top: 4px; font-size: 11px; line-height: 16px; }
+.cd-details-refresh-btn { width: 40px; height: 40px; padding: 8px; border-radius: 8px; }
+.cd-details-subtitle { margin-top: 5px; font-size: 11px; line-height: 16px; }

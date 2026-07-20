@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCluster } from '../contexts/ClusterContext';
 import './ClusterDetails.css';
@@ -98,7 +98,9 @@ export function ClusterDetails() {
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
   const runtimeLabel = cluster.mode === 'EXTERNAL'
     ? 'External'
-    : (cluster.runtimeStatusLabel || cluster.status);
+    : cluster.status === 'SUCCESS'
+      ? 'Success'
+      : (cluster.runtimeStatusLabel || cluster.status);
   const runtimeClass = cluster.mode === 'EXTERNAL'
     ? 'success'
     : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
@@ -244,10 +246,10 @@ export function ClusterDetails() {
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }
 
-  // The first 9 items are visible in the main navbar
-  const visibleTabs = tabs.slice(0, 9);
-  // The rest are in the dropdown
-  const dropdownTabs = tabs.slice(9);
+  // Keep the active Configuration tab visible without compressing the navigation.
+  const isConfigurationPage = location.pathname === `/clusters/${id}/config`;
+  const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
+  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
   const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
 
   return (
@@ -264,17 +266,28 @@ export function ClusterDetails() {
           {/* Title Row */}
           <div className="cd-details-title-row">
             <div className="cd-details-title-left">
-              <button onClick={() => navigate('/clusters')} className="cluster-back-btn" aria-label="Back to clusters">
-                <ChevronLeft size={20} strokeWidth={1.5} />
-              </button>
-              <h1>{cluster.name}<Info size={15} className="cluster-title-info" strokeWidth={1.5} /></h1>
-            </div>
-            <div className="cd-details-actions">
+              <h1>{cluster.name}</h1>
               <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
                 {runtimeLabel}
               </div>
             </div>
+            <button
+              type="button"
+              className="cd-details-refresh-btn"
+              aria-label="Refresh cluster"
+              onClick={() => {
+                fetch(`/api/v1/ui/clusters/${id}`)
+                  .then(res => res.json())
+                  .then(setCluster)
+                  .catch(console.error);
+              }}
+            >
+              <RefreshCw size={20} strokeWidth={1.5} />
+            </button>
           </div>
+          <p className="cd-details-subtitle">
+            Kafka {cluster.kafkaVersion} • {cluster.nodeCount} {cluster.nodeCount === 1 ? 'node' : 'nodes'} • {cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}
+          </p>
         </header>
 
         <div className="cluster-tabs">
