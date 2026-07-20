@@ -442,35 +442,14 @@ export function Clusters() {
                       </td>
                       <td>
                         {canManage ? (
-                          <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
-                            <button
-                              className="btn icon-only"
-                              onClick={() => setOpenMenuId(openMenuId === cluster.id ? null : cluster.id)}
-                              title="Cluster actions"
-                            >
-                              <MoreVertical size={16} />
-                            </button>
-                            {openMenuId === cluster.id && (
-                              <div className="cluster-action-menu">
-                                <button disabled title="Temporarily disabled">
-                                  <RotateCcw size={14} />
-                                  Rolling restart
-                                </button>
-                                <button disabled title="Temporarily disabled">
-                                  <Settings size={14} />
-                                  Configuration change
-                                </button>
-                                <button disabled title="Temporarily disabled">
-                                  <ServerCog size={14} />
-                                  Add node
-                                </button>
-                                <button className="danger" onClick={e => deleteCluster(e, cluster.id, cluster.name)}>
-                                  <Trash2 size={14} />
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
+                          <button
+                            className="btn icon-only danger"
+                            onClick={e => { e.stopPropagation(); deleteCluster(e, cluster.id, cluster.name); }}
+                            title="Delete cluster"
+                            style={{ color: '#E15252', background: 'none', border: 'none', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         ) : (
                           <span className="heartbeat-text">View only</span>
                         )}

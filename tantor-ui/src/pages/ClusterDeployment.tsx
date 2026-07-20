@@ -1314,7 +1314,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const mainContent = (
-    <div className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}>
+    <div 
+      className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}
+      style={!onClose ? { maxWidth: '100%' } : {}}
+    >
       {(!onClose || stage === 'preview') && (
         <header className="cd-header">
           <div>
@@ -1751,7 +1754,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </section>
 
           <div className="cd-footer-actions">
-            <button className="cd-secondary-btn" onClick={() => isAddNodeMode ? navigate('/clusters') : setStage('details')}>Cancel</button>
+            <button className="cd-secondary-btn" onClick={() => onClose ? onClose() : navigate(-1)}>Cancel</button>
             <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
               {validatingKraft && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Preview add node' : validatingKraft ? 'Validating topology' : 'Preview'}
@@ -2021,6 +2024,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             {mainContent}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (!onClose) {
+    return (
+      <div className="cluster-deployment-page-wrapper" style={{ padding: '24px', backgroundColor: '#F5F6FA', flex: 1, minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', boxSizing: 'border-box' }}>
+        {mainContent}
       </div>
     );
   }

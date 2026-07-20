@@ -434,7 +434,7 @@ export function Dashboard() {
                       <h3>Create your Cluster</h3>
                       <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                     </div>
-                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setDeploymentStep('deploy'); }}>Create</button>
+                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
                   </div>
 
                   <div className="cd-deployment-card">

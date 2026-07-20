@@ -72,3 +72,9 @@
   line-height: 16px;
   font-weight: 400;
 }
+
+.cluster-node-status.success {
+  background: rgba(42, 199, 146, 0.1);
+  border: 1px solid #2AC792;
+  color: #1F845A;
+}
