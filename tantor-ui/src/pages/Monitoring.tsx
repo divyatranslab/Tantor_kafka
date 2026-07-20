@@ -102,6 +102,7 @@ export function Monitoring() {
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [nodes, setNodes] = useState<{value: string, label: string}[]>([]);
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
