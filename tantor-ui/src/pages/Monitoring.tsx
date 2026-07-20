@@ -142,13 +142,7 @@ export function Monitoring() {
   }, [selectedClusterId]);
 
   const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
-  const selectedClusterNodes = useMemo(() => {
-    const overviewNodes = overview?.clusterId === selectedClusterId ? overview.nodes : undefined;
-    const nodes = overviewNodes?.length ? overviewNodes : (selectedCluster?.nodes || []);
-    return nodes.filter(node => node.nodeId);
-  }, [overview?.clusterId, overview?.nodes, selectedCluster?.nodes, selectedClusterId]);
-  const isMultiNodeCluster = selectedClusterNodes.length > 1;
-  const selectedMonitoringNode = selectedClusterNodes.find(node => nodeValue(node) === selectedNodeId);
+
 
   // 1. Load clusters and hosts on mount
   const loadInitialData = async () => {
@@ -187,17 +181,7 @@ export function Monitoring() {
     loadInitialData();
   }, [selectedType]);
 
-  useEffect(() => {
-    setSelectedNodeId(current => {
-      if (selectedClusterNodes.length <= 1) {
-        return '';
-      }
-      if (selectedClusterNodes.some(node => nodeValue(node) === current)) {
-        return current;
-      }
-      return nodeValue(selectedClusterNodes[0]);
-    });
-  }, [selectedClusterId, selectedClusterNodes]);
+
 
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {

@@ -125,60 +125,104 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
 
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>Agent Connectivity</h2>
-          <button className="modal-close" onClick={onClose}>
-            <X size={14} />
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: '720px' }}>
+        <div className="modal-header" style={{ padding: '24px 32px 16px 32px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 500, color: '#111827', margin: 0 }}>Agent Connectivity</h2>
+          <button className="modal-close" onClick={onClose} style={{ border: 'none', background: 'transparent', padding: 0, color: '#9CA3AF' }}>
+            <X size={20} />
           </button>
         </div>
 
-        <p className="modal-section-title" style={{ margin: '20px 32px 10px 32px' }}>Discovered nodes waiting to connect</p>
-
         {pendingHosts.length === 0 ? (
-          <div className="empty-pending" style={{ margin: '0 32px' }}>
+          <div className="empty-pending" style={{ margin: '0 32px 32px 32px' }}>
             No new nodes discovered. Run the agent script on a VM to discover it.
           </div>
         ) : (
-          <>
-            <label className="pending-select-all" style={{ margin: '0 32px 10px 32px' }}>
-              <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
-              <span>Select all discovered agents</span>
-            </label>
-            <div style={{ padding: '0 32px' }}>
+          <div style={{ background: '#F8FAFC', borderRadius: '12px', margin: '0 32px 24px 32px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 500 }}>Discovered Nodes</span>
+              <label className="pending-select-all" style={{ margin: 0, padding: 0, border: 'none', background: 'transparent', gap: '8px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={allPendingSelected} 
+                  onChange={toggleAllPendingHosts} 
+                  style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }} 
+                />
+                <span style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
+              </label>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
               {pendingHosts.map(host => (
-                <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
-                  <label className="pending-node-select" onClick={event => event.stopPropagation()}>
+                <div 
+                  key={host.id} 
+                  className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} 
+                  onClick={() => togglePendingHost(host.id)} 
+                  style={{ 
+                    background: '#FFFFFF', 
+                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #F1F5F9', 
+                    borderRadius: '8px', 
+                    padding: '16px', 
+                    margin: 0, 
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px'
+                  }}
+                >
+                  <label className="pending-node-select" onClick={event => event.stopPropagation()} style={{ margin: 0, display: 'flex' }}>
                     <input
                       type="checkbox"
                       checked={!!selectedPendingIds[host.id]}
                       onChange={() => togglePendingHost(host.id)}
+                      style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                     />
                   </label>
-                  <div className="pending-node-info">
-                    <p className="name">{host.agentName || host.hostname}</p>
-                    <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
+                  <div className="pending-node-info" style={{ flex: 1 }}>
+                    <p className="name" style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 4px 0' }}>{host.agentName || host.hostname}</p>
+                    <p className="ip" style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                   </div>
                   <div className="pending-node-actions">
-                    <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
-                      <Trash2 size={14} />
+                    <button 
+                      className="btn icon-only danger" 
+                      title="Reject & remove" 
+                      onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }} 
+                      style={{ border: 'none', background: 'transparent', color: '#9CA3AF', padding: '4px' }}
+                    >
+                      <Trash2 size={18} />
                     </button>
                   </div>
                 </div>
               ))}
             </div>
-            <div className="pending-connect-summary" style={{ margin: '16px 32px 0 32px' }}>
-              <span>{selectedCount} selected</span>
-              <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
-                {connectingAgents ? 'Connecting...' : 'Connect selected'}
-              </button>
-            </div>
-          </>
+          </div>
         )}
 
-        <hr className="modal-divider" />
-        <div className="modal-footer" style={{ margin: '16px 32px 24px 32px' }}>
-          <button className="btn" onClick={onClose}>Close</button>
+        <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#FFFFFF' }}>
+          <button 
+            className="btn" 
+            onClick={onClose} 
+            style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#64748B', padding: '8px 24px', borderRadius: '8px', fontWeight: 500, fontSize: '14px' }}
+          >
+            Cancel
+          </button>
+          <button 
+            className="btn btn-primary-action" 
+            disabled={selectedCount === 0 || connectingAgents} 
+            onClick={connectSelectedAgents} 
+            style={{ 
+              background: '#FFFFFF', 
+              border: '1px solid #8B5CF6', 
+              color: '#8B5CF6', 
+              padding: '8px 24px', 
+              borderRadius: '8px', 
+              fontWeight: 500, 
+              fontSize: '14px',
+              opacity: (selectedCount === 0 || connectingAgents) ? 0.5 : 1
+            }}
+          >
+            {connectingAgents ? 'Connecting...' : 'Connect'}
+          </button>
         </div>
       </div>
     </div>
