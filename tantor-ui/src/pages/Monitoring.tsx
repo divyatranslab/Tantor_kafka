@@ -260,50 +260,59 @@ export function Monitoring() {
 
         {/* Controls */}
         <div className="controls-area">
-          <select
-            className="tantor-select"
-            value={selectedType}
-            onChange={event => {
-              setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
-              setSelectedClusterId('');
-            }}
-          >
-            <option value="INTERNAL">Internal</option>
-            <option value="EXTERNAL">External</option>
-          </select>
+          <label className="monitoring-control-field">
+            <span>Cluster type</span>
+            <select
+              className="tantor-select"
+              value={selectedType}
+              onChange={event => {
+                setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
+                setSelectedClusterId('');
+              }}
+            >
+              <option value="INTERNAL">Internal</option>
+              <option value="EXTERNAL">External</option>
+            </select>
+          </label>
 
           {/* Cluster Selection */}
           {clusters.length > 0 && (
-            <select
-              className="tantor-select"
-              value={selectedClusterId}
-              onChange={e => {
-                setSelectedClusterId(e.target.value);
-                setSelectedNodeId('');
-                setOverview(null);
-                setHistory([]);
-              }}
-            >
-              {clusters.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+            <label className="monitoring-control-field">
+              <span>Cluster name</span>
+              <select
+                className="tantor-select"
+                value={selectedClusterId}
+                onChange={e => {
+                  setSelectedClusterId(e.target.value);
+                  setSelectedNodeId('');
+                  setOverview(null);
+                  setHistory([]);
+                }}
+              >
+                {clusters.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
           )}
 
           {isMultiNodeCluster && (
-            <select
-              className="tantor-select monitoring-node-select"
-              value={selectedNodeId}
-              onChange={e => {
-                setSelectedNodeId(e.target.value);
-              }}
-            >
-              {selectedClusterNodes.map(node => (
-                <option key={nodeValue(node)} value={nodeValue(node)}>
-                  {nodeLabel(node)}
-                </option>
-              ))}
-            </select>
+            <label className="monitoring-control-field monitoring-node-field">
+              <span>Node name</span>
+              <select
+                className="tantor-select monitoring-node-select"
+                value={selectedNodeId}
+                onChange={e => {
+                  setSelectedNodeId(e.target.value);
+                }}
+              >
+                {selectedClusterNodes.map(node => (
+                  <option key={nodeValue(node)} value={nodeValue(node)}>
+                    {nodeLabel(node)}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
 
           {/* Live Indicator */}
