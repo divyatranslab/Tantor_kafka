@@ -10,6 +10,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Dashboard.css';
 import { NewClusterModal } from '../components/NewClusterModal';
 
@@ -256,7 +257,7 @@ export function Dashboard() {
           </div>
           <div className="db-hero-actions">
             <span className="db-generated">Last update: {relativeTime(dashboard.generatedAt)}</span>
-            <button className="db-btn ghost" onClick={fetchDashboard}>
+            <button className="db-btn ghost" onClick={fetchDashboard} aria-label="Refresh dashboard" title="Refresh">
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
             </button>
             {canManage && (
@@ -535,10 +536,7 @@ function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: st
 }
 
 function healthTone(status: string) {
-  const normalized = status?.toUpperCase();
-  if (normalized === 'HEALTHY' || normalized === 'SUCCESS') return 'good';
-  if (normalized === 'WARNING' || normalized === 'DELETING' || normalized === 'PENDING' || normalized === 'RUNNING') return 'warn';
-  return 'bad';
+  return clusterStatusTone(status) === 'state-positive' ? 'good' : 'bad';
 }
 
 function statusLabel(status: string) {

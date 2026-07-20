@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
+import { confirmAction, notifyAction } from './ConfirmDialog';
 
 type AgentConnectivityModalProps = {
   onClose: () => void;
@@ -27,18 +28,18 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
   }, []);
 
   const deleteHost = async (id: string) => {
-    if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
+    if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
         const errorData = await res.json().catch(() => ({}));
-        alert(errorData.message || 'Failed to disconnect node.');
+        notifyAction(errorData.message || 'Failed to disconnect node.');
       }
     } catch (e) {
       console.error(e);
-      alert('An error occurred while disconnecting the node.');
+      notifyAction('An error occurred while disconnecting the node.');
     }
   };
 
@@ -113,7 +114,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;
       if (failed > 0) {
-        alert(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
+        notifyAction(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
       }
       setSelectedPendingIds({});
       await fetchHosts();

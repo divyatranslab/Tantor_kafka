@@ -5,6 +5,7 @@ import {
   Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
 import orangeBanner from '../assets/orange.png';
 
@@ -102,6 +103,7 @@ export function Artifacts() {
   const [hostDistributionDirs, setHostDistributionDirs] = useState<Record<string, string>>({});
   const [selectedHosts, setSelectedHosts] = useState<Record<string, string[]>>({});
   const [openArtifactMenuId, setOpenArtifactMenuId] = useState<string | null>(null);
+  const [artifactMenuAnchor, setArtifactMenuAnchor] = useState<HTMLElement | null>(null);
   const [auditModalArtifact, setAuditModalArtifact] = useState<ArtifactVersion | null>(null);
   const [artifactAuditEvents, setArtifactAuditEvents] = useState<ArtifactAuditEvent[]>([]);
   const [artifactAuditLoading, setArtifactAuditLoading] = useState(false);
@@ -464,7 +466,7 @@ export function Artifacts() {
   };
 
   return (
-    <div className="artifacts-page animate-fade-in" onClick={() => setOpenArtifactMenuId(null)}>
+    <div className="artifacts-page animate-fade-in" onClick={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
       <header className="page-header flex-between">
         <div>
           <h1>Artifacts</h1>
@@ -570,13 +572,17 @@ export function Artifacts() {
                       <div className="artifact-menu-anchor" onClick={event => event.stopPropagation()}>
                         <button
                           className="artifact-menu-button"
-                          onClick={() => setOpenArtifactMenuId(openArtifactMenuId === ver.id ? null : ver.id)}
+                          onClick={event => {
+                            const opening = openArtifactMenuId !== ver.id;
+                            setOpenArtifactMenuId(opening ? ver.id : null);
+                            setArtifactMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                           title="Artifact actions"
                         >
                           <MoreVertical size={15} />
                         </button>
-                        {openArtifactMenuId === ver.id && (
-                          <div className="artifact-action-menu">
+                        {openArtifactMenuId === ver.id && artifactMenuAnchor && (
+                          <AnchoredMenu anchor={artifactMenuAnchor} className="artifact-action-menu" onClose={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
                             <button onClick={() => openArtifactLogs(ver)}>
                               <FileText size={14} />
                               View Log
@@ -592,7 +598,7 @@ export function Artifacts() {
                                 Delete
                               </button>
                             )}
-                          </div>
+                          </AnchoredMenu>
                         )}
                       </div>
                       <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>

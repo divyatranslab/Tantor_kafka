@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -59,7 +60,7 @@ export function ClusterNodes() {
       setSelectedAgents({});
       await fetchNodes();
     } catch (e) {
-      alert('Failed to bind agents');
+      notifyAction('Failed to bind agents');
     } finally {
       setBinding(false);
     }

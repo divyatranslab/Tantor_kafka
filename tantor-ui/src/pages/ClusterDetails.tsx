@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCluster } from '../contexts/ClusterContext';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -33,16 +35,6 @@ export function ClusterDetails() {
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const { setActiveClusterId } = useCluster();
 
@@ -104,6 +96,13 @@ export function ClusterDetails() {
   const runtimeClass = cluster.mode === 'EXTERNAL'
     ? 'success'
     : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
+  const runtimeTone = clusterStatusTone(
+    cluster.runtimeStatusLabel,
+    cluster.runtimeHealth,
+    cluster.kafkaHealth,
+    cluster.status,
+    cluster.overallHealth,
+  );
 
   if (isLogsView) {
     return (
@@ -265,7 +264,7 @@ export function ClusterDetails() {
           <div className="cd-details-title-row">
             <div className="cd-details-title-left">
               <h1>{cluster.name}</h1>
-              <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
+              <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason}>
                 {runtimeLabel}
               </div>
             </div>
@@ -321,8 +320,13 @@ export function ClusterDetails() {
                 >
                   <ChevronDown size={18} />
                 </button>
-                {isDropdownOpen && (
-                  <div className="cluster-tabs-dropdown-menu">
+                {isDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cluster-tabs-dropdown-menu"
+                    onClose={() => setIsDropdownOpen(false)}
+                    minWidth={180}
+                  >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {
                         return (
@@ -342,7 +346,7 @@ export function ClusterDetails() {
                         </NavLink>
                       );
                     })}
-                  </div>
+                  </AnchoredMenu>
                 )}
               </div>
             )}

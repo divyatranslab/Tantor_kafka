@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2, FileClock,
   History, Info, Package, Search, XCircle, Database,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import './AuditLogs.css';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 
 const CustomRefreshIcon = ({ size = 24, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
   <svg 
@@ -146,17 +147,11 @@ interface CustomDropdownProps {
 
 function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(opt => opt.value === value) || options[0];
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClose = () => setIsOpen(false);
-    window.addEventListener('click', handleClose);
-    return () => window.removeEventListener('click', handleClose);
-  }, [isOpen]);
-
   return (
-    <div className="custom-select-wrapper" onClick={e => e.stopPropagation()}>
+    <div ref={anchorRef} className="custom-select-wrapper">
       <div
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(prev => !prev)}
@@ -168,8 +163,14 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
           </svg>
         </span>
       </div>
-      {isOpen && (
-        <div className="custom-select-options">
+      {isOpen && anchorRef.current && (
+        <AnchoredMenu
+          anchor={anchorRef.current}
+          className="custom-select-options"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
           {options.map(opt => (
             <div
               key={opt.value}
@@ -182,7 +183,7 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
               {opt.label}
             </div>
           ))}
-        </div>
+        </AnchoredMenu>
       )}
     </div>
   );
@@ -293,7 +294,7 @@ export function AuditLogs() {
       <div className="audit-header-title-row">
         <h1>Audit Trail</h1>
         <button className="btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
-          <CustomRefreshIcon size={24} color="#818181" className={loading ? 'spin' : ''} />
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
         </button>
       </div>
       <p className="audit-subtitle">Who performed each action, on which resource, and whether it succeeded.</p>
@@ -346,7 +347,7 @@ export function AuditLogs() {
         </label>
         <div className="audit-filters-actions">
           <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
-            <CustomRefreshIcon size={24} color="#818181" className={loading ? 'spin' : ''} />
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
           </button>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>

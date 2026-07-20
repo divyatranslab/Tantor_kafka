@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -140,7 +142,7 @@ export function Clusters() {
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
     if (!canManage) return;
-    if (!window.confirm(`Delete cluster '${name}' and clean it from assigned VM(s)?`)) return;
+    if (!(await confirmAction(`Delete cluster '${name}' and clean it from assigned VM(s)?`))) return;
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -154,10 +156,10 @@ export function Clusters() {
         );
         setTimeout(fetchClusters, 2000);
       } else {
-        alert('Failed to delete cluster.');
+        notifyAction('Failed to delete cluster.');
       }
     } catch {
-      alert('An error occurred while deleting.');
+      notifyAction('An error occurred while deleting.');
     }
   };
 
@@ -167,7 +169,7 @@ export function Clusters() {
     const warning = nodeCount === 1
       ? `WARNING: '${cluster.name}' has only one node. Three nodes are recommended for availability, and this restart will interrupt Kafka service. Do you want to continue?`
       : `Start rolling restart for '${cluster.name}'?`;
-    if (!window.confirm(warning)) return;
+    if (!(await confirmAction(warning))) return;
     try {
       const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -177,10 +179,10 @@ export function Clusters() {
       if (res.ok) {
         navigate(data.jobId ? `/jobs/${data.jobId}` : `/clusters/${cluster.id}/actions`);
       } else {
-        alert(data.error || 'Failed to schedule rolling restart.');
+        notifyAction(data.error || 'Failed to schedule rolling restart.');
       }
     } catch {
-      alert('Network error while scheduling rolling restart.');
+      notifyAction('Network error while scheduling rolling restart.');
     }
   };
 
@@ -317,7 +319,7 @@ export function Clusters() {
       </div>
       <div className="header-actions">
         <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
-          {clusters.length > 0 ? 'Deploy Cluster' : '+ Add Cluster'}
+          {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
         </button>
         <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
@@ -328,31 +330,32 @@ export function Clusters() {
 
   return (
     <div className={`clusters-page animate-fade-in ${!loading && clusters.length === 0 ? 'is-empty' : ''}`} onClick={() => setOpenMenuId(null)}>
-      {renderHeader()}
-      {(!loading && clusters.length === 0) ? (
-        <div className="white-container full-empty-card">
-          <div className="state-center">
-            <div className="empty-state-icon" />
-            <h2>No clusters yet</h2>
-            <p>
-              You haven't added any Kafka clusters.<br />Click above to provision your first cluster or connect an external one.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="inventory-header">
-            <div>
-              <h3>Cluster Inventory</h3>
-              <span>Kafka Clusters</span>
-            </div>
-            <div className="inventory-total-badge">
-              <span>{clusters.length} Total</span>
+      <div className="clusters-surface">
+        {renderHeader()}
+        {(!loading && clusters.length === 0) ? (
+          <div className="white-container full-empty-card">
+            <div className="state-center">
+              <div className="empty-state-icon" />
+              <h2>No clusters yet</h2>
+              <p>
+                You haven't added any Kafka clusters.<br />Click above to provision your first cluster or connect an external one.
+              </p>
             </div>
           </div>
-          <div className="inventory-divider" />
-          
-          <section className="clusters-inventory white-card">
+        ) : (
+          <>
+            <div className="inventory-header">
+              <div>
+                <h3>Cluster Inventory</h3>
+                <span>Kafka Clusters</span>
+              </div>
+              <div className="inventory-total-badge">
+                <span>{clusters.length} Total</span>
+              </div>
+            </div>
+            <div className="inventory-divider" />
+
+            <section className="clusters-inventory white-card">
             {loading ? (
               <div className="state-center loading-state">
                 <RefreshCw size={24} className="spin" style={{ color: '#3E1363' }} />
@@ -363,8 +366,8 @@ export function Clusters() {
                 <table className="clusters-table">
                   <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Kafka Cluster ID</th>
+                    <th>Cluster Name</th>
+                    <th>Cluster ID</th>
                     <th>Broker</th>
                     <th>DEV</th>
                     <th>Storage</th>
@@ -377,6 +380,15 @@ export function Clusters() {
                   {clusters.map(cluster => {
                     const host = primaryHost(cluster);
                     const progress = diskPct(host);
+                    const tagTone = cluster.kafkaHealthChecking
+                      ? 'state-negative'
+                      : clusterStatusTone(
+                        cluster.runtimeStatusLabel,
+                        cluster.runtimeHealth,
+                        cluster.kafkaHealth,
+                        cluster.status,
+                        cluster.overallHealth,
+                      );
                     return (
                       <tr
                         key={cluster.id}
@@ -439,13 +451,13 @@ export function Clusters() {
                         </td>
                         <td>
                           <div className="tags-column-wrap">
-                            <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
+                            <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'} ${tagTone}`}>
                               {sourceLabel(cluster)}
                             </span>
-                            <span className={`access-pill-v2 ${managementClass(cluster)}`}>
+                            <span className={`access-pill-v2 ${managementClass(cluster)} ${tagTone}`}>
                               {managementLabel(cluster)}
                             </span>
-                            <span className={`status-badge-v2 ${statusClass(cluster)}`}>
+                            <span className={`status-badge-v2 ${statusClass(cluster)} ${tagTone}`}>
                               {statusLabel(cluster)}
                             </span>
                           </div>
@@ -472,9 +484,10 @@ export function Clusters() {
               </table>
             </div>
           )}
-        </section>
-        </>
-      )}
+            </section>
+          </>
+        )}
+      </div>
 
       {showDeploymentModal && (
         <div className="cd-modal-backdrop" onClick={() => setShowDeploymentModal(false)}>

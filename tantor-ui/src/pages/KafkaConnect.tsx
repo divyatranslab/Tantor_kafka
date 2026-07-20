@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -66,10 +68,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -78,10 +81,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && (
-        <>
-          <div className="ds-custom-select-overlay" onClick={() => setIsOpen(false)} />
-          <div className="ds-custom-select-dropdown">
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="ds-custom-select-dropdown"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
             {options.map(opt => (
               <div
                 key={opt.value}
@@ -94,8 +101,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
                 {opt.label}
               </div>
             ))}
-          </div>
-        </>
+        </AnchoredMenu>
       )}
     </div>
   );
@@ -263,7 +269,7 @@ export function KafkaConnect() {
   const handleDeleteConnection = async () => {
     if (!canManage) return;
     if (!selectedConnectionId) return;
-    if (!window.confirm("Are you sure you want to delete this connection?")) return;
+    if (!(await confirmAction("Are you sure you want to delete this connection?"))) return;
     
     setLoading(true);
     try {
@@ -362,7 +368,7 @@ export function KafkaConnect() {
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
     if (!canManage) return;
-    if (action === 'delete' && !window.confirm(`Delete connector ${name}?`)) return;
+    if (action === 'delete' && !(await confirmAction(`Delete connector ${name}?`))) return;
     setSaving(true);
     setError(null);
     try {

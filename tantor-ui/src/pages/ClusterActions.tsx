@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 
 interface ClusterInfo {
   id: string;
@@ -63,7 +64,7 @@ export function ClusterActions() {
     const warning = nodeCount === 1
       ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
       : 'WARNING: This will begin a rolling restart of the cluster. Continue?';
-    if (!window.confirm(warning)) return;
+    if (!(await confirmAction(warning))) return;
     
     setLoading(true);
     try {
@@ -76,10 +77,10 @@ export function ClusterActions() {
         if (data.jobId) navigate(`/jobs/${data.jobId}`);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to trigger rolling restart.");
+        notifyAction(data.error || "Failed to trigger rolling restart.");
       }
     } catch (e) {
-      alert("Error triggering rolling restart.");
+      notifyAction("Error triggering rolling restart.");
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export function ClusterActions() {
   const enableMonitoring = async () => {
     if (!canManage) return;
     if (!monitoringHostId || !prometheusUrl.trim() || !grafanaUrl.trim()) {
-      alert('Select a host and provide both Prometheus and Grafana artifact URLs.');
+      notifyAction('Select a host and provide both Prometheus and Grafana artifact URLs.');
       return;
     }
     setMonitoringLoading(true);
@@ -108,9 +109,9 @@ export function ClusterActions() {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.jobId) navigate(`/jobs/${body.jobId}`);
-      else alert(body.error || 'Failed to create monitoring enablement job.');
+      else notifyAction(body.error || 'Failed to create monitoring enablement job.');
     } catch {
-      alert('Network error while creating monitoring job.');
+      notifyAction('Network error while creating monitoring job.');
     } finally {
       setMonitoringLoading(false);
     }
@@ -129,7 +130,7 @@ export function ClusterActions() {
   const triggerUpgrade = async () => {
     if (!canManage) return;
     if (!targetVersion) return;
-    if (!window.confirm(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`)) return;
+    if (!(await confirmAction(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`))) return;
 
     setUpgradeLoading(true);
     setUpgradeMsg('');

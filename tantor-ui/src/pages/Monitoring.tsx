@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Monitoring.css';
 
 interface MonitoringCluster {
@@ -188,6 +189,7 @@ export function Monitoring() {
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
+  const liveDropdownRef = useRef<HTMLDivElement>(null);
 
   // Load nodes when selectedClusterId changes
   useEffect(() => {
@@ -224,17 +226,6 @@ export function Monitoring() {
         setSelectedNodeId(fallback[0].value);
       });
   }, [selectedClusterId]);
-
-  useEffect(() => {
-    const handleOutsideClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.live-pill-dropdown-wrapper')) {
-        setShowIntervalDropdown(false);
-      }
-    };
-    document.addEventListener('click', handleOutsideClick);
-    return () => document.removeEventListener('click', handleOutsideClick);
-  }, []);
 
   // 1. Load clusters and hosts on mount
   const loadInitialData = async () => {
@@ -361,6 +352,7 @@ export function Monitoring() {
   const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
   const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
   const jmxHealthy = overview?.jmxUp === 1;
+  const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
   const kafkaExporterLabel = overview
     ? (kafkaExporterHealthy ? 'KAFKA_EXPORTER UP' : 'KAFKA_EXPORTER REQUIRED')
     : 'KAFKA_EXPORTER';
@@ -443,7 +435,7 @@ export function Monitoring() {
           </div>
 
           {/* Live indicator Pill Box */}
-          <div className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
+          <div ref={liveDropdownRef} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
             <div 
               className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
               onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
@@ -486,8 +478,14 @@ export function Monitoring() {
               </div>
             </div>
 
-            {showIntervalDropdown && (
-              <div className="live-dropdown-menu" style={{ top: '44px' }}>
+            {showIntervalDropdown && liveDropdownRef.current && (
+              <AnchoredMenu
+                anchor={liveDropdownRef.current}
+                className="live-dropdown-menu"
+                onClose={() => setShowIntervalDropdown(false)}
+                align="start"
+                minWidth={180}
+              >
                 {[5, 10, 15, 30, 60].map((sec) => (
                   <div 
                     key={sec}
@@ -513,7 +511,7 @@ export function Monitoring() {
                   <span className="live-pill-dot"></span>
                   {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
                 </div>
-              </div>
+              </AnchoredMenu>
             )}
           </div>
 
@@ -627,7 +625,7 @@ export function Monitoring() {
             <div className="broker-info">
               <h2>
                 {clusterTitle}
-                <span className="cluster-source-tag">
+                <span className={`cluster-source-tag ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
                   {selectedType === 'INTERNAL' ? 'Internal' : 'External'}
                 </span>
               </h2>
@@ -636,9 +634,9 @@ export function Monitoring() {
               </p>
             </div>
             <div className="monitoring-status-right">
-              <span className="kafka-running-badge">
+              <span className={`kafka-running-badge ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
                 <span className="status-dot"></span>
-                Kafka running
+                {kafkaRunning ? 'Kafka running' : 'Kafka offline'}
               </span>
             </div>
           </div>

@@ -298,7 +298,7 @@ export function InternalConfigEditor() {
     <div className="node-config-page versioned-config-page">
       <header className="node-config-header">
         <div><h2>Versioned Configuration Change</h2><p>Review, validate and save an immutable version before anything reaches a node.</p></div>
-        <button onClick={fetchConfigs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
+        <button onClick={fetchConfigs} disabled={loading} aria-label="Refresh configuration" title="Refresh"><RefreshCw size={14} className={loading ? 'spin' : ''} /></button>
       </header>
 
       <div className="config-flow-strip" style={{

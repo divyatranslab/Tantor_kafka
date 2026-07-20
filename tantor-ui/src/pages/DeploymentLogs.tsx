@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './DeploymentLogs.css';
 
 interface Task {
@@ -162,7 +163,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to retry task.");
+      notifyAction("Failed to retry task.");
     } finally {
       setActionLoading(false);
     }
@@ -170,7 +171,7 @@ export function DeploymentLogs() {
 
   const handleRollback = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)")) return;
+    if (!(await confirmAction("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)"))) return;
     
     setActionLoading(true);
     try {
@@ -178,7 +179,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger rollback.");
+      notifyAction("Failed to trigger rollback.");
     } finally {
       setActionLoading(false);
     }
@@ -192,7 +193,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to resume task.");
+      notifyAction("Failed to resume task.");
     } finally {
       setActionLoading(false);
     }
@@ -200,7 +201,7 @@ export function DeploymentLogs() {
 
   const handleCleanup = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)")) return;
+    if (!(await confirmAction("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)"))) return;
     
     setActionLoading(true);
     try {
@@ -208,7 +209,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger cleanup.");
+      notifyAction("Failed to trigger cleanup.");
     } finally {
       setActionLoading(false);
     }

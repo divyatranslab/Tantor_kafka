@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import {
   AlertTriangle,
   Check,
@@ -405,18 +407,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setNodeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openRoleMenuHostId, setOpenRoleMenuHostId] = useState<string | null>(null);
+  const [roleMenuAnchor, setRoleMenuAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     loadHosts();
@@ -460,7 +454,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       })
       .catch(error => {
         console.error(error);
-        alert('Failed to load cluster details for add-node mode.');
+        notifyAction('Failed to load cluster details for add-node mode.');
         navigate('/clusters');
       })
       .finally(() => setLoadingCluster(false));
@@ -932,7 +926,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'KRaft topology validation failed.');
+        notifyAction(body.error || body.message || 'KRaft topology validation failed.');
         return;
       }
       const report = body as KraftValidationReport;
@@ -941,7 +935,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       setStage('preview');
     } catch (error) {
       console.error(error);
-      alert('Network error while validating the KRaft topology.');
+      notifyAction('Network error while validating the KRaft topology.');
     } finally {
       setValidatingKraft(false);
     }
@@ -1227,7 +1221,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const fixPrerequisites = async () => {
     const failedHosts = selectedHosts.filter(host => prereqResults[host.id]?.status === 'FAILED');
     if (failedHosts.length === 0) return;
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
       `Apply privileged operating-system changes on ${failedHosts.length} host(s)? This may update limits, sysctl, THP, SELinux, time synchronization, and may require a reboot.`,
     );
     if (!confirmed) return;
@@ -1254,7 +1248,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const rebootHost = async (host: Host) => {
-    if (!window.confirm(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`)) return;
+    if (!(await confirmAction(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`))) return;
     setCheckingPrereqs(true);
     try {
       const res = await fetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
@@ -1294,7 +1288,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'Deployment failed to start.');
+        notifyAction(body.error || body.message || 'Deployment failed to start.');
         return;
       }
       if (onClose) {
@@ -1307,7 +1301,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       }
     } catch (e) {
       console.error(e);
-      alert('Network error while starting deployment.');
+      notifyAction('Network error while starting deployment.');
     } finally {
       setDeploying(false);
     }
@@ -1524,8 +1518,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
                   <ChevronDown size={16} />
                 </button>
-                {nodeDropdownOpen && (
-                  <div className="cd-node-menu">
+                {nodeDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cd-node-menu"
+                    onClose={() => setNodeDropdownOpen(false)}
+                    align="start"
+                    matchAnchorWidth
+                  >
                     <div className="cd-search">
                       <Search size={15} />
                       <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
@@ -1550,7 +1550,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                         );
                       })}
                     </div>
-                  </div>
+                  </AnchoredMenu>
                 )}
               </div>
             </div>
@@ -1688,13 +1688,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <div className="cd-role-menu-wrap" style={{ position: 'relative' }}>
                         <button
                           className="cd-figma-action-btn"
-                          onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                          onClick={event => {
+                            const opening = openRoleMenuHostId !== host.id;
+                            setOpenRoleMenuHostId(opening ? host.id : null);
+                            setRoleMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                         >
                           <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                           <MoreVertical size={14} />
                         </button>
-                      {openRoleMenuHostId === host.id && (
-                        <div className="cd-role-menu">
+                      {openRoleMenuHostId === host.id && roleMenuAnchor && (
+                        <AnchoredMenu anchor={roleMenuAnchor} className="cd-role-menu" onClose={() => { setOpenRoleMenuHostId(null); setRoleMenuAnchor(null); }}>
                           {roleOptions.filter(r => r.id !== 'separate').map(role => {
                             const currentRole = rolesByHost[host.id] || defaultRoleForMode;
                             let isActive = currentRole === role.id;
@@ -1734,7 +1738,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                               </label>
                             );
                           })}
-                        </div>
+                        </AnchoredMenu>
                       )}
                     </div>
                     <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
