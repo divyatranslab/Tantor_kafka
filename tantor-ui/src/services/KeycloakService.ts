@@ -6,13 +6,13 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
-const currentRedirectUri = () => window.location.href;
+const dashboardRedirectUri = () => `${window.location.origin}/dashboard`;
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
@@ -24,7 +24,7 @@ export const initKeycloak = (): Promise<boolean> => {
       onLoad: 'login-required',
       pkceMethod: 'S256',
       checkLoginIframe: true,
-      redirectUri: currentRedirectUri(),
+      redirectUri: dashboardRedirectUri(),
     });
   }
 
@@ -34,7 +34,7 @@ export const initKeycloak = (): Promise<boolean> => {
 export const login = () =>
   isAuthEnabled()
     ? keycloak.login({
-        redirectUri: currentRedirectUri(),
+        redirectUri: dashboardRedirectUri(),
       })
     : Promise.resolve();
 
@@ -69,7 +69,7 @@ export const getValidToken = async () => {
 };
 
 export const installAuthenticatedFetch = () => {
-  if (!isAuthEnabled() || authenticatedFetchInstalled) return;
+  if (authenticatedFetchInstalled) return;
 
   nativeFetch = window.fetch.bind(window);
   authenticatedFetchInstalled = true;
@@ -80,9 +80,11 @@ export const installAuthenticatedFetch = () => {
     const headers = new Headers(init?.headers || request?.headers);
 
     if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-      const token = await getValidToken();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      if (isAuthEnabled()) {
+        const token = await getValidToken();
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
       }
     }
 

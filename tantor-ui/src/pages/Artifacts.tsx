@@ -5,7 +5,9 @@ import {
   Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
+import orangeBanner from '../assets/orange.png';
 
 interface ArtifactVersion {
   id: string;
@@ -101,6 +103,7 @@ export function Artifacts() {
   const [hostDistributionDirs, setHostDistributionDirs] = useState<Record<string, string>>({});
   const [selectedHosts, setSelectedHosts] = useState<Record<string, string[]>>({});
   const [openArtifactMenuId, setOpenArtifactMenuId] = useState<string | null>(null);
+  const [artifactMenuAnchor, setArtifactMenuAnchor] = useState<HTMLElement | null>(null);
   const [auditModalArtifact, setAuditModalArtifact] = useState<ArtifactVersion | null>(null);
   const [artifactAuditEvents, setArtifactAuditEvents] = useState<ArtifactAuditEvent[]>([]);
   const [artifactAuditLoading, setArtifactAuditLoading] = useState(false);
@@ -463,7 +466,7 @@ export function Artifacts() {
   };
 
   return (
-    <div className="artifacts-page animate-fade-in" onClick={() => setOpenArtifactMenuId(null)}>
+    <div className="artifacts-page animate-fade-in" onClick={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
       <header className="page-header flex-between">
         <div>
           <h1>Artifacts</h1>
@@ -569,13 +572,17 @@ export function Artifacts() {
                       <div className="artifact-menu-anchor" onClick={event => event.stopPropagation()}>
                         <button
                           className="artifact-menu-button"
-                          onClick={() => setOpenArtifactMenuId(openArtifactMenuId === ver.id ? null : ver.id)}
+                          onClick={event => {
+                            const opening = openArtifactMenuId !== ver.id;
+                            setOpenArtifactMenuId(opening ? ver.id : null);
+                            setArtifactMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                           title="Artifact actions"
                         >
                           <MoreVertical size={15} />
                         </button>
-                        {openArtifactMenuId === ver.id && (
-                          <div className="artifact-action-menu">
+                        {openArtifactMenuId === ver.id && artifactMenuAnchor && (
+                          <AnchoredMenu anchor={artifactMenuAnchor} className="artifact-action-menu" onClose={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
                             <button onClick={() => openArtifactLogs(ver)}>
                               <FileText size={14} />
                               View Log
@@ -591,7 +598,7 @@ export function Artifacts() {
                                 Delete
                               </button>
                             )}
-                          </div>
+                          </AnchoredMenu>
                         )}
                       </div>
                       <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>
@@ -705,83 +712,92 @@ export function Artifacts() {
 
       {canManage && showUploadModal && (
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Upload Parcel Binary</h2>
+          <div className="modal upload-parcel-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header upload-parcel-header">
+              <div className="upload-parcel-heading">
+                <h2>Upload Parcel Binary</h2>
+                <p className="modal-subtitle">Upload a Kafka .tgz binary or a JMX .jar to the internal artifact repository.</p>
+              </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
               </button>
             </div>
-            <p className="modal-subtitle">Upload a Kafka <code>.tgz</code> binary or a JMX <code>.jar</code> to the internal artifact repository.</p>
 
-            <form onSubmit={handleUploadSubmit}>
-              <div className="form-group">
-                <label>Service Type</label>
-                <select
-                  className="form-control"
-                  value={serviceType}
-                  onChange={e => {
-                    setServiceType(e.target.value);
-                    setFile(null);
-                    if (fileRef.current) fileRef.current.value = '';
-                  }}
-                >
-                  {artifactServiceOptions.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-                <small className="form-hint">{selectedServiceOption.helper}</small>
-              </div>
+            <form onSubmit={handleUploadSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Service Type</label>
+                  <select
+                    className="form-control"
+                    value={serviceType}
+                    onChange={e => {
+                      setServiceType(e.target.value);
+                      setFile(null);
+                      if (fileRef.current) fileRef.current.value = '';
+                    }}
+                  >
+                    {artifactServiceOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <small className="form-hint">{selectedServiceOption.helper}</small>
+                </div>
 
-              <div className="form-group">
-                <label>Version Number</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={versionInput}
-                  onChange={e => setVersionInput(e.target.value)}
-                  placeholder={selectedServiceOption.versionPlaceholder}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Repository Subdirectory (Optional)</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={uploadDirectory}
-                  onChange={e => setUploadDirectory(e.target.value)}
-                  placeholder={selectedServiceOption.directoryPlaceholder}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Binary File (.tgz or .jar)</label>
-                <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
-                  <Upload size={28} className="upload-dropzone-icon" />
-                  {file ? (
-                    <>
-                      <span className="dropzone-filename">{file.name}</span>
-                      <span className="dropzone-size">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                    </>
-                  ) : (
-                    <span className="dropzone-hint">Click to select a binary file</span>
-                  )}
+                <div className="form-group">
+                  <label>Version Number</label>
                   <input
-                    type="file"
-                    ref={fileRef}
-                    style={{ display: 'none' }}
-                    onChange={e => setFile(e.target.files?.[0] ?? null)}
-                    accept={selectedServiceOption.fileAccept}
+                    type="text"
+                    className="form-control"
+                    value={versionInput}
+                    onChange={e => setVersionInput(e.target.value)}
+                    placeholder={selectedServiceOption.versionPlaceholder}
+                    required
                   />
                 </div>
-                {!fileMatchesServiceType && (
-                  <small className="form-error">Selected file does not match {selectedServiceOption.label}.</small>
-                )}
+
+                <div className="form-group">
+                  <label>Repository Subdirectory (Optional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    value={uploadDirectory}
+                    onChange={e => setUploadDirectory(e.target.value)}
+                    placeholder={selectedServiceOption.directoryPlaceholder}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Binary File (.tgz or .jar)</label>
+                  <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
+                    <span className="upload-dropzone-icon-shell">
+                      <Upload size={22} className="upload-dropzone-icon" />
+                    </span>
+                    {file ? (
+                      <>
+                        <span className="dropzone-filename">{file.name}</span>
+                        <span className="dropzone-size">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                      </>
+                    ) : (
+                      <span className="dropzone-hint">Click to select a binary file</span>
+                    )}
+                    <input
+                      type="file"
+                      ref={fileRef}
+                      style={{ display: 'none' }}
+                      onChange={e => setFile(e.target.files?.[0] ?? null)}
+                      accept={selectedServiceOption.fileAccept}
+                    />
+                  </div>
+                  {!fileMatchesServiceType && (
+                    <small className="form-error">Selected file does not match {selectedServiceOption.label}.</small>
+                  )}
+                </div>
               </div>
 
               <div className="modal-footer">
+                <button type="button" className="btn btn-cancel-purple-outline" onClick={() => setShowUploadModal(false)}>
+                  Cancel
+                </button>
                 <button type="submit" className="btn btn-primary-action" disabled={uploading || !file || !versionInput || !fileMatchesServiceType}>
                   {uploading ? 'Uploading...' : 'Upload'}
                 </button>
@@ -836,6 +852,7 @@ export function Artifacts() {
         <div className="modal-overlay" onClick={() => setDeleteConfirmVer(null)}>
           <div className="modal delete-confirm-modal" onClick={e => e.stopPropagation()}>
             <div className="delete-modal-banner">
+              <img src={orangeBanner} alt="Banner" className="delete-banner-image" />
               <button className="modal-close" onClick={() => setDeleteConfirmVer(null)}>
                 <X size={14} />
               </button>
@@ -884,4 +901,3 @@ function actionIcon(action: ParcelAction) {
     remove: Trash2,
   }[action];
 }
-

@@ -137,12 +137,15 @@
 
 .status-pill {
   box-sizing: border-box;
-  display: flex;
+  display: inline-flex;
   flex-direction: row;
   justify-content: center;
   align-items: center;
   padding: 4px 8px;
   gap: 10px;
+  height: 24px;
+  width: fit-content;
+  min-width: 59px;
   border-radius: 100px;
   font-family: 'Satoshi', sans-serif;
   font-weight: 400;
@@ -154,6 +157,31 @@
 .badge-success {
   background: rgba(42, 199, 146, 0.25);
   color: #069B68;
+}
+
+.badge-failed {
+  background: rgba(242, 118, 167, 0.3);
+  color: #EF4D5F;
+}
+
+.badge-in-progress {
+  background: rgba(217, 217, 217, 0.5);
+  color: #818181;
+}
+
+.badge-rolled-back {
+  background: rgba(22, 171, 194, 0.25);
+  color: #16ABC2;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.badge-pending {
+  background: rgba(217, 217, 217, 0.5);
+  color: #818181;
 }
 
 .job-main-layout {
@@ -168,10 +196,6 @@
 }
 
 .job-sidebar {
-  background: #FFFFFF;
-  border: 1px solid #CCCCCC;
-  border-radius: 16px;
-  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -211,14 +235,11 @@
   gap: 0.75rem;
 }
 
-.step-icon-success { color: #10b981; }
-.step-icon-failed { color: #ef4444; }
-.step-icon-progress { color: #6366f1; }
-.step-icon-warning { color: #f59e0b; }
-.step-icon-pending-circle {
-  border-radius: 50%;
-  background: #e5e7eb;
-}
+.step-icon-success { color: #36AD8F; }
+.step-icon-failed { color: #EF4D5F; }
+.step-icon-progress { color: #818181; }
+.step-icon-warning { color: #E08E40; }
+.step-icon-pending { color: #CCCCCC; }
 
 .step-name {
   font-size: 0.85rem;
@@ -272,8 +293,11 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  font-size: 0.95rem;
+  font-family: 'Satoshi';
   font-weight: 500;
+  font-size: 16px;
+  line-height: 22px;
+  color: #FFFFFF;
 }
 
 .toggle-expand-btn {
@@ -281,8 +305,12 @@
   color: white;
   border: none;
   cursor: pointer;
-  padding: 0.25rem;
-  border-radius: 4px;
+  padding: 0px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.8;
 }
 
@@ -302,10 +330,11 @@
 
 .logs-text {
   margin: 0;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #e5e7eb;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 14px;
+  line-height: 20px;
+  font-feature-settings: 'ss01' on, 'cv01' on, 'cv11' on;
+  color: #FFFFFF;
   white-space: pre-wrap;
   word-break: break-all;
 }
