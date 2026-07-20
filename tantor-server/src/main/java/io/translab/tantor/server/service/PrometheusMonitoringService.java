@@ -175,7 +175,7 @@ public class PrometheusMonitoringService {
     @Transactional(readOnly = true)
     public List<MonitoringClusterSummary> clusters(String type) {
         String normalizedType = type == null ? "" : type.trim().toUpperCase(Locale.ROOT);
-        List<MonitoringClusterSummary> result = new ArrayList<>();
+        Map<UUID, MonitoringClusterSummary> result = new LinkedHashMap<>();
         for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
             if (!normalizedType.isBlank() && !normalizedType.equals(origin(cluster))) {
                 continue;
@@ -189,7 +189,7 @@ public class PrometheusMonitoringService {
             summary.setJmxAvailable(hasJmxTargets(cluster));
             summary.setWarning(monitoringWarning(cluster));
             summary.setNodes(monitoringNodes(cluster));
-            result.add(summary);
+            result.put(cluster.getId(), summary);
         }
         for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
             if (!normalizedType.isBlank() && !normalizedType.equals("EXTERNAL")) {
@@ -204,9 +204,11 @@ public class PrometheusMonitoringService {
             summary.setJmxAvailable(hasJmxTargets(cluster));
             summary.setWarning(null);
             summary.setNodes(monitoringNodes(cluster));
-            result.add(summary);
+            // External clusters are mirrored into kf_clusters for the shared cluster APIs.
+            // Keep the richer mirrored entry when both repositories contain the same id.
+            result.putIfAbsent(cluster.getId(), summary);
         }
-        return result;
+        return new ArrayList<>(result.values());
     }
 
     @Transactional(readOnly = true)

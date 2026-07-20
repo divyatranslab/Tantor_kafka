@@ -1,4 +1,6 @@
 .top-navbar {
+  position: relative;
+  z-index: 30;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -80,17 +82,127 @@
   font-weight: 700;
   font-size: 14px;
   user-select: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .logo-container {
   display: flex;
   align-items: center;
-  height: 100%;
+  width: 107px;
+  height: 29px;
+  overflow: hidden;
 }
 
 .header-logo {
   width: 140px;
+  max-width: none;
   height: 29px;
   object-fit: contain;
-  filter: none; /* Removed filter so native colors of Tantor-pink-logo.png display correctly */
+  transform: translateX(-33px);
+  filter: none;
+}
+
+.profile-menu-wrap {
+  position: relative;
+}
+
+.profile-badge:hover,
+.profile-badge[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px rgba(223, 103, 139, 0.18);
+}
+
+.profile-popover {
+  position: absolute;
+  top: calc(100% + 14px);
+  right: 0;
+  width: min(420px, calc(100vw - 32px));
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #ece8f1;
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(45, 34, 68, 0.18);
+  color: #282f49;
+}
+
+.profile-popover-main {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 16px;
+  padding: 28px 30px 22px;
+}
+
+.profile-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #9b7cf4;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.profile-identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+}
+
+.profile-identity strong {
+  font-size: 18px;
+}
+
+.profile-identity span,
+.profile-member-since {
+  color: #68738d;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.profile-role-list {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.profile-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid #cfe0ff;
+  border-radius: 9px;
+  background: #edf5ff;
+  color: #2872dc;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-popover-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 20px 30px 24px;
+  border-top: 1px solid #eeeaf2;
+}
+
+.profile-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  background: transparent;
+  color: #f04444;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }

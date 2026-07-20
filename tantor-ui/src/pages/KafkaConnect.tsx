@@ -121,7 +121,7 @@ export function KafkaConnect() {
         const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = rej; r.readAsText(certFile);
       });
       return btoa(text.trim());
-    } else if (certType === 'PKCS12_JKS' && certFile) {
+    } else if (certType === 'PKCS12' && certFile) {
       return await readFileAsBase64(certFile);
     }
     return undefined;
@@ -1019,7 +1019,7 @@ export function KafkaConnect() {
                       style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
                     >
                       <option value="PEM">PEM</option>
-                      <option value="PKCS12_JKS">PKCS12 / JKS</option>
+                      <option value="PKCS12">PKCS12</option>
                     </select>
                     <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
                       <ChevronDown size={16} style={{ color: '#818181' }} />
@@ -1051,7 +1051,7 @@ export function KafkaConnect() {
                     <FileDown size={16} style={{ color: '#7F56D9' }} /> {certFileName || 'Choose file'}
                     <input
                       type="file"
-                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx,.jks'}
+                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx'}
                       onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }}
                       style={{ display: 'none' }}
                     />
@@ -1060,7 +1060,7 @@ export function KafkaConnect() {
                 </div>
               </div>
 
-              {certType === 'PKCS12_JKS' && (
+              {certType === 'PKCS12' && (
                 <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
                   <div style={{ position: 'relative' }}>

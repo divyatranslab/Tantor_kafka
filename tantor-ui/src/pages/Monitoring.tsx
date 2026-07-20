@@ -95,6 +95,38 @@ const nodeLabel = (node: MonitoringNode) => {
   return [nodeName, host, role].filter(Boolean).join(' - ');
 };
 
+const mergeMonitoringClusters = (items: MonitoringCluster[]) => {
+  const merged = new Map<string, MonitoringCluster>();
+
+  items.forEach(cluster => {
+    if (!cluster.id) return;
+    const current = merged.get(cluster.id);
+    if (!current) {
+      merged.set(cluster.id, cluster);
+      return;
+    }
+
+    const nodes = new Map<string, MonitoringNode>();
+    [...(current.nodes || []), ...(cluster.nodes || [])].forEach((node, index) => {
+      const key = node.nodeId || node.hostId || node.hostname || node.hostIp || String(index);
+      nodes.set(key, { ...nodes.get(key), ...node });
+    });
+
+    merged.set(cluster.id, {
+      ...cluster,
+      ...current,
+      name: current.name?.trim() || cluster.name?.trim() || '',
+      originType: current.originType || cluster.originType,
+      monitoringEnabled: Boolean(current.monitoringEnabled || cluster.monitoringEnabled),
+      kafkaExporterTarget: current.kafkaExporterTarget || cluster.kafkaExporterTarget,
+      jmxAvailable: Boolean(current.jmxAvailable || cluster.jmxAvailable),
+      warning: current.warning || cluster.warning,
+      nodes: Array.from(nodes.values()),
+    });
+  });
+
+  return Array.from(merged.values());
+};
 export function Monitoring() {
   const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
@@ -125,7 +157,8 @@ export function Monitoring() {
       const clustersRes = await fetch(`/api/v1/monitoring/clusters?type=${selectedType}`);
       let clusterList: MonitoringCluster[] = [];
       if (clustersRes.ok) {
-        clusterList = await clustersRes.json();
+        const responseClusters: MonitoringCluster[] = await clustersRes.json();
+        clusterList = mergeMonitoringClusters(responseClusters);
         setClusters(clusterList);
       }
 
@@ -279,20 +312,26 @@ export function Monitoring() {
           {clusters.length > 0 && (
             <label className="monitoring-control-field">
               <span>Cluster name</span>
-              <select
-                className="tantor-select"
-                value={selectedClusterId}
-                onChange={e => {
-                  setSelectedClusterId(e.target.value);
-                  setSelectedNodeId('');
-                  setOverview(null);
-                  setHistory([]);
-                }}
-              >
-                {clusters.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+              {clusters.length === 1 ? (
+                <div className="tantor-select monitoring-single-cluster" title={clusters[0].name || clusters[0].id}>
+                  {clusters[0].name || clusters[0].id}
+                </div>
+              ) : (
+                <select
+                  className="tantor-select"
+                  value={selectedClusterId}
+                  onChange={e => {
+                    setSelectedClusterId(e.target.value);
+                    setSelectedNodeId('');
+                    setOverview(null);
+                    setHistory([]);
+                  }}
+                >
+                  {clusters.map(c => (
+                    <option key={c.id} value={c.id}>{c.name || c.id}</option>
+                  ))}
+                </select>
+              )}
             </label>
           )}
 

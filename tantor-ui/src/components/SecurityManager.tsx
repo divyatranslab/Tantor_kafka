@@ -10,6 +10,25 @@ import { usePermissions } from '../hooks/usePermissions';
 interface Props {
   clusterId: string;
 }
+type ApiError = {
+  message?: string;
+  response?: {
+    data?: {
+      detail?: string;
+      message?: string;
+      error?: string;
+    };
+  };
+};
+
+const apiErrorMessage = (error: unknown, fallback: string) => {
+  const apiError = error as ApiError;
+  return apiError.response?.data?.detail
+    || apiError.response?.data?.message
+    || apiError.response?.data?.error
+    || apiError.message
+    || fallback;
+};
 
 export interface AclEntry {
   principal: string;
@@ -49,9 +68,7 @@ export default function SecurityManager({ clusterId }: Props) {
       const data = await getAcls(clusterId);
       setAcls(data.acls || []);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load ACLs';
-      const axErr = err as { response?: { data?: { detail?: string } } };
-      setAclsError(axErr.response?.data?.detail || msg);
+      setAclsError(apiErrorMessage(err, 'Failed to load ACLs'));
     } finally {
       setAclsLoading(false);
     }
@@ -86,8 +103,8 @@ export default function SecurityManager({ clusterId }: Props) {
       setAclPrincipal('');
       setAclResourceName('');
       fetchAcls();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || err.message || 'Failed to create ACL');
+    } catch (err: unknown) {
+      alert(apiErrorMessage(err, 'Failed to create ACL'));
     } finally {
       setAclCreating(false);
     }
@@ -107,8 +124,8 @@ export default function SecurityManager({ clusterId }: Props) {
         permission_type: acl.permissionType,
       });
       fetchAcls();
-    } catch (err: any) {
-      alert(err.response?.data?.detail || err.message || 'Failed to delete ACL');
+    } catch (err: unknown) {
+      alert(apiErrorMessage(err, 'Failed to delete ACL'));
     }
   };
 

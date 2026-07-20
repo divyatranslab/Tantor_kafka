@@ -6,13 +6,14 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED !== 'false';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
 const currentRedirectUri = () => window.location.href;
+const postLogoutRedirectUri = () => new URL(import.meta.env.BASE_URL || '/', window.location.origin).href;
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
@@ -38,12 +39,18 @@ export const login = () =>
       })
     : Promise.resolve();
 
-export const logout = () =>
-  isAuthEnabled()
-    ? keycloak.logout({
-        redirectUri: window.location.origin,
-      })
-    : Promise.resolve();
+export const logout = () => {
+  const redirectUri = postLogoutRedirectUri();
+  if (!isAuthEnabled()) {
+    window.location.assign(redirectUri);
+    return Promise.resolve();
+  }
+
+  // Navigate directly so logout remains tied to the user's click and cannot
+  // be swallowed by an unresolved adapter promise.
+  window.location.assign(keycloak.createLogoutUrl({ redirectUri, logoutMethod: 'GET' }));
+  return Promise.resolve();
+};
 
 export const getToken = () => isAuthEnabled() ? keycloak.token : undefined;
 

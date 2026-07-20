@@ -581,17 +581,19 @@
   margin-bottom: 12px;
 }
 
-.tab-headers span {
+.tab-headers button {
   font-family: 'Satoshi';
   font-weight: 500;
   font-size: 14px;
   color: var(--text-tertiary);
   cursor: pointer;
-  padding-bottom: 6px;
+  padding: 0 0 6px;
+  border: 0;
   border-bottom: 2px solid transparent;
+  background: transparent;
 }
 
-.tab-headers span.active-tab {
+.tab-headers button.active-tab {
   color: var(--accent-primary);
   border-bottom-color: var(--accent-primary);
   font-weight: 700;

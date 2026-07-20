@@ -149,7 +149,7 @@ public class HostController {
         task.setHostId(id);
         task.setCommand("APPLY_PREREQUISITES");
         task.setStatus("PENDING");
-        task.setParameters("{}");
+        task.setParameters(requesterParameters());
         taskRepository.save(task);
         auditService.record("PREREQUISITE", "PREREQUISITE_FIX_REQUESTED", "HOST", id,
                 host.getClusterId(), "REQUESTED", null, null, null,
@@ -204,6 +204,7 @@ public class HostController {
         task.setStatus("PENDING");
 
         Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("requested_by", io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
         if (options != null) {
             copyOption(options, parameters, "mode");
             copyOption(options, parameters, "required_ports");
@@ -214,6 +215,14 @@ public class HostController {
         return task;
     }
 
+    private String requesterParameters() {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "requested_by", io.translab.tantor.server.security.SecurityUtils.getCurrentUsername()));
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to capture request identity", e);
+        }
+    }
     private void copyOption(Map<String, Object> source, Map<String, Object> target, String key) {
         Object value = source.get(key);
         if (value != null && !String.valueOf(value).isBlank()) {

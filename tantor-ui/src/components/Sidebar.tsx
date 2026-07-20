@@ -6,7 +6,6 @@ import {
   ChevronRight,
   LayoutDashboard,
   LineChart,
-  LogOut,
   Network,
   Package,
   PlayCircle,
@@ -51,7 +50,7 @@ const navSections: NavSection[] = [
 const hiddenNavPaths = new Set(['/user-management', '/commands', '/ldap-settings', '/admin']);
 
 export function Sidebar() {
-  const { decodedToken, logout } = useAuth();
+  const { decodedToken } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     Clusters: true,
   });
@@ -119,9 +118,6 @@ export function Sidebar() {
           <span className="sidebar-version-dot" />
           <span className="sidebar-user-name" title={displayName}>{displayName}</span>
         </div>
-        <button className="sidebar-logout" type="button" onClick={() => void logout()} title="Logout">
-          <LogOut size={15} />
-        </button>
       </div>
     </aside>
   );

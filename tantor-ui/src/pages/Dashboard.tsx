@@ -85,6 +85,8 @@ interface TaskRow {
   errorMsg?: string;
 }
 
+type OutcomeTab = 'SUCCESS' | 'FAILED';
+
 interface DashboardPayload {
   generatedAt: string;
   summary: DashboardSummary;
@@ -156,6 +158,8 @@ export function Dashboard() {
   const [error, setError] = useState('');
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
   const [deploymentStep, setDeploymentStep] = useState<'choice' | 'deploy'>('choice');
+  const [serviceTab, setServiceTab] = useState<OutcomeTab>('SUCCESS');
+  const [recentTaskTab, setRecentTaskTab] = useState<OutcomeTab>('SUCCESS');
 
   // Capitalize the first letter of username
   const username = useMemo(() => {
@@ -182,6 +186,17 @@ export function Dashboard() {
   }, []);
 
   const summary = dashboard.summary;
+  const serviceRowsByOutcome = useMemo<Record<OutcomeTab, ServiceRow[]>>(() => ({
+    SUCCESS: dashboard.runningServices.filter(row => {
+      const status = row.status?.toUpperCase();
+      return status === 'SUCCESS' || status === 'RUNNING';
+    }),
+    FAILED: dashboard.failedServices.filter(row => row.status?.toUpperCase() === 'FAILED'),
+  }), [dashboard.failedServices, dashboard.runningServices]);
+  const taskRowsByOutcome = useMemo<Record<OutcomeTab, TaskRow[]>>(() => ({
+    SUCCESS: dashboard.recentTasks.filter(task => task.status?.toUpperCase() === 'SUCCESS'),
+    FAILED: dashboard.recentTasks.filter(task => task.status?.toUpperCase() === 'FAILED'),
+  }), [dashboard.recentTasks]);
 
 
   const kpis = useMemo(() => [
@@ -346,12 +361,24 @@ export function Dashboard() {
 
         <article className="db-panel services-panel">
           <PanelTitle title="Services" detail="" />
-          <div className="tab-headers">
-            <span className="active-tab">Running ({summary.runningServices})</span>
-            <span>Failed ({summary.failedServices})</span>
+          <div className="tab-headers" role="tablist" aria-label="Service outcome">
+            {(Object.keys(serviceRowsByOutcome) as OutcomeTab[]).map(outcome => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={serviceTab === outcome}
+                className={serviceTab === outcome ? 'active-tab' : ''}
+                onClick={() => setServiceTab(outcome)}
+                key={outcome}
+              >
+                {statusLabel(outcome)} ({serviceRowsByOutcome[outcome].length})
+              </button>
+            ))}
           </div>
           <div className="tab-content">
-            <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
+            {serviceRowsByOutcome[serviceTab].length
+              ? <ServiceList rows={serviceRowsByOutcome[serviceTab]} iconFor={serviceIcon} />
+              : <EmptyPanel text={`No ${statusLabel(serviceTab).toLowerCase()} services.`} compact />}
           </div>
         </article>
       </section>
@@ -374,12 +401,22 @@ export function Dashboard() {
 
         <article className="db-panel">
           <PanelTitle title="Recent Tasks" detail="View all" />
-          <div className="tab-headers">
-            <span className="active-tab">Success ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() === 'SUCCESS').length})</span>
-            <span>Failed ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() !== 'SUCCESS').length})</span>
+          <div className="tab-headers" role="tablist" aria-label="Recent task outcome">
+            {(Object.keys(taskRowsByOutcome) as OutcomeTab[]).map(outcome => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={recentTaskTab === outcome}
+                className={recentTaskTab === outcome ? 'active-tab' : ''}
+                onClick={() => setRecentTaskTab(outcome)}
+                key={outcome}
+              >
+                {statusLabel(outcome)} ({taskRowsByOutcome[outcome].length})
+              </button>
+            ))}
           </div>
           <div className="db-task-list">
-            {dashboard.recentTasks.length ? dashboard.recentTasks.map(task => (
+            {taskRowsByOutcome[recentTaskTab].length ? taskRowsByOutcome[recentTaskTab].map(task => (
               <div key={task.id} className="db-task-row">
                 <span className={`db-task-status ${task.status?.toLowerCase()}`}>{task.status}</span>
                 <div>
@@ -388,7 +425,7 @@ export function Dashboard() {
                   {task.errorMsg && <em>{task.errorMsg}</em>}
                 </div>
               </div>
-            )) : <EmptyPanel text="No tasks have run yet." compact />}
+            )) : <EmptyPanel text={`No ${statusLabel(recentTaskTab).toLowerCase()} tasks.`} compact />}
           </div>
         </article>
       </section>
