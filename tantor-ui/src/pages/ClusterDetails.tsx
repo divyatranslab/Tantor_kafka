@@ -126,9 +126,9 @@ export function ClusterDetails() {
   if (isLogsView) {
     return (
       <div className="cluster-details-page cluster-logs-page animate-fade-in">
-        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '5px', width: '1130px', height: '142px' }}>
+        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
           {/* Breadcrumbs (Frame 1000005411) */}
-          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: '140px', height: '20px' }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: 'auto', height: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '20px' }}>
               <span 
                 onClick={() => navigate('/clusters')} 
@@ -163,7 +163,7 @@ export function ClusterDetails() {
           </div>
           
           {/* Title Row (Frame 1000005262) */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', width: '1129px', height: '51px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '8px', width: '1129px', height: 'auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '2px', width: '1129px', height: '32px' }}>
               <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', width: '1129px', height: '32px' }}>
                 <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '465px', height: '32px' }}>
@@ -205,9 +205,7 @@ export function ClusterDetails() {
               fontSize: '14px',
               lineHeight: '19px',
               color: '#818181',
-              margin: '0px',
-              width: '162px',
-              height: '19px'
+              margin: '0px'
             }}>
               {`${cluster.name}Kafka ${cluster.kafkaVersion}${cluster.mode ? cluster.mode.toLowerCase() : ''}`}
             </p>
@@ -344,7 +342,7 @@ export function ClusterDetails() {
           
           {/* Subtitle */}
           <p className="cd-details-subtitle">
-            {`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} nodes • ${cluster.mode || 'INTERNAL'}`}
+            {`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} nodes • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
           </p>
         </header>
 

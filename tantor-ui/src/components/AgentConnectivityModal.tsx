@@ -132,39 +132,41 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           </button>
         </div>
 
-        <p className="modal-section-title">Discovered nodes waiting to connect</p>
+        <p className="modal-section-title" style={{ margin: '20px 32px 10px 32px' }}>Discovered nodes waiting to connect</p>
 
         {pendingHosts.length === 0 ? (
-          <div className="empty-pending">
+          <div className="empty-pending" style={{ margin: '0 32px' }}>
             No new nodes discovered. Run the agent script on a VM to discover it.
           </div>
         ) : (
           <>
-            <label className="pending-select-all">
+            <label className="pending-select-all" style={{ margin: '0 32px 10px 32px' }}>
               <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
               <span>Select all discovered agents</span>
             </label>
-            {pendingHosts.map(host => (
-              <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
-                <label className="pending-node-select" onClick={event => event.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={!!selectedPendingIds[host.id]}
-                    onChange={() => togglePendingHost(host.id)}
-                  />
-                </label>
-                <div className="pending-node-info">
-                  <p className="name">{host.agentName || host.hostname}</p>
-                  <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
+            <div style={{ padding: '0 32px' }}>
+              {pendingHosts.map(host => (
+                <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
+                  <label className="pending-node-select" onClick={event => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={!!selectedPendingIds[host.id]}
+                      onChange={() => togglePendingHost(host.id)}
+                    />
+                  </label>
+                  <div className="pending-node-info">
+                    <p className="name">{host.agentName || host.hostname}</p>
+                    <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
+                  </div>
+                  <div className="pending-node-actions">
+                    <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
-                <div className="pending-node-actions">
-                  <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-            <div className="pending-connect-summary">
+              ))}
+            </div>
+            <div className="pending-connect-summary" style={{ margin: '16px 32px 0 32px' }}>
               <span>{selectedCount} selected</span>
               <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
                 {connectingAgents ? 'Connecting...' : 'Connect selected'}
@@ -174,7 +176,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
         )}
 
         <hr className="modal-divider" />
-        <div className="modal-footer">
+        <div className="modal-footer" style={{ margin: '16px 32px 24px 32px' }}>
           <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>

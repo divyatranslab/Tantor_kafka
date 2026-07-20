@@ -559,6 +559,11 @@
   color: #EF4D5F;
 }
 
+.cd-status-badge.unknown {
+  background: rgba(129, 129, 129, 0.15);
+  color: #818181;
+}
+
 .cd-details-actions {
   display: flex;
   align-items: center;
