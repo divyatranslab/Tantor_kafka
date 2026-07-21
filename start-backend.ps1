@@ -51,9 +51,14 @@ function Normalize-PathEnvironment {
 }
 
 function Resolve-Java {
+    $localJavaHome = Join-Path $RootDir "jdk-21"
     $candidateJavaHome = "C:\Program Files\Java\jdk-21"
-    if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -and (Test-Path $candidateJavaHome)) {
-        $env:JAVA_HOME = $candidateJavaHome
+    if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+        if (Test-Path $localJavaHome) {
+            $env:JAVA_HOME = $localJavaHome
+        } elseif (Test-Path $candidateJavaHome) {
+            $env:JAVA_HOME = $candidateJavaHome
+        }
     }
 
     if (![string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {

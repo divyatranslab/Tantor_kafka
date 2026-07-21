@@ -23,11 +23,14 @@ if (Test-Path $envFile) {
 }
 
 # ── Resolve Java ─────────────────────────────────────────────────────────────
+$localJavaHome = "$RootDir\jdk-21"
 $candidateJavaHome1 = "C:\Program Files\Java\jdk-21"
 $candidateJavaHome2 = "C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot"
 $candidateJavaHome3 = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
 if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
-    if (Test-Path $candidateJavaHome1) {
+    if (Test-Path $localJavaHome) {
+        $env:JAVA_HOME = $localJavaHome
+    } elseif (Test-Path $candidateJavaHome1) {
         $env:JAVA_HOME = $candidateJavaHome1
     } elseif (Test-Path $candidateJavaHome2) {
         $env:JAVA_HOME = $candidateJavaHome2
