@@ -71,6 +71,15 @@ const artifactServiceOptions = [
     helper: 'Kafka binaries appear in the parcel list and can be distributed to hosts.',
   },
   {
+    value: 'KAFKA_EXPORTER',
+    label: 'Kafka Exporter',
+    versionPlaceholder: 'e.g. 1.9.0',
+    directoryPlaceholder: 'custom/kafka-exporter (under configured repository root)',
+    fileLabel: 'Kafka exporter binary (.tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Kafka exporter binaries for metrics collection.',
+  },
+  {
     value: 'JMX_EXPORTER',
     label: 'JMX Exporter',
     versionPlaceholder: 'e.g. 0.20.0',
