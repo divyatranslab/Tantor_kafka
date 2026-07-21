@@ -141,13 +141,17 @@ public class PrometheusMonitoringService {
                 continue;
             }
 
-
             if (isExternal(cluster)) {
                 addExternalJmxTargets(targets, cluster);
             } else {
                 addInternalTargets(targets, cluster);
             }
         }
+        
+        for (ExternalCluster extCluster : externalClusterRepository.findByStatusNot("DELETED")) {
+            addExternalJmxTargets(targets, extCluster);
+        }
+        
         return targets;
     }
 
