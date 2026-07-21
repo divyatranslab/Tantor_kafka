@@ -137,7 +137,7 @@ public class PrometheusMonitoringService {
     public List<SdTargetGroup> prometheusTargets() {
         List<SdTargetGroup> targets = new ArrayList<>();
         for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
-            if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
+            if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled()) && !isExternal(cluster)) {
                 continue;
             }
 
