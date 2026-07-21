@@ -131,24 +131,7 @@ public class PrometheusMonitoringService {
         }
     }
 
-    @EventListener(ApplicationReadyEvent.class)
-    public void ensureKafkaExportersOnStartup() {
-        reconcileKafkaExporters();
-    }
 
-    @Scheduled(fixedDelayString = "${tantor.monitoring.exporter-reconcile-delay-ms:60000}")
-    public void reconcileKafkaExporters() {
-        try {
-            for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
-                String status = cluster.getStatus() == null ? "" : cluster.getStatus().trim().toUpperCase(Locale.ROOT);
-                if ("SUCCESS".equals(status) || "RUNNING".equals(status) || "AVAILABLE".equals(status)) {
-                    ensureKafkaExporter(cluster);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Could not reconcile kafka_exporter services", e);
-        }
-    }
 
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {
@@ -157,8 +140,7 @@ public class PrometheusMonitoringService {
             if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
                 continue;
             }
-            exporterTarget(cluster).ifPresent(target ->
-                    targets.add(group(target, labels(cluster, "kafka_exporter", null, null))));
+
 
             if (isExternal(cluster)) {
                 addExternalJmxTargets(targets, cluster);
@@ -172,7 +154,7 @@ public class PrometheusMonitoringService {
     @Transactional(readOnly = true)
     public List<MonitoringClusterSummary> clusters(String type) {
         String normalizedType = type == null ? "" : type.trim().toUpperCase(Locale.ROOT);
-        List<MonitoringClusterSummary> result = new ArrayList<>();
+        Map<UUID, MonitoringClusterSummary> result = new LinkedHashMap<>();
         for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
             if (!normalizedType.isBlank() && !normalizedType.equals(origin(cluster))) {
                 continue;
@@ -185,15 +167,43 @@ public class PrometheusMonitoringService {
             summary.setKafkaExporterTarget(exporterTarget(cluster).orElse(null));
             summary.setJmxAvailable(hasJmxTargets(cluster));
             summary.setWarning(monitoringWarning(cluster));
-            result.add(summary);
+            summary.setNodes(monitoringNodes(cluster));
+            result.put(cluster.getId(), summary);
         }
-        return result;
+        for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+            if (!normalizedType.isBlank() && !normalizedType.equals("EXTERNAL")) {
+                continue;
+            }
+            MonitoringClusterSummary summary = new MonitoringClusterSummary();
+            summary.setId(cluster.getId());
+            summary.setName(cluster.getName());
+            summary.setOriginType("EXTERNAL");
+            summary.setMonitoringEnabled(true);
+            summary.setKafkaExporterTarget(null);
+            summary.setJmxAvailable(hasJmxTargets(cluster));
+            summary.setWarning(null);
+            summary.setNodes(monitoringNodes(cluster));
+            // External clusters are mirrored into kf_clusters for the shared cluster APIs.
+            // Keep the richer mirrored entry when both repositories contain the same id.
+            result.putIfAbsent(cluster.getId(), summary);
+        }
+        return new ArrayList<>(result.values());
     }
 
     @Transactional(readOnly = true)
     public MonitoringOverview overview(UUID clusterId) {
+        return overview(clusterId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public MonitoringOverview overview(UUID clusterId, String nodeId) {
         Cluster cluster = clusterRepository.findWithServicesById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
+
+        List<MonitoringNodeSummary> nodes = monitoringNodes(cluster);
+        String selectedNodeId = selectedNodeId(nodes, nodeId);
+        String clusterSelector = labelSelector(cluster.getId());
+        String metricSelector = labelSelector(cluster.getId(), selectedNodeId);
 
         MonitoringOverview overview = new MonitoringOverview();
         overview.setClusterId(cluster.getId());
@@ -202,49 +212,50 @@ public class PrometheusMonitoringService {
         overview.setPrometheusUrl(monitoringSourceUrl());
         overview.setKafkaExporterTarget(exporterTarget(cluster).orElse(null));
         overview.setJmxAvailable(hasJmxTargets(cluster));
+        overview.setNodes(nodes);
+        overview.setSelectedNodeId(selectedNodeId);
         overview.setWarnings(new ArrayList<>());
         String warning = monitoringWarning(cluster);
         if (warning != null) {
             overview.getWarnings().add(warning);
         }
 
-        String selector = labelSelector(cluster.getId());
-        overview.setKafkaExporterUp(firstNumber("max(max_over_time(up{job=\"kafka_exporter\"," + selector + "}[90s]))"));
-        overview.setJmxUp(firstNumber("max(max_over_time(up{job=\"kafka_jmx\"," + selector + "}[90s]))"));
-        overview.setBrokerCount(firstNumber("max(kafka_brokers{" + selector + "})"));
-        overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + selector + "}))"));
-        overview.setPartitionCount(firstNumber("sum(kafka_topic_partitions{" + selector + "})"));
-        overview.setUnderReplicatedPartitions(firstOrZero("sum(kafka_topic_partition_under_replicated_partition{" + selector + "})"));
-        overview.setConsumerLag(firstOrZero("sum(kafka_consumergroup_lag{" + selector + "})"));
+        overview.setKafkaExporterUp(firstNumber("max(max_over_time(up{job=\"kafka_exporter\"," + clusterSelector + "}[90s]))"));
+        overview.setJmxUp(firstNumber("max(max_over_time(up{job=\"kafka_jmx\"," + metricSelector + "}[90s]))"));
+        overview.setBrokerCount(firstNumber("max(kafka_brokers{" + clusterSelector + "})"));
+        overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + clusterSelector + "}))"));
+        overview.setPartitionCount(firstNumber("sum(max(kafka_topic_partitions{" + clusterSelector + "}) by (topic))"));
+        overview.setUnderReplicatedPartitions(firstOrZero("sum(kafka_topic_partition_under_replicated_partition{" + clusterSelector + "})"));
+        overview.setConsumerLag(firstOrZero("sum(max(kafka_consumergroup_lag{" + clusterSelector + "}) by (consumergroup, topic))"));
         overview.setMessagesInPerSecond(firstPresentNumber(
-                append(brokerTopicRate(selector, "MessagesInPerSec"),
-                        "sum(rate(kafka_topic_partition_current_offset{" + selector + "}[5m]))")
+                append(brokerTopicRate(metricSelector, "MessagesInPerSec"),
+                        "sum(rate(kafka_topic_partition_current_offset{" + metricSelector + "}[5m]))")
         ));
-        overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(selector, "BytesInPerSec")));
-        overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(selector, "BytesOutPerSec")));
+        overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesInPerSec")));
+        overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesOutPerSec")));
         overview.setJvmHeapUsedPercent(firstPresentNumber(
-                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                heapPercent(selector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                heapPercent(selector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
         ));
         overview.setBrokerCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", selector),
-                cpuPercent("jvm_operatingsystem_processcpuload", selector),
-                "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + selector + "}[5m])) * 100"
+                cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", metricSelector),
+                cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
+                "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + metricSelector + "}[5m])) * 100"
         ));
         overview.setSystemCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", selector),
-                cpuPercent("jvm_OperatingSystem_CpuLoad", selector),
-                cpuPercent("jvm_operatingsystem_systemcpuload", selector),
-                cpuPercent("jvm_operatingsystem_cpuload", selector)
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
+                cpuPercent("jvm_OperatingSystem_CpuLoad", metricSelector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector),
+                cpuPercent("jvm_operatingsystem_cpuload", metricSelector)
         ));
 
-        overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster));
+        overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
 
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
@@ -257,116 +268,7 @@ public class PrometheusMonitoringService {
         return overview;
     }
 
-    @Transactional(readOnly = true)
-    public ExporterPlan exporterPlan(UUID clusterId) {
-        Cluster cluster = clusterRepository.findById(clusterId)
-                .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
-        return buildExporterPlan(cluster, true);
-    }
 
-    @Transactional(readOnly = true)
-    public void ensureKafkaExporter(UUID clusterId) {
-        clusterRepository.findById(clusterId).ifPresent(this::ensureKafkaExporter);
-    }
-
-    public void ensureKafkaExporter(Cluster cluster) {
-        if (cluster == null || !Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
-            return;
-        }
-        if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
-            log.warn("Skipping kafka_exporter setup for cluster {} because bootstrap servers are empty", cluster.getId());
-            return;
-        }
-        Path exporterBinary = Path.of("/usr/local/bin/kafka_exporter");
-        if (!Files.isExecutable(exporterBinary)) {
-            log.warn("Skipping kafka_exporter setup for cluster {} because {} is missing or not executable",
-                    cluster.getId(), exporterBinary);
-            return;
-        }
-
-        ExporterPlan plan = buildExporterPlan(cluster, false);
-        Path unitPath = Path.of("/etc/systemd/system/" + plan.getServiceName() + ".service");
-        try {
-            Files.createDirectories(unitPath.getParent());
-            boolean unitChanged = !Files.exists(unitPath) || !plan.getUnit().equals(Files.readString(unitPath, StandardCharsets.UTF_8));
-            if (unitChanged) {
-                Files.writeString(unitPath, plan.getUnit(), StandardCharsets.UTF_8);
-                runSystemCommand("systemctl", "daemon-reload");
-                runSystemCommand("systemctl", "enable", plan.getServiceName());
-                runSystemCommand("systemctl", "restart", plan.getServiceName());
-                log.info("kafka_exporter service {} was installed/restarted for cluster {}", plan.getServiceName(), cluster.getId());
-                return;
-            }
-            runSystemCommand("systemctl", "enable", plan.getServiceName());
-            if (!systemCommandSucceeds("systemctl", "is-active", "--quiet", plan.getServiceName())) {
-                runSystemCommand("systemctl", "restart", plan.getServiceName());
-                log.info("kafka_exporter service {} was recovered for cluster {}", plan.getServiceName(), cluster.getId());
-            }
-        } catch (Exception e) {
-            log.warn("Could not auto-start kafka_exporter for cluster {}. Use /api/v1/monitoring/clusters/{}/exporter-plan if manual setup is needed.",
-                    cluster.getId(), cluster.getId(), e);
-        }
-    }
-
-    private ExporterPlan buildExporterPlan(Cluster cluster, boolean maskSecrets) {
-        int port = exporterPort(cluster);
-        String serviceName = "tantor-kafka-exporter-" + cluster.getId();
-        String exporterArgs = kafkaExporterArgs(cluster, maskSecrets);
-
-        ExporterPlan plan = new ExporterPlan();
-        plan.setClusterId(cluster.getId());
-        plan.setServiceName(serviceName);
-        plan.setPort(port);
-        plan.setTarget(exporterHost(cluster).orElse("<set TANTOR_MONITORING_EXPORTER_HOST>") + ":" + port);
-        plan.setUnit("""
-                [Unit]
-                Description=Tantor Kafka Exporter for %s
-                After=network-online.target
-
-                [Service]
-                Type=simple
-                ExecStart=/usr/local/bin/kafka_exporter --web.listen-address=:%d %s
-                Restart=always
-                RestartSec=5
-
-                [Install]
-                WantedBy=multi-user.target
-                """.formatted(cluster.getName(), port, exporterArgs));
-        plan.setInstallCommands(List.of(
-                "sudo install -m 0755 kafka_exporter /usr/local/bin/kafka_exporter",
-                "sudo tee /etc/systemd/system/" + serviceName + ".service >/dev/null <<'EOF'\n" + plan.getUnit() + "EOF",
-                "sudo systemctl daemon-reload",
-                "sudo systemctl enable --now " + serviceName
-        ));
-        return plan;
-    }
-
-    private void runSystemCommand(String... command) throws IOException, InterruptedException {
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-        if (!finished) {
-            process.destroyForcibly();
-            throw new IllegalStateException(String.join(" ", command) + " timed out");
-        }
-        if (process.exitValue() != 0) {
-            throw new IllegalStateException(String.join(" ", command) + " failed: " + output);
-        }
-    }
-
-    private boolean systemCommandSucceeds(String... command) {
-        try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            boolean finished = process.waitFor(10, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return false;
-            }
-            return process.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     public boolean prometheusHealthy() {
         try {
@@ -396,6 +298,9 @@ public class PrometheusMonitoringService {
                 if (port != DEFAULT_JMX_PORT) {
                     addJmxTarget(targets, cluster, hostIp, DEFAULT_JMX_PORT, role, nodeId);
                 }
+                
+                // Add node-level kafka_exporter target
+                targets.add(group(hostIp + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
             }
             if (Boolean.TRUE.equals(cluster.getNodeExporterEnabled())) {
                 int port = service.getNodeExporterPort() != null ? service.getNodeExporterPort() : nodeExporterPort(cluster);
@@ -430,6 +335,7 @@ public class PrometheusMonitoringService {
                     : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
             targets.add(group(node.getHost() + ":" + node.getJmxExporterPort(), labels(cluster, "kafka_jmx", role, nodeId)));
+            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
         }
     }
 
@@ -444,6 +350,7 @@ public class PrometheusMonitoringService {
                     : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
             targets.add(group(node.getHost() + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
+            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
         }
     }
 
@@ -506,6 +413,59 @@ public class PrometheusMonitoringService {
         return !externalClusterNodeRepository.findByClusterId(cluster.getId()).isEmpty();
     }
 
+    private List<MonitoringNodeSummary> monitoringNodes(Cluster cluster) {
+        Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
+        if (cluster.getServices() == null) {
+            return new ArrayList<>();
+        }
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            String key = service.getNodeId() == null ? service.getHostId() : String.valueOf(service.getNodeId());
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            MonitoringNodeSummary node = nodes.computeIfAbsent(key, ignored -> {
+                MonitoringNodeSummary created = new MonitoringNodeSummary();
+                created.setNodeId(service.getNodeId() == null ? null : String.valueOf(service.getNodeId()));
+                created.setHostId(service.getHostId());
+                Host host = service.getHostId() == null ? null : hostRepository.findById(service.getHostId()).orElse(null);
+                created.setHostname(host == null ? service.getHostId() : host.getHostname());
+                created.setHostIp(hostIp(host));
+                return created;
+            });
+            node.setRole(mergeRole(node.getRole(), roleLabel(service.getRole())));
+        }
+        return new ArrayList<>(nodes.values());
+    }
+
+    private List<MonitoringNodeSummary> monitoringNodes(ExternalCluster cluster) {
+        Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
+        for (ExternalClusterNode externalNode : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            String key = externalNode.getNodeId() == null ? externalNode.getHost() : String.valueOf(externalNode.getNodeId());
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            MonitoringNodeSummary node = new MonitoringNodeSummary();
+            node.setNodeId(externalNode.getNodeId() == null ? null : String.valueOf(externalNode.getNodeId()));
+            node.setHostIp(externalNode.getHost());
+            node.setHostname(externalNode.getHost());
+            node.setRole(externalRoleLabel(externalNode));
+            nodes.put(key, node);
+        }
+        return new ArrayList<>(nodes.values());
+    }
+
+    private String selectedNodeId(List<MonitoringNodeSummary> nodes, String requestedNodeId) {
+        if (requestedNodeId == null || requestedNodeId.isBlank()) {
+            return null;
+        }
+        String normalized = requestedNodeId.trim();
+        return nodes.stream()
+                .map(MonitoringNodeSummary::getNodeId)
+                .filter(value -> value != null && value.equals(normalized))
+                .findFirst()
+                .orElse(null);
+    }
+
     private boolean isBrokerRole(String role) {
         if (role == null) {
             return false;
@@ -517,12 +477,51 @@ public class PrometheusMonitoringService {
                 || "broker_zookeeper".equals(normalized);
     }
 
+    private String roleLabel(String role) {
+        if (role == null || role.isBlank()) {
+            return "Kafka";
+        }
+        String normalized = role.trim().toLowerCase(Locale.ROOT);
+        if ("broker_controller".equals(normalized) || "broker+controller".equals(normalized)) {
+            return "Broker + Controller";
+        }
+        if ("broker".equals(normalized)) {
+            return "Broker";
+        }
+        if ("controller".equals(normalized)) {
+            return "Controller";
+        }
+        return role.trim();
+    }
+
+    private String externalRoleLabel(ExternalClusterNode node) {
+        boolean broker = Boolean.TRUE.equals(node.getIsBroker());
+        boolean controller = Boolean.TRUE.equals(node.getIsController());
+        if (broker && controller) {
+            return "Broker + Controller";
+        }
+        if (broker) {
+            return "Broker";
+        }
+        if (controller) {
+            return "Controller";
+        }
+        return "Kafka";
+    }
+
+    private String mergeRole(String current, String next) {
+        if (next == null || next.isBlank()) {
+            return current;
+        }
+        if (current == null || current.isBlank()) {
+            return next;
+        }
+        return current.contains(next) ? current : current + ", " + next;
+    }
+
     private String monitoringWarning(Cluster cluster) {
         if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled())) {
             return "Monitoring is disabled for this cluster.";
-        }
-        if (exporterTarget(cluster).isEmpty()) {
-            return "Kafka exporter host is not configured. Set TANTOR_MONITORING_EXPORTER_HOST or kf_clusters.kafka_exporter_host.";
         }
         if (isExternal(cluster) && !hasJmxTargets(cluster)) {
             return "External JMX exporter target not found. Showing kafka_exporter-level monitoring only.";
@@ -593,18 +592,26 @@ public class PrometheusMonitoringService {
         return null;
     }
 
-    private Double computeHostMemoryPercent(Cluster cluster) {
+    private Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
         if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
             return null;
         }
         long totalMb = 0;
         long usedMb = 0;
         int counted = 0;
+        Map<String, Host> countedHosts = new LinkedHashMap<>();
         for (ClusterServiceAssignment service : cluster.getServices()) {
+            if (nodeId != null && (service.getNodeId() == null || !nodeId.equals(String.valueOf(service.getNodeId())))) {
+                continue;
+            }
+            if (service.getHostId() == null || countedHosts.containsKey(service.getHostId())) {
+                continue;
+            }
             Host host = hostRepository.findById(service.getHostId()).orElse(null);
             if (host == null || host.getMemTotalMb() == null || host.getMemTotalMb() <= 0) {
                 continue;
             }
+            countedHosts.put(service.getHostId(), host);
             totalMb += host.getMemTotalMb();
             usedMb += host.getMemUsedMb() == null ? 0 : host.getMemUsedMb();
             counted++;
@@ -635,6 +642,17 @@ public class PrometheusMonitoringService {
 
     private String labelSelector(UUID clusterId) {
         return "cluster_id=\"" + clusterId + "\"";
+    }
+
+    private String labelSelector(UUID clusterId, String nodeId) {
+        if (nodeId == null || nodeId.isBlank()) {
+            return labelSelector(clusterId);
+        }
+        return labelSelector(clusterId) + ",node_id=\"" + promLabelValue(nodeId) + "\"";
+    }
+
+    private String promLabelValue(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private Double firstNumber(String promql) {
@@ -911,6 +929,16 @@ public class PrometheusMonitoringService {
         private String kafkaExporterTarget;
         private Boolean jmxAvailable;
         private String warning;
+        private List<MonitoringNodeSummary> nodes;
+    }
+
+    @Data
+    public static class MonitoringNodeSummary {
+        private String nodeId;
+        private String hostId;
+        private String hostname;
+        private String hostIp;
+        private String role;
     }
 
     @Data
@@ -935,6 +963,8 @@ public class PrometheusMonitoringService {
         private Double brokerCpuPercent;
         private Double systemCpuPercent;
         private Double hostMemoryUsedPercent;
+        private String selectedNodeId;
+        private List<MonitoringNodeSummary> nodes;
         private List<String> warnings;
     }
 

@@ -57,7 +57,6 @@ interface DiscoveryAgentStatus {
 }
 
 const TRUSTSTORE_FILE_RULES: Record<string, { accept: string; extensions: string[]; label: string }> = {
-  JKS: { accept: '.jks', extensions: ['.jks'], label: 'JKS truststore' },
   PKCS12: { accept: '.p12,.pfx', extensions: ['.p12', '.pfx'], label: 'PKCS12 truststore' },
   PEM: { accept: '.pem,.crt,.cer', extensions: ['.pem', '.crt', '.cer'], label: 'PEM certificate' },
 };
@@ -81,11 +80,11 @@ export function ExternalClusters() {
     saslMechanism: 'PLAIN',
     saslUsername: '',
     saslPassword: '',
-    truststoreType: 'JKS',
+    truststoreType: 'PKCS12',
     truststorePassword: '',
     truststoreBase64: '',
     truststoreFilename: '',
-    keystoreType: 'JKS',
+    keystoreType: 'PKCS12',
     keystorePassword: '',
     keyPassword: '',
     keystoreBase64: '',
@@ -94,7 +93,7 @@ export function ExternalClusters() {
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
-  const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.JKS;
+  const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.PKCS12;
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
@@ -448,7 +447,6 @@ export function ExternalClusters() {
                             setBootstrapResult(null);
                           }}
                         >
-                          <option value="JKS">JKS</option>
                           <option value="PKCS12">PKCS12</option>
                           <option value="PEM">PEM / X.509</option>
                         </select>

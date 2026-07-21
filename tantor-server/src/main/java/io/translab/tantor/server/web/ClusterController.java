@@ -1476,8 +1476,7 @@ public class ClusterController {
     private String normalizedKraftQuorumMode(String kafkaVersion, Object configured) {
         String requested = configured == null ? "" : String.valueOf(configured).trim().toLowerCase();
         if ("static".equals(requested) || "dynamic".equals(requested)) return requested;
-        int[] version = parseKafkaVersion(kafkaVersion);
-        return version[0] >= 4 || (version[0] == 3 && version[1] >= 9) ? "dynamic" : "static";
+        return "static";
     }
 
     private Map<String, Object> kraftValidationReport(DeployClusterRequest request, Map<String, Object> config) {

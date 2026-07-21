@@ -7,7 +7,6 @@ type Job = {
   id: string;
   type: string;
   status: string;
-  requestedBy: string;
   startTime: string;
   endTime: string;
   createdAt: string;
@@ -91,7 +90,6 @@ export function JobsList() {
               <tr>
                 <th>Job ID</th>
                 <th>Job Type</th>
-                <th>Requested By</th>
                 <th>Status</th>
                 <th>Started</th>
                 <th>Ended</th>
@@ -105,7 +103,6 @@ export function JobsList() {
                   <td className="job-type">
                     {job.type.charAt(0).toUpperCase() + job.type.slice(1).toLowerCase()}
                   </td>
-                  <td>{job.requestedBy || 'anonymousUser'}</td>
                   <td>
                     <div className={`status-pill ${getStatusClass(job.status)}`}>
                       {formatStatus(job.status)}
@@ -122,7 +119,7 @@ export function JobsList() {
               ))}
               {jobs.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="empty-state">No jobs found.</td>
+                  <td colSpan={6} className="empty-state">No jobs found.</td>
                 </tr>
               )}
             </tbody>

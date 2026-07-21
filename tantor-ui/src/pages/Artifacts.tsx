@@ -71,6 +71,15 @@ const artifactServiceOptions = [
     helper: 'Kafka binaries appear in the parcel list and can be distributed to hosts.',
   },
   {
+    value: 'KAFKA_EXPORTER',
+    label: 'Kafka Exporter',
+    versionPlaceholder: 'e.g. 1.9.0',
+    directoryPlaceholder: 'custom/kafka-exporter (under configured repository root)',
+    fileLabel: 'Kafka exporter binary (.tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Kafka exporter binaries for metrics collection.',
+  },
+  {
     value: 'JMX_EXPORTER',
     label: 'JMX Exporter',
     versionPlaceholder: 'e.g. 0.20.0',
@@ -712,14 +721,16 @@ export function Artifacts() {
 
       {canManage && showUploadModal && (
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Upload Parcel Binary</h2>
+          <div className="modal upload-parcel-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header upload-parcel-header">
+              <div className="upload-parcel-heading">
+                <h2>Upload Parcel Binary</h2>
+                <p className="modal-subtitle">Upload a Kafka .tgz binary or a JMX .jar to the internal artifact repository.</p>
+              </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
               </button>
             </div>
-            <p className="modal-subtitle">Upload a Kafka <code>.tgz</code> binary or a JMX <code>.jar</code> to the internal artifact repository.</p>
 
             <form onSubmit={handleUploadSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               <div className="modal-body">
@@ -767,7 +778,9 @@ export function Artifacts() {
                 <div className="form-group">
                   <label>Binary File (.tgz or .jar)</label>
                   <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
-                    <Upload size={28} className="upload-dropzone-icon" />
+                    <span className="upload-dropzone-icon-shell">
+                      <Upload size={22} className="upload-dropzone-icon" />
+                    </span>
                     {file ? (
                       <>
                         <span className="dropzone-filename">{file.name}</span>
@@ -897,4 +910,3 @@ function actionIcon(action: ParcelAction) {
     remove: Trash2,
   }[action];
 }
-

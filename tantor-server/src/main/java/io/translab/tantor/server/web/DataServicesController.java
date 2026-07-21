@@ -60,7 +60,7 @@ public class DataServicesController {
 
     /**
      * Builds client from a request-scoped X-Custom-Certificate header (backward-compat override).
-     * certType must be "PKCS12_JKS" or "PEM".
+     * certType may be "PKCS12", the legacy alias "PKCS12_JKS", or "PEM".
      */
     private HttpClient getHttpClient(String encodedCert) {
         if (encodedCert == null || encodedCert.isBlank()) return defaultHttpClient;
@@ -71,13 +71,8 @@ public class DataServicesController {
             String certType = attrs.getRequest().getHeader("X-Custom-Certificate-Type");
             String certPassword = attrs.getRequest().getHeader("X-Custom-Certificate-Password");
 
-            javax.net.ssl.SSLContext sslContext;
-            if ("PKCS12_JKS".equalsIgnoreCase(certType)) {
-                sslContext = SslUtils.createSslContextFromPkcs12(encodedCert, certPassword);
-            } else {
-                String pem = new String(java.util.Base64.getDecoder().decode(encodedCert), StandardCharsets.UTF_8);
-                sslContext = SslUtils.createSslContextFromPem(pem);
-            }
+            javax.net.ssl.SSLContext sslContext =
+                    SslUtils.createSslContext(certType, encodedCert, certPassword);
             return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).sslContext(sslContext).build();
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize SSL context from provided certificate: " + e.getMessage(), e);
@@ -102,16 +97,10 @@ public class DataServicesController {
                     // plain JDK default client, which would fail for self-signed certs with a
                     // misleading SunCertPathBuilderException instead of a clear cert error.
                     try {
-                        javax.net.ssl.SSLContext sslContext;
-                        if ("PKCS12_JKS".equalsIgnoreCase(conn.getCertificateType())) {
-                            String pwd = conn.getTruststorePasswordEncrypted() != null
-                                    ? encryptionService.decrypt(conn.getTruststorePasswordEncrypted()) : null;
-                            sslContext = SslUtils.createSslContextFromPkcs12(conn.getCertificateData(), pwd);
-                        } else {
-                            String pem = new String(java.util.Base64.getDecoder()
-                                    .decode(conn.getCertificateData()), StandardCharsets.UTF_8);
-                            sslContext = SslUtils.createSslContextFromPem(pem);
-                        }
+                        String pwd = conn.getTruststorePasswordEncrypted() != null
+                                ? encryptionService.decrypt(conn.getTruststorePasswordEncrypted()) : null;
+                        javax.net.ssl.SSLContext sslContext = SslUtils.createSslContext(
+                                conn.getCertificateType(), conn.getCertificateData(), pwd);
                         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).sslContext(sslContext).build();
                     } catch (Exception e) {
                         // Propagate as RuntimeException so caller gets a clear error message

@@ -410,11 +410,11 @@ public class DashboardController {
                 .count();
         long activeParcels = parcels.stream().filter(HostParcel::isActive).count();
 
-        services.add(serviceRow("Tantor Backend API", "Management API is serving this dashboard", "RUNNING", "platform"));
-        services.add(serviceRow("Agent fleet", onlineHosts + " active host" + plural(onlineHosts), onlineHosts > 0 ? "RUNNING" : "IDLE", "agent"));
-        services.add(serviceRow("Kafka clusters", activeClusters + " active cluster" + plural(activeClusters), activeClusters > 0 ? "RUNNING" : "IDLE", "kafka"));
-        services.add(serviceRow("External cluster control", activeExternal + " connected external cluster" + plural(activeExternal), activeExternal > 0 ? "RUNNING" : "IDLE", "external"));
-        services.add(serviceRow("Active parcels", activeParcels + " active parcel" + plural(activeParcels), activeParcels > 0 ? "RUNNING" : "IDLE", "parcel"));
+        services.add(serviceRow("Tantor Backend API", "Management API is serving this dashboard", "SUCCESS", "platform"));
+        services.add(serviceRow("Agent fleet", onlineHosts + " active host" + plural(onlineHosts), onlineHosts > 0 ? "SUCCESS" : "IDLE", "agent"));
+        services.add(serviceRow("Kafka clusters", activeClusters + " active cluster" + plural(activeClusters), activeClusters > 0 ? "SUCCESS" : "IDLE", "kafka"));
+        services.add(serviceRow("External cluster control", activeExternal + " connected external cluster" + plural(activeExternal), activeExternal > 0 ? "SUCCESS" : "IDLE", "external"));
+        services.add(serviceRow("Active parcels", activeParcels + " active parcel" + plural(activeParcels), activeParcels > 0 ? "SUCCESS" : "IDLE", "parcel"));
         return services;
     }
 

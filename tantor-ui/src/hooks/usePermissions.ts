@@ -40,9 +40,11 @@ export function usePermissions() {
 
     const isAdmin = roles.has('admin');
     const isMonitor = !isAdmin && roles.has('monitor');
+    const effectiveRole = isAdmin ? 'admin' : isMonitor ? 'monitor' : undefined;
 
     return {
       roles: Array.from(roles),
+      effectiveRole,
       isAdmin,
       isMonitor,
       canManage: isAdmin,

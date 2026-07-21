@@ -3,11 +3,35 @@ package io.translab.tantor.server.util;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.util.Base64;
 
 public class SslUtils {
+
+    /**
+     * Builds an SSL context from the base64 certificate representation used by
+     * data-service connection requests and persisted connections.
+     *
+     * PKCS12_JKS is retained as a legacy request-header alias. Persisted values
+     * are normalized to PKCS12 by DataServiceConnectionService.
+     */
+    public static SSLContext createSslContext(String certificateType,
+                                              String base64Certificate,
+                                              String password) throws Exception {
+        if ("PKCS12".equalsIgnoreCase(certificateType)
+                || "PKCS12_JKS".equalsIgnoreCase(certificateType)) {
+            return createSslContextFromPkcs12(base64Certificate, password);
+        }
+        if (certificateType == null
+                || certificateType.isBlank()
+                || "PEM".equalsIgnoreCase(certificateType)) {
+            String pem = new String(Base64.getDecoder().decode(base64Certificate), StandardCharsets.UTF_8);
+            return createSslContextFromPem(pem);
+        }
+        throw new IllegalArgumentException("Unsupported certificate type: " + certificateType);
+    }
 
     public static SSLContext createSslContextFromPem(String pemCertificate) throws Exception {
         if (pemCertificate == null || pemCertificate.isBlank()) {

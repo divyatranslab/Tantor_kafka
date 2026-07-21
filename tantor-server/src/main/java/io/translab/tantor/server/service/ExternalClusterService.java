@@ -383,8 +383,6 @@ public class ExternalClusterService {
                 null,
                 externalAuditDetails(savedCluster)
         );
-        reconcileMonitoringExporter(savedCluster.getId());
-        
         return savedCluster;
     }
 
@@ -534,7 +532,6 @@ public class ExternalClusterService {
             applyDiscoveryReportToNodes(cluster, report, agent);
         });
         pendingDiscoveries.remove(discoveryKey);
-        reconcileMonitoringExporter(cluster.getId());
         return cluster;
     }
 
@@ -631,13 +628,7 @@ public class ExternalClusterService {
         return saved;
     }
 
-    private void reconcileMonitoringExporter(UUID clusterId) {
-        try {
-            clusterRepository.findById(clusterId).ifPresent(prometheusMonitoringService::ensureKafkaExporter);
-        } catch (Exception e) {
-            log.warn("External cluster {} was saved, but kafka_exporter reconciliation failed", clusterId, e);
-        }
-    }
+
 
     @Transactional
     public void receiveMetrics(String clusterName, ExternalBrokerMetricsDto metrics) {
