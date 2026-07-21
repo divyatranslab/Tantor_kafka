@@ -429,30 +429,38 @@ export function Dashboard() {
         <article className="db-panel">
           <PanelTitle title="Recent Tasks" detail="View all" onDetailClick={() => navigate('/jobs')} />
           <div className="tab-headers" role="tablist" aria-label="Recent task outcome">
-            {(Object.keys(taskRowsByOutcome) as OutcomeTab[]).map(outcome => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={recentTaskTab === outcome}
-                className={recentTaskTab === outcome ? 'active-tab' : ''}
-                onClick={() => setRecentTaskTab(outcome)}
-                key={outcome}
-              >
-                {statusLabel(outcome)} ({taskRowsByOutcome[outcome].length})
-              </button>
-            ))}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'success'}
+              className={taskTab === 'success' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('success')}
+            >
+              {statusLabel('SUCCESS')} ({dashboard.recentTasks.filter(isSuccessfulTask).length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'failed'}
+              className={taskTab === 'failed' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('failed')}
+            >
+              {statusLabel('FAILED')} ({dashboard.recentTasks.filter(t => !isSuccessfulTask(t)).length})
+            </button>
           </div>
           <div className="db-task-list">
-            {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
-              <div key={task.id} className="db-task-row">
-                <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
-                <div>
-                  <strong>{prettyCommand(task.command)}</strong>
-                  <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
-                  {task.errorMsg && <em>{task.errorMsg}</em>}
+            {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length
+              ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
+                <div key={task.id} className="db-task-row">
+                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
+                  <div>
+                    <strong>{prettyCommand(task.command)}</strong>
+                    <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
+                    {task.errorMsg && <em>{task.errorMsg}</em>}
+                  </div>
                 </div>
-              </div>
-            )) : <EmptyPanel text={taskTab === 'success' ? 'No successful tasks found.' : 'No failed tasks found.'} compact />}
+              ))
+              : <EmptyPanel text={taskTab === 'success' ? 'No successful tasks found.' : 'No failed tasks found.'} compact />}
           </div>
         </article>
       </section>
