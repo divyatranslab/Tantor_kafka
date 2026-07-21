@@ -320,9 +320,11 @@ export function Clusters() {
         <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
         </button>
-        <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
-          {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
-        </button>
+        {canManage && (
+          <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
+            {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
+          </button>
+        )}
       </div>
     </header>
   );
