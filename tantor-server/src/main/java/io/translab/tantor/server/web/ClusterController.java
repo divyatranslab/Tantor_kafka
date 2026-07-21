@@ -1901,15 +1901,15 @@ public class ClusterController {
         }
 
         String telemetry = "None";
-        String managementLevel = "Bootstrap only";
+        String managementLevel = "Agent Not Connected";
         String agentHealth = reportingHostsCount > 0 ? "NOT_CONNECTED" : "NOT_INSTALLED";
         if (reportingHostsCount > 0) {
             if (reportingHostsCount == totalHostsCount || totalHostsCount == 0) {
                 telemetry = "Full";
-                managementLevel = "Fully managed";
+                managementLevel = "Agent Connected";
             } else {
                 telemetry = "Partial";
-                managementLevel = "Partially managed";
+                managementLevel = "Partially Connected";
             }
         }
         if (freshHostsCount > 0) {
