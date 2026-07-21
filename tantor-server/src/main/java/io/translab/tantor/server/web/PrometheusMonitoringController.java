@@ -46,12 +46,4 @@ public class PrometheusMonitoringController {
         }
     }
 
-    @GetMapping("/api/v1/monitoring/clusters/{clusterId}/exporter-plan")
-    public ResponseEntity<?> exporterPlan(@PathVariable UUID clusterId) {
-        try {
-            return ResponseEntity.ok(monitoringService.exporterPlan(clusterId));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
 }

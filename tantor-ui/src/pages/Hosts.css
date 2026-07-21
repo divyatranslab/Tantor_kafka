@@ -72,6 +72,22 @@
   background: #2b0c47;
 }
 
+.agent-connectivity-btn {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 19px;
+}
+
+.agent-connectivity-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .btn.btn-outline {
   border-color: var(--border-subtle);
   background: transparent;
@@ -215,30 +231,59 @@
 
 /* ── Status badges ── */
 .host-status-badge {
+  box-sizing: border-box;
   display: inline-flex;
-  align-items: center;
+  flex-direction: row;
   justify-content: center;
-  padding: 4px 12px;
-  border-radius: 999px;
-  font-size: 0.72rem;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 4px;
+  width: 61px;
+  height: 24px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
   font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
 }
 
-.host-status-badge.online,
+.host-status-badge.online {
+  background: rgba(42, 199, 146, 0.1);
+  border: 1px solid #2AC792;
+  color: #1F845A;
+}
+
+.host-status-badge .status-dot {
+  width: 6px;
+  height: 6px;
+  background: #1F845A;
+  border-radius: 50%;
+  flex: none;
+}
+
 .host-status-badge.offline {
-  background: rgba(42, 199, 146, 0.25);
-  color: #069B68;
+  background: rgba(239, 77, 95, 0.1);
+  border: 1px solid #EF4D5F;
+  color: #EF4D5F;
 }
 
+.host-status-badge.maintenance,
 .host-status-badge.warning,
 .host-status-badge.occupied {
+  width: fit-content;
+  min-width: 61px;
   background: #F3F4F6;
-  color: #9CA3AF;
+  border: 1px solid #CCCCCC;
+  color: #818181;
 }
 
 .host-status-badge.pending {
-  background: #E3F2FD;
-  color: #1976D2;
+  width: fit-content;
+  min-width: 61px;
+  background: rgba(22, 171, 194, 0.1);
+  border: 1px solid #16ABC2;
+  color: #16ABC2;
 }
 
 /* ── Metric bar ── */
@@ -553,24 +598,36 @@
 }
 
 .availability-badge {
+  box-sizing: border-box;
   display: inline-flex;
-  width: fit-content;
+  flex-direction: row;
+  justify-content: center;
   align-items: center;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 0.72rem;
+  padding: 4px 12px;
+  height: 24px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
   font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  width: fit-content;
 }
 
-.availability-badge.available,
+.availability-badge.available {
+  background: rgba(22, 171, 194, 0.15);
+  color: #16ABC2;
+}
+
 .availability-badge.unavailable {
-  background: rgba(22, 171, 194, 0.25);
-  color: #c21616;
+  background: #FFF7D9;
+  color: #EF4D5F;
 }
 
-.availability-badge.occupied {
-  background: #FCE7F3;
-  color: #DB2777;
+.availability-badge.occupied,
+.availability-badge.critical {
+  background: rgba(239, 77, 95, 0.15);
+  color: #EF4D5F;
 }
 
 .cluster-lock {

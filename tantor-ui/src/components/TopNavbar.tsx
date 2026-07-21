@@ -1,118 +1,246 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, BookOpen, Bell, LogOut, ShieldCheck } from 'lucide-react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { useNavigate, useLocation } from 'react-router-dom';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
 
+interface ClusterInfo {
+  id: string;
+  name: string;
+  mode: string;
+}
 
-const normalizedDisplayName = (value?: string) => {
-  const parts = (value || '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '';
+interface TopicInfo {
+  name: string;
+}
 
-  const adjacentDeduped = parts.filter((part, index) =>
-    index === 0 || part.toLocaleLowerCase() !== parts[index - 1].toLocaleLowerCase());
-  if (adjacentDeduped.length % 2 === 0) {
-    const midpoint = adjacentDeduped.length / 2;
-    const firstHalf = adjacentDeduped.slice(0, midpoint).join(' ').toLocaleLowerCase();
-    const secondHalf = adjacentDeduped.slice(midpoint).join(' ').toLocaleLowerCase();
-    if (firstHalf === secondHalf) return adjacentDeduped.slice(0, midpoint).join(' ');
-  }
-  return adjacentDeduped.join(' ');
-};
 export function TopNavbar() {
   const { decodedToken, logout } = useAuth();
-  const { effectiveRole } = usePermissions();
-  const [profileOpen, setProfileOpen] = useState(false);
+  const { isAdmin } = usePermissions();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // State
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [alertsCount, setAlertsCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [allClusters, setAllClusters] = useState<ClusterInfo[]>([]);
+  const [clusterTopics, setClusterTopics] = useState<TopicInfo[]>([]);
+
   const profileRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
 
-  const profile = useMemo(() => {
-    const username = decodedToken?.preferred_username || normalizedDisplayName(decodedToken?.name) || 'User';
-    const displayName = normalizedDisplayName(decodedToken?.name)
-      || normalizedDisplayName([decodedToken?.given_name, decodedToken?.family_name].filter(Boolean).join(' '))
-      || username;
-    const issuedAt = decodedToken?.auth_time || decodedToken?.iat;
-    const memberSince = typeof issuedAt === 'number'
-      ? new Date(issuedAt * 1000).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-      : null;
-    return {
-      displayName,
-      username,
-      email: decodedToken?.email,
-      role: effectiveRole
-        ? effectiveRole.replace(/[_-]+/g, ' ').replace(/\b\w/g, letter => letter.toUpperCase())
-        : undefined,
-      memberSince,
-      initial: displayName.charAt(0).toUpperCase(),
-    };
-  }, [decodedToken, effectiveRole]);
+  // Extract active cluster ID if in a cluster path
+  const activeClusterId = useMemo(() => {
+    const match = location.pathname.match(/\/clusters\/([^/]+)/);
+    return match ? match[1] : null;
+  }, [location.pathname]);
 
+  // Resolve the first letter of the username
+  const userInitial = useMemo(() => {
+    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'User';
+    return rawName.charAt(0).toUpperCase();
+  }, [decodedToken]);
+
+  const applicationRole = isAdmin ? 'Admin' : 'Monitoring';
+
+  // Fetch alerts count
   useEffect(() => {
-    if (!profileOpen) return;
-    const closeOnOutsideClick = (event: MouseEvent) => {
-      if (!profileRef.current?.contains(event.target as Node)) setProfileOpen(false);
+    const fetchAlerts = async () => {
+      try {
+        const res = await fetch('/api/v1/ui/alerts');
+        if (res.ok) {
+          const data = await res.json();
+          setAlertsCount(Array.isArray(data) ? data.length : 0);
+        }
+      } catch (e) {
+        console.error('Failed to fetch alerts count', e);
+      }
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setProfileOpen(false);
-    };
-    document.addEventListener('mousedown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [profileOpen]);
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch all clusters for search context
+  useEffect(() => {
+    fetch('/api/v1/ui/clusters')
+      .then(res => res.ok ? res.json() : [])
+      .then(setAllClusters)
+      .catch(console.error);
+  }, []);
+
+  // Fetch topics in current cluster for search context
+  useEffect(() => {
+    if (activeClusterId) {
+      fetch(`/api/v1/clusters/${activeClusterId}/topics`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data && Array.isArray(data.content)) {
+            setClusterTopics(data.content);
+          } else {
+            setClusterTopics([]);
+          }
+        })
+        .catch(() => {
+          setClusterTopics([]);
+        });
+    } else {
+      setClusterTopics([]);
+    }
+  }, [activeClusterId]);
+
+  // Click outside handlers
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileOpen(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Search filter matches
+  const filteredResults = useMemo(() => {
+    if (!searchQuery.trim()) return { clusters: [], topics: [] };
+    const query = searchQuery.toLowerCase();
+    const clusters = allClusters.filter(c => c.name.toLowerCase().includes(query));
+    const topics = clusterTopics.filter(t => t.name.toLowerCase().includes(query));
+    return { clusters, topics };
+  }, [searchQuery, allClusters, clusterTopics]);
+
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      window.location.href = '/login';
+    } catch (e) {
+      console.error(e);
+      window.location.href = '/login';
+    }
+  };
 
   return (
-    <div className="top-navbar">
+    <div className="top-navbar" style={{ position: 'relative' }}>
       <div className="navbar-left">
-        <div className="logo-container">
+        <div className="logo-container" style={{ cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
           <img src={tantorLogo} alt="Tantor" className="header-logo" />
         </div>
       </div>
+      
       <div className="navbar-right">
-        <div className="search-container">
-          <Search size={18} className="search-icon" />
-          <input type="text" placeholder="Search" className="search-input" />
-        </div>
-        <button className="nav-action-btn" title="Documentation" type="button">
-          <BookOpen size={20} />
-        </button>
-        <button className="nav-action-btn" title="Notifications" type="button">
+
+
+        {/* Notifications Bell */}
+        <button className="nav-action-btn" title="Notifications" onClick={() => navigate('/alerts')} style={{ position: 'relative' }}>
           <Bell size={20} />
+          {alertsCount > 0 && (
+            <span style={{
+              position: 'absolute',
+              top: '4px',
+              right: '4px',
+              background: '#EF4444',
+              color: '#fff',
+              borderRadius: '50%',
+              width: '8px',
+              height: '8px',
+              display: 'block'
+            }} />
+          )}
         </button>
-        <div className="profile-menu-wrap" ref={profileRef}>
-          <button
-            className="profile-badge"
-            type="button"
-            aria-label="Open user profile"
-            aria-expanded={profileOpen}
-            onClick={() => setProfileOpen(open => !open)}
-          >
-            <span>{profile.initial}</span>
-          </button>
-          {profileOpen && (
-            <div className="profile-popover" role="dialog" aria-label="User profile">
-              <div className="profile-popover-main">
-                <div className="profile-avatar">{profile.initial}</div>
-                <div className="profile-identity">
-                  <strong>{profile.displayName}</strong>
-                  {profile.email && <span>{profile.email}</span>}
-                  {!profile.email && profile.username !== profile.displayName && <span>{profile.username}</span>}
+
+        {/* Profile Dropdown Container */}
+        <div ref={profileRef} style={{ position: 'relative' }}>
+          <div className="profile-badge" onClick={() => setIsProfileOpen(!isProfileOpen)} style={{ cursor: 'pointer' }}>
+            <span>{userInitial}</span>
+          </div>
+
+          {/* Profile Dropdown Card */}
+          {isProfileOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '48px',
+              right: 0,
+              width: '360px',
+              background: '#fff',
+              border: '1px solid #ECECF1',
+              borderRadius: '16px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.1)',
+              padding: '24px',
+              zIndex: 1000,
+              fontFamily: 'Satoshi, Inter, sans-serif'
+            }}>
+              {/* Profile Header */}
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '50%',
+                  background: '#A78BFA',
+                  color: '#fff',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  fontWeight: 600,
+                  fontSize: '18px',
+                  textTransform: 'uppercase'
+                }}>
+                  {userInitial}
                 </div>
-                {profile.role && (
-                  <div className="profile-role-list">
-                    <span className="profile-role">
-                      <ShieldCheck size={13} /> {profile.role}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '16px', fontWeight: 600, color: '#282F49' }}>
+                    {decodedToken?.preferred_username || decodedToken?.name || 'User'}
+                  </span>
+                  {decodedToken?.email && (
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>
+                      {decodedToken.email}
                     </span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-              <div className="profile-popover-footer">
-                {profile.memberSince && <span className="profile-member-since">Member since {profile.memberSince}</span>}
-                <button type="button" className="profile-signout" onClick={() => void logout()}>
-                  <LogOut size={18} /> Sign Out
-                </button>
+
+              {/* Application role: the UI exposes only Admin and Monitoring. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: '#EFF6FF',
+                  color: '#3B82F6',
+                  border: '1px solid #DBEAFE',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  padding: '4px 10px',
+                  borderRadius: '8px'
+                }}>
+                  {applicationRole}
+                </span>
+              </div>
+
+              {/* Divider */}
+              <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 -24px 16px -24px' }} />
+
+              {/* Sign Out Row */}
+              <div 
+                onClick={handleSignOut} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  color: '#EF4444', 
+                  fontSize: '14px', 
+                  fontWeight: 600, 
+                  cursor: 'pointer',
+                  padding: '4px 0'
+                }}
+              >
+                <LogOut size={16} />
+                Sign Out
               </div>
             </div>
           )}

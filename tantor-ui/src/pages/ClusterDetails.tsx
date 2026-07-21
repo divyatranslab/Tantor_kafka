@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useCluster } from '../contexts/ClusterContext';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -33,17 +36,16 @@ export function ClusterDetails() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const { setActiveClusterId } = useCluster();
+
+  // Sync the global active cluster context whenever this page loads
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (id) setActiveClusterId(id);
+  }, [id, setActiveClusterId]);
 
   useEffect(() => {
+    // Clear stale data when switching clusters to prevent flash of old data
+    setCluster(null);
     fetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(setCluster)
@@ -86,57 +88,134 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
-  const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
-  const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
-  const agentLabel = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'Agent connected';
-      case 'PARTIAL':
-        return 'Agent partial';
-      case 'NOT_CONNECTED':
-        return 'Agent not connected';
-      default:
-        return 'Agent not connected';
-    }
-  })();
-  const agentClass = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'connected';
-      case 'PARTIAL':
-        return 'partial';
-      case 'NOT_CONNECTED':
-        return 'not-connected';
-      default:
-        return 'not-connected';
-    }
-  })();
+  const runtimeLabel = cluster.mode === 'EXTERNAL'
+    ? 'External'
+    : cluster.status === 'SUCCESS'
+      ? 'Success'
+      : (cluster.runtimeStatusLabel || cluster.status);
+  const runtimeClass = cluster.mode === 'EXTERNAL'
+    ? 'success'
+    : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
+  const runtimeTone = clusterStatusTone(
+    cluster.runtimeStatusLabel,
+    cluster.runtimeHealth,
+    cluster.kafkaHealth,
+    cluster.status,
+    cluster.overallHealth,
+  );
 
   if (isLogsView) {
     return (
       <div className="cluster-details-page cluster-logs-page animate-fade-in">
-        <header className="cluster-logs-header">
-          <div className="breadcrumb">
-            <span onClick={() => navigate('/clusters')}>Clusters</span>
-            <span>/</span>
-            <strong>{cluster.name}</strong>
-          </div>
-          <div className="cluster-logs-title">
-            <div className="icon-wrap"><Terminal size={20} /></div>
-            <div>
-              <h1>Deployment Logs</h1>
-              <p>{cluster.name} · Kafka {cluster.kafkaVersion} · {cluster.mode}</p>
+        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
+          {/* Breadcrumbs (Frame 1000005411) */}
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: 'auto', height: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '20px' }}>
+              <span 
+                onClick={() => navigate('/clusters')} 
+                style={{ 
+                  cursor: 'pointer', 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '14px', 
+                  lineHeight: '19px', 
+                  color: '#818181' 
+                }}
+              >
+                Cluster
+              </span>
             </div>
-          <div className={`status-badge ${(cluster.status || '').toLowerCase()}`}>
-            <div className="status-dot" /> {cluster.status}
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', color: '#818181' }}>
+              <ChevronRight size={14} />
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '19px' }}>
+              <span 
+                style={{ 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '14px', 
+                  lineHeight: '19px', 
+                  color: '#3E1363' 
+                }}
+              >
+                {cluster.name}
+              </span>
+            </div>
           </div>
+          
+          {/* Title Row (Frame 1000005262) */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '8px', width: '1129px', height: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '2px', width: '1129px', height: '32px' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', width: '1129px', height: '32px' }}>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '465px', height: '32px' }}>
+                  <h1 style={{ fontFamily: 'Satoshi', fontWeight: 700, fontSize: '24px', lineHeight: '32px', color: '#282F49', margin: 0 }}>
+                    Deployment Logs
+                  </h1>
+                  <div style={{
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: '4px 8px',
+                    gap: '10px',
+                    width: '59px',
+                    height: '24px',
+                    background: 'rgba(42, 199, 146, 0.25)',
+                    borderRadius: '100px'
+                  }}>
+                    <span style={{
+                      fontFamily: 'Satoshi',
+                      fontWeight: 400,
+                      fontSize: '12px',
+                      lineHeight: '16px',
+                      textAlign: 'center',
+                      color: '#069B68'
+                    }}>
+                      Success
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Subtitle */}
+            <p style={{
+              fontFamily: 'Satoshi',
+              fontWeight: 400,
+              fontSize: '14px',
+              lineHeight: '19px',
+              color: '#818181',
+              margin: '0px'
+            }}>
+              {`${cluster.name}Kafka ${cluster.kafkaVersion}${cluster.mode ? cluster.mode.toLowerCase() : ''}`}
+            </p>
+          </div>
+
+          {/* Back button (Frame 1000005471) */}
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', margin: '0 auto', width: '1130px', height: '24px', marginTop: '8px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '142px', height: '24px' }}>
+              <span 
+                onClick={() => navigate(`/clusters/${id}/overview`)} 
+                style={{ 
+                  cursor: 'pointer', 
+                  fontFamily: 'Satoshi', 
+                  fontWeight: 500, 
+                  fontSize: '16px', 
+                  lineHeight: '22px',
+                  color: '#5B327F', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px' 
+                }}
+              >
+                <ChevronLeft size={24} style={{ color: '#818181' }} /> Logs (Selected)
+              </span>
+            </div>
           </div>
         </header>
-        <div className="cluster-tabs cluster-logs-tabs">
-          <nav><span className="active"><Terminal size={16} /> Logs</span></nav>
-        </div>
-        <div className="cluster-content cluster-logs-content">
+
+        <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
           <Outlet />
         </div>
       </div>
@@ -164,62 +243,49 @@ export function ClusterDetails() {
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }
 
-  // The first 9 items are visible in the main navbar
-  const visibleTabs = tabs.slice(0, 9);
-  // The rest are in the dropdown
-  const dropdownTabs = tabs.slice(9);
+  // Keep the active Configuration tab visible without compressing the navigation.
+  const isConfigurationPage = location.pathname === `/clusters/${id}/config`;
+  const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
+  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
   const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
 
   return (
     <div className="cluster-details-page animate-fade-in">
       <div className="cluster-details-card">
-        <header className="page-header" style={{ borderBottom: 'none', padding: '0 0 16px 0', marginBottom: '20px' }}>
-          <div className="breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#818181', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', marginBottom: '12px' }}>
-            <span onClick={() => navigate('/clusters')} style={{ cursor: 'pointer' }}>Cluster</span>
-            <span style={{ color: '#818181', display: 'flex', alignItems: 'center' }}><ChevronRight size={14} /></span>
-            <span style={{ color: '#332849', fontWeight: 500 }}>{cluster.name}</span>
+        <header className="cd-details-header">
+          {/* Breadcrumbs */}
+          <div className="cd-breadcrumbs">
+            <span onClick={() => navigate('/clusters')} className="cd-breadcrumb-link">Cluster</span>
+            <span className="cd-breadcrumb-separator"><ChevronRight size={12} /></span>
+            <span className="cd-breadcrumb-current">{cluster.name}</span>
           </div>
-          <div className="cluster-health-stack">
-            <div className={`status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-              <div className="status-dot"></div> {runtimeLabel}
-            </div>
-            {cluster.mode === 'EXTERNAL' && (
-              <div className={`agent-status-badge ${agentClass}`}>
-                {agentLabel}
+          
+          {/* Title Row */}
+          <div className="cd-details-title-row">
+            <div className="cd-details-title-left">
+              <h1>{cluster.name}</h1>
+              <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason}>
+                {runtimeLabel}
               </div>
-            )}
-          </div>
-        </header>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-            <button 
-              onClick={() => navigate('/clusters')} 
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                cursor: 'pointer', 
-                padding: 0, 
-                display: 'flex', 
-                alignItems: 'center', 
-                color: '#818181' 
+            </div>
+            <button
+              type="button"
+              className="cd-details-refresh-btn"
+              aria-label="Refresh cluster"
+              onClick={() => {
+                fetch(`/api/v1/ui/clusters/${id}`)
+                  .then(res => res.json())
+                  .then(setCluster)
+                  .catch(console.error);
               }}
             >
-              <ChevronLeft size={24} style={{ strokeWidth: 1.5 }} />
+              <RefreshCw size={20} strokeWidth={1.5} />
             </button>
-            <h1 style={{ 
-              fontFamily: 'Satoshi, sans-serif', 
-              fontWeight: 500, 
-              fontSize: '24px', 
-              color: '#332849', 
-              margin: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px'
-            }}>
-              {cluster.name}
-              <Info size={22} style={{ color: '#CCCCCC', cursor: 'pointer', strokeWidth: 1.5 }} />
-            </h1>
           </div>
+          <p className="cd-details-subtitle">
+            Kafka {cluster.kafkaVersion} • {cluster.nodeCount || 0} {(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • {cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}
+          </p>
+        </header>
 
         <div className="cluster-tabs">
           <nav>
@@ -254,8 +320,13 @@ export function ClusterDetails() {
                 >
                   <ChevronDown size={18} />
                 </button>
-                {isDropdownOpen && (
-                  <div className="cluster-tabs-dropdown-menu">
+                {isDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cluster-tabs-dropdown-menu"
+                    onClose={() => setIsDropdownOpen(false)}
+                    minWidth={180}
+                  >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {
                         return (
@@ -275,7 +346,7 @@ export function ClusterDetails() {
                         </NavLink>
                       );
                     })}
-                  </div>
+                  </AnchoredMenu>
                 )}
               </div>
             )}

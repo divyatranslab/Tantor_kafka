@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -34,7 +35,11 @@ export function ClusterNodes() {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/nodes`);
       if (!res.ok) throw new Error('Failed to fetch nodes');
-      setNodes(await res.json());
+      const data = await res.json();
+      setNodes(data || []);
+    } catch (e: any) {
+      console.error(e);
+      setNodes([]);
     } finally {
       setLoading(false);
     }
@@ -55,7 +60,7 @@ export function ClusterNodes() {
       setSelectedAgents({});
       await fetchNodes();
     } catch (e) {
-      alert('Failed to bind agents');
+      notifyAction('Failed to bind agents');
     } finally {
       setBinding(false);
     }
@@ -73,7 +78,7 @@ export function ClusterNodes() {
   return (
     <div className="cluster-nodes-page animate-fade-in">
       <header className="page-header">
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 500, color: '#3E1363', margin: 0 }}>Cluster Nodes</h2>
+        <h2 className="cluster-section-heading">Cluster Nodes</h2>
       </header>
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">
@@ -81,10 +86,10 @@ export function ClusterNodes() {
             {canBindAgents && <th style={{ width: '40px', textAlign: 'center' }}></th>}
             <th>Node ID</th>
             <th>Host</th>
-            <th>IP address</th>
+            <th>IP Address</th>
             <th>Role</th>
             <th>Status</th>
-            <th>Last heartbeat</th>
+            <th>Last updated</th>
           </tr></thead>
           <tbody>
             {nodes.map((node, index) => {
@@ -114,10 +119,10 @@ export function ClusterNodes() {
                 <td><code>{node.nodeId ?? '-'}</code></td>
                 <td><span className="cluster-node-host">{node.hostname || node.hostId}</span></td>
                 <td><span className="cluster-node-ip">{node.ipAddress || '-'}</span></td>
-                <td><span className="cluster-node-role">{String(node.role || 'unknown').replaceAll('_', ' ')}</span></td>
+                <td><span className="cluster-node-role">{String(node.role || 'unknown').toLowerCase() === 'broker_controller' ? 'Broker Controller' : String(node.role || 'unknown').replaceAll('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span></td>
                 <td>
                   <span className={`cluster-node-status ${(node.status || '').toLowerCase()}`}>
-                    {node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN'}
+                    {node.status === 'SUCCESS' ? 'Success' : node.status === 'OCCUPIED' ? 'Occupied' : (node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN')}
                   </span>
                 </td>
                 <td>{node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleString() : '-'}</td>

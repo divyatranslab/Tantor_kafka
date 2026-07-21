@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 
 interface ClusterInfo {
   id: string;
@@ -63,7 +64,7 @@ export function ClusterActions() {
     const warning = nodeCount === 1
       ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
       : 'WARNING: This will begin a rolling restart of the cluster. Continue?';
-    if (!window.confirm(warning)) return;
+    if (!(await confirmAction(warning))) return;
     
     setLoading(true);
     try {
@@ -76,10 +77,10 @@ export function ClusterActions() {
         if (data.jobId) navigate(`/jobs/${data.jobId}`);
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to trigger rolling restart.");
+        notifyAction(data.error || "Failed to trigger rolling restart.");
       }
     } catch (e) {
-      alert("Error triggering rolling restart.");
+      notifyAction("Error triggering rolling restart.");
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export function ClusterActions() {
   const enableMonitoring = async () => {
     if (!canManage) return;
     if (!monitoringHostId || !prometheusUrl.trim() || !grafanaUrl.trim()) {
-      alert('Select a host and provide both Prometheus and Grafana artifact URLs.');
+      notifyAction('Select a host and provide both Prometheus and Grafana artifact URLs.');
       return;
     }
     setMonitoringLoading(true);
@@ -108,9 +109,9 @@ export function ClusterActions() {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok && body.jobId) navigate(`/jobs/${body.jobId}`);
-      else alert(body.error || 'Failed to create monitoring enablement job.');
+      else notifyAction(body.error || 'Failed to create monitoring enablement job.');
     } catch {
-      alert('Network error while creating monitoring job.');
+      notifyAction('Network error while creating monitoring job.');
     } finally {
       setMonitoringLoading(false);
     }
@@ -129,7 +130,7 @@ export function ClusterActions() {
   const triggerUpgrade = async () => {
     if (!canManage) return;
     if (!targetVersion) return;
-    if (!window.confirm(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`)) return;
+    if (!(await confirmAction(`Upgrade this cluster from Kafka ${cluster?.kafkaVersion || 'current'} to ${targetVersion}?`))) return;
 
     setUpgradeLoading(true);
     setUpgradeMsg('');
@@ -174,82 +175,213 @@ export function ClusterActions() {
   }, [taskId, id]);
 
   return (
-    <div className="topics-tab" style={{ maxWidth: '800px' }}>
-      <div className="topics-header">
+    <div className="topics-tab" style={{ width: '100%' }}>
+      <div className="topics-header" style={{ marginBottom: '1.5rem' }}>
         <div>
-          <h2>Cluster Actions</h2>
+          <h2 className="cluster-section-heading">Cluster Actions</h2>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Perform disruptive day-two operations on your cluster.</p>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-        {canManage && !isExternal && (
-        <div className="table-card">
-          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ padding: '0.625rem', backgroundColor: '#f0fdf4', color: '#16a34a', borderRadius: '0.5rem' }}>
-                <ArrowUpCircle size={24} />
-              </div>
-              <div>
-                <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Upgrade Kafka Version</h3>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  Apply an active parcel version to this running cluster
-                </p>
-              </div>
+        {canManage && (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              border: '1px solid #94a3b8',
+              color: '#64748b',
+              flexShrink: 0
+            }}>
+              <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↑</span>
             </div>
-
-            <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1rem', lineHeight: 1.5 }}>
-              Current cluster version: <strong>Kafka {cluster?.kafkaVersion || '-'}</strong>. Choose a newer active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 260px) 1fr', gap: '0.75rem', alignItems: 'center' }}>
-              <select
-                className="form-control"
-                value={targetVersion}
-                onChange={e => setTargetVersion(e.target.value)}
-                disabled={upgradeLoading || activeUpgradeVersions.length === 0}
-              >
-                {activeUpgradeVersions.length === 0 ? (
-                  <option value="">No active upgrade parcel</option>
-                ) : activeUpgradeVersions.map(version => (
-                  <option key={version} value={version}>Kafka {version}</option>
-                ))}
-              </select>
-              <button
-                className="btn btn-primary-action"
-                style={{ justifyContent: 'center' }}
-                onClick={triggerUpgrade}
-                disabled={upgradeLoading || !targetVersion || cluster?.status !== 'SUCCESS'}
-              >
-                {upgradeLoading ? <RefreshCw size={16} className="spin" /> : <ArrowUpCircle size={16} />}
-                Upgrade Kafka
-              </button>
-            </div>
-
-            {upgradeMsg && (
-              <p style={{ margin: '1rem 0 0', fontSize: '0.875rem', color: upgradeMsg.startsWith('Failed') ? '#b91c1c' : '#166534' }}>
-                {upgradeMsg}
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Upgrade Kafka Version</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                Apply an active parcel version to this running cluster.
               </p>
-            )}
+            </div>
           </div>
+
+          <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+            Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
+          </p>
+
+          <div style={{
+            background: '#f8fafc',
+            border: '1px solid #f1f5f9',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'grid',
+            gridTemplateColumns: '1fr auto',
+            gap: '12px',
+            alignItems: 'center'
+          }}>
+            <select
+              value={targetVersion}
+              onChange={e => setTargetVersion(e.target.value)}
+              disabled={upgradeLoading}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0',
+                fontSize: '14px',
+                background: '#fff',
+                outline: 'none',
+                color: '#332849'
+              }}
+            >
+              {activeUpgradeVersions.length === 0 ? (
+                <option value="">No active upgrade parcel</option>
+              ) : activeUpgradeVersions.map(version => (
+                <option key={version} value={version}>Kafka {version}</option>
+              ))}
+            </select>
+            <button
+              onClick={triggerUpgrade}
+              disabled={upgradeLoading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                height: '42px',
+                padding: '0 20px',
+                borderRadius: '8px',
+                background: '#3E1363',
+                color: '#fff',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {upgradeLoading ? <RefreshCw size={16} className="spin" /> : null}
+              Upgrade Kafka
+            </button>
+          </div>
+
+          {upgradeMsg && (
+            <p style={{ margin: '1rem 0 0', fontSize: '0.875rem', color: upgradeMsg.startsWith('Failed') ? '#b91c1c' : '#166534' }}>
+              {upgradeMsg}
+            </p>
+          )}
         </div>
         )}
         
-        {canManage && !isExternal && (
-          <div className="table-card">
-            <div style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-                <BarChart3 size={22} />
-                <div><h3 style={{ margin: 0 }}>Monitoring Enablement</h3><p style={{ margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p></div>
+        {canManage && (
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '32px',
+                height: '32px',
+                borderRadius: '50%',
+                border: '1px solid #94a3b8',
+                color: '#64748b',
+                flexShrink: 0
+              }}>
+                <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↑</span>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <select value={monitoringHostId} onChange={event => setMonitoringHostId(event.target.value)}>
-                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname} · {host.ipAddress}</option>)}
+              <div style={{ flex: 1 }}>
+                <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Monitoring Enablement</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+              Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
+            </p>
+
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #f1f5f9',
+              borderRadius: '12px',
+              padding: '16px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <select 
+                  value={monitoringHostId} 
+                  onChange={event => setMonitoringHostId(event.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    background: '#fff',
+                    outline: 'none',
+                    color: '#332849'
+                  }}
+                >
+                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` · ${host.ipAddress}` : ''}</option>)}
                 </select>
-                <input value={prometheusUrl} onChange={event => setPrometheusUrl(event.target.value)} placeholder="Prometheus artifact URL" />
-                <input value={grafanaUrl} onChange={event => setGrafanaUrl(event.target.value)} placeholder="Grafana artifact URL" />
-                <button className="btn btn-primary-action" onClick={enableMonitoring} disabled={monitoringLoading}>
-                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : <Play size={16} />} Enable Monitoring
+                <input 
+                  value={prometheusUrl} 
+                  onChange={event => setPrometheusUrl(event.target.value)} 
+                  placeholder="Prometheus Artifact URL" 
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    background: '#fff',
+                    outline: 'none',
+                    color: '#332849'
+                  }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <input 
+                  value={grafanaUrl} 
+                  onChange={event => setGrafanaUrl(event.target.value)} 
+                  placeholder="Grafana Artifact URL" 
+                  style={{
+                    flex: 1,
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    fontSize: '14px',
+                    background: '#fff',
+                    outline: 'none',
+                    color: '#332849'
+                  }}
+                />
+                <button 
+                  onClick={enableMonitoring} 
+                  disabled={monitoringLoading}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    height: '42px',
+                    padding: '0 20px',
+                    borderRadius: '8px',
+                    background: '#3E1363',
+                    color: '#fff',
+                    fontWeight: 500,
+                    fontSize: '14px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : null} 
+                  Enable Monitoring
                 </button>
               </div>
             </div>
@@ -257,38 +389,67 @@ export function ClusterActions() {
         )}
 
         {/* Rolling Restart Card */}
-        {canManage && <div className="table-card">
-          <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div style={{ padding: '0.625rem', backgroundColor: '#eff6ff', color: '#2563eb', borderRadius: '0.5rem' }}>
-                <RefreshCw size={24} />
-              </div>
-              <div>
-                <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Rolling Restart</h3>
-                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  {isExternal ? 'Queue restart through the discovery agent' : 'Restart quorum services and brokers one at a time'}
-                </p>
-              </div>
+        {canManage && (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              border: '1px solid #94a3b8',
+              color: '#64748b',
+              flexShrink: 0
+            }}>
+              <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↺</span>
             </div>
-            <p style={{ fontSize: '0.875rem', color: '#4b5563', marginBottom: '1.5rem', lineHeight: 1.5 }}>
-              {isExternal
-                ? 'External clusters require a running discovery agent on the broker VM before Tantor can perform service control. Bootstrap-only external clusters remain read-only.'
-                : 'The orchestrator restarts non-leader controllers or ZooKeeper members first, then the active controller and brokers. It waits for each agent task, all brokers, and all replicas to become healthy before continuing. Zero-downtime restart requires at least two brokers and three metadata quorum nodes.'}
-            </p>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Rolling Restart</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                Restart quorum services and brokers one at a time.
+              </p>
+            </div>
+          </div>
+          <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+            The orchestrator restarts non-leader controllers or ZooKeeper members first, then the active controller and brokers. It waits for each agent task, all brokers, and all replicas to become healthy before continuing. Zero-downtime restart requires at least two brokers and three metadata quorum nodes.
+          </p>
+          <div style={{
+            background: '#f8fafc',
+            border: '1px solid #f1f5f9',
+            borderRadius: '12px',
+            padding: '16px',
+            display: 'flex',
+            justifyContent: 'flex-end'
+          }}>
             <button 
-              className="btn btn-primary-action"
-              style={{ width: '100%', justifyContent: 'center' }}
               onClick={triggerRollingRestart}
-              disabled={!externalCanRestart || loading || (taskId != null && !status.startsWith('COMPLETED') && !status.startsWith('FAILED') && !status.startsWith('PAUSED'))}
-              title={!externalCanRestart ? 'Attach the discovery agent to enable restart control' : 'Start rolling restart'}
+              disabled={loading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                height: '42px',
+                padding: '0 20px',
+                borderRadius: '8px',
+                background: '#3E1363',
+                color: '#fff',
+                fontWeight: 500,
+                fontSize: '14px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
             >
-              <Play size={16} /> Start Rolling Restart
+              Start Rolling Restart
             </button>
           </div>
 
           {/* Progress Tracker */}
           {taskId && (
-            <div style={{ backgroundColor: '#f9fafb', padding: '1.5rem' }}>
+            <div style={{ backgroundColor: '#f9fafb', padding: '1.5rem', marginTop: '1.5rem', borderRadius: '8px' }}>
               <h4 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.75rem 0' }}>
                 <Activity size={16} color="#3b82f6" /> Live Task Status
               </h4>
@@ -313,7 +474,8 @@ export function ClusterActions() {
               </div>
             </div>
           )}
-        </div>}
+        </div>
+        )}
 
       </div>
     </div>

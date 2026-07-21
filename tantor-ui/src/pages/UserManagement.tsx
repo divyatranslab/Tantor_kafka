@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Users, Plus, Shield, Eye, Trash2, Key, Check, X } from 'lucide-react';
 import { getUsers, createAuthUser, updateAuthUser, deleteAuthUser } from '../lib/api.ts';
 import type { UserResponse } from '../types/index.ts';
+import { confirmAction } from '../components/ConfirmDialog';
 import './UserManagement.css';
 
 export default function UserManagement() {
@@ -66,7 +67,7 @@ export default function UserManagement() {
   };
 
   const handleDelete = async (user: UserResponse) => {
-    if (!confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
+    if (!(await confirmAction(`Delete user "${user.username}"? This cannot be undone.`))) return;
     try {
       await deleteAuthUser(user.id);
       fetchUsers();

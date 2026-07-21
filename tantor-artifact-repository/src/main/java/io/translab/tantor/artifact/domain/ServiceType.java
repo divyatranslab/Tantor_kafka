@@ -14,6 +14,7 @@ public enum ServiceType {
     KSQLDB("ksqldb"),
     CRUISE_CONTROL("cruise-control"),
     JMX_EXPORTER("jmx-exporter"),
+    KAFKA_EXPORTER("kafka-exporter"),
     PROMETHEUS("prometheus"),
     GRAFANA("grafana");
 

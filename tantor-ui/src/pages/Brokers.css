@@ -9,19 +9,20 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  background: linear-gradient(90deg, #3E1363 0%, #D44473 30%, #F5C7D3 60%, #FCE8ED 100%);
-  border-radius: 12px;
-  padding: 16px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
 }
 
 .figma-card {
   background: #ffffff;
   border-radius: 8px;
-  padding: 16px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02);
 }
 
 .figma-card .card-header {
@@ -29,27 +30,13 @@
   align-items: center;
   justify-content: flex-start;
   margin-bottom: 0;
-  gap: 8px;
 }
-
-.metric-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.figma-icon-blue   { background: #E6F0FA; color: #378ADD; }
-.figma-icon-purple { background: #F1E5F8; color: #8F55C9; }
-.figma-icon-green  { background: #E9F6E9; color: #43A047; }
 
 .card-header .label {
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 500;
-  color: #23252D;
+  color: #818181;
 }
 
 .card-body {
@@ -68,8 +55,9 @@
 
 .card-body .subtext {
   font-family: 'Satoshi', sans-serif;
-  font-size: 11px;
-  color: #818181;
+  font-size: 13px;
+  font-weight: 500;
+  color: #23252D;
 }
 
 .brokers-list-header {
