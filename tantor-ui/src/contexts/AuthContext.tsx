@@ -91,9 +91,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    clearAuthState();
-    await keycloakLogout();
-  }, [authEnabled, clearAuthState]);
+    try {
+      await keycloakLogout();
+    } catch (e) {
+      console.error('Logout failed', e);
+      // Fallback: force navigation to origin
+      window.location.href = window.location.origin;
+    }
+  }, [authEnabled]);
 
   useEffect(() => {
     if (!authEnabled) {
