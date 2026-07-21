@@ -477,6 +477,24 @@
   white-space: nowrap;
 }
 
+.db-panel-detail {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #3e1363;
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.db-panel-detail:hover,
+.db-panel-detail:focus-visible {
+  color: #df678b;
+}
+
 .db-empty-panel {
   display: flex;
   align-items: center;

@@ -442,7 +442,7 @@ public class AgentService {
                 }
             }
         }
-        cluster.setUpdatedBy("system");
+        // Preserve the actor that initiated the deployment. This callback runs asynchronously without the user security context, so replacing updatedBy with system caused completed deployment audit events to be attributed to system.
         clusterRepository.save(cluster);
     }
 

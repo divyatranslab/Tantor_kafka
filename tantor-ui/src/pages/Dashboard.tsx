@@ -385,7 +385,7 @@ export function Dashboard() {
 
       <section className="db-bottom-grid">
         <article className="db-panel">
-          <PanelTitle title="Activity Feed" detail="View all" />
+          <PanelTitle title="Activity Feed" detail="View all" onDetailClick={() => navigate('/audit')} />
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
@@ -400,7 +400,7 @@ export function Dashboard() {
         </article>
 
         <article className="db-panel">
-          <PanelTitle title="Recent Tasks" detail="View all" />
+          <PanelTitle title="Recent Tasks" detail="View all" onDetailClick={() => navigate('/jobs')} />
           <div className="tab-headers" role="tablist" aria-label="Recent task outcome">
             {(Object.keys(taskRowsByOutcome) as OutcomeTab[]).map(outcome => (
               <button
@@ -486,13 +486,15 @@ export function Dashboard() {
   );
 }
 
-function PanelTitle({ title, detail }: { title: string; detail: string }) {
+function PanelTitle({ title, detail, onDetailClick }: { title: string; detail: string; onDetailClick?: () => void }) {
   return (
     <div className="db-panel-title">
       <div>
         <h2>{title}</h2>
       </div>
-      <span>{detail}</span>
+      {onDetailClick ? (
+        <button type="button" className="db-panel-detail" onClick={onDetailClick}>{detail}</button>
+      ) : <span>{detail}</span>}
     </div>
   );
 }
