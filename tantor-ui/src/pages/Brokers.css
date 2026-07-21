@@ -92,7 +92,7 @@
   color: #818181;
 }
 
-.search-input {
+.search-wrapper .search-input {
   width: 240px;
   background: #ffffff;
   border: 1px solid #CCCCCC;
