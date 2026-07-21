@@ -116,14 +116,12 @@ export function TopNavbar() {
     return { clusters, topics };
   }, [searchQuery, allClusters, clusterTopics]);
 
-  const handleSignOut = async () => {
-    try {
-      await logout();
-      window.location.href = '/login';
-    } catch (e) {
-      console.error(e);
-      window.location.href = '/login';
-    }
+  const handleSignOut = () => {
+    // keycloak.logout() triggers a full-page redirect to the Keycloak
+    // end-session endpoint, which then 302-redirects back to the app.
+    // Do NOT set window.location.href here — it races with the Keycloak
+    // redirect and can prevent proper session termination.
+    logout().catch(e => console.error('Logout failed', e));
   };
 
   return (
