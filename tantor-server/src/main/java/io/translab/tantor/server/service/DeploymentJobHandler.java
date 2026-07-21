@@ -93,7 +93,6 @@ public class DeploymentJobHandler implements JobHandler {
 
         cluster.setStatus("SUCCESS");
         clusterRepository.save(cluster);
-        prometheusMonitoringService.ensureKafkaExporter(cluster.getId());
     }
 
     private void executeDeployBatch(
