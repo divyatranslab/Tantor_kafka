@@ -72,6 +72,22 @@
   background: #2b0c47;
 }
 
+.agent-connectivity-btn {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 19px;
+}
+
+.agent-connectivity-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .btn.btn-outline {
   border-color: var(--border-subtle);
   background: transparent;
@@ -391,6 +407,39 @@
   max-height: 90vh;
   overflow-y: auto;
   position: relative;
+}
+
+/* Scoped layout prevents shared page modal rules from removing the content inset. */
+.agent-connectivity-modal {
+  width: min(640px, calc(100vw - 2rem));
+  max-width: 640px;
+  max-height: 90vh;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-connectivity-modal > .modal-header {
+  margin: 0;
+  padding: 24px 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agent-connectivity-modal > .modal-section-header {
+  margin: 22px 28px 10px;
+}
+
+.agent-connectivity-modal > .pending-node {
+  margin-left: 28px;
+  margin-right: 28px;
+}
+
+.agent-connectivity-modal > .modal-footer {
+  margin: 20px 0 0;
+  padding: 20px 28px 24px;
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .modal-header {

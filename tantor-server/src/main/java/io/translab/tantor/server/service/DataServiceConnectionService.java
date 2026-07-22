@@ -16,7 +16,6 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -356,23 +355,13 @@ public class DataServiceConnectionService {
     }
 
     private SSLContext buildSslContext(DataServiceConnection conn) throws Exception {
-        String certType = conn.getCertificateType();
-        String certData = conn.getCertificateData();
-
-        if ("PKCS12".equalsIgnoreCase(certType)) {
-            String password = null;
-            if (conn.getTruststorePasswordEncrypted() != null
-                    && !conn.getTruststorePasswordEncrypted().isBlank()) {
-                password = encryptionService.decrypt(conn.getTruststorePasswordEncrypted());
-            }
-            return SslUtils.createSslContextFromPkcs12(certData, password);
-        } else if ("PEM".equalsIgnoreCase(certType)) {
-            String pemText = new String(
-                    java.util.Base64.getDecoder().decode(certData), StandardCharsets.UTF_8);
-            return SslUtils.createSslContextFromPem(pemText);
-        } else {
-            throw new IllegalArgumentException("Unsupported certificate type: " + certType);
+        String password = null;
+        if (conn.getTruststorePasswordEncrypted() != null
+                && !conn.getTruststorePasswordEncrypted().isBlank()) {
+            password = encryptionService.decrypt(conn.getTruststorePasswordEncrypted());
         }
+        return SslUtils.createSslContext(
+                conn.getCertificateType(), conn.getCertificateData(), password);
     }
 
     private ConnectivityResult testConnectivity(String serviceType,

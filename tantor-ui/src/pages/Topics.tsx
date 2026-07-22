@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  AlertTriangle, ChevronLeft, ChevronRight, Copy, Database, Download,
+  AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
   MoreVertical, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Topics.css';
 
 interface TopicSummary {
@@ -59,6 +60,9 @@ export function Topics() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(15);
+  const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
+  const liveDropdownRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -67,6 +71,7 @@ export function Topics() {
   const [includeInternal, setIncludeInternal] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [pendingAction, setPendingAction] = useState<{ kind: ActionKind; names: string[] } | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -124,14 +129,9 @@ export function Topics() {
   useEffect(() => { fetchTopics(); }, [fetchTopics]);
   useEffect(() => {
     if (!autoRefresh) return;
-    const timer = window.setInterval(() => fetchTopics(true), 15000);
+    const timer = window.setInterval(() => fetchTopics(true), refreshInterval * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, fetchTopics]);
-  useEffect(() => {
-    const close = () => setOpenMenu(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, []);
 
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -261,27 +261,100 @@ export function Topics() {
     <section className="topics-page animate-fade-in">
       <div className="topics-title-row">
         <div>
-          <p className="topics-eyebrow">Kafka resources</p>
           <h2>Topics</h2>
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
-          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing}>
-            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} /> Refresh
+          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
+            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
           </button>
-          <button
-            className={`topic-button secondary ${autoRefresh ? 'live-active' : ''}`}
-            onClick={() => setAutoRefresh(current => !current)}
-            title="Refresh topics every 15 seconds"
-          >
-            <RefreshCw size={16} className={autoRefresh ? 'spin-slow' : ''} /> Live 15s
-          </button>
-          <button className="topic-button secondary" onClick={exportCsv} disabled={!data?.content.length}>
+          <div ref={liveDropdownRef} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
+            <div
+              onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: '#F8FAFC',
+                border: `1px solid ${autoRefresh ? '#3E1363' : '#E2E8F0'}`,
+                borderRadius: '8px',
+                padding: '8px 12px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                height: '40px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <span style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: autoRefresh ? '#10B981' : '#94A3B8',
+                display: 'inline-block',
+                flexShrink: 0
+              }} />
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
+              <div style={{
+                width: '16px',
+                height: '16px',
+                borderRadius: '4px',
+                border: '1px solid #CBD5E1',
+                background: autoRefresh ? '#3B82F6' : '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginLeft: '4px',
+                flexShrink: 0
+              }}>
+                {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
+              </div>
+              <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B', marginLeft: '2px', whiteSpace: 'nowrap' }}>
+                {refreshInterval}s
+              </span>
+            </div>
+
+            {showIntervalDropdown && liveDropdownRef.current && (
+              <AnchoredMenu
+                anchor={liveDropdownRef.current}
+                className="live-dropdown-menu"
+                onClose={() => setShowIntervalDropdown(false)}
+                align="start"
+                minWidth={180}
+              >
+                {[5, 10, 15, 30, 60].map((sec) => (
+                  <div
+                    key={sec}
+                    className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
+                    onClick={() => {
+                      setRefreshInterval(sec);
+                      setAutoRefresh(true);
+                      setShowIntervalDropdown(false);
+                    }}
+                  >
+                    <span className="live-pill-dot active" />
+                    Live | {sec} Sec
+                  </div>
+                ))}
+                <div className="dropdown-divider" />
+                <div
+                  className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
+                  onClick={() => {
+                    setAutoRefresh(!autoRefresh);
+                    setShowIntervalDropdown(false);
+                  }}
+                >
+                  <span className="live-pill-dot" />
+                  {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
+                </div>
+              </AnchoredMenu>
+            )}
+          </div>
+          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>
           {canManage && (
-            <button className="topic-button primary" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add a topic
+            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
+              <Plus size={16} /> Add Topic
             </button>
           )}
         </div>
@@ -300,7 +373,7 @@ export function Topics() {
           />
           {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
         </label>
-        
+
         <div className="topics-toolbar-right">
           <label className="internal-toggle">
             <input
@@ -314,14 +387,6 @@ export function Topics() {
             <span aria-hidden="true" />
             Show internal topics
           </label>
-          <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
-            <Download size={16} /> Export CSV
-          </button>
-          {canManage && (
-            <button className="topic-button filled" onClick={() => setShowCreate(true)}>
-              <Plus size={16} /> Add Topic
-            </button>
-          )}
         </div>
       </div>
 
@@ -408,15 +473,17 @@ export function Topics() {
                     aria-label={'Actions for ' + topic.name}
                     onClick={event => {
                       event.stopPropagation();
-                      setOpenMenu(current => current === topic.name ? null : topic.name);
+                      const opening = openMenu !== topic.name;
+                      setOpenMenu(opening ? topic.name : null);
+                      setMenuAnchor(opening ? event.currentTarget : null);
                     }}
                   ><MoreVertical size={18} /></button>
-                  {openMenu === topic.name && (
-                    <div className="topic-menu" onClick={event => event.stopPropagation()}>
+                  {openMenu === topic.name && menuAnchor && (
+                    <AnchoredMenu anchor={menuAnchor} className="topic-menu" onClose={() => { setOpenMenu(null); setMenuAnchor(null); }}>
                       <button onClick={() => setPendingAction({ kind: 'clear', names: [topic.name] })}>Clear messages</button>
                       <button onClick={() => setPendingAction({ kind: 'recreate', names: [topic.name] })}>Recreate topic</button>
                       <button onClick={() => setPendingAction({ kind: 'remove', names: [topic.name] })}>Remove topic</button>
-                    </div>
+                    </AnchoredMenu>
                   )}
                 </td>}
               </tr>

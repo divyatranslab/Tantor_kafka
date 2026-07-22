@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2, FileClock,
   History, Info, Package, Search, XCircle, Database,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import './AuditLogs.css';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 
 const CustomRefreshIcon = ({ size = 24, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
   <svg 
@@ -45,13 +46,7 @@ const ReportIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M8.5 3.5h7l5 5v7l-5 5h-7l-5-5v-7z" />
     <path d="M12 8v5M12 16h.01" />
-  </svg>
-);
 
-const TextAdIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818181" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2.5" y="4.5" width="19" height="15" rx="1.5" />
-    <path d="M6 9h6M6 12h12M6 15h12" />
   </svg>
 );
 
@@ -146,17 +141,11 @@ interface CustomDropdownProps {
 
 function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(opt => opt.value === value) || options[0];
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClose = () => setIsOpen(false);
-    window.addEventListener('click', handleClose);
-    return () => window.removeEventListener('click', handleClose);
-  }, [isOpen]);
-
   return (
-    <div className="custom-select-wrapper" onClick={e => e.stopPropagation()}>
+    <div ref={anchorRef} className="custom-select-wrapper">
       <div
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(prev => !prev)}
@@ -168,8 +157,14 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
           </svg>
         </span>
       </div>
-      {isOpen && (
-        <div className="custom-select-options">
+      {isOpen && anchorRef.current && (
+        <AnchoredMenu
+          anchor={anchorRef.current}
+          className="custom-select-options"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
           {options.map(opt => (
             <div
               key={opt.value}
@@ -182,7 +177,7 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
               {opt.label}
             </div>
           ))}
-        </div>
+        </AnchoredMenu>
       )}
     </div>
   );
@@ -293,7 +288,7 @@ export function AuditLogs() {
       <div className="audit-header-title-row">
         <h1>Audit Trail</h1>
         <button className="btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
-          <CustomRefreshIcon size={24} color="#818181" className={loading ? 'spin' : ''} />
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
         </button>
       </div>
       <p className="audit-subtitle">Who performed each action, on which resource, and whether it succeeded.</p>
@@ -341,12 +336,12 @@ export function AuditLogs() {
           <input placeholder="Search configs..." value={search} onChange={e => setSearch(e.target.value)} />
         </label>
         <label className="audit-resource-id">
-          <TextAdIcon />
+
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">
           <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
-            <CustomRefreshIcon size={24} color="#818181" className={loading ? 'spin' : ''} />
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
           </button>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>

@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
 import './JobStatusPage.css';
 
 type Job = {
@@ -79,6 +80,8 @@ export function JobStatusPage() {
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [loading, setLoading] = useState(true);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const fetchJob = async () => {
@@ -122,7 +125,7 @@ export function JobStatusPage() {
   };
 
   const handleRollback = async () => {
-    if (!window.confirm('Rollback all successfully completed steps for this job?')) return;
+    if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
@@ -222,7 +225,7 @@ export function JobStatusPage() {
     else if (isRunning) bgColor = '#3E1363';
 
     if (isRunning) {
-      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#818181', flexShrink: 0 }} />;
+      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#3E1363', flexShrink: 0 }} />;
     }
 
     return (
@@ -321,11 +324,61 @@ export function JobStatusPage() {
       </div>
 
       {!isLogsExpanded && (
-        <h3 className="panel-title" style={{ textAlign: 'left', marginBottom: '16px', color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+          <div style={{ position: 'relative' }}>
+            <button 
+              onClick={() => setShowDropdown(!showDropdown)} 
+              style={{ 
+                background: '#FFFFFF', 
+                border: '1px solid #CCCCCC', 
+                borderRadius: '8px', 
+                width: '32px', 
+                height: '32px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                cursor: 'pointer' 
+              }}
+            >
+              <MoreVertical size={16} color="#818181" />
+            </button>
+            {showDropdown && (
+              <div style={{ 
+                position: 'absolute', 
+                right: 0, 
+                top: '36px', 
+                background: '#FFFFFF', 
+                border: '1px solid #CCCCCC', 
+                borderRadius: '8px', 
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)', 
+                zIndex: 10,
+                minWidth: '120px'
+              }}>
+                <button 
+                  onClick={() => { setShowLogs(!showLogs); setShowDropdown(false); }} 
+                  style={{ 
+                    width: '100%', 
+                    padding: '8px 16px', 
+                    textAlign: 'left', 
+                    background: 'none', 
+                    border: 'none', 
+                    cursor: 'pointer',
+                    fontFamily: 'Satoshi',
+                    fontSize: '14px',
+                    color: '#332849'
+                  }}
+                >
+                  {showLogs ? 'Hide logs' : 'View logs'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
-      <div className={`job-main-layout ${isLogsExpanded ? 'logs-expanded' : ''}`}>
+      <div className={`job-main-layout ${isLogsExpanded ? 'logs-expanded' : ''} ${!showLogs ? 'full-width-steps' : ''}`}>
         {!isLogsExpanded && (
-          <div className="job-sidebar">
+          <div className="job-sidebar" style={{ marginLeft: !showLogs ? 0 : '16px', width: !showLogs ? '100%' : 'auto' }}>
             <div style={{
               border: '1px solid #CCCCCC',
               borderRadius: '8px',
@@ -434,33 +487,35 @@ export function JobStatusPage() {
           </div>
         )}
 
-        <div className="job-logs-container">
-          <div className="logs-header">
-            <div className="logs-header-title">
-              <span>Live Logs</span>
-              {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+        {(showLogs || isLogsExpanded) && (
+          <div className="job-logs-container">
+            <div className="logs-header">
+              <div className="logs-header-title">
+                <span>Live Logs</span>
+                {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+              </div>
+              <button className="btn icon-only toggle-expand-btn" onClick={() => setIsLogsExpanded(!isLogsExpanded)} title={isLogsExpanded ? "Collapse" : "Expand"}>
+                {isLogsExpanded ? (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M 19 10 h -5 v -5" />
+                    <path d="M 5 14 h 5 v 5" />
+                  </svg>
+                ) : (
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M 14 5 h 5 v 5" />
+                    <path d="M 10 19 H 5 v -5" />
+                  </svg>
+                )}
+              </button>
             </div>
-            <button className="btn icon-only toggle-expand-btn" onClick={() => setIsLogsExpanded(!isLogsExpanded)} title={isLogsExpanded ? "Collapse" : "Expand"}>
-              {isLogsExpanded ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M 19 10 h -5 v -5" />
-                  <path d="M 5 14 h 5 v 5" />
-                </svg>
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M 14 5 h 5 v 5" />
-                  <path d="M 10 19 H 5 v -5" />
-                </svg>
-              )}
-            </button>
+            <div className="logs-content">
+              <pre className="logs-text">
+                {renderLogs(job.logs)}
+              </pre>
+              <div ref={logsEndRef} />
+            </div>
           </div>
-          <div className="logs-content">
-            <pre className="logs-text">
-              {renderLogs(job.logs)}
-            </pre>
-            <div ref={logsEndRef} />
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

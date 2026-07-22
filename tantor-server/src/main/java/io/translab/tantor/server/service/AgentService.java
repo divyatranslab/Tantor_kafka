@@ -233,7 +233,7 @@ public class AgentService {
         try {
             UUID taskId = UUID.fromString(dto.getTaskId());
             taskRepository.findById(taskId).ifPresent(task -> {
-                if ("IN_PROGRESS".equals(dto.getStatus()) && dto.getCurrentStep() != null) {
+                if (!isTerminalTaskStatus(dto.getStatus())) {
                     task.setCurrentStep(dto.getCurrentStep());
                     try {
                         Map<String, String> stepLogsMap = new java.util.LinkedHashMap<>();
@@ -298,12 +298,20 @@ public class AgentService {
                                 : "CHECK_PORTS".equals(task.getCommand())
                                 ? "PORT_CHECK_COMPLETED"
                                 : "PREREQUISITE_CHECK_COMPLETED";
-                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                        String auditActor = taskParameter(task, "requested_by");
+                        if (auditActor == null || auditActor.isBlank()) {
+                            auditActor = "agent:" + task.getHostId();
+                        }
+                        auditService.recordAs(auditActor, "AGENT", null,
                                 "PREREQUISITE", action, "HOST", task.getHostId(),
                                 task.getClusterId(), dto.getStatus(), null, null, null, prerequisiteDetails);
                     }
                     if ("REBOOT_HOST".equals(task.getCommand())) {
-                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                        String auditActor = taskParameter(task, "requested_by");
+                        if (auditActor == null || auditActor.isBlank()) {
+                            auditActor = "agent:" + task.getHostId();
+                        }
+                        auditService.recordAs(auditActor, "AGENT", null,
                                 "RESTART", "HOST_REBOOT_SCHEDULED", "HOST", task.getHostId(), task.getClusterId(),
                                 dto.getStatus(), null, null, null,
                                 Map.of("taskId", taskId.toString(), "result", dto.getStatus()));
@@ -434,7 +442,7 @@ public class AgentService {
                 }
             }
         }
-        cluster.setUpdatedBy("system");
+        // Preserve the actor that initiated the deployment. This callback runs asynchronously without the user security context, so replacing updatedBy with system caused completed deployment audit events to be attributed to system.
         clusterRepository.save(cluster);
     }
 
@@ -444,6 +452,9 @@ public class AgentService {
         return error.contains("Rollback completed") || logs.contains("Rollback completed");
     }
 
+    private boolean isTerminalTaskStatus(String status) {
+        return "SUCCESS".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status);
+    }
     @SuppressWarnings("unchecked")
     private String taskParameter(Task task, String name) {
         if (task.getParameters() == null || task.getParameters().isBlank()) {

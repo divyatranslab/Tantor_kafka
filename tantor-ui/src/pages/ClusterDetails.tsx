@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, Info, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useCluster } from '../contexts/ClusterContext';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -33,17 +36,16 @@ export function ClusterDetails() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const { setActiveClusterId } = useCluster();
+
+  // Sync the global active cluster context whenever this page loads
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (id) setActiveClusterId(id);
+  }, [id, setActiveClusterId]);
 
   useEffect(() => {
+    // Clear stale data when switching clusters to prevent flash of old data
+    setCluster(null);
     fetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(setCluster)
@@ -86,32 +88,21 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
-  const runtimeLabel = cluster.runtimeStatusLabel || (cluster.mode === 'EXTERNAL' ? 'External' : cluster.status);
-  const runtimeClass = (cluster.runtimeHealth || cluster.status || '').toLowerCase();
-  const agentLabel = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'Agent connected';
-      case 'PARTIAL':
-        return 'Agent partial';
-      case 'NOT_CONNECTED':
-        return 'Agent not connected';
-      default:
-        return 'Agent not connected';
-    }
-  })();
-  const agentClass = (() => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'connected';
-      case 'PARTIAL':
-        return 'partial';
-      case 'NOT_CONNECTED':
-        return 'not-connected';
-      default:
-        return 'not-connected';
-    }
-  })();
+  const runtimeLabel = cluster.mode === 'EXTERNAL'
+    ? 'External'
+    : cluster.status === 'SUCCESS'
+      ? 'Success'
+      : (cluster.runtimeStatusLabel || cluster.status);
+  const runtimeClass = cluster.mode === 'EXTERNAL'
+    ? 'success'
+    : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
+  const runtimeTone = clusterStatusTone(
+    cluster.runtimeStatusLabel,
+    cluster.runtimeHealth,
+    cluster.kafkaHealth,
+    cluster.status,
+    cluster.overallHealth,
+  );
 
   if (isLogsView) {
     return (
@@ -242,20 +233,20 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/security`, icon: Shield, label: 'ACLs', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
-    { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' || cluster.mode === 'EXTERNAL' },
   ];
 
   if (cluster.mode === 'EXTERNAL') {
-    tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: false });
+    tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: true });
   } else {
     tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: cluster.status !== 'SUCCESS' });
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
   }
 
-  // The first 9 items are visible in the main navbar
-  const visibleTabs = tabs.slice(0, 9);
-  // The rest are in the dropdown
-  const dropdownTabs = tabs.slice(9);
+  // Keep the active Configuration tab visible without compressing the navigation.
+  const isConfigurationPage = location.pathname === `/clusters/${id}/config`;
+  const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
+  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
   const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
 
   return (
@@ -265,43 +256,39 @@ export function ClusterDetails() {
           {/* Breadcrumbs */}
           <div className="cd-breadcrumbs">
             <span onClick={() => navigate('/clusters')} className="cd-breadcrumb-link">Cluster</span>
-            <span className="cd-breadcrumb-separator"><ChevronRight size={14} /></span>
+            <span className="cd-breadcrumb-separator"><ChevronRight size={12} /></span>
             <span className="cd-breadcrumb-current">{cluster.name}</span>
           </div>
           
           {/* Title Row */}
           <div className="cd-details-title-row">
-            <div className="cd-details-title-left">
-              <h1>{cluster.name}</h1>
-              <div className={`cd-status-badge ${runtimeClass}`} title={cluster.runtimeStatusReason}>
-                {runtimeLabel ? runtimeLabel.charAt(0).toUpperCase() + runtimeLabel.slice(1).toLowerCase() : ''}
-              </div>
-              {cluster.mode === 'EXTERNAL' && (
-                <div className={`cd-agent-status-badge ${agentClass}`}>
-                  {agentLabel}
-                </div>
-              )}
-            </div>
-            <div className="cd-details-actions">
+            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button 
-                className="cd-details-refresh-btn" 
-                onClick={() => {
-                  fetch(`/api/v1/ui/clusters/${id}`)
-                    .then(res => res.ok ? res.json() : Promise.reject())
-                    .then(setCluster)
-                    .catch(() => {});
-                }}
-                title="Refresh Health"
+                type="button" 
+                className="cluster-back-btn" 
+                onClick={() => navigate('/clusters')}
+                aria-label="Back to clusters"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: '#818181' }}
               >
-                <RefreshCw size={24} />
+                <ChevronLeft size={20} />
               </button>
+              <h1 style={{ display: 'flex', alignItems: 'center', margin: 0 }}>
+                {cluster.name}
+              </h1>
+              <span 
+                title={`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
+                style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '4px', cursor: 'pointer' }}
+              >
+                <Info size={16} style={{ color: '#818181' }} />
+              </span>
+            </div>
+
+            <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason} style={{ gap: '6px' }}>
+              <span className="cd-status-dot"></span>
+              {runtimeLabel}
             </div>
           </div>
-          
-          {/* Subtitle */}
-          <p className="cd-details-subtitle">
-            {`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} nodes • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
-          </p>
+
         </header>
 
         <div className="cluster-tabs">
@@ -337,8 +324,13 @@ export function ClusterDetails() {
                 >
                   <ChevronDown size={18} />
                 </button>
-                {isDropdownOpen && (
-                  <div className="cluster-tabs-dropdown-menu">
+                {isDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cluster-tabs-dropdown-menu"
+                    onClose={() => setIsDropdownOpen(false)}
+                    minWidth={180}
+                  >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {
                         return (
@@ -358,7 +350,7 @@ export function ClusterDetails() {
                         </NavLink>
                       );
                     })}
-                  </div>
+                  </AnchoredMenu>
                 )}
               </div>
             )}

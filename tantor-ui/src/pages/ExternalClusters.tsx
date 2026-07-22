@@ -57,7 +57,6 @@ interface DiscoveryAgentStatus {
 }
 
 const TRUSTSTORE_FILE_RULES: Record<string, { accept: string; extensions: string[]; label: string }> = {
-  JKS: { accept: '.jks', extensions: ['.jks'], label: 'JKS truststore' },
   PKCS12: { accept: '.p12,.pfx', extensions: ['.p12', '.pfx'], label: 'PKCS12 truststore' },
   PEM: { accept: '.pem,.crt,.cer', extensions: ['.pem', '.crt', '.cer'], label: 'PEM certificate' },
 };
@@ -81,11 +80,11 @@ export function ExternalClusters() {
     saslMechanism: 'PLAIN',
     saslUsername: '',
     saslPassword: '',
-    truststoreType: 'JKS',
+    truststoreType: 'PKCS12',
     truststorePassword: '',
     truststoreBase64: '',
     truststoreFilename: '',
-    keystoreType: 'JKS',
+    keystoreType: 'PKCS12',
     keystorePassword: '',
     keyPassword: '',
     keystoreBase64: '',
@@ -94,7 +93,7 @@ export function ExternalClusters() {
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
-  const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.JKS;
+  const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.PKCS12;
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
@@ -354,7 +353,7 @@ export function ExternalClusters() {
                     <label>Bootstrap URL</label>
                     <input
                       type="text"
-                      placeholder="192.168.1.100:9092"
+                      placeholder="Broker host and port"
                       value={form.bootstrapServers}
                       onChange={e => {
                         setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
@@ -448,7 +447,6 @@ export function ExternalClusters() {
                             setBootstrapResult(null);
                           }}
                         >
-                          <option value="JKS">JKS</option>
                           <option value="PKCS12">PKCS12</option>
                           <option value="PEM">PEM / X.509</option>
                         </select>
@@ -680,9 +678,8 @@ export function ExternalClusters() {
                   <h3>Agent connectivity</h3>
                   <p>Shows discovery agents that are polling this Tantor server, even before Kafka is detected.</p>
                 </div>
-                <button className="btn" onClick={loadAgents} disabled={agentsLoading}>
+                <button className="btn" onClick={loadAgents} disabled={agentsLoading} aria-label="Refresh agents" title="Refresh">
                   <RefreshCw size={14} className={agentsLoading ? 'spin' : ''} />
-                  Refresh
                 </button>
               </div>
 

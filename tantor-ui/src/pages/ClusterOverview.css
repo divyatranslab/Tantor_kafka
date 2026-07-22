@@ -1,201 +1,227 @@
+/* ══════════════════════════════════════════
+   ClusterOverview — Redesign to match Figma Specs
+   ══════════════════════════════════════════ */
+
 .overview-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 5px 0 0 0;
-  background: transparent;
+  gap: 28px;
   min-height: 100%;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .overview-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+}
+
+/* Light-grey background container for card sections to contrast on white details card */
+.overview-card,
+.overview-band {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #F8FAFC;
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  padding: 20px;
 }
 
 .section-header-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
+  min-height: 36px;
 }
 
 .overview-section h2 {
   margin: 0;
-  color: #3E1363;
-  font-family: 'Satoshi', sans-serif;
+  color: #3E1363; /* Dark purple matching theme specs */
+  font-family: 'Satoshi', 'Inter', sans-serif;
   font-size: 16px;
-  font-weight: 500;
-  line-height: 100%;
-  letter-spacing: 0%;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 120%;
+  letter-spacing: -0.01em;
 }
 
+/* Export CSV button - purple outline style */
 .overview-export {
-  border: 1px solid #3E1363;
-  background: #ffffff;
-  color: #3E1363;
-  border-radius: 4px;
-  height: 32px;
+  height: 36px;
   padding: 0 16px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #3E1363;
   cursor: pointer;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 13px;
   font-weight: 500;
-  transition: all 0.15s;
+  transition: background-color var(--transition-fast, 0.15s) ease, border-color var(--transition-fast, 0.15s) ease;
 }
 
 .overview-export:hover {
   background: #FAF8FF;
 }
 
-.overview-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background: #F9F9F9;
-  border-radius: 8px;
-  padding: 16px;
+.overview-export svg {
+  width: 14px;
+  height: 14px;
 }
 
+/* Grids for cards */
 .overview-grid {
   display: grid;
-  gap: 8px;
+  gap: 16px;
 }
 
-.overview-grid.identity-grid {
-  grid-template-columns: repeat(6, 1fr);
-}
+.overview-grid.identity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.overview-grid.uptime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.overview-grid.partitions-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
-.overview-grid.uptime-grid {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.overview-grid.partitions-grid {
-  grid-template-columns: repeat(5, 1fr);
-}
-
+/* Individual Cards - White, clean border and soft shadow */
 .overview-item {
-  background: #FFFFFF;
-  border-radius: 8px;
-  padding: 10px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  gap: 10px;
-  min-height: 81px;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  background: #FFFFFF;
+  border: 1px solid #E1E7EC;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
 }
 
 .overview-label {
-  color: #818181;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
   display: flex;
   align-items: center;
-  gap: 4px;
+  color: #818181;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
 }
 
 .overview-value {
-  color: #23252D;
-  font-family: 'Satoshi', sans-serif;
+  color: #282F49;
+  font-family: 'Satoshi', 'Inter', sans-serif;
   font-size: 14px;
-  font-weight: 500;
-  word-break: break-all;
+  font-weight: 600;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-  margin-left: 6px;
-}
-
-.status-dot.green {
-  background: #96CF7B;
-}
-
+/* Table container matching Figma specification */
 .overview-table-wrap {
-  background: #ffffff;
-  border: 1px solid #CCCCCC;
-  border-radius: 8px;
+  width: 100%;
   overflow-x: auto;
-  margin-top: 24px;
+  box-sizing: border-box;
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
+  margin-top: 8px;
 }
 
 .overview-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
+  font-family: 'Satoshi', 'Inter', sans-serif;
 }
 
 .overview-table th {
-  padding: 16px;
-  background: #FFFFFF;
-  border-bottom: 1px solid #CCCCCC;
-  color: #332849;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
+  height: 44px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  background: #FCFCFD;
+  border-bottom: 1px solid #E1E7EC;
+  color: #64748B;
+  font-size: 12px;
+  font-weight: 600;
   text-align: left;
   white-space: nowrap;
 }
 
 .overview-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #CCCCCC;
-  color: #23252D;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
+  height: 52px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #E1E7EC;
+  color: #282F49;
+  font-size: 13px;
   font-weight: 400;
-  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .overview-table tr:last-child td {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
 .overview-broker-id {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #23252D;
-  font-weight: 400;
+  font-weight: 600;
+  color: #282F49;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  background: #F1F5F9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: capitalize;
 }
 
 .overview-alert {
-  border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
+  gap: 10px;
+  border-radius: 8px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: 8px;
 }
 
 .overview-alert.error {
-  background: #fcebeb;
-  border: 1px solid #e8b4b4;
-  color: #791f1f;
+  border: 1px solid #FCA5A5;
+  background: #FEF2F2;
+  color: #991B1B;
 }
 
 .overview-alert.warning {
-  background: #fff7e8;
-  border: 1px solid #edd09a;
-  color: #7a4d10;
+  border: 1px solid #FDE047;
+  background: #FEFCE8;
+  color: #854F0B;
 }
 
+/* Responsiveness */
 @media (max-width: 1100px) {
-  .overview-grid,
-  .overview-grid.partitions-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  .overview-grid.partitions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-@media (max-width: 768px) {
-  .overview-grid,
-  .overview-grid.partitions-grid {
-    grid-template-columns: 1fr;
-  }
+@media (max-width: 760px) {
+  .overview-grid.identity-grid,
+  .overview-grid.uptime-grid,
+  .overview-grid.partitions-grid { grid-template-columns: 1fr; }
 }

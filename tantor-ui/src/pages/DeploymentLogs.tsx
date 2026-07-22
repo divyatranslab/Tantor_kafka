@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './DeploymentLogs.css';
 
 interface Task {
@@ -74,32 +75,16 @@ export function DeploymentLogs() {
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
         const nextTasks: Task[] = await tasksRes.json();
-        if (!nextTasks || nextTasks.length === 0) {
-          throw new Error('Empty tasks');
-        }
-        setTasks(nextTasks);
-        setSelectedTaskId(current => current && nextTasks.some(task => task.id === current) ? current : nextTasks[0]?.id || '');
+        const availableTasks = Array.isArray(nextTasks) ? nextTasks : [];
+        setTasks(availableTasks);
+        setSelectedTaskId(current => current && availableTasks.some(task => task.id === current) ? current : availableTasks[0]?.id || '');
       } else {
         throw new Error('Tasks request failed');
       }
     } catch (error) {
-      if (!cluster) {
-        setCluster({ status: 'SUCCESS' });
-      }
-      const mockTasks: Task[] = [
-        {
-          id: "123e4567-e89b-12d3-a456-426614174008",
-          hostId: "123e4567-e89b-12d3-a456-426614174008",
-          command: "UPDATE_KAFKA_CONFIG",
-          status: "SUCCESS",
-          logOutput: "Existing config backed up to /opt/data/kafka/config/.tantor-backups/server.properties/v3-20260711T063746.503325575Z.bak\n\nConfigs updated successfully\n\nKafka service kafka restarted",
-          errorMsg: "",
-          createdAt: "2026-07-11T12:07:41Z",
-          updatedAt: "2026-07-11T12:07:41Z"
-        }
-      ];
-      setTasks(mockTasks);
-      setSelectedTaskId("123e4567-e89b-12d3-a456-426614174008");
+      console.error('Failed to load deployment logs', error);
+      setTasks([]);
+      setSelectedTaskId('');
     } finally {
       setLoading(false);
     }
@@ -162,7 +147,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to retry task.");
+      notifyAction("Failed to retry task.");
     } finally {
       setActionLoading(false);
     }
@@ -170,7 +155,7 @@ export function DeploymentLogs() {
 
   const handleRollback = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)")) return;
+    if (!(await confirmAction("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)"))) return;
     
     setActionLoading(true);
     try {
@@ -178,7 +163,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger rollback.");
+      notifyAction("Failed to trigger rollback.");
     } finally {
       setActionLoading(false);
     }
@@ -192,7 +177,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to resume task.");
+      notifyAction("Failed to resume task.");
     } finally {
       setActionLoading(false);
     }
@@ -200,7 +185,7 @@ export function DeploymentLogs() {
 
   const handleCleanup = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)")) return;
+    if (!(await confirmAction("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)"))) return;
     
     setActionLoading(true);
     try {
@@ -208,7 +193,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger cleanup.");
+      notifyAction("Failed to trigger cleanup.");
     } finally {
       setActionLoading(false);
     }
@@ -230,7 +215,19 @@ export function DeploymentLogs() {
 
   const activeStepIndex = DEPLOYMENT_STEPS.indexOf(selectedTask.currentStep || '');
   const isFailed = selectedTask.status === 'FAILED';
-  const isSuccess = selectedTask.status === 'SUCCESS';
+  const renderLogs = (logsText: string) => {
+    if (!logsText) return 'No output recorded.';
+    return logsText.split('\n').map((line, idx) => {
+      let className = 'log-line';
+      const lowerLine = line.toLowerCase();
+      if (lowerLine.includes('completed')) {
+        className += ' log-success';
+      } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
+        className += ' log-error';
+      }
+      return <div key={idx} className={className}>{line || ' '}</div>;
+    });
+  };
 
   return (
     <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch' }}>
@@ -420,20 +417,17 @@ export function DeploymentLogs() {
           background: '#000000',
           borderRadius: '0px 0px 16px 16px'
         }} ref={logBodyRef}>
-          <pre style={{
-            margin: 0,
+          <div className="logs-text" style={{
             width: '100%',
             fontFamily: 'Source Code Pro, monospace',
-            fontStyle: 'normal',
-            fontWeight: 400,
             fontSize: '14px',
             lineHeight: '20px',
             color: '#FFFFFF',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all'
           }}>
-            {selectedTask.logOutput || selectedTask.errorMsg || 'No output recorded.'}
-          </pre>
+            {renderLogs(selectedTask.logOutput || selectedTask.errorMsg || '')}
+          </div>
         </div>
       </div>
 

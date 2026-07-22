@@ -12,9 +12,12 @@ import {
 
 type DecodedToken = KeycloakTokenParsed & {
   name?: string;
+  given_name?: string;
+  family_name?: string;
   preferred_username?: string;
   email?: string;
   sid?: string;
+  auth_time?: number;
   role?: string;
   roles?: string[];
   realm_access?: { roles?: string[] };
@@ -40,25 +43,12 @@ const sessionIdFromToken = (token?: DecodedToken) => {
   return token?.sid;
 };
 
-const devDecodedToken = (): DecodedToken => {
-  const role = import.meta.env.VITE_DEV_ROLE || 'admin';
-  return {
-    preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat',
-    role,
-    roles: [role],
-  } as DecodedToken;
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const authEnabled = isAuthEnabled();
   const [isInitializing, setIsInitializing] = useState(authEnabled);
   const [isAuthenticated, setIsAuthenticated] = useState(!authEnabled);
   const [accessToken, setAccessToken] = useState<string | undefined>();
-  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>(
-    authEnabled
-      ? undefined
-      : devDecodedToken(),
-  );
+  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>();
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>();
 
   const syncAuthState = useCallback(() => {
@@ -101,15 +91,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    clearAuthState();
-    await keycloakLogout();
-  }, [authEnabled, clearAuthState]);
-
+    try {
+      await keycloakLogout();
+    } catch (e) {
+      console.error('Logout failed', e);
+      // Fallback: force navigation to origin
+      window.location.href = window.location.origin;
+    }
+  }, [authEnabled]);
   useEffect(() => {
     if (!authEnabled) {
+      installAuthenticatedFetch();
+      setDecodedToken({
+        preferred_username: 'shaukat',
+        roles: ['admin'],
+        realm_access: { roles: ['admin'] }
+      });
       setIsInitializing(false);
       setIsAuthenticated(true);
-      setDecodedToken(devDecodedToken());
       return;
     }
 

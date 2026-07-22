@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import {
   AlertTriangle,
   Check,
@@ -326,6 +328,14 @@ function displayIp(host: Host): string {
     || 'Unknown';
 }
 
+function nodeAvailabilityMessage(host: Host): string {
+  if (host.availabilityReason) return host.availabilityReason;
+  const status = String(host.status || '').toUpperCase();
+  if (status === 'PENDING') return 'Pending connection - use + Add Node';
+  if (status === 'OCCUPIED_INTERNAL' || status === 'OCCUPIED_EXTERNAL' || status === 'OCCUPIED') return 'Kafka Already Deployed';
+  return status || 'Unavailable';
+}
+
 function validatePath(value: string, label: string): string {
   if (!value.trim()) return `${label} is required.`;
   if (!value.trim().startsWith('/')) return `${label} must be an absolute Linux path.`;
@@ -405,18 +415,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setNodeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [openRoleMenuHostId, setOpenRoleMenuHostId] = useState<string | null>(null);
+  const [roleMenuAnchor, setRoleMenuAnchor] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
     loadHosts();
@@ -460,7 +462,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       })
       .catch(error => {
         console.error(error);
-        alert('Failed to load cluster details for add-node mode.');
+        notifyAction('Failed to load cluster details for add-node mode.');
         navigate('/clusters');
       })
       .finally(() => setLoadingCluster(false));
@@ -854,7 +856,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort });
       } else if (role === 'broker_zookeeper') {
         const brokerCfg = configFor('server');
         const zookeeperCfg = configFor('zookeeper');
@@ -932,7 +934,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'KRaft topology validation failed.');
+        notifyAction(body.error || body.message || 'KRaft topology validation failed.');
         return;
       }
       const report = body as KraftValidationReport;
@@ -941,7 +943,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       setStage('preview');
     } catch (error) {
       console.error(error);
-      alert('Network error while validating the KRaft topology.');
+      notifyAction('Network error while validating the KRaft topology.');
     } finally {
       setValidatingKraft(false);
     }
@@ -1047,45 +1049,83 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     return Array.from(ports);
   };
 
-  const checkHostPorts = async (hostId: string) => {
-    setPortCheckResults(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Checking ports...', errorMsg: '' } }));
-    
-    // Simulate check local-only in UI
-    await new Promise(resolve => setTimeout(resolve, 1200));
+  const pollPortCheck = async (hostId: string, taskId: string) => {
+    for (let i = 0; i < 90; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      if (!res.ok) continue;
 
-    const reqPorts = prerequisitePortsForHost(hostId);
-    const unavailablePorts: number[] = [];
-    const availablePorts: number[] = [];
-    
-    reqPorts.forEach((port, idx) => {
-      // Mock: first port is in use (unavailable), others are free
-      if (idx === 0) {
-        unavailablePorts.push(port);
-      } else {
-        availablePorts.push(port);
-      }
-    });
+      const body = await res.json();
+      const status = String(body.status || 'RUNNING').toUpperCase();
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: activeStatus(status) ? 'RUNNING' : status === 'SUCCESS' ? 'SUCCESS' : 'FAILED',
+          taskId,
+          logOutput: body.logOutput || prev[hostId]?.logOutput || '',
+          errorMsg: body.errorMsg || '',
+        },
+      }));
+      if (!activeStatus(status)) return;
+    }
 
-    const hasFailed = unavailablePorts.length > 0;
-    
-    // Generate simulated logOutput
-    let logOutput = '\n===== Kafka Port Availability Check =====\n';
-    unavailablePorts.forEach(port => {
-      logOutput += `Port ${port}: Unavailable [FAIL]\n`;
-    });
-    availablePorts.forEach(port => {
-      logOutput += `Port ${port}: Available [PASS]\n`;
-    });
-    logOutput += '===== Port Check Completed =====\n';
-    
     setPortCheckResults(prev => ({
       ...prev,
       [hostId]: {
-        status: hasFailed ? 'FAILED' : 'SUCCESS',
-        logOutput,
-        errorMsg: hasFailed ? `Port check failed: ${unavailablePorts.length} required ports are unavailable` : '',
-      }
+        status: 'FAILED',
+        taskId,
+        logOutput: prev[hostId]?.logOutput || '',
+        errorMsg: 'Port check timed out while waiting for the host agent.',
+      },
     }));
+  };
+
+  const checkHostPorts = async (hostId: string) => {
+    const requiredPorts = prerequisitePortsForHost(hostId);
+    if (requiredPorts.length === 0) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: { status: 'FAILED', logOutput: '', errorMsg: 'No required ports are configured for this host.' },
+      }));
+      return;
+    }
+
+    setPortCheckResults(prev => ({
+      ...prev,
+      [hostId]: { status: 'RUNNING', logOutput: 'Queuing port availability check...', errorMsg: '' },
+    }));
+
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ required_ports: requiredPorts.join(',') }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body.taskId) {
+        throw new Error(body.message || 'Failed to queue port availability check.');
+      }
+
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'RUNNING',
+          taskId: body.taskId,
+          logOutput: 'Port check queued. Waiting for the host agent...',
+          errorMsg: '',
+        },
+      }));
+      await pollPortCheck(hostId, body.taskId);
+    } catch (error) {
+      setPortCheckResults(prev => ({
+        ...prev,
+        [hostId]: {
+          status: 'FAILED',
+          logOutput: '',
+          errorMsg: error instanceof Error ? error.message : 'Failed to check ports.',
+        },
+      }));
+    }
   };
 
   const getPortTooltipText = (hostId: string) => {
@@ -1227,7 +1267,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const fixPrerequisites = async () => {
     const failedHosts = selectedHosts.filter(host => prereqResults[host.id]?.status === 'FAILED');
     if (failedHosts.length === 0) return;
-    const confirmed = window.confirm(
+    const confirmed = await confirmAction(
       `Apply privileged operating-system changes on ${failedHosts.length} host(s)? This may update limits, sysctl, THP, SELinux, time synchronization, and may require a reboot.`,
     );
     if (!confirmed) return;
@@ -1254,7 +1294,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const rebootHost = async (host: Host) => {
-    if (!window.confirm(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`)) return;
+    if (!(await confirmAction(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`))) return;
     setCheckingPrereqs(true);
     try {
       const res = await fetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
@@ -1294,7 +1334,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        alert(body.error || body.message || 'Deployment failed to start.');
+        notifyAction(body.error || body.message || 'Deployment failed to start.');
         return;
       }
       if (onClose) {
@@ -1307,7 +1347,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       }
     } catch (e) {
       console.error(e);
-      alert('Network error while starting deployment.');
+      notifyAction('Network error while starting deployment.');
     } finally {
       setDeploying(false);
     }
@@ -1524,8 +1564,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   <span>{selectedNodeIds.length ? `${selectedNodeIds.length} node${selectedNodeIds.length > 1 ? 's' : ''} selected` : 'Select'}</span>
                   <ChevronDown size={16} />
                 </button>
-                {nodeDropdownOpen && (
-                  <div className="cd-node-menu">
+                {nodeDropdownOpen && dropdownRef.current && (
+                  <AnchoredMenu
+                    anchor={dropdownRef.current}
+                    className="cd-node-menu"
+                    onClose={() => setNodeDropdownOpen(false)}
+                    align="start"
+                    matchAnchorWidth
+                  >
                     <div className="cd-search">
                       <Search size={15} />
                       <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
@@ -1544,13 +1590,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
                             <span className="cd-node-info">
                               <strong>{host.hostname}</strong>
-                              <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
+                              <small>{displayIp(host)} - {disabled ? nodeAvailabilityMessage(host) : '/srv/tantor-agent/tantor-agent-linux'}</small>
                             </span>
                           </button>
                         );
                       })}
                     </div>
-                  </div>
+                  </AnchoredMenu>
                 )}
               </div>
             </div>
@@ -1688,13 +1734,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <div className="cd-role-menu-wrap" style={{ position: 'relative' }}>
                         <button
                           className="cd-figma-action-btn"
-                          onClick={() => setOpenRoleMenuHostId(openRoleMenuHostId === host.id ? null : host.id)}
+                          onClick={event => {
+                            const opening = openRoleMenuHostId !== host.id;
+                            setOpenRoleMenuHostId(opening ? host.id : null);
+                            setRoleMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                         >
                           <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase())}</span>
                           <MoreVertical size={14} />
                         </button>
-                      {openRoleMenuHostId === host.id && (
-                        <div className="cd-role-menu">
+                      {openRoleMenuHostId === host.id && roleMenuAnchor && (
+                        <AnchoredMenu anchor={roleMenuAnchor} className="cd-role-menu" onClose={() => { setOpenRoleMenuHostId(null); setRoleMenuAnchor(null); }}>
                           {roleOptions.filter(r => r.id !== 'separate').map(role => {
                             const currentRole = rolesByHost[host.id] || defaultRoleForMode;
                             let isActive = currentRole === role.id;
@@ -1734,7 +1784,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                               </label>
                             );
                           })}
-                        </div>
+                        </AnchoredMenu>
                       )}
                     </div>
                     <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
