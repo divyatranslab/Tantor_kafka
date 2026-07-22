@@ -133,70 +133,77 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           </button>
         </div>
 
-        {pendingHosts.length === 0 ? (
-          <div className="empty-pending" style={{ margin: '0 32px 32px 32px' }}>
-            No new nodes discovered. Run the agent script on a VM to discover it.
-          </div>
-        ) : (
-          <div style={{ margin: '0 32px 24px 32px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Discovered Nodes</span>
-              <label className="pending-select-all" style={{ margin: 0, padding: 0, border: 'none', background: 'transparent', gap: '8px', cursor: 'pointer' }}>
-                <input 
-                  type="checkbox" 
-                  checked={allPendingSelected} 
-                  onChange={toggleAllPendingHosts} 
-                  style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }} 
-                />
-                <span style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
-              </label>
+        {/* Separator line below header */}
+        <div style={{ height: '1px', background: '#F1F5F9', margin: '0 0 0 0' }} />
+
+        <div style={{ padding: '20px 32px 8px 32px' }}>
+          {pendingHosts.length === 0 ? (
+            <div className="empty-pending">
+              No new nodes discovered. Run the agent script on a VM to discover it.
             </div>
-            
-            <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
-              {pendingHosts.map(host => (
-                <div 
-                  key={host.id} 
-                  className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} 
-                  onClick={() => togglePendingHost(host.id)} 
-                  style={{ 
-                    background: '#FFFFFF', 
-                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #E2E8F0', 
-                    borderRadius: '8px', 
-                    padding: '14px 16px', 
-                    margin: 0, 
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '14px'
-                  }}
-                >
-                  <label className="pending-node-select" onClick={event => event.stopPropagation()} style={{ margin: 0, display: 'flex' }}>
-                    <input
-                      type="checkbox"
-                      checked={!!selectedPendingIds[host.id]}
-                      onChange={() => togglePendingHost(host.id)}
-                      style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
-                    />
-                  </label>
-                  <div className="pending-node-info" style={{ flex: 1 }}>
-                    <p className="name" style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 3px 0' }}>{host.agentName || host.hostname}</p>
-                    <p className="ip" style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
-                  </div>
-                  <div className="pending-node-actions">
-                    <button 
-                      className="btn icon-only danger" 
-                      title="Reject & remove" 
-                      onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }} 
-                      style={{ border: 'none', background: 'transparent', color: '#9CA3AF', padding: '4px' }}
+          ) : (
+            <div>
+              {/* Section label row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                  Discovered Nodes
+                </span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={allPendingSelected}
+                    onChange={toggleAllPendingHosts}
+                    style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
+                  />
+                  <span style={{ fontSize: '13px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
+                </label>
+              </div>
+
+              {/* Node cards inside grey container */}
+              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
+                {pendingHosts.map(host => (
+                  <div
+                    key={host.id}
+                    onClick={() => togglePendingHost(host.id)}
+                    style={{
+                      background: '#FFFFFF',
+                      border: selectedPendingIds[host.id] ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
+                      borderRadius: '8px',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    <label onClick={e => e.stopPropagation()} style={{ margin: 0, display: 'flex', flexShrink: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={!!selectedPendingIds[host.id]}
+                        onChange={() => togglePendingHost(host.id)}
+                        style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
+                      />
+                    </label>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
+                      <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;·&nbsp; {host.agentPath || 'Path unavailable'}</p>
+                    </div>
+                    <button
+                      title="Reject & remove"
+                      onClick={e => { e.stopPropagation(); deleteHost(host.id); }}
+                      style={{ border: 'none', background: 'transparent', color: '#CBD5E1', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                      onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
+                      onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#FFFFFF' }}>
           <button 
