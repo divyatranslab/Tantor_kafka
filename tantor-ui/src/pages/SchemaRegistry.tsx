@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -95,6 +96,26 @@ const formatSchema = (schema: unknown, fallback = '{}'): string => {
   }
 };
 
+const formatSchemaCompact = (schema: unknown, fallback = '{}'): string => {
+  if (schema === null || schema === undefined || schema === '') return fallback;
+
+  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+
+  try {
+    const parsed = JSON.parse(source);
+    if (typeof parsed === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(parsed));
+      } catch {
+        return parsed;
+      }
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    return source;
+  }
+};
+
 interface CustomSelectProps {
   value: string;
   onChange: (val: string) => void;
@@ -106,10 +127,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -118,10 +140,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && (
-        <>
-          <div className="ds-custom-select-overlay" onClick={() => setIsOpen(false)} />
-          <div className="ds-custom-select-dropdown">
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="ds-custom-select-dropdown"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
             {options.map(opt => (
               <div
                 key={opt.value}
@@ -134,8 +160,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
                 {opt.label}
               </div>
             ))}
-          </div>
-        </>
+        </AnchoredMenu>
       )}
     </div>
   );
@@ -213,6 +238,19 @@ export function SchemaRegistry() {
     () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
     [savedConnections, selectedConnectionId]
   );
+
+  const comparableVersions = useMemo(() => {
+    const versions = [...(details?.versions || [])];
+    const latest = details?.latest;
+
+    if (latest && !versions.some(version => version.version === latest.version)) {
+      versions.push(latest);
+    }
+
+    return versions
+      .filter(version => Number.isFinite(version.version))
+      .sort((a, b) => b.version - a.version);
+  }, [details]);
 
   // ── Cert helpers ──────────────────────────────────────────────
 
@@ -383,31 +421,6 @@ export function SchemaRegistry() {
     setLoading(true);
     setError(null);
 
-    // Check if the selected connection matches the exact mock testing credentials
-    const isMockConnection = import.meta.env.DEV && selectedConn && 
-      selectedConn.connectionName.trim().toLowerCase() === 'test' &&
-      selectedConn.protocol === 'http' &&
-      selectedConn.host === '127.1.1.1' &&
-      selectedConn.port === 8081;
-
-    if (isMockConnection) {
-      setSummary({
-        connection: selectedConnectionId || 'default',
-        subjects: [
-          { subject: 'customers_test-value', type: 'VALUE', version: 1, id: 101, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'customers_test_SASL_PLAINTEXT-value', type: 'VALUE', version: 2, id: 102, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "SASL_Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'customers_test_SSL-value', type: 'VALUE', version: 1, id: 103, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "SSL_Customer",\n  "fields": [\n    { "name": "id", "type": "string" }\n  ]\n}' },
-          { subject: 'dep_table-value', type: 'VALUE', version: 1, id: 104, schemaType: 'AVRO', schema: '{\n  "type": "record",\n  "name": "Department",\n  "fields": [\n    { "name": "id", "type": "int" }\n  ]\n}' }
-        ],
-        totalSubjects: 4,
-        keySubjects: 0,
-        valueSubjects: 4
-      });
-      setGlobalCompatibility('BACKWARD');
-      setLoading(false);
-      return;
-    }
-
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
       const data = await res.json().catch(() => ({}));
@@ -439,43 +452,6 @@ export function SchemaRegistry() {
     setError(null);
     setExpandedVersions(new Set());
 
-    // Check if the selected connection matches the exact mock testing credentials
-    const isMockConnection = import.meta.env.DEV && selectedConn && 
-      selectedConn.connectionName.trim().toLowerCase() === 'test' &&
-      selectedConn.protocol === 'http' &&
-      selectedConn.host === '127.1.1.1' &&
-      selectedConn.port === 8081;
-
-    if (isMockConnection) {
-      setDetails({
-        subject: item.subject,
-        latest: {
-          version: 2,
-          id: 102,
-          schemaType: item.schemaType,
-          schema: item.schema
-        },
-        versions: [
-          {
-            version: 2,
-            id: 102,
-            schemaType: item.schemaType,
-            schema: item.schema
-          },
-          {
-            version: 1,
-            id: 101,
-            schemaType: item.schemaType,
-            schema: item.schema.replace('"id", "type": "string"', '"id", "type": "int"')
-          }
-        ],
-        compatibility: 'BACKWARD'
-      });
-      setSubjectCompatibility('BACKWARD');
-      setLoadingDetails(false);
-      return;
-    }
-
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
       const data = await res.json().catch(() => ({}));
@@ -502,7 +478,7 @@ export function SchemaRegistry() {
     if (!selected || !latest) return;
     setEditSchemaType(latest.schemaType || 'AVRO');
     setEditCompatibility(subjectCompatibility);
-    setNewSchema(latest.schema || emptySchema);
+    setNewSchema(formatSchemaCompact(latest.schema || emptySchema));
     setView('edit');
   };
 
@@ -520,15 +496,18 @@ export function SchemaRegistry() {
   };
 
   const openCompare = () => {
-    const versions = [...(details?.versions || [])].sort((a, b) => b.version - a.version);
-    if (versions.length < 2) return;
-    setCompareVersionA(versions[0].version);
-    setCompareVersionB(versions[1].version);
+    if (comparableVersions.length < 2) {
+      setError('At least two schema versions are required to compare.');
+      return;
+    }
+    setError(null);
+    setCompareVersionA(comparableVersions[0].version);
+    setCompareVersionB(comparableVersions[1].version);
     setShowCompare(true);
   };
 
-  const comparedSchemaA = details?.versions.find(v => v.version === compareVersionA);
-  const comparedSchemaB = details?.versions.find(v => v.version === compareVersionB);
+  const comparedSchemaA = comparableVersions.find(v => v.version === compareVersionA);
+  const comparedSchemaB = comparableVersions.find(v => v.version === compareVersionB);
   const schemasAreIdentical = Boolean(
     comparedSchemaA && comparedSchemaB && comparedSchemaA.schema === comparedSchemaB.schema
   );
@@ -665,9 +644,9 @@ export function SchemaRegistry() {
       {/* ── LIST VIEW ─────────────────────────────────────────── */}
       {view === 'list' && (
         <>
-          <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
-            <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div className="ds-selectors-group" style={{ display: 'flex', gap: '16px', alignItems: 'flex-end' }}>
+          <div className="ds-header ds-sr-header">
+            <div className="ds-actions">
+              <div className="ds-selectors-group">
                 {/* ── Instance Selector ── */}
                 <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance Selector</span>
@@ -681,25 +660,12 @@ export function SchemaRegistry() {
                         savedConnections.length > 0
                           ? savedConnections.map(c => ({
                               value: c.id,
-                              label: `${c.connectionName}${c.isDefault ? ' (default)' : ''}`
+                              label: c.isDefault ? 'Default connection' : c.connectionName
                             }))
                           : [{ value: '', label: 'Default connection' }]
                       }
                     />
-                    {selectedConn && (
-                      <span
-                        className="ds-instance-status-dot"
-                        style={{
-                          display: 'inline-block',
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: connStatusColor(selectedConn.status),
-                          marginLeft: 4
-                        }}
-                        title={selectedConn.status}
-                      />
-                    )}
+
                   </div>
                 </div>
 
@@ -711,7 +677,10 @@ export function SchemaRegistry() {
                     value={globalCompatibility}
                     onChange={saveGlobalCompatibility}
                     disabled={!canManage}
-                    options={compatibilityOptions.map(o => ({ value: o, label: o }))}
+                    options={compatibilityOptions.map(o => ({
+                      value: o,
+                      label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
+                    }))}
                   />
                 </div>
               </div>
@@ -720,6 +689,7 @@ export function SchemaRegistry() {
                 {/* ── Buttons ── */}
                 {canManage && (
                   <button 
+                    className="ds-sr-save-button"
                     onClick={() => saveGlobalCompatibility(globalCompatibility)} 
                     disabled={saving}
                     style={{
@@ -727,9 +697,9 @@ export function SchemaRegistry() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      padding: '8px 16px',
+                      padding: '0 8px',
                       gap: '8px',
-                      height: '35px',
+                      height: '32px',
                       background: '#FFFFFF',
                       border: '1px solid #3E1363',
                       borderRadius: '8px',
@@ -779,9 +749,10 @@ export function SchemaRegistry() {
           {error && <div className="ds-alert">{error}</div>}
 
           {!hasFetched ? (
-            <div className="ds-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-              <p style={{ fontSize: '15px', color: '#475569', marginBottom: '8px' }}>Schema Registry data is not loaded automatically.</p>
+            <div className="ds-fetch-prompt ds-sr-fetch-prompt">
+              <p>Schema Registry data is not loaded automatically.</p>
               <button 
+                className="ds-sr-fetch-button"
                 type="button" 
                 onClick={load} 
                 disabled={loading}
@@ -790,8 +761,8 @@ export function SchemaRegistry() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  height: '42px',
-                  padding: '0 24px',
+                  height: '32px',
+                  padding: '0 16px',
                   borderRadius: '8px',
                   background: '#3E1363',
                   color: '#fff',
@@ -799,8 +770,7 @@ export function SchemaRegistry() {
                   fontSize: '14px',
                   border: 'none',
                   cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  marginTop: '12px'
+                  transition: 'all 0.2s'
                 }}
               >
                 {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
@@ -808,19 +778,19 @@ export function SchemaRegistry() {
               </button>
             </div>
           ) : <>
-          <div className="ds-metrics">
+          <div className="ds-metrics ds-sr-metrics">
             <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
             <div className="ds-metric-card">
               <span>REST Endpoint</span>
-              <strong style={{ fontSize: 16 }}>
+              <strong className="ds-sr-endpoint-value">
                 {summary?.connection ? (
                   <a 
                     href={summary.connection} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    style={{ color: '#3E1363', textDecoration: 'underline' }}
+
                   >
                     {summary.connection}
                   </a>
@@ -831,8 +801,8 @@ export function SchemaRegistry() {
             </div>
           </div>
 
-          <div className="ds-panel">
-            <table className="ds-table">
+          <div className="ds-panel ds-sr-subjects-panel">
+            <table className="ds-table ds-sr-subjects-table">
               <thead>
                 <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
               </thead>
@@ -872,14 +842,15 @@ export function SchemaRegistry() {
       {view === 'detail' && selected && (
         <>
           {/* Breadcrumb bar */}
-          <div className="ds-page-bar">
+          <div className="ds-page-bar ds-sr-detail-bar">
             <div className="ds-breadcrumb-nav">
-              <button className="ds-breadcrumb-link" onClick={backToList}>Schema Registry</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
+              <button className="ds-detail-back-button" onClick={backToList} aria-label="Back to Schema Registry">
+                <ChevronLeft size={16} />
+              </button>
               <span className="ds-breadcrumb-current">{selected.subject}</span>
             </div>
             <div className="ds-inline-actions">
-              <button className="ds-button outlined" onClick={openCompare} disabled={(details?.versions.length || 0) < 2} title="Compare versions">
+              <button type="button" className="ds-button outlined" onClick={openCompare} disabled={loadingDetails} title="Compare versions">
                 <GitCompare size={16} /> Compare Versions
               </button>
               {canManage && (
@@ -898,7 +869,7 @@ export function SchemaRegistry() {
           {error && <div className="ds-alert">{error}</div>}
 
           {/* Actual version */}
-          <div className="ds-schema-shell">
+          <div className="ds-schema-shell ds-sr-detail-shell">
             <div className="ds-schema-code-card">
               <div className="ds-schema-card-header">
                 <button
@@ -915,7 +886,7 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-schema-code">
-                {loadingDetails ? 'Loading schema...' : formatSchema(details?.latest?.schema || selected.schema)}
+                {loadingDetails ? 'Loading schema...' : formatSchemaCompact(details?.latest?.schema || selected.schema)}
               </pre>
             </div>
             <div className="ds-schema-meta-card">
@@ -946,8 +917,8 @@ export function SchemaRegistry() {
 
           {/* Old versions */}
           <h4 className="ds-section-title">Old versions</h4>
-          <div className="ds-panel">
-            <table className="ds-table">
+          <div className="ds-panel ds-sr-versions-panel">
+            <table className="ds-table ds-sr-versions-table">
               <thead>
                 <tr>
                   <th style={{ width: 40 }}></th>
@@ -962,7 +933,7 @@ export function SchemaRegistry() {
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
                         <button className="ds-mini-button ds-expand-btn">
-                          {expandedVersions.has(version.version) ? '−' : '+'}
+                          {expandedVersions.has(version.version) ? '−' : '—'}
                         </button>
                       </td>
                       <td>{version.version}</td>
@@ -1003,9 +974,9 @@ export function SchemaRegistry() {
         </>
       )}
       {showCompare && details && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
+        <div className="ds-modal-backdrop ds-compare-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
           <div className="ds-modal ds-compare-modal animate-fade-in">
-            <div className="ds-modal-header" style={{ padding: '0 0 20px 0' }}>
+            <div className="ds-modal-header">
               <div>
                 <h3 id="compare-versions-title" style={{ fontSize: '18px', fontWeight: 700 }}>Compare Versions</h3>
                 <span className="ds-muted-line">{details.subject}</span>
@@ -1021,7 +992,7 @@ export function SchemaRegistry() {
                 <CustomSelect
                   value={compareVersionA ? String(compareVersionA) : ''}
                   onChange={val => setCompareVersionA(Number(val))}
-                  options={details.versions.map(v => ({
+                  options={comparableVersions.map(v => ({
                     value: String(v.version),
                     label: `Version ${v.version} (ID ${v.id ?? 'Unavailable'})`
                   }))}
@@ -1032,7 +1003,7 @@ export function SchemaRegistry() {
                 <CustomSelect
                   value={compareVersionB ? String(compareVersionB) : ''}
                   onChange={val => setCompareVersionB(Number(val))}
-                  options={details.versions.map(v => ({
+                  options={comparableVersions.map(v => ({
                     value: String(v.version),
                     label: `Version ${v.version} (ID ${v.id ?? 'Unavailable'})`
                   }))}
@@ -1075,55 +1046,56 @@ export function SchemaRegistry() {
 
       {/* ── EDIT VIEW ─────────────────────────────────────────── */}
       {canManage && view === 'edit' && selected && (
-        <form onSubmit={submitEditSchema}>
+        <form className="ds-sr-edit-form" onSubmit={submitEditSchema}>
           {/* Breadcrumb bar */}
-          <div className="ds-page-bar">
+          <div className="ds-page-bar ds-sr-detail-bar ds-sr-edit-bar">
             <div className="ds-breadcrumb-nav">
-              <button type="button" className="ds-breadcrumb-link" onClick={backToList}>Schema Registry</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
-              <button type="button" className="ds-breadcrumb-link" onClick={backToDetail}>{selected.subject}</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
-              <span className="ds-breadcrumb-current">Edit</span>
+              <button type="button" className="ds-detail-back-button" onClick={backToDetail} aria-label="Back to subject details">
+                <ChevronLeft size={16} />
+              </button>
+              <span className="ds-breadcrumb-current">{selected.subject}</span>
             </div>
-            <button type="submit" className="ds-button primary" disabled={saving}>
-              {saving ? <RefreshCw size={16} className="spin" /> : <Save size={16} />} Submit
-            </button>
           </div>
 
           {error && <div className="ds-alert">{error}</div>}
 
           {/* Type + Compatibility selectors */}
           <div className="ds-edit-controls">
-            <div className="ds-field">
-              <label>Type</label>
-              <CustomSelect
-                value={editSchemaType}
-                onChange={setEditSchemaType}
-                options={[
-                  { value: 'AVRO', label: 'Avro' },
-                  { value: 'JSON', label: 'Json' },
-                  { value: 'PROTOBUF', label: 'Protobuf' }
-                ]}
-              />
+            <div className="ds-edit-selectors">
+              <div className="ds-field">
+                <label>Type</label>
+                <CustomSelect
+                  value={editSchemaType}
+                  onChange={setEditSchemaType}
+                  options={[
+                    { value: 'AVRO', label: 'Avro' },
+                    { value: 'JSON', label: 'Json' },
+                    { value: 'PROTOBUF', label: 'Protobuf' }
+                  ]}
+                />
+              </div>
+              <div className="ds-field">
+                <label>Compatibility level</label>
+                <CustomSelect
+                  value={editCompatibility}
+                  onChange={setEditCompatibility}
+                  options={compatibilityOptions.map(o => ({
+                    value: o,
+                    label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
+                  }))}
+                />
+              </div>
             </div>
-            <div className="ds-field">
-              <label>Compatibility level</label>
-              <CustomSelect
-                value={editCompatibility}
-                onChange={setEditCompatibility}
-                options={compatibilityOptions.map(o => ({
-                  value: o,
-                  label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
-                }))}
-              />
-            </div>
+            <button type="submit" className="ds-button primary ds-edit-submit" disabled={saving}>
+              {saving && <RefreshCw size={14} className="spin" />} Submit
+            </button>
           </div>
 
           {/* Side-by-side editors */}
           <div className="ds-edit-shell">
             <div className="ds-edit-pane">
               <div className="ds-edit-pane-header">
-                <span>Latest schema</span>
+                <span>Latest Schema</span>
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
@@ -1138,12 +1110,12 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-edit-code ds-edit-readonly">
-                {details?.latest?.schema || selected.schema || '{}'}
+                {formatSchemaCompact(details?.latest?.schema || selected.schema || '{}')}
               </pre>
             </div>
             <div className="ds-edit-pane">
               <div className="ds-edit-pane-header">
-                <span>New schema</span>
+                <span>New Schema</span>
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
@@ -1214,7 +1186,7 @@ export function SchemaRegistry() {
                       ]}
                     />
                   </div>
-                  <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.222" required /></div>
+                  <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="Host or IP address" required /></div>
                   <div className="ds-field"><label>Port</label><input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8081" required /></div>
                 </div>
                 <div className="ds-form-grid two">

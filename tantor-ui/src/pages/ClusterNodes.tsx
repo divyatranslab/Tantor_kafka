@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -59,7 +60,7 @@ export function ClusterNodes() {
       setSelectedAgents({});
       await fetchNodes();
     } catch (e) {
-      alert('Failed to bind agents');
+      notifyAction('Failed to bind agents');
     } finally {
       setBinding(false);
     }
@@ -77,7 +78,7 @@ export function ClusterNodes() {
   return (
     <div className="cluster-nodes-page animate-fade-in">
       <header className="page-header">
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 500, color: '#3E1363', margin: 0 }}>Cluster Nodes</h2>
+        <h2 className="cluster-section-heading">Cluster Nodes</h2>
       </header>
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">

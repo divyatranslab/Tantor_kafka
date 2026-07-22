@@ -26,6 +26,7 @@ import { KafkaConnect } from './pages/KafkaConnect';
 import UserManagement from './pages/UserManagement';
 import { ClusterProvider } from './contexts/ClusterContext';
 import { TopNavbar } from './components/TopNavbar';
+import { GlobalConfirmDialog } from './components/ConfirmDialog';
 import { ClusterNodes } from './pages/ClusterNodes';
 import { JobsList } from './pages/JobsList';
 import { JobStatusPage } from './pages/JobStatusPage';
@@ -73,6 +74,7 @@ function App() {
             <main className="main-content">
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/login" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/hosts" element={<Hosts />} />
               <Route path="/clusters" element={<Clusters />} />
@@ -112,8 +114,9 @@ function App() {
               } />
             </Routes>
           </main>
+          </div>
+          <GlobalConfirmDialog />
         </div>
-      </div>
     </Router>
     </ClusterProvider>
   );

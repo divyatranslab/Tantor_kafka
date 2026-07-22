@@ -1378,6 +1378,19 @@
   color: #E02424;
 }
 
+.source-pill-v2.healthy-state,
+.access-pill-v2.healthy-state,
+.status-badge-v2.healthy-state {
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
+}
+
+.source-pill-v2.unhealthy-state,
+.access-pill-v2.unhealthy-state,
+.status-badge-v2.unhealthy-state {
+  background: #FDE8E8;
+  color: #E02424;
+}
 .trash-btn-action {
   border: 0;
   background: transparent;
@@ -2322,4 +2335,259 @@
   background: #3E1363;
   border: none;
   color: #FFFFFF;
+}
+
+/* Main cluster inventory composition */
+.clusters-page {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  padding: 24px;
+  background: #F5F6F8;
+  box-sizing: border-box;
+}
+
+.clusters-surface {
+  width: 100%;
+  min-height: calc(100vh - 120px);
+  padding: 24px 26px 32px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(40, 47, 73, 0.035);
+  box-sizing: border-box;
+}
+
+.clusters-surface .clusters-header {
+  align-items: flex-start;
+  padding: 0;
+}
+
+.clusters-surface .clusters-header h1 {
+  margin: 0;
+  color: #282F49;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 38px;
+  letter-spacing: -0.02em;
+}
+
+.clusters-surface .clusters-subtitle {
+  margin: 2px 0 0;
+  color: #818181;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.clusters-surface .header-actions {
+  gap: 12px;
+}
+
+.clusters-surface .add-cluster-btn,
+.clusters-surface .deploy-cluster-btn {
+  width: auto;
+  min-width: 131px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 8px;
+  border-radius: 8px !important;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 19px;
+}
+
+.clusters-surface .deploy-cluster-btn {
+  min-width: 148px;
+}
+
+.clusters-surface .inventory-header {
+  align-items: center;
+  margin-top: 40px;
+  padding: 0;
+}
+
+.clusters-surface .inventory-header h3 {
+  margin: 0;
+  color: #3E1363;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 25px;
+}
+
+.clusters-surface .inventory-header > div:first-child > span {
+  margin-top: 4px;
+  color: #3E1363;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.clusters-surface .inventory-total-badge {
+  padding: 5px 13px;
+  border-radius: 999px;
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.clusters-surface .inventory-total-badge span {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+}
+
+.clusters-surface .inventory-divider {
+  margin: 32px 0 32px;
+  border-top: 1px solid #CCCCCC;
+}
+
+.clusters-surface .clusters-inventory {
+  min-width: 0;
+  padding: 22px;
+  border: 0;
+  border-radius: 10px;
+  background: #FAFAFA;
+  box-shadow: none;
+}
+
+.clusters-surface .clusters-table-wrap {
+  width: 100%;
+  min-height: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 1px solid #CCCCCC;
+  border-radius: 10px;
+  background: #FFFFFF;
+}
+
+.clusters-surface .clusters-table {
+  min-width: 1040px;
+  table-layout: fixed;
+}
+
+.clusters-surface .clusters-table th {
+  height: 56px;
+  padding: 0 20px;
+  border-bottom: 1px solid #CCCCCC;
+  background: #FAFAFA;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.clusters-surface .clusters-table th:first-child {
+  padding-left: 22px;
+}
+
+.clusters-surface .clusters-table td {
+  height: 108px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #E1E1E1;
+  background: #FFFFFF;
+  color: #282F49;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.clusters-surface .clusters-table th:nth-child(1),
+.clusters-surface .clusters-table td:nth-child(1) { width: 16%; }
+.clusters-surface .clusters-table th:nth-child(2),
+.clusters-surface .clusters-table td:nth-child(2) { width: 20%; }
+.clusters-surface .clusters-table th:nth-child(3),
+.clusters-surface .clusters-table td:nth-child(3) { width: 14%; }
+.clusters-surface .clusters-table th:nth-child(4),
+.clusters-surface .clusters-table td:nth-child(4) { width: 10%; }
+.clusters-surface .clusters-table th:nth-child(5),
+.clusters-surface .clusters-table td:nth-child(5) { width: 12%; }
+.clusters-surface .clusters-table th:nth-child(6),
+.clusters-surface .clusters-table td:nth-child(6) { width: 11%; }
+.clusters-surface .clusters-table th:nth-child(7),
+.clusters-surface .clusters-table td:nth-child(7) { width: 13%; }
+.clusters-surface .clusters-table th:nth-child(8),
+.clusters-surface .clusters-table td:nth-child(8) { width: 4%; }
+
+.clusters-surface .cluster-title-text strong {
+  color: #282F49 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 20px;
+}
+
+.clusters-surface .cluster-title-text span,
+.clusters-surface .host-cell-v2 span,
+.clusters-surface .env-cell-v2 span {
+  color: #818181 !important;
+  font-size: 13px !important;
+  line-height: 19px;
+}
+
+.clusters-surface .host-cell-v2 strong,
+.clusters-surface .env-cell-v2 strong,
+.clusters-surface .disk-label-text,
+.clusters-surface .created-text,
+.clusters-surface .kafka-id-value {
+  color: #282F49;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.clusters-surface .tags-column-wrap {
+  gap: 5px;
+}
+
+.clusters-surface .source-pill-v2,
+.clusters-surface .access-pill-v2,
+.clusters-surface .status-badge-v2 {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.clusters-surface .full-empty-card {
+  height: auto;
+  min-height: calc(100vh - 260px);
+  padding: 0;
+}
+
+@media (max-width: 760px) {
+  .clusters-page {
+    padding: 12px;
+  }
+
+  .clusters-surface {
+    min-height: calc(100vh - 96px);
+    padding: 18px 16px 24px;
+  }
+
+  .clusters-surface .clusters-header {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .clusters-surface .header-actions,
+  .clusters-surface .add-cluster-btn,
+  .clusters-surface .deploy-cluster-btn {
+    width: 100%;
+  }
+
+  .clusters-surface .inventory-header {
+    margin-top: 32px;
+  }
+
+  .clusters-surface .clusters-inventory {
+    margin: 0;
+    padding: 12px;
+  }
 }

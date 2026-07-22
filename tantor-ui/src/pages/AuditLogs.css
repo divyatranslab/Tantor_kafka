@@ -291,6 +291,10 @@
   opacity: 1;
 }
 
+.audit-resource-id {
+  padding-inline: 12px;
+}
+
 .audit-filters-actions {
   display: flex;
   align-items: center;

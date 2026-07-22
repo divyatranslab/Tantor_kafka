@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { Search, Bell, LogOut, Info } from 'lucide-react';
+import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
@@ -17,6 +18,7 @@ interface TopicInfo {
 
 export function TopNavbar() {
   const { decodedToken, logout } = useAuth();
+  const { isAdmin } = usePermissions();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -43,6 +45,7 @@ export function TopNavbar() {
     return rawName.charAt(0).toUpperCase();
   }, [decodedToken]);
 
+  const applicationRole = isAdmin ? 'Admin' : 'Monitoring';
   // Fetch alerts count
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -78,26 +81,11 @@ export function TopNavbar() {
           if (data && Array.isArray(data.content)) {
             setClusterTopics(data.content);
           } else {
-            // Mock topics fallback
-            setClusterTopics([
-              { name: 'anuj_test' },
-              { name: '_schema' },
-              { name: '_schemas' },
-              { name: '-employee_hyphen-topic' },
-              { name: '...employee_tpk' },
-              { name: '.employee_tpk' }
-            ]);
+            setClusterTopics([]);
           }
         })
         .catch(() => {
-          setClusterTopics([
-            { name: 'anuj_test' },
-            { name: '_schema' },
-            { name: '_schemas' },
-            { name: '-employee_hyphen-topic' },
-            { name: '...employee_tpk' },
-            { name: '.employee_tpk' }
-          ]);
+          setClusterTopics([]);
         });
     } else {
       setClusterTopics([]);
@@ -127,14 +115,12 @@ export function TopNavbar() {
     return { clusters, topics };
   }, [searchQuery, allClusters, clusterTopics]);
 
-  const handleSignOut = async () => {
-    try {
-      await logout();
-      window.location.href = '/login';
-    } catch (e) {
-      console.error(e);
-      window.location.href = '/login';
-    }
+  const handleSignOut = () => {
+    // keycloak.logout() triggers a full-page redirect to the Keycloak
+    // end-session endpoint, which then 302-redirects back to the app.
+    // Do NOT set window.location.href here — it races with the Keycloak
+    // redirect and can prevent proper session termination.
+    logout().catch(e => console.error('Logout failed', e));
   };
 
   return (
@@ -206,50 +192,36 @@ export function TopNavbar() {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span style={{ fontSize: '16px', fontWeight: 600, color: '#282F49' }}>
-                    {decodedToken?.preferred_username || decodedToken?.name || 'admin'}
+                    {decodedToken?.preferred_username || decodedToken?.name || 'User'}
                   </span>
-                  <span style={{ fontSize: '13px', color: '#64748B' }}>
-                    {decodedToken?.email || 'administrator@gmail.com'}
-                  </span>
+                  {decodedToken?.email && (
+                    <span style={{ fontSize: '13px', color: '#64748B' }}>
+                      {decodedToken.email}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Status Badges */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#FEF3C7', color: '#B27C1E', fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '100px' }}>
-                  👑 Pro
+              {/* Application role: the UI exposes only Admin and Monitoring. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: '#EFF6FF',
+                  color: '#3B82F6',
+                  border: '1px solid #DBEAFE',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  padding: '4px 10px',
+                  borderRadius: '8px'
+                }}>
+                  {applicationRole}
                 </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#DBEAFE', color: '#1E40AF', fontSize: '12px', fontWeight: 600, padding: '4px 10px', borderRadius: '100px' }}>
-                  🛡️ Data Steward
-                </span>
-              </div>
-
-              {/* Roles Tags */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '20px' }}>
-                {['global-admin', 'User Manager', 'admin', 'Data Auditor', 'Policy Manager', 'Data Owner', 'Connection Manager'].map(role => (
-                  <span key={role} style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    background: '#EFF6FF',
-                    color: '#3B82F6',
-                    border: '1px solid #DBEAFE',
-                    fontSize: '12px',
-                    fontWeight: 500,
-                    padding: '4px 10px',
-                    borderRadius: '8px'
-                  }}>
-                    🛡️ {role}
-                  </span>
-                ))}
               </div>
 
               {/* Divider */}
               <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '0 -24px 16px -24px' }} />
 
-              {/* Footer info */}
-              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
-                Member since July 2026
-              </div>
 
               {/* Sign Out Row */}
               <div 

@@ -5,8 +5,6 @@ import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.JobRepository;
 import io.translab.tantor.server.repository.JobStepRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -262,11 +260,7 @@ public class JobService {
     }
 
     private String currentRequester() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null) {
-            return "anonymous";
-        }
-        return authentication.getName();
+        return io.translab.tantor.server.security.SecurityUtils.getCurrentUsername();
     }
 
     private boolean isTerminal(JobStatus status) {

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
 
@@ -118,10 +119,10 @@ function ExternalConfigEditor() {
         setTopology(payload.serviceTopology || []);
         setConfigFiles(payload.staticConfigs.configFiles || []);
       } else {
-        alert('Failed to fetch cluster configuration');
+        notifyAction('Failed to fetch cluster configuration');
       }
     } catch (e) {
-      alert('Error fetching config');
+      notifyAction('Error fetching config');
     } finally {
       setLoading(false);
     }
@@ -275,7 +276,7 @@ function ExternalConfigEditor() {
     
     const changesArray = Object.values(stagedChanges);
     if (changesArray.length === 0) {
-      alert('No changes staged.');
+      notifyAction('No changes staged.');
       return;
     }
     
@@ -293,10 +294,10 @@ function ExternalConfigEditor() {
       if (response.ok && data.jobId) {
         navigate(`/jobs/${data.jobId}`);
       } else {
-        alert(data.message || 'Failed to apply configuration.');
+        notifyAction(data.message || 'Failed to apply configuration.');
       }
     } catch (e) {
-      alert('Error applying changes.');
+      notifyAction('Error applying changes.');
     } finally {
       setApplying(false);
     }

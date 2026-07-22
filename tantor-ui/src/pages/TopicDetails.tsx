@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './TopicDetails.css';
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
@@ -155,6 +156,7 @@ export function TopicDetails() {
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'recreate' | 'remove' | null>(null);
   const [acting, setActing] = useState(false);
   const [showProduce, setShowProduce] = useState(false);
@@ -415,14 +417,19 @@ export function TopicDetails() {
         </div>
         {canManage && <div className="topic-heading-actions">
           <button className="topic-detail-button primary" onClick={() => setShowProduce(true)}><Plus size={16} /> Produce message</button>
-          <div className="detail-menu-wrap">
+          <div ref={actionMenuRef} className="detail-menu-wrap">
             <button className="detail-icon-button" aria-label="Topic actions" onClick={() => setActionMenu(current => !current)}><MoreVertical size={19} /></button>
-            {actionMenu && (
-              <div className="detail-action-menu">
+            {actionMenu && actionMenuRef.current && (
+              <AnchoredMenu
+                anchor={actionMenuRef.current}
+                className="detail-action-menu"
+                onClose={() => setActionMenu(false)}
+                minWidth={180}
+              >
                 <button onClick={() => { setConfirmAction('clear'); setActionMenu(false); }}>Clear messages</button>
                 <button onClick={() => { setConfirmAction('recreate'); setActionMenu(false); }}>Recreate topic</button>
                 <button onClick={() => { setConfirmAction('remove'); setActionMenu(false); }}>Remove topic</button>
-              </div>
+              </AnchoredMenu>
             )}
           </div>
         </div>}
@@ -505,7 +512,7 @@ export function TopicDetails() {
 
         {activeTab === 'consumers' && (
           <div>
-            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')}><RefreshCw size={15} /> Refresh</button></div>
+            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
               <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '—'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
             </table></div>
@@ -557,7 +564,7 @@ export function TopicDetails() {
 
         {activeTab === 'acls' && (
           <div>
-            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')}><RefreshCw size={15} /> Refresh</button></div>
+            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Principal</th><th>Host</th><th>Operation</th><th>Permission</th><th>Pattern</th></tr></thead>
               <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} · {acl.resourceName}</td></tr>)}</tbody>
             </table></div>

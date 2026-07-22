@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -66,10 +68,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -78,10 +81,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && (
-        <>
-          <div className="ds-custom-select-overlay" onClick={() => setIsOpen(false)} />
-          <div className="ds-custom-select-dropdown">
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="ds-custom-select-dropdown"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
             {options.map(opt => (
               <div
                 key={opt.value}
@@ -94,8 +101,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
                 {opt.label}
               </div>
             ))}
-          </div>
-        </>
+        </AnchoredMenu>
       )}
     </div>
   );
@@ -167,7 +173,7 @@ export function KafkaConnect() {
         const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = rej; r.readAsText(certFile);
       });
       return btoa(text.trim());
-    } else if (certType === 'PKCS12_JKS' && certFile) {
+    } else if (certType === 'PKCS12' && certFile) {
       return await readFileAsBase64(certFile);
     }
     return undefined;
@@ -263,7 +269,7 @@ export function KafkaConnect() {
   const handleDeleteConnection = async () => {
     if (!canManage) return;
     if (!selectedConnectionId) return;
-    if (!window.confirm("Are you sure you want to delete this connection?")) return;
+    if (!(await confirmAction("Are you sure you want to delete this connection?"))) return;
     
     setLoading(true);
     try {
@@ -362,7 +368,7 @@ export function KafkaConnect() {
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
     if (!canManage) return;
-    if (action === 'delete' && !window.confirm(`Delete connector ${name}?`)) return;
+    if (action === 'delete' && !(await confirmAction(`Delete connector ${name}?`))) return;
     setSaving(true);
     setError(null);
     try {
@@ -394,10 +400,10 @@ export function KafkaConnect() {
   return (
     <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
       <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
-        <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: hasFetched ? 'space-between' : 'flex-end', alignItems: 'flex-end', marginBottom: hasFetched ? '0' : '24px' }}>
           
           {/* ── Instance Selector ── */}
-          <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+          {hasFetched && <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
             <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CustomSelect
@@ -428,7 +434,7 @@ export function KafkaConnect() {
                 />
               )}
             </div>
-          </div>
+          </div>}
 
           <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {/* ── Buttons ── */}
@@ -583,36 +589,28 @@ export function KafkaConnect() {
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div className="ds-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center', width: '100%' }}>
-          <p style={{ fontSize: '15px', color: '#475569', marginBottom: '8px' }}>Kafka Connect data is not loaded automatically.</p>
+        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt">
+          <div className="ds-kafka-connect-illustration" aria-hidden="true">
+            {[0, 1, 2].map(row => (
+              <span className="ds-kafka-connect-illustration-row" key={row}>
+                <i />
+                <i />
+              </span>
+            ))}
+            <span className="ds-kafka-connect-illustration-feet"><i /><i /></span>
+          </div>
+          <p>Kafka Connect data is not loaded automatically.</p>
           <button 
+            className="ds-fetch-link"
             type="button" 
             onClick={load} 
             disabled={loading}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              height: '42px',
-              padding: '0 24px',
-              borderRadius: '8px',
-              background: '#3E1363',
-              color: '#fff',
-              fontWeight: 500,
-              fontSize: '14px',
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              marginTop: '12px'
-            }}
           >
-            {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
             {loading ? 'Fetching Kafka Connect...' : 'Fetch Kafka Connect for this cluster'}
           </button>
         </div>
       ) : <>
-      <div className="ds-metrics" style={{
+      <div className="ds-metrics ds-kc-metrics" style={{
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'center',
@@ -625,7 +623,7 @@ export function KafkaConnect() {
         width: '100%'
       }}>
         {/* Total Connectors */}
-        <div style={{
+        <div className="ds-kc-metric-card" style={{
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -642,7 +640,7 @@ export function KafkaConnect() {
         </div>
 
         {/* Running Connectors */}
-        <div style={{
+        <div className="ds-kc-metric-card" style={{
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -659,7 +657,7 @@ export function KafkaConnect() {
         </div>
 
         {/* Paused Connectors */}
-        <div style={{
+        <div className="ds-kc-metric-card" style={{
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -676,7 +674,7 @@ export function KafkaConnect() {
         </div>
 
         {/* Failed Connectors */}
-        <div style={{
+        <div className="ds-kc-metric-card" style={{
           boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
@@ -693,8 +691,9 @@ export function KafkaConnect() {
         </div>
       </div>
 
-      <div className="ds-tabs" style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #CCCCCC', marginBottom: '20px' }}>
+      <div className="ds-tabs ds-kc-tabs" style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #CCCCCC', marginBottom: '20px' }}>
         <button 
+          className={activeTab === 'clusters' ? 'active' : ''}
           onClick={() => setActiveTab('clusters')}
           style={{
             background: 'none',
@@ -712,6 +711,7 @@ export function KafkaConnect() {
           Clusters
         </button>
         <button 
+          className={activeTab === 'connectors' ? 'active' : ''}
           onClick={() => setActiveTab('connectors')}
           style={{
             background: 'none',
@@ -729,6 +729,7 @@ export function KafkaConnect() {
           Connectors
         </button>
         <button 
+          className={activeTab === 'plugins' ? 'active' : ''}
           onClick={() => setActiveTab('plugins')}
           style={{
             background: 'none',
@@ -747,9 +748,9 @@ export function KafkaConnect() {
         </button>
       </div>
 
-      <div className="ds-panel">
+      <div className="ds-panel ds-kc-panel">
         {activeTab === 'clusters' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table">
             <thead>
               <tr><th>Name</th><th>Version</th><th>Connectors</th><th>Running Tasks</th><th>REST Endpoint</th></tr>
             </thead>
@@ -781,7 +782,7 @@ export function KafkaConnect() {
         )}
 
         {activeTab === 'connectors' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table ds-kc-connectors-table">
             <thead>
               <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th>{canManage && <th>Actions</th>}</tr>
             </thead>
@@ -793,7 +794,7 @@ export function KafkaConnect() {
                   <tr key={connector.name}>
                     <td>{connector.name}</td>
                     <td>{connector.class || '-'}</td>
-                    <td><span className={statusClass(connector.state)}>{connector.state}</span></td>
+                    <td><span className={statusClass(connector.state)}>{connector.state.charAt(0) + connector.state.slice(1).toLowerCase()}</span></td>
                     <td>{connector.runningTasks} / {connector.tasks}</td>
                     {canManage && (
                       <td>
@@ -823,7 +824,7 @@ export function KafkaConnect() {
         )}
 
         {activeTab === 'plugins' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table">
             <thead>
               <tr><th>Class</th><th>Type</th><th>Version</th></tr>
             </thead>
@@ -902,7 +903,7 @@ export function KafkaConnect() {
                   <input 
                     value={customIp} 
                     onChange={e => setCustomIp(e.target.value)} 
-                    placeholder="192.168.3.161" 
+                    placeholder="Host or IP address"
                     required 
                     style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
                   />
@@ -930,7 +931,7 @@ export function KafkaConnect() {
                       style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
                     >
                       <option value="PEM">PEM</option>
-                      <option value="PKCS12_JKS">PKCS12 / JKS</option>
+                      <option value="PKCS12">PKCS12</option>
                     </select>
                     <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
                       <ChevronDown size={16} style={{ color: '#818181' }} />
@@ -962,7 +963,7 @@ export function KafkaConnect() {
                     <FileDown size={16} style={{ color: '#7F56D9' }} /> {certFileName || 'Choose file'}
                     <input
                       type="file"
-                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx,.jks'}
+                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx'}
                       onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }}
                       style={{ display: 'none' }}
                     />
@@ -971,7 +972,7 @@ export function KafkaConnect() {
                 </div>
               </div>
 
-              {certType === 'PKCS12_JKS' && (
+              {certType === 'PKCS12' && (
                 <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
                   <div style={{ position: 'relative' }}>

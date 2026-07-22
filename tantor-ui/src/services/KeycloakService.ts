@@ -6,7 +6,7 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
@@ -23,7 +23,7 @@ export const initKeycloak = (): Promise<boolean> => {
     initializationPromise = keycloak.init({
       onLoad: 'login-required',
       pkceMethod: 'S256',
-      checkLoginIframe: true,
+      checkLoginIframe: false,
       redirectUri: currentRedirectUri(),
     });
   }
@@ -38,12 +38,20 @@ export const login = () =>
       })
     : Promise.resolve();
 
-export const logout = () =>
-  isAuthEnabled()
-    ? keycloak.logout({
-        redirectUri: window.location.origin,
-      })
-    : Promise.resolve();
+export const logout = () => {
+  if (!isAuthEnabled()) {
+    return Promise.resolve();
+  }
+
+  // Reset the cached init promise so a fresh init happens when the app
+  // re-mounts after the Keycloak redirect.  Without this the stale promise
+  // resolves immediately with `authenticated = true` from the previous session.
+  initializationPromise = undefined;
+
+  return keycloak.logout({
+    redirectUri: window.location.origin,
+  });
+};
 
 export const getToken = () => isAuthEnabled() ? keycloak.token : undefined;
 

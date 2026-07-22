@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { isAuthEnabled } from '../services/KeycloakService';
 
 type TokenLike = {
   role?: string;
@@ -39,15 +38,13 @@ export function usePermissions() {
     });
     token?.groups?.forEach(group => addRole(roles, group));
 
-    if (roles.size === 0 && !isAuthEnabled()) {
-      addRole(roles, import.meta.env.VITE_DEV_ROLE || 'admin');
-    }
-
     const isAdmin = roles.has('admin');
     const isMonitor = !isAdmin && roles.has('monitor');
+    const effectiveRole = isAdmin ? 'admin' : isMonitor ? 'monitor' : undefined;
 
     return {
       roles: Array.from(roles),
+      effectiveRole,
       isAdmin,
       isMonitor,
       canManage: isAdmin,

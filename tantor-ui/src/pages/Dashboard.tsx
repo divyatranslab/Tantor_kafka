@@ -10,6 +10,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Dashboard.css';
 import { NewClusterModal } from '../components/NewClusterModal';
 
@@ -172,10 +173,13 @@ export function Dashboard() {
   const [error, setError] = useState('');
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
   const [deploymentStep, setDeploymentStep] = useState<'choice' | 'deploy'>('choice');
+  const [serviceTab, setServiceTab] = useState<'running' | 'failed'>('running');
+  const [taskTab, setTaskTab] = useState<'success' | 'failed'>('success');
+  const [openInfo, setOpenInfo] = useState<'overview' | 'cluster-health' | null>(null);
 
   // Capitalize the first letter of username
   const username = useMemo(() => {
-    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'Rajat';
+    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'User';
     return rawName.charAt(0).toUpperCase() + rawName.slice(1);
   }, [decodedToken]);
 
@@ -204,37 +208,37 @@ export function Dashboard() {
     {
       label: 'Active Hosts',
       value: `${summary.activeHosts.toString().padStart(2, '0')}`,
-      detail: `0 Offline | 0 Pending`, // Hardcoded fallback or calculated as needed
+      detail: `${summary.offlineHosts} Offline | ${summary.pendingHosts} Pending`,
       icon: Server,
-      tone: summary.offlineHosts > 0 ? 'warn' : 'good',
+      tone: 'cyan',
     },
     {
       label: 'Clusters',
       value: `${summary.totalClusters.toString().padStart(2, '0')}`,
-      detail: `0 Internal | 0 External`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: Network,
-      tone: summary.failedClusters > 0 ? 'bad' : 'blue',
+      tone: 'purple',
     },
     {
       label: 'External Clusters',
       value: `${summary.externalClusters.toString().padStart(2, '0')}`,
-      detail: `0 Internal | 0 External`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: ExternalLink,
-      tone: summary.externalClusters > 0 ? 'purple' : 'muted',
+      tone: 'indigo',
     },
     {
       label: 'Failed Service',
       value: `${summary.failedServices.toString().padStart(2, '0')}`,
-      detail: `0 Failed | 0 Issues`,
+      detail: `${summary.failedServices} Failed | ${summary.failedParcels} Issues`,
       icon: AlertTriangle,
-      tone: summary.failedServices > 0 ? 'bad' : 'good',
+      tone: 'pink',
     },
     {
       label: 'Running Service',
       value: `${summary.runningServices.toString().padStart(2, '0')}`,
-      detail: `0 Active parcel`,
+      detail: `${summary.activeParcels} Active parcel`,
       icon: Activity,
-      tone: 'good',
+      tone: 'green',
     },
   ], [summary]);
 
@@ -249,12 +253,28 @@ export function Dashboard() {
           <div>
             <h1>👋 Welcome {username}!</h1>
             <p className="db-subtitle-wrap">
-              Dashboard overview <Info size={14} className="db-info-trigger" />
+              Dashboard overview
+              <span className="db-info-wrap">
+                <button
+                  type="button"
+                  className="db-info-button hero"
+                  aria-label="About the dashboard overview"
+                  aria-expanded={openInfo === 'overview'}
+                  onClick={() => setOpenInfo(current => current === 'overview' ? null : 'overview')}
+                >
+                  <Info size={14} />
+                </button>
+                {openInfo === 'overview' && (
+                  <span className="db-info-popover overview" role="status">
+                    A summary of your Kafka environment, hosts, clusters, and service status.
+                  </span>
+                )}
+              </span>
             </p>
           </div>
           <div className="db-hero-actions">
             <span className="db-generated">Last update: {relativeTime(dashboard.generatedAt)}</span>
-            <button className="db-btn ghost" onClick={fetchDashboard}>
+            <button className="db-btn ghost" onClick={fetchDashboard} aria-label="Refresh dashboard" title="Refresh">
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
             </button>
             {canManage && (
@@ -283,7 +303,24 @@ export function Dashboard() {
       {error && <div className="db-banner error">{error}</div>}
 
       <section className="db-cluster-health">
-        <PanelTitle title="Cluster Health" detail={<Info size={16} style={{ cursor: 'pointer', opacity: 0.7 }} />} />
+        <PanelTitle title="Cluster Health" detail={(
+          <span className="db-info-wrap">
+            <button
+              type="button"
+              className="db-info-button neutral"
+              aria-label="About cluster health"
+              aria-expanded={openInfo === 'cluster-health'}
+              onClick={() => setOpenInfo(current => current === 'cluster-health' ? null : 'cluster-health')}
+            >
+              <Info size={16} />
+            </button>
+            {openInfo === 'cluster-health' && (
+              <span className="db-info-popover cluster-health" role="status">
+                Shows the current health and status of each configured Kafka cluster.
+              </span>
+            )}
+          </span>
+        )} />
         {dashboard.clusterHealth.length ? (
           <div className="db-cluster-list">
             {dashboard.clusterHealth.map(cluster => (
@@ -310,14 +347,16 @@ export function Dashboard() {
       <section className="db-main-grid">
         <article className="db-panel large">
           <PanelTitle title="Host Disk Usage" detail="From latest host heartbeat" />
-          {dashboard.hostDiskUsage.length ? (
+          {summary.activeHosts === 0 ? (
+            <EmptyPanel text="No hosts connected yet. Connect a host agent to view disk metrics." />
+          ) : dashboard.hostDiskUsage.length ? (
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
                 <CartesianGrid stroke="#eeeae3" horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
                 <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
                 <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#378ADD" barSize={16} />
+                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#16ABC2" barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -355,8 +394,8 @@ export function Dashboard() {
               <Tooltip />
               <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
               <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
-              <Line type="monotone" dataKey="running" stroke="#FBC02D" strokeWidth={2} dot={false} name="Running" />
-              <Line type="monotone" dataKey="success" stroke="#1D9E75" strokeWidth={2} dot={false} name="Success" />
+              <Line type="monotone" dataKey="running" stroke="#FFCF57" strokeWidth={2} dot={false} name="Running" />
+              <Line type="monotone" dataKey="success" stroke="#098C60" strokeWidth={2} dot={false} name="Success" />
             </LineChart>
           </ResponsiveContainer>
         </article>
@@ -364,22 +403,22 @@ export function Dashboard() {
         <article className="db-panel services-panel">
           <PanelTitle title="Services" detail="" />
           <div className="tab-headers">
-            <span className="active-tab">Running ({summary.runningServices})</span>
-            <span>Filled({summary.failedServices})</span>
+            <button type="button" className={serviceTab === 'running' ? 'active-tab' : ''} onClick={() => setServiceTab('running')}>Running ({summary.runningServices})</button>
+            <button type="button" className={serviceTab === 'failed' ? 'active-tab' : ''} onClick={() => setServiceTab('failed')}>Failed ({summary.failedServices})</button>
           </div>
           <div className="tab-content">
-            <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
+            <ServiceList rows={serviceTab === 'running' ? dashboard.runningServices : dashboard.failedServices} iconFor={serviceIcon} />
           </div>
         </article>
       </section>
 
       <section className="db-bottom-grid">
         <article className="db-panel">
-          <PanelTitle title="Activity Feed" detail="View all" />
+          <PanelTitle title="Activity Feed" detail="View all" onDetailClick={() => navigate('/audit')} />
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
-                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}>{item.level || 'INFO'}</span>
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileCheck size={16} /></span>
                 <div>
                   <strong>{item.message}</strong>
                   <small>{formatDateTime(item.createdAt)}</small>
@@ -390,22 +429,40 @@ export function Dashboard() {
         </article>
 
         <article className="db-panel">
-          <PanelTitle title="Recent Tasks" detail="View all" />
-          <div className="tab-headers">
-            <span className="active-tab">Success ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() === 'SUCCESS').length})</span>
-            <span>Failed ({dashboard.recentTasks.filter(t => t.status?.toUpperCase() !== 'SUCCESS').length})</span>
+          <PanelTitle title="Recent Tasks" detail="View all" onDetailClick={() => navigate('/jobs')} />
+          <div className="tab-headers" role="tablist" aria-label="Recent task outcome">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'success'}
+              className={taskTab === 'success' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('success')}
+            >
+              {statusLabel('SUCCESS')} ({dashboard.recentTasks.filter(isSuccessfulTask).length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'failed'}
+              className={taskTab === 'failed' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('failed')}
+            >
+              {statusLabel('FAILED')} ({dashboard.recentTasks.filter(t => !isSuccessfulTask(t)).length})
+            </button>
           </div>
           <div className="db-task-list">
-            {dashboard.recentTasks.length ? dashboard.recentTasks.map(task => (
-              <div key={task.id} className="db-task-row">
-                <span className={`db-task-status ${task.status?.toLowerCase()}`}>{task.status}</span>
-                <div>
-                  <strong>{prettyCommand(task.command)}</strong>
-                  <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
-                  {task.errorMsg && <em>{task.errorMsg}</em>}
+            {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length
+              ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
+                <div key={task.id} className="db-task-row">
+                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
+                  <div>
+                    <strong>{prettyCommand(task.command)}</strong>
+                    <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
+                    {task.errorMsg && <em>{task.errorMsg}</em>}
+                  </div>
                 </div>
-              </div>
-            )) : <EmptyPanel text="No tasks have run yet." compact />}
+              ))
+              : <EmptyPanel text={taskTab === 'success' ? 'No successful tasks found.' : 'No failed tasks found.'} compact />}
           </div>
         </article>
       </section>
@@ -428,8 +485,11 @@ export function Dashboard() {
                 <div className="cd-deployment-choice-grid">
                   <div className="cd-deployment-card">
                     <div className="cd-deployment-card-content">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M17 16l-4-4V8.82C14.16 8.4 15 7.3 15 6c0-1.66-1.34-3-3-3S9 4.34 9 6c0 1.3.84 2.4 2 2.82V12l-4 4H3v5h5v-3.05l4-4.2 4 4.2V21h5v-5h-4zM12 5c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-7 14v-1h1.79l4-4.2 4 4.2H17v1H5z" />
+                      <svg className="cluster-choice-icon managed" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <circle cx="12" cy="4.5" r="3.25" />
+                        <path d="M12 7.75v6M5 13.75h14M5 13.75V17M19 13.75V17" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                        <rect x="2" y="17" width="6" height="5" rx="0.5" />
+                        <rect x="16" y="17" width="6" height="5" rx="0.5" />
                       </svg>
                       <h3>Create your Cluster</h3>
                       <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
@@ -439,7 +499,7 @@ export function Dashboard() {
 
                   <div className="cd-deployment-card">
                     <div className="cd-deployment-card-content">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <svg className="cluster-choice-icon existing" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z" />
                       </svg>
                       <h3>Existing Cluster</h3>
@@ -467,13 +527,15 @@ export function Dashboard() {
   );
 }
 
-function PanelTitle({ title, detail }: { title: string; detail?: string | React.ReactNode }) {
+function PanelTitle({ title, detail, onDetailClick }: { title: React.ReactNode; detail?: string | React.ReactNode; onDetailClick?: () => void }) {
   return (
     <div className="db-panel-title">
       <div>
         <h2>{title}</h2>
       </div>
-      <span>{detail}</span>
+      {onDetailClick ? (
+        <button type="button" className="db-panel-detail" onClick={onDetailClick}>{detail}</button>
+      ) : <span>{detail}</span>}
     </div>
   );
 }
@@ -513,6 +575,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
 }
 
 function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+  if (!rows.length) return <EmptyPanel text="No services found for this status." compact />;
   return (
     <div className="db-service-list">
       {rows.map(row => {
@@ -532,10 +595,7 @@ function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: st
 }
 
 function healthTone(status: string) {
-  const normalized = status?.toUpperCase();
-  if (normalized === 'HEALTHY' || normalized === 'SUCCESS') return 'good';
-  if (normalized === 'WARNING' || normalized === 'DELETING' || normalized === 'PENDING' || normalized === 'RUNNING') return 'warn';
-  return 'bad';
+  return clusterStatusTone(status) === 'state-positive' ? 'good' : 'bad';
 }
 
 function statusLabel(status: string) {
@@ -584,4 +644,8 @@ function formatDateTime(value?: string) {
 function prettyCommand(command?: string) {
   if (!command) return 'Task';
   return command.toLowerCase().split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function isSuccessfulTask(task: TaskRow) {
+  return ['SUCCESS', 'SUCCEEDED', 'COMPLETED', 'COMPLETED_SUCCESSFULLY'].includes(task.status?.toUpperCase() || '');
 }
