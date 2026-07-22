@@ -572,9 +572,10 @@
 .db-panel-title h2 {
   margin: 0;
   color: #655485;
+  font-family: Satoshi, sans-serif;
   font-size: 18px;
-  font-weight: 410;
-  line-height: 1.2;
+  font-weight: 500;
+  line-height: 100%;
   letter-spacing: 0;
 }
 
@@ -1376,14 +1377,18 @@
   align-items: center;
   gap: 8px;
   color: #655485;
+  font-family: Satoshi, sans-serif;
   font-size: 18px;
-  font-weight: 410;
+  font-weight: 500;
+  line-height: 100%;
 }
 
 .db-panel-title h2 .db-title-with-badge {
   color: #655485;
+  font-family: Satoshi, sans-serif;
   font-size: 18px;
-  font-weight: 410;
+  font-weight: 500;
+  line-height: 100%;
 }
 
 .db-live-badge {
