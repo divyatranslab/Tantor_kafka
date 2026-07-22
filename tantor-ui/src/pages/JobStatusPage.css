@@ -191,7 +191,8 @@
   align-items: stretch;
 }
 
-.job-main-layout.logs-expanded {
+.job-main-layout.logs-expanded,
+.job-main-layout.full-width-steps {
   grid-template-columns: 1fr;
 }
 
