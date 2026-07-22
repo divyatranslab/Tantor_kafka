@@ -43,12 +43,23 @@ const sessionIdFromToken = (token?: DecodedToken) => {
   return token?.sid;
 };
 
+const devDecodedToken = (): DecodedToken => {
+  const role = import.meta.env.VITE_DEV_ROLE || 'monitor';
+  return {
+    preferred_username: import.meta.env.VITE_DEV_USER || 'shaukat',
+    role,
+    roles: [role],
+  } as DecodedToken;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const authEnabled = isAuthEnabled();
   const [isInitializing, setIsInitializing] = useState(authEnabled);
   const [isAuthenticated, setIsAuthenticated] = useState(!authEnabled);
   const [accessToken, setAccessToken] = useState<string | undefined>();
-  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>();
+  const [decodedToken, setDecodedToken] = useState<DecodedToken | undefined>(
+    authEnabled ? undefined : devDecodedToken()
+  );
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>();
 
   const syncAuthState = useCallback(() => {
@@ -100,6 +111,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       installAuthenticatedFetch();
       setIsInitializing(false);
       setIsAuthenticated(true);
+      setDecodedToken(devDecodedToken());
       return;
     }
 

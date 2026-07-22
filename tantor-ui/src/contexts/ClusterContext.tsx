@@ -18,6 +18,7 @@ interface ClusterContextProps {
   /** Convenience boolean: true when the active cluster is External */
   isExternalCluster: boolean;
   loading: boolean;
+  error: string | null;
 }
 
 const ClusterContext = createContext<ClusterContextProps>({
@@ -27,6 +28,7 @@ const ClusterContext = createContext<ClusterContextProps>({
   activeClusterMode: null,
   isExternalCluster: false,
   loading: true,
+  error: null,
 });
 
 export const useCluster = () => useContext(ClusterContext);
@@ -35,10 +37,16 @@ export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [activeClusterId, setActiveClusterId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/v1/ui/clusters')
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Failed to fetch clusters: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+      })
       .then(data => {
         setClusters(data);
         if (data.length > 0) {
@@ -46,7 +54,10 @@ export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setActiveClusterId(defaultCluster.id);
         }
       })
-      .catch(err => console.error("Failed to load clusters for dropdown", err))
+      .catch(err => {
+        console.error("Failed to load clusters for dropdown", err);
+        setError(err instanceof Error ? err.message : String(err));
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -59,7 +70,7 @@ export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const isExternalCluster = activeClusterMode === 'EXTERNAL';
 
   return (
-    <ClusterContext.Provider value={{ clusters, activeClusterId, setActiveClusterId, activeClusterMode, isExternalCluster, loading }}>
+    <ClusterContext.Provider value={{ clusters, activeClusterId, setActiveClusterId, activeClusterMode, isExternalCluster, loading, error }}>
       {children}
     </ClusterContext.Provider>
   );
