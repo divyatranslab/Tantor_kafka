@@ -142,8 +142,8 @@ const STATUS_COLORS: Record<string, string> = {
   IN_PROGRESS: '#378ADD',
   PENDING: '#BA7517',
   DELETING: '#BA7517',
-  OFFLINE: '#A32D2D',
-  FAILED: '#A32D2D',
+  OFFLINE: '#E02424',
+  FAILED: '#E02424',
   UNKNOWN: '#8b8982',
 };
 
@@ -289,9 +289,11 @@ export function Dashboard() {
         <div className="db-kpi-grid">
           {kpis.map(kpi => (
             <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
-              <div className="db-kpi-icon"><kpi.icon size={18} /></div>
-              <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="db-kpi-icon"><kpi.icon size={18} /></div>
                 <span>{kpi.label}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '12px' }}>
                 <strong>{kpi.value}</strong>
                 <small>{kpi.detail}</small>
               </div>
@@ -569,7 +571,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
               data={clean}
               dataKey="value"
               nameKey="name"
-              innerRadius={82}
+              innerRadius={80}
               outerRadius={90}
               paddingAngle={3}
             >

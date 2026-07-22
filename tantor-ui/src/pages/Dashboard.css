@@ -283,47 +283,20 @@
   position: relative;
   overflow: hidden;
   display: flex;
-  gap: 11px;
+  flex-direction: column;
+  justify-content: space-between;
   min-height: 104px;
-  padding: 14px;
-  border-radius: 8px;
-  border: 0.5px solid #e2e0db;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
   background: #ffffff;
-  box-shadow: 0 1px 4px rgba(26, 26, 24, 0.04);
-}
-
-.db-kpi-card::after {
-  content: '';
-  position: absolute;
-  inset: auto 0 0;
-  height: 3px;
-  background: #378ADD;
-}
-
-.db-kpi-card.good::after {
-  background: #1D9E75;
-}
-
-.db-kpi-card.bad::after {
-  background: #A32D2D;
-}
-
-.db-kpi-card.warn::after {
-  background: #BA7517;
-}
-
-.db-kpi-card.purple::after {
-  background: #534AB7;
-}
-
-.db-kpi-card.muted::after {
-  background: #9b9991;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .db-kpi-icon {
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -357,18 +330,11 @@
   color: #6f6d67;
 }
 
-.db-kpi-card>div:last-child {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
 .db-kpi-card span {
-  color: #6f6d67;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0;
+  color: #475569;
+  font-family: Satoshi, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .db-kpi-card strong {
@@ -489,33 +455,30 @@
 .db-cluster-card b {
   display: inline-flex;
   align-items: center;
-  min-height: 24px;
-  padding: 3px 8px;
+  justify-content: center;
+  padding: 4px 12px;
   border-radius: 999px;
-  color: #5f5e5a;
-  background: #f5f4f1;
-  border: 0.5px solid #e2e0db;
-  font-size: 10.5px;
-  font-weight: 760;
+  background: transparent;
+  font-family: Satoshi, sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1;
   white-space: nowrap;
 }
 
 .db-cluster-card.good b {
-  color: #146c2e;
-  background: #e9f7ed;
-  border-color: #bde6c8;
+  color: #069B68;
+  border: 1px solid #069B68;
 }
 
 .db-cluster-card.warn b {
-  color: #7a5407;
-  background: #fff6df;
-  border-color: #f0d796;
+  color: #BA7517;
+  border: 1px solid #BA7517;
 }
 
 .db-cluster-card.bad b {
-  color: #a32d2d;
-  background: #fcebeb;
-  border-color: #e8b4b4;
+  color: #E02424;
+  border: 1px solid #E02424;
 }
 
 .db-main-grid,
@@ -651,17 +614,13 @@
 }
 
 .db-donut-legend span.green-pill {
-  border: 1px solid #36AD8F;
-  /* Green success border */
-  color: #36AD8F;
-  /* Green success text */
+  border: 1px solid #069B68;
+  color: #069B68;
 }
 
 .db-donut-legend span.default-pill {
-  border: 1px solid #A32D2D;
-  /* Red failed/offline border */
-  color: #A32D2D;
-  /* Red failed/offline text */
+  border: 1px solid #E02424;
+  color: #E02424;
 }
 
 .db-donut-legend i {
@@ -672,13 +631,11 @@
 }
 
 .db-donut-legend span.green-pill i {
-  background: #36AD8F !important;
-  /* Green dot */
+  background: #069B68 !important;
 }
 
 .db-donut-legend span.default-pill i {
-  background: #A32D2D !important;
-  /* Red dot */
+  background: #E02424 !important;
 }
 
 /* Custom Task Activity Legend & Select */
