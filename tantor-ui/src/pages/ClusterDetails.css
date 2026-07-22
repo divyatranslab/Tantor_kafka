@@ -593,10 +593,15 @@
   display: inline-block;
 }
 
-.cd-status-badge.success {
-  width: 59px;
+.cd-status-badge.success,
+.cd-status-badge.badge-healthy {
   background: rgba(42, 199, 146, 0.25);
   color: #069B68;
+}
+
+.cd-status-badge.badge-unhealthy {
+  background: #FFECEC;
+  color: #EF4D5F;
 }
 
 .cd-status-badge.warning,

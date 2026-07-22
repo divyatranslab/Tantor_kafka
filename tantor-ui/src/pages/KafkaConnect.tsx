@@ -589,23 +589,30 @@ export function KafkaConnect() {
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt">
-          <div className="ds-kafka-connect-illustration" aria-hidden="true">
-            {[0, 1, 2].map(row => (
-              <span className="ds-kafka-connect-illustration-row" key={row}>
-                <i />
-                <i />
-              </span>
-            ))}
-            <span className="ds-kafka-connect-illustration-feet"><i /><i /></span>
-          </div>
-          <p>Kafka Connect data is not loaded automatically.</p>
+        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: '16px' }}>
+          <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: '16px', color: '#818181' }}>Kafka Connect data is not loaded automatically.</p>
           <button 
-            className="ds-fetch-link"
             type="button" 
             onClick={load} 
             disabled={loading}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              height: '36px',
+              padding: '0 16px',
+              borderRadius: '8px',
+              background: '#3E1363',
+              color: '#FFFFFF',
+              fontWeight: 500,
+              fontSize: '14px',
+              border: 'none',
+              cursor: 'pointer',
+              fontFamily: 'Satoshi, sans-serif'
+            }}
           >
+            <RefreshCw size={14} className={loading ? 'spin' : ''} style={{ display: 'inline-block' }} />
             {loading ? 'Fetching Kafka Connect...' : 'Fetch Kafka Connect for this cluster'}
           </button>
         </div>

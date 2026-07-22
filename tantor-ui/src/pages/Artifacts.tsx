@@ -562,7 +562,7 @@ export function Artifacts() {
                         <div className="version-title-row">
                           <span className="version-name">Kafka {ver.version}</span>
                           {ver.available ? (
-                            <span className="status-badge available">Avaiable</span>
+                            <span className="status-badge available">Available</span>
                           ) : (
                             <span className="status-badge unavailable">Not downloaded</span>
                           )}

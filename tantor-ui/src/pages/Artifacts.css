@@ -417,21 +417,21 @@
 
 /* ── Expanded panel ── */
 .version-card-body {
-  border-top: 1px solid var(--border-subtle);
-  background: #FCFCFA;
-  padding: 20px;
+  border-top: 1px solid #CCCCCC;
+  background: #FAFAFA;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  border-bottom-left-radius: var(--radius-lg);
-  border-bottom-right-radius: var(--radius-lg);
+  gap: 16px;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
 }
 
 .parcel-empty-hosts {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--text-tertiary);
+  color: #818181;
   font-size: 0.85rem;
 }
 
@@ -441,10 +441,10 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 16px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 .override-input-group {
@@ -455,34 +455,46 @@
 }
 
 .override-input-group label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 19px;
+  color: #332849;
 }
 
 .override-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 /* Host Table styling */
 .parcel-host-table {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
   overflow: hidden;
-  background: var(--bg-surface);
+  background: #FFFFFF;
 }
 
 .parcel-host-row {
-  display: grid;
-  grid-template-columns: 1.5fr 1fr 2fr 1.2fr;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  display: grid !important;
+  grid-template-columns: 1.7fr 1fr 1.4fr 1fr !important;
+  align-items: center !important;
+  gap: 16px !important;
+  padding: 8px 16px;
+  border-bottom: 1px solid #CCCCCC;
+  background: #FFFFFF;
+  box-sizing: border-box;
+}
+
+.parcel-host-row > * {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-width: 0;
 }
 
 .parcel-host-row:last-child {
@@ -490,13 +502,53 @@
 }
 
 .parcel-host-row.header {
-  background: #F9F8F5;
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-  font-weight: 600;
-  text-transform: capitalize;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  display: grid !important;
+  grid-template-columns: 1.7fr 1fr 1.4fr 1fr !important;
+  background: #F9F9F9;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 22px;
+  text-transform: none;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.parcel-host-row.header .col-host-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.col-host-select {
+  display: flex;
+  align-items: center;
+}
+
+.parcel-host-name-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.parcel-host-name-box .name {
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 19px;
+  color: #23252D;
+}
+
+.parcel-host-name-box .sub {
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
 }
 
 .col-host-select {
@@ -519,33 +571,48 @@
 
 .parcel-host strong {
   display: block;
-  font-size: 0.85rem;
-  color: var(--text-primary);
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
   font-weight: 500;
+  font-size: 14px;
+  line-height: 19px;
+  color: #23252D;
 }
 
 .host-uuid {
   display: block;
-  font-size: 0.72rem;
-  color: var(--text-tertiary);
-  font-family: monospace;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
 }
 
 /* State Badge */
 .parcel-status {
-  display: inline-flex;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
   align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
+  padding: 4px 8px;
+  gap: 10px;
+  width: 60px;
+  height: 24px;
+  background: rgba(42, 199, 146, 0.25);
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  color: #069B68;
 }
 
 .parcel-status.available {
-  background: #D1FAE5;
-  /* Light green */
-  color: #065F46;
-  /* Dark green */
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
 }
 
 .parcel-status.deactivated {
@@ -580,8 +647,24 @@
 }
 
 .parcel-host-destination .form-control {
-  padding: 6px 10px;
-  font-size: 0.8rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 10px 16px;
+  gap: 8px;
+  width: 100%;
+  max-width: 240px;
+  height: 40px;
+  background: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #332849;
 }
 
 .parcel-actions {
@@ -591,23 +674,33 @@
 }
 
 .parcel-action {
+  box-sizing: border-box;
   display: inline-flex;
-  align-items: center;
+  flex-direction: row;
   justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-default);
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
+  align-items: center;
+  padding: 10px 16px;
+  gap: 8px;
+  height: 40px;
+  background: #FFFFFF;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 19px;
+  color: #3E1363;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all 0.2s;
+}
+
+.parcel-action svg {
+  display: none;
 }
 
 .parcel-action:hover:not(:disabled) {
-  background: var(--bg-raised);
+  background: rgba(62, 19, 99, 0.05);
 }
 
 .parcel-action:disabled {
@@ -615,15 +708,13 @@
   cursor: not-allowed;
 }
 
-
-
 .parcel-action.remove {
-  border-color: rgba(220, 38, 38, 0.25);
-  color: var(--color-danger);
+  border-color: #EF4D5F;
+  color: #EF4D5F;
 }
 
 .parcel-action.remove:hover {
-  background: var(--color-danger-light);
+  background: rgba(239, 77, 95, 0.05);
 }
 
 .parcel-progress {
