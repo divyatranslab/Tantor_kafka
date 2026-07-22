@@ -562,14 +562,23 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
           );
         })}
       </div>
-      <ResponsiveContainer width="100%" height={190}>
-        <PieChart>
-          <Pie data={clean} dataKey="value" nameKey="name" innerRadius={71} outerRadius={78} paddingAngle={3}>
-            {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
-          </Pie>
-          <Tooltip />
-        </PieChart>
-      </ResponsiveContainer>
+      <div style={{ display: 'flex', justifyContent: 'center', width: '100%', height: '180px' }}>
+        <ResponsiveContainer width={180} height={180}>
+          <PieChart width={180} height={180}>
+            <Pie
+              data={clean}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={57.6}
+              outerRadius={90}
+              paddingAngle={3}
+            >
+              {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
