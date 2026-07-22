@@ -260,10 +260,11 @@ export function ClusterOverview() {
                   <tr key={broker.brokerId}>
                     <td>
                       <div className="overview-broker-id">
+                        <CheckCircle2 size={24} color="#FFFFFF" fill="#36AD8F" />
                         <span>{broker.brokerId}</span>
                       </div>
                     </td>
-                    <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
+                    <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
                     <td>{broker.inSyncReplicas}</td>
                     <td>{broker.replicas}</td>
                     <td>{formatSkew(broker.replicaSkewPct)}</td>

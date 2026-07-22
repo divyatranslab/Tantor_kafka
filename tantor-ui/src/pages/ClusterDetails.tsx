@@ -88,14 +88,6 @@ export function ClusterDetails() {
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
-  const runtimeLabel = cluster.mode === 'EXTERNAL'
-    ? 'External'
-    : cluster.status === 'SUCCESS'
-      ? 'Success'
-      : (cluster.runtimeStatusLabel || cluster.status);
-  const runtimeClass = cluster.mode === 'EXTERNAL'
-    ? 'success'
-    : (cluster.runtimeHealth || cluster.status || '').toLowerCase();
   const runtimeTone = clusterStatusTone(
     cluster.runtimeStatusLabel,
     cluster.runtimeHealth,
@@ -103,6 +95,9 @@ export function ClusterDetails() {
     cluster.status,
     cluster.overallHealth,
   );
+  const isHealthy = runtimeTone === 'state-positive';
+  const badgeClass = isHealthy ? 'badge-healthy' : 'badge-unhealthy';
+  const runtimeLabel = cluster.mode === 'EXTERNAL' ? 'External' : 'Internal';
 
   if (isLogsView) {
     return (
@@ -281,12 +276,27 @@ export function ClusterDetails() {
               >
                 <Info size={16} style={{ color: '#818181' }} />
               </span>
+              <div className={`cd-status-badge ${badgeClass}`} title={cluster.runtimeStatusReason} style={{ gap: '6px', marginLeft: '8px' }}>
+                <span className="cd-status-dot"></span>
+                {runtimeLabel}
+              </div>
             </div>
 
-            <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason} style={{ gap: '6px' }}>
-              <span className="cd-status-dot"></span>
-              {runtimeLabel}
-            </div>
+            <button 
+              type="button" 
+              className="cd-details-refresh-btn" 
+              onClick={() => {
+                setCluster(null);
+                fetch(`/api/v1/ui/clusters/${id}`)
+                  .then(res => res.json())
+                  .then(setCluster)
+                  .catch(console.error);
+              }}
+              title="Refresh"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', cursor: 'pointer', width: '40px', height: '40px', padding: '8px' }}
+            >
+              <RefreshCw size={16} style={{ color: '#818181' }} />
+            </button>
           </div>
 
         </header>

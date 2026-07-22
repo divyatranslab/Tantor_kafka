@@ -273,55 +273,57 @@ export function Hosts() {
               </button>
             </div>
 
-            {pendingHosts.length === 0 ? (
-              <>
-                <div className="empty-pending">
-                  <h3>No new nodes discovered</h3>
-                  <p>Run the agent script on a VM to discover it.</p>
-                </div>
-                <hr className="modal-divider" />
-                <div className="modal-footer right">
-                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="modal-section-header">
-                  <p className="modal-section-title">Discovered Nodes</p>
-                  <label className="pending-select-all">
-                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
-                    <span>Select all</span>
-                  </label>
-                </div>
-                {pendingHosts.map(host => (
-                  <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
-                    <label className="pending-node-select" onClick={event => event.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={!!selectedPendingIds[host.id]}
-                        onChange={() => togglePendingHost(host.id)}
-                      />
-                    </label>
-                    <div className="pending-node-info">
-                      <p className="name">{host.agentName || host.hostname}</p>
-                      <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
-                    </div>
-                    <div className="pending-node-actions">
-                      <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+            <div className="modal-body-content">
+              {pendingHosts.length === 0 ? (
+                <>
+                  <div className="empty-pending" style={{ marginTop: '20px' }}>
+                    <h3>No new nodes discovered</h3>
+                    <p>Run the agent script on a VM to discover it.</p>
                   </div>
-                ))}
-                <hr className="modal-divider" />
-                <div className="modal-footer right">
-                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
-                  <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
-                    {connectingAgents ? 'Connecting...' : 'Connect'}
-                  </button>
+                </>
+              ) : (
+                <div className="discovered-nodes-wrapper">
+                  <div className="modal-section-header">
+                    <p className="modal-section-title">Discovered Nodes</p>
+                    <label className="pending-select-all">
+                      <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
+                      <span>Select all</span>
+                    </label>
+                  </div>
+                  <div className="discovered-nodes-list">
+                    {pendingHosts.map(host => (
+                      <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
+                        <label className="pending-node-select" onClick={event => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={!!selectedPendingIds[host.id]}
+                            onChange={() => togglePendingHost(host.id)}
+                          />
+                        </label>
+                        <div className="pending-node-info">
+                          <p className="name">{host.agentName || host.hostname}</p>
+                          <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
+                        </div>
+                        <div className="pending-node-actions">
+                          <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </>
-            )}
+              )}
+            </div>
+
+            <div className="modal-footer right">
+              <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
+              {pendingHosts.length > 0 && (
+                <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
+                  {connectingAgents ? 'Connecting...' : 'Connect'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -22,11 +22,11 @@
 .overview-band {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  background: #F8FAFC;
-  border: 1px solid #E1E7EC;
-  border-radius: 12px;
-  padding: 20px;
+  gap: 8px;
+  background: #FAFAFA;
+  border-radius: 8px;
+  padding: 16px;
+  border: none;
 }
 
 .section-header-row {
@@ -34,37 +34,38 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 36px;
 }
 
 .overview-section h2 {
   margin: 0;
-  color: #3E1363; /* Dark purple matching theme specs */
-  font-family: 'Satoshi', 'Inter', sans-serif;
-  font-size: 16px;
+  color: #3E1363; /* Primary/Purple */
+  font-family: 'Satoshi', sans-serif;
   font-style: normal;
-  font-weight: 600;
-  line-height: 120%;
-  letter-spacing: -0.01em;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 22px;
 }
 
 /* Export CSV button - purple outline style */
 .overview-export {
-  height: 36px;
-  padding: 0 16px;
-  display: inline-flex;
-  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
   justify-content: center;
-  gap: 8px;
-  border: 1px solid #3E1363;
-  border-radius: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 6px;
+  height: 28px;
   background: #FFFFFF;
+  border: 1px solid #3E1363;
+  border-radius: 6px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 16px;
   color: #3E1363;
   cursor: pointer;
-  font-family: 'Satoshi', 'Inter', sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background-color var(--transition-fast, 0.15s) ease, border-color var(--transition-fast, 0.15s) ease;
 }
 
 .overview-export:hover {
@@ -72,52 +73,61 @@
 }
 
 .overview-export svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 /* Grids for cards */
 .overview-grid {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  padding: 0px;
+  gap: 8px;
+  width: 100%;
 }
 
-.overview-grid.identity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.overview-grid.uptime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.overview-grid.partitions-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.overview-grid.identity-grid > *,
+.overview-grid.uptime-grid > *,
+.overview-grid.partitions-grid > * {
+  flex: 1;
+}
 
 /* Individual Cards - White, clean border and soft shadow */
 .overview-item {
-  min-width: 0;
-  min-height: 72px;
-  padding: 16px 20px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 6px;
-  box-sizing: border-box;
+  align-items: flex-start;
+  padding: 10px;
+  gap: 10px;
   background: #FFFFFF;
-  border: 1px solid #E1E7EC;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
+  border-radius: 8px;
+  min-height: 81px;
+  border: none;
+  box-shadow: none;
 }
 
 .overview-label {
   display: flex;
+  flex-direction: row;
   align-items: center;
+  gap: 4px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
   color: #818181;
-  font-family: 'Satoshi', 'Inter', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
 }
 
 .overview-value {
-  color: #282F49;
-  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
   font-size: 14px;
-  font-weight: 600;
-  line-height: 18px;
+  line-height: 19px;
+  color: #332849;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -128,10 +138,10 @@
   width: 100%;
   overflow-x: auto;
   box-sizing: border-box;
-  border: 1px solid #E1E7EC;
-  border-radius: 12px;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
   background: #FFFFFF;
-  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
+  box-shadow: none;
   margin-top: 8px;
 }
 
@@ -139,30 +149,36 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: auto;
-  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-family: 'Satoshi', sans-serif;
 }
 
 .overview-table th {
-  height: 44px;
-  padding: 0 16px;
+  height: 54px;
+  padding: 16px;
   box-sizing: border-box;
-  background: #FCFCFD;
-  border-bottom: 1px solid #E1E7EC;
-  color: #64748B;
-  font-size: 12px;
-  font-weight: 600;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 16px;
+  line-height: 22px;
   text-align: left;
   white-space: nowrap;
 }
 
 .overview-table td {
   height: 52px;
-  padding: 0 16px;
+  padding: 14px 16px;
   box-sizing: border-box;
-  border-bottom: 1px solid #E1E7EC;
-  color: #282F49;
-  font-size: 13px;
+  border-bottom: 1px solid #CCCCCC;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
   font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
   white-space: nowrap;
 }
 
@@ -174,8 +190,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  color: #282F49;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #23252D;
 }
 
 .role-badge {
