@@ -1227,14 +1227,15 @@
 }
 
 .db-kpi-card {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: 8px;
-  row-gap: 12px;
-  min-height: 110px;
-  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 104px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .db-kpi-card::after {
@@ -1242,11 +1243,13 @@
 }
 
 .db-kpi-icon {
-  grid-column: 1;
-  grid-row: 1;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: #C5EAF0;
-  color: #16ABC2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .db-kpi-card.cyan .db-kpi-icon {
@@ -1275,31 +1278,31 @@
 }
 
 .db-kpi-card > div:last-child {
-  display: contents;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 12px;
 }
 
 .db-kpi-card span {
-  grid-column: 2;
-  grid-row: 1;
   color: #282F49;
+  font-family: Satoshi, sans-serif;
   font-size: 15px;
-  font-weight: 400;
+  font-weight: 500;
   text-transform: none;
 }
 
 .db-kpi-card strong {
-  grid-column: 1;
-  grid-row: 2;
   color: #332849;
-  font-size: 22px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .db-kpi-card small {
-  grid-column: 2;
-  grid-row: 2;
-  align-self: center;
   color: #818181;
   font-size: 11px;
+  align-self: flex-end;
 }
 
 .db-cluster-list {
