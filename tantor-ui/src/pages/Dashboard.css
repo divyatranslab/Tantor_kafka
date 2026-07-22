@@ -756,7 +756,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
+  border-radius: 50%;
   color: #185FA5;
   background: #e6f1fb;
 }

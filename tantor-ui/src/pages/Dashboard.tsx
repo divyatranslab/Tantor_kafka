@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertTriangle, Bot, Database, ExternalLink,
-  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck
+  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck, FileText, FileCode
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
@@ -420,7 +420,7 @@ export function Dashboard() {
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
-                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileCheck size={16} /></span>
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileText size={16} /></span>
                 <div>
                   <strong>{item.message}</strong>
                   <small>{formatDateTime(item.createdAt)}</small>
@@ -456,7 +456,7 @@ export function Dashboard() {
             {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length
               ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
                 <div key={task.id} className="db-task-row">
-                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
+                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><FileCode size={16} /></span>
                   <div>
                     <strong>{prettyCommand(task.command)}</strong>
                     <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
