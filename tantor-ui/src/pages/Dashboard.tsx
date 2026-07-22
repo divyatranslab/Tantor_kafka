@@ -136,8 +136,8 @@ const emptyDashboard: DashboardPayload = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  SUCCESS: '#36AD8F',
-  ONLINE: '#36AD8F',
+  SUCCESS: '#2AC792',
+  ONLINE: '#2AC792',
   RUNNING: '#378ADD',
   IN_PROGRESS: '#378ADD',
   PENDING: '#BA7517',
@@ -564,7 +564,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
       </div>
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
-          <Pie data={clean} dataKey="value" nameKey="name" innerRadius={54} outerRadius={78} paddingAngle={3}>
+          <Pie data={clean} dataKey="value" nameKey="name" innerRadius={71} outerRadius={78} paddingAngle={3}>
             {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
           </Pie>
           <Tooltip />
