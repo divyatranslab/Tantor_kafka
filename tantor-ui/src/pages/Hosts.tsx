@@ -265,7 +265,7 @@ export function Hosts() {
 
       {canManage && showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal agent-connectivity-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Agent Connectivity</h2>
               <button className="modal-close" onClick={() => setShowEnrollModal(false)}>
