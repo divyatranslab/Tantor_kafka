@@ -328,6 +328,14 @@ function displayIp(host: Host): string {
     || 'Unknown';
 }
 
+function nodeAvailabilityMessage(host: Host): string {
+  if (host.availabilityReason) return host.availabilityReason;
+  const status = String(host.status || '').toUpperCase();
+  if (status === 'PENDING') return 'Pending connection - use + Add Node';
+  if (status === 'OCCUPIED_INTERNAL' || status === 'OCCUPIED_EXTERNAL' || status === 'OCCUPIED') return 'Kafka Already Deployed';
+  return status || 'Unavailable';
+}
+
 function validatePath(value: string, label: string): string {
   if (!value.trim()) return `${label} is required.`;
   if (!value.trim().startsWith('/')) return `${label} must be an absolute Linux path.`;
@@ -1582,7 +1590,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             <span className="cd-checkbox">{checked && <Check size={12} strokeWidth={3} />}</span>
                             <span className="cd-node-info">
                               <strong>{host.hostname}</strong>
-                              <small>{displayIp(host)} - {disabled ? (host.available === false ? 'Kafka Already Deployed' : host.status) : '/srv/tantor-agent/tantor-agent-linux'}</small>
+                              <small>{displayIp(host)} - {disabled ? nodeAvailabilityMessage(host) : '/srv/tantor-agent/tantor-agent-linux'}</small>
                             </span>
                           </button>
                         );
