@@ -569,7 +569,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
               data={clean}
               dataKey="value"
               nameKey="name"
-              innerRadius={57.6}
+              innerRadius={82}
               outerRadius={90}
               paddingAngle={3}
             >
