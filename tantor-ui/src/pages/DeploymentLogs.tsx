@@ -215,7 +215,19 @@ export function DeploymentLogs() {
 
   const activeStepIndex = DEPLOYMENT_STEPS.indexOf(selectedTask.currentStep || '');
   const isFailed = selectedTask.status === 'FAILED';
-  const isSuccess = selectedTask.status === 'SUCCESS';
+  const renderLogs = (logsText: string) => {
+    if (!logsText) return 'No output recorded.';
+    return logsText.split('\n').map((line, idx) => {
+      let className = 'log-line';
+      const lowerLine = line.toLowerCase();
+      if (lowerLine.includes('completed')) {
+        className += ' log-success';
+      } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
+        className += ' log-error';
+      }
+      return <div key={idx} className={className}>{line || ' '}</div>;
+    });
+  };
 
   return (
     <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch' }}>
@@ -405,20 +417,17 @@ export function DeploymentLogs() {
           background: '#000000',
           borderRadius: '0px 0px 16px 16px'
         }} ref={logBodyRef}>
-          <pre style={{
-            margin: 0,
+          <div className="logs-text" style={{
             width: '100%',
             fontFamily: 'Source Code Pro, monospace',
-            fontStyle: 'normal',
-            fontWeight: 400,
             fontSize: '14px',
             lineHeight: '20px',
             color: '#FFFFFF',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all'
           }}>
-            {selectedTask.logOutput || selectedTask.errorMsg || 'No output recorded.'}
-          </pre>
+            {renderLogs(selectedTask.logOutput || selectedTask.errorMsg || '')}
+          </div>
         </div>
       </div>
 
