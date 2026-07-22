@@ -99,10 +99,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.location.href = window.location.origin;
     }
   }, [authEnabled]);
-
   useEffect(() => {
     if (!authEnabled) {
       installAuthenticatedFetch();
+      setDecodedToken({
+        preferred_username: 'shaukat',
+        roles: ['admin'],
+        realm_access: { roles: ['admin'] }
+      });
       setIsInitializing(false);
       setIsAuthenticated(true);
       return;

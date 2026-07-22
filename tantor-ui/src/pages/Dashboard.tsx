@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity, AlertTriangle, Bot, Database, ExternalLink,
-  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck
+  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck, FileText, FileCode
 } from 'lucide-react';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
@@ -136,14 +136,14 @@ const emptyDashboard: DashboardPayload = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  SUCCESS: '#36AD8F',
-  ONLINE: '#36AD8F',
+  SUCCESS: '#2AC792',
+  ONLINE: '#2AC792',
   RUNNING: '#378ADD',
   IN_PROGRESS: '#378ADD',
   PENDING: '#BA7517',
   DELETING: '#BA7517',
-  OFFLINE: '#A32D2D',
-  FAILED: '#A32D2D',
+  OFFLINE: '#E02424',
+  FAILED: '#E02424',
   UNKNOWN: '#8b8982',
 };
 
@@ -289,9 +289,11 @@ export function Dashboard() {
         <div className="db-kpi-grid">
           {kpis.map(kpi => (
             <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
-              <div className="db-kpi-icon"><kpi.icon size={18} /></div>
-              <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="db-kpi-icon"><kpi.icon size={18} /></div>
                 <span>{kpi.label}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginTop: '12px' }}>
                 <strong>{kpi.value}</strong>
                 <small>{kpi.detail}</small>
               </div>
@@ -418,7 +420,7 @@ export function Dashboard() {
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
-                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileCheck size={16} /></span>
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileText size={16} /></span>
                 <div>
                   <strong>{item.message}</strong>
                   <small>{formatDateTime(item.createdAt)}</small>
@@ -454,7 +456,7 @@ export function Dashboard() {
             {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length
               ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
                 <div key={task.id} className="db-task-row">
-                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
+                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><FileCode size={16} /></span>
                   <div>
                     <strong>{prettyCommand(task.command)}</strong>
                     <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
@@ -562,14 +564,23 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
           );
         })}
       </div>
-      <ResponsiveContainer width="100%" height={190}>
-        <PieChart>
-          <Pie data={clean} dataKey="value" nameKey="name" innerRadius={54} outerRadius={78} paddingAngle={3}>
-            {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
-          </Pie>
-          <Tooltip />
-        </PieChart>
-      </ResponsiveContainer>
+      <div style={{ display: 'flex', justifyContent: 'center', width: '100%', height: '180px' }}>
+        <ResponsiveContainer width={180} height={180}>
+          <PieChart width={180} height={180}>
+            <Pie
+              data={clean}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={80}
+              outerRadius={90}
+              paddingAngle={3}
+            >
+              {clean.map(row => <Cell key={row.status || row.name} fill={STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN} />)}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

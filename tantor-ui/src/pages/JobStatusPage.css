@@ -191,7 +191,8 @@
   align-items: stretch;
 }
 
-.job-main-layout.logs-expanded {
+.job-main-layout.logs-expanded,
+.job-main-layout.full-width-steps {
   grid-template-columns: 1fr;
 }
 
@@ -340,5 +341,12 @@
 }
 
 .log-line { min-height: 1.5em; }
-.log-success { color: #34d399; }
-.log-error { color: #f87171; }
+.logs-text .log-line {
+  color: #FFFFFF !important;
+}
+.logs-text .log-line.log-success {
+  color: #34d399 !important;
+}
+.logs-text .log-line.log-error {
+  color: #f87171 !important;
+}
