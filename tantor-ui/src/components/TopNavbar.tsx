@@ -46,6 +46,7 @@ export function TopNavbar() {
   }, [decodedToken]);
 
   const applicationRole = isAdmin ? 'Admin' : 'Monitoring';
+
   // Fetch alerts count
   useEffect(() => {
     const fetchAlerts = async () => {

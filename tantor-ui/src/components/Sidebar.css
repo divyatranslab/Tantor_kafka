@@ -14,6 +14,7 @@
   flex-shrink: 0;
   overflow: hidden;
   box-sizing: border-box;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── Logo ── */
@@ -69,6 +70,7 @@
   letter-spacing: 0.8px;
   color: #818181;
   padding: 12px 24px 6px;
+  transition: opacity 0.15s ease, padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Nav item */
@@ -86,9 +88,20 @@
   color: #282F49;
   text-decoration: none;
   border-right: 4px solid transparent;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), gap 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   box-sizing: border-box;
+}
+
+.nav-item span {
+  opacity: 1;
+  max-width: 150px;
+  display: inline-block;
+  vertical-align: middle;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  transition: opacity 0.15s ease, max-width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-item:hover {
@@ -118,14 +131,12 @@
 .sidebar-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   padding: 16px 24px;
   border-top: 1px solid #F3F0F0;
-  font-family: 'Satoshi';
-  font-size: 12px;
-  color: #818181;
   flex-shrink: 0;
+  transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .sidebar-user {
@@ -206,6 +217,43 @@
 
 .nav-item.active-parent .nav-item-icon {
   color: #DF678B;
+}
+
+/* Collapsed Sidebar overrides */
+.sidebar.collapsed {
+  width: 68px;
+}
+
+.sidebar.collapsed .nav-item {
+  padding: 12px 22px;
+  gap: 0;
+}
+
+.sidebar.collapsed .nav-item span {
+  opacity: 0;
+  max-width: 0;
+  pointer-events: none;
+}
+
+.sidebar.collapsed .nav-section-label {
+  opacity: 0;
+  padding: 12px 0 6px;
+  pointer-events: none;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 16px 22px;
+}
+
+.sidebar-toggle-icon {
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.sidebar-toggle-icon:hover {
+  opacity: 0.8;
 }
 
 @media (max-width: 700px) {

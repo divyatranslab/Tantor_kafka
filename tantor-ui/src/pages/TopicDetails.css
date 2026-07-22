@@ -705,6 +705,7 @@
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
+  gap: 0px !important;
   padding: 0px !important;
   width: 613px !important;
   height: 35px !important;
@@ -724,7 +725,7 @@
   flex-direction: row !important;
   align-items: center !important;
   justify-content: center !important;
-  padding: 8px 32px !important;
+  padding: 8px 8px !important;
   border: none !important;
   border-right: 1px solid #CCCCCC !important;
   background: #FFFFFF !important;

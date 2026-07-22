@@ -562,7 +562,7 @@ export function Artifacts() {
                         <div className="version-title-row">
                           <span className="version-name">Kafka {ver.version}</span>
                           {ver.available ? (
-                            <span className="status-badge available">Available</span>
+                            <span className="status-badge available">Avaiable</span>
                           ) : (
                             <span className="status-badge unavailable">Not downloaded</span>
                           )}
@@ -822,31 +822,33 @@ export function Artifacts() {
             <div className="modal-header">
               <h2>Artifacts Logs</h2>
               <button className="modal-close" onClick={() => setAuditModalArtifact(null)}>
-                <X size={14} />
+                <X size={18} />
               </button>
             </div>
 
-            {artifactAuditLoading ? (
-              <div className="artifact-log-empty"><Loader2 size={18} className="spin" /> Loading audit log...</div>
-            ) : artifactAuditEvents.length === 0 ? (
-              <div className="artifact-log-empty">No audit log entries found for this artifact.</div>
-            ) : (
-              <div className="artifact-log-box">
-                {artifactAuditEvents.map(event => {
-                  const created = event.createdAt ? new Date(event.createdAt) : new Date();
-                  const dateStr = created.toLocaleDateString('en-US') + ', ' + created.toLocaleTimeString('en-US');
-                  const category = (event.category || 'PACKAGE').toUpperCase();
-                  const action = (event.action || 'PACKAGE_UPLOADED').toUpperCase();
-                  const status = (event.status || 'SUCCESS').toUpperCase();
-                  const logLine = `${dateStr}${category}${action}${status}`;
-                  return (
-                    <div key={event.id} className="log-line">
-                      {logLine}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="modal-body" style={{ padding: '0 32px 24px 32px' }}>
+              {artifactAuditLoading ? (
+                <div className="artifact-log-empty"><Loader2 size={18} className="spin" /> Loading audit log...</div>
+              ) : artifactAuditEvents.length === 0 ? (
+                <div className="artifact-log-empty">No audit log entries found for this artifact.</div>
+              ) : (
+                <div className="artifact-log-box">
+                  {artifactAuditEvents.map(event => {
+                    const created = event.createdAt ? new Date(event.createdAt) : new Date();
+                    const dateStr = created.toLocaleDateString('en-US') + ', ' + created.toLocaleTimeString('en-US');
+                    const category = (event.category || 'PACKAGE').toUpperCase();
+                    const action = (event.action || 'PACKAGE_UPLOADED').toUpperCase();
+                    const status = (event.status || 'SUCCESS').toUpperCase();
+                    const logLine = `${dateStr} ${category} ${action} ${status}`;
+                    return (
+                      <div key={event.id} className="log-line">
+                        {logLine}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="modal-footer">
               <button type="button" className="btn btn-cancel-purple-outline" onClick={() => setAuditModalArtifact(null)}>

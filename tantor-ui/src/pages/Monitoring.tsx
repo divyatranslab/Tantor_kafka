@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from 'lucide-react';
+import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -142,6 +142,7 @@ export function Monitoring() {
   }, [selectedClusterId]);
 
   const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
+
 
   // 1. Load clusters and hosts on mount
   const loadInitialData = async () => {
@@ -522,16 +523,19 @@ export function Monitoring() {
 
             {/* Broker Details Header Card */}
             <div className="broker-details-card">
-              <div className="broker-info">
-                <h2>
-                  {clusterTitle}
-                  <span className={`cluster-source-tag ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
-                    {selectedType === 'INTERNAL' ? 'Internal' : 'External'}
-                  </span>
-                </h2>
-                <p className="broker-meta">
-                  {[exporterTarget?.split(':')[0], selectedNode?.label].filter(Boolean).join(' | ') || 'Monitoring endpoint unavailable'}
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+                <Server size={28} color="#DF678B" style={{ flexShrink: 0 }} />
+                <div className="broker-info">
+                  <h2 style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {clusterTitle}
+                    <span className={`cluster-source-tag ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
+                      {selectedType === 'INTERNAL' ? 'Internal' : 'External'}
+                    </span>
+                  </h2>
+                  <p className="broker-meta">
+                    {[exporterTarget?.split(':')[0], selectedNode?.label].filter(Boolean).join(' | ') || 'Monitoring endpoint unavailable'}
+                  </p>
+                </div>
               </div>
               <div className="monitoring-status-right">
                 <span className={`kafka-running-badge ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
@@ -699,6 +703,7 @@ export function Monitoring() {
             </div>
           </>
         )}
+
       </div>
     </div>
   );

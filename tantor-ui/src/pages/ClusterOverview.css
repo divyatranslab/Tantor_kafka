@@ -1,24 +1,32 @@
+/* ══════════════════════════════════════════
+   ClusterOverview — Redesign to match Figma Specs
+   ══════════════════════════════════════════ */
+
 .overview-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 28px;
   min-height: 100%;
-  color: #332849;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .overview-section {
   display: flex;
   flex-direction: column;
+  gap: 16px;
 }
 
+/* Light-grey background container for card sections to contrast on white details card */
 .overview-card,
 .overview-band {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: #fafafa;
-  border-radius: 8px;
+  gap: 16px;
+  background: #F8FAFC;
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  padding: 20px;
 }
 
 .section-header-row {
@@ -26,141 +34,188 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  min-height: 20px;
+  min-height: 36px;
 }
 
 .overview-section h2 {
   margin: 0;
-  color: #5b327f;
-  font-family: 'Satoshi', sans-serif;
+  color: #3E1363; /* Dark purple matching theme specs */
+  font-family: 'Satoshi', 'Inter', sans-serif;
   font-size: 16px;
   font-style: normal;
-  font-weight: 500;
-  line-height: 100%;
-  letter-spacing: 0;
+  font-weight: 600;
+  line-height: 120%;
+  letter-spacing: -0.01em;
 }
 
+/* Export CSV button - purple outline style */
 .overview-export {
-  height: 28px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border: 1px solid #5b327f;
-  border-radius: 4px;
-  background: #fff;
-  color: #5b327f;
+  gap: 8px;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #3E1363;
   cursor: pointer;
-  font: 500 12px/100% 'Satoshi', sans-serif;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background-color var(--transition-fast, 0.15s) ease, border-color var(--transition-fast, 0.15s) ease;
 }
 
-.overview-export:hover { background: #fcf8ff; }
-.overview-export svg { width: 12px; height: 12px; }
+.overview-export:hover {
+  background: #FAF8FF;
+}
 
+.overview-export svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Grids for cards */
 .overview-grid {
   display: grid;
-  gap: 6px;
+  gap: 16px;
 }
 
 .overview-grid.identity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .overview-grid.uptime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .overview-grid.partitions-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
+/* Individual Cards - White, clean border and soft shadow */
 .overview-item {
   min-width: 0;
-  min-height: 38px;
-  padding: 5px 8px;
+  min-height: 72px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
+  gap: 6px;
   box-sizing: border-box;
-  background: #fff;
-  border-radius: 6px;
-}
-
-.overview-label,
-.overview-value {
-  overflow: hidden;
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
-  line-height: 14px;
-  letter-spacing: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: #FFFFFF;
+  border: 1px solid #E1E7EC;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
 }
 
 .overview-label {
   display: flex;
   align-items: center;
   color: #818181;
-  font-weight: 400;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
 }
 
 .overview-value {
-  color: #332849;
-  font-weight: 500;
+  color: #282F49;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.status-dot.green {
-  width: 5px;
-  height: 5px;
-  margin-left: 5px;
-  display: inline-block;
-  border-radius: 50%;
-  background: #85c96f;
-}
-
+/* Table container matching Figma specification */
 .overview-table-wrap {
   width: 100%;
   overflow-x: auto;
   box-sizing: border-box;
-  border: 1px solid #cccccc;
-  border-radius: 6px;
-  background: #fff;
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(40, 47, 73, 0.04);
+  margin-top: 8px;
 }
 
 .overview-table {
   width: 100%;
   border-collapse: collapse;
   table-layout: auto;
+  font-family: 'Satoshi', 'Inter', sans-serif;
 }
 
-.overview-table th,
-.overview-table td {
-  height: 36px;
-  padding: 0 12px;
+.overview-table th {
+  height: 44px;
+  padding: 0 16px;
   box-sizing: border-box;
-  border-bottom: 1px solid #cccccc;
+  background: #FCFCFD;
+  border-bottom: 1px solid #E1E7EC;
+  color: #64748B;
+  font-size: 12px;
+  font-weight: 600;
   text-align: left;
   white-space: nowrap;
 }
 
-.overview-dashboard .overview-table th {
-  color: #332849;
-  font: 500 12px/16px 'Satoshi', sans-serif;
+.overview-table td {
+  height: 52px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #E1E7EC;
+  color: #282F49;
+  font-size: 13px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
-.overview-dashboard .overview-table td {
-  color: #4b4654;
-  font: 400 12px/16px 'Satoshi', sans-serif;
+.overview-table tr:last-child td {
+  border-bottom: 0;
 }
 
-.overview-table tr:last-child td { border-bottom: 0; }
-
-.overview-alert {
-  padding: 9px 11px;
+.overview-broker-id {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-radius: 7px;
-  font: 400 11px/16px 'Satoshi', sans-serif;
+  font-weight: 600;
+  color: #282F49;
 }
 
-.overview-alert.error { border: 1px solid #e8b4b4; background: #fcebeb; color: #791f1f; }
-.overview-alert.warning { border: 1px solid #edd09a; background: #fff7e8; color: #7a4d10; }
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  background: #F1F5F9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-transform: capitalize;
+}
 
+.overview-alert {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  font-family: 'Satoshi', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.overview-alert.error {
+  border: 1px solid #FCA5A5;
+  background: #FEF2F2;
+  color: #991B1B;
+}
+
+.overview-alert.warning {
+  border: 1px solid #FDE047;
+  background: #FEFCE8;
+  color: #854F0B;
+}
+
+/* Responsiveness */
 @media (max-width: 1100px) {
   .overview-grid.partitions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

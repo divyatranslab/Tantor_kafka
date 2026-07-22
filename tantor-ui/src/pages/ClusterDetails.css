@@ -1,6 +1,6 @@
 .cluster-details-page {
   padding: 24px;
-  background-color: var(--bg-base);
+  background-color: var(--page-grey);
   min-height: 100vh;
   box-sizing: border-box;
 }
@@ -583,6 +583,14 @@
   font-size: 12px;
   line-height: 16px;
   text-align: center;
+}
+
+.cd-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  display: inline-block;
 }
 
 .cd-status-badge.success {

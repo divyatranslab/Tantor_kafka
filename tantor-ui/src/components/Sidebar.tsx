@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import './Sidebar.css';
 import { useAuth } from '../contexts/AuthContext';
+import collapseIcon from '../assets/collapse.png';
 
 type NavItem = {
   icon?: any;
@@ -51,6 +52,18 @@ const hiddenNavPaths = new Set(['/user-management', '/commands', '/ldap-settings
 
 export function Sidebar() {
   const { decodedToken } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    return localStorage.getItem('tantor.sidebarCollapsed') === 'true';
+  });
+
+  const toggleCollapse = () => {
+    setIsCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('tantor.sidebarCollapsed', String(next));
+      return next;
+    });
+  };
+
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     Clusters: true,
   });
@@ -70,14 +83,14 @@ export function Sidebar() {
         <div key={item.label} className="nav-item-group">
           <div
             className={`nav-item ${isActive ? 'active-parent' : ''}`}
-            style={{ paddingLeft: `${18 + depth * 12}px` }}
+            style={{ paddingLeft: isCollapsed ? '0px' : `${18 + depth * 12}px` }}
             onClick={() => toggleExpand(item.label)}
           >
             {item.icon && <item.icon size={15} className="nav-item-icon" />}
             <span style={{ flex: 1 }}>{item.label}</span>
-            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            {!isCollapsed && (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
           </div>
-          {isExpanded && (
+          {!isCollapsed && isExpanded && (
             <div className="nav-subitems">
               {item.subItems.map(sub => renderItem(sub, depth + 1))}
             </div>
@@ -101,7 +114,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       <nav className="sidebar-nav">
         {navSections.map(section => (
           <div key={section.label} className="nav-section">
@@ -114,10 +127,13 @@ export function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-user">
-          <span className="sidebar-version-dot" />
-          <span className="sidebar-user-name" title={displayName}>{displayName}</span>
-        </div>
+        <img
+          src={collapseIcon}
+          alt="Collapse Sidebar"
+          className="sidebar-toggle-icon"
+          onClick={toggleCollapse}
+          style={{ transform: isCollapsed ? 'rotate(180deg)' : 'none' }}
+        />
       </div>
     </aside>
   );

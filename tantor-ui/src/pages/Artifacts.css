@@ -91,14 +91,14 @@
   background: #2b0d45;
 }
 
-/* Pink Outline Buttons */
+/* Purple Outline Buttons */
 .btn-distribute-selected,
 .parcel-action.distribute,
 .parcel-action.activate,
 .parcel-action.deactivate,
 .btn-distribute-pink-outline {
-  border: 1px solid #DE3B76;
-  color: #DE3B76;
+  border: 1px solid #3E1363;
+  color: #3E1363;
   background: transparent;
   font-weight: 600;
 }
@@ -108,16 +108,17 @@
 .parcel-action.activate:hover:not(:disabled),
 .parcel-action.deactivate:hover:not(:disabled),
 .btn-distribute-pink-outline:hover:not(:disabled) {
-  background: rgba(222, 59, 118, 0.06);
+  background: rgba(62, 19, 99, 0.06);
 }
 
 /* Section Title */
-.section-title {
+.artifacts-list-container .section-title {
   font-family: var(--font-display);
   font-size: 1.15rem;
-  font-weight: 600;
+  font-weight: 580;
   color: var(--text-primary);
-  margin: 1.5rem 0 0.75rem;
+  margin: 0.02rem 0 0.85rem !important;
+  text-transform: none !important;
 }
 
 /* ── Upload status message ── */
@@ -228,7 +229,7 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
   padding: 16px 0;
   background: transparent;
@@ -242,23 +243,19 @@
   align-items: center;
   justify-content: center;
   padding-left: 4px;
+  margin-top: 6px;
+  /* Align dot vertically with the first line of text */
+  flex-shrink: 0;
 }
 
-.status-dot {
+.status-dot-container .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  display: inline-block;
-}
-
-.status-dot.available {
+  display: inline-block !important;
   background-color: #10B981;
-  /* Green */
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-}
-
-.status-dot.unavailable {
-  background-color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
 .version-info {
@@ -658,9 +655,9 @@
   gap: 12px;
   margin-bottom: 16px;
   padding: 20px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid #CCCCCC;
   border-radius: var(--radius-lg);
-  background: var(--bg-surface);
+  background: #F8FAFC;
 }
 
 .universal-distribution-directory label {
@@ -1037,11 +1034,11 @@
 }
 
 .btn-cancel-pink-outline {
-  border: 1px solid #DE3B76;
-  color: #DE3B76;
+  border: 1px solid #3E1363;
+  color: #3E1363;
   background: transparent;
 }
 
 .btn-cancel-pink-outline:hover {
-  background: rgba(222, 59, 118, 0.05);
+  background: rgba(62, 19, 99, 0.05);
 }

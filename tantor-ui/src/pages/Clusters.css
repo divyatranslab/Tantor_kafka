@@ -1062,7 +1062,6 @@
   padding: 3px 8px;
   border-radius: 20px;
 }
-
 .clusters-subtitle {
   font-size: 14px;
   color: #818181;
@@ -1391,6 +1390,7 @@
   background: #FDE8E8;
   color: #E02424;
 }
+
 .trash-btn-action {
   border: 0;
   background: transparent;

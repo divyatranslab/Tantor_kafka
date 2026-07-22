@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCluster } from '../contexts/ClusterContext';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
@@ -42,6 +42,7 @@ export function ClusterDetails() {
   useEffect(() => {
     if (id) setActiveClusterId(id);
   }, [id, setActiveClusterId]);
+
   useEffect(() => {
     // Clear stale data when switching clusters to prevent flash of old data
     setCluster(null);
@@ -261,29 +262,33 @@ export function ClusterDetails() {
           
           {/* Title Row */}
           <div className="cd-details-title-row">
-            <div className="cd-details-title-left">
-              <h1>{cluster.name}</h1>
-              <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason}>
-                {runtimeLabel}
-              </div>
+            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                type="button" 
+                className="cluster-back-btn" 
+                onClick={() => navigate('/clusters')}
+                aria-label="Back to clusters"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: '#818181' }}
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <h1 style={{ display: 'flex', alignItems: 'center', margin: 0 }}>
+                {cluster.name}
+              </h1>
+              <span 
+                title={`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
+                style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '4px', cursor: 'pointer' }}
+              >
+                <Info size={16} style={{ color: '#818181' }} />
+              </span>
             </div>
-            <button
-              type="button"
-              className="cd-details-refresh-btn"
-              aria-label="Refresh cluster"
-              onClick={() => {
-                fetch(`/api/v1/ui/clusters/${id}`)
-                  .then(res => res.json())
-                  .then(setCluster)
-                  .catch(console.error);
-              }}
-            >
-              <RefreshCw size={20} strokeWidth={1.5} />
-            </button>
+
+            <div className={`cd-status-badge ${runtimeClass} ${runtimeTone}`} title={cluster.runtimeStatusReason} style={{ gap: '6px' }}>
+              <span className="cd-status-dot"></span>
+              {runtimeLabel}
+            </div>
           </div>
-          <p className="cd-details-subtitle">
-            Kafka {cluster.kafkaVersion} • {cluster.nodeCount || 0} {(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • {cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}
-          </p>
+
         </header>
 
         <div className="cluster-tabs">

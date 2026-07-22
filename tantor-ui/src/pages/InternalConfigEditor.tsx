@@ -69,6 +69,7 @@ interface ConfigDialog {
   cancelLabel?: string;
   onConfirm?: () => void;
 }
+
 const editableVersionStatuses = new Set(['VALIDATED', 'APPROVED', 'FAILED']);
 
 export function InternalConfigEditor() {
@@ -264,6 +265,7 @@ export function InternalConfigEditor() {
       onConfirm: () => { setDialog(null); void performVersionAction(version, action); },
     });
   };
+
   const latestApplyableVersion = useMemo(() => {
     return [...versions]
       .sort((a, b) => b.configVersion - a.configVersion)

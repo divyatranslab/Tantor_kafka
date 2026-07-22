@@ -685,7 +685,7 @@ export function SchemaRegistry() {
                 </div>
               </div>
 
-              <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="ds-buttons-group">
                 {/* ── Buttons ── */}
                 {canManage && (
                   <button 
