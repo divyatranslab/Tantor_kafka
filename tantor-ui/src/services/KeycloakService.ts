@@ -6,7 +6,7 @@ const keycloak = new Keycloak({
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
 
-export const isAuthEnabled = () => import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
@@ -23,7 +23,7 @@ export const initKeycloak = (): Promise<boolean> => {
     initializationPromise = keycloak.init({
       onLoad: 'login-required',
       pkceMethod: 'S256',
-      checkLoginIframe: true,
+      checkLoginIframe: false,
       redirectUri: currentRedirectUri(),
     });
   }
@@ -38,12 +38,20 @@ export const login = () =>
       })
     : Promise.resolve();
 
-export const logout = () =>
-  isAuthEnabled()
-    ? keycloak.logout({
-        redirectUri: window.location.origin,
-      })
-    : Promise.resolve();
+export const logout = () => {
+  if (!isAuthEnabled()) {
+    return Promise.resolve();
+  }
+
+  // Reset the cached init promise so a fresh init happens when the app
+  // re-mounts after the Keycloak redirect.  Without this the stale promise
+  // resolves immediately with `authenticated = true` from the previous session.
+  initializationPromise = undefined;
+
+  return keycloak.logout({
+    redirectUri: window.location.origin,
+  });
+};
 
 export const getToken = () => isAuthEnabled() ? keycloak.token : undefined;
 
@@ -69,7 +77,7 @@ export const getValidToken = async () => {
 };
 
 export const installAuthenticatedFetch = () => {
-  if (!isAuthEnabled() || authenticatedFetchInstalled) return;
+  if (authenticatedFetchInstalled) return;
 
   nativeFetch = window.fetch.bind(window);
   authenticatedFetchInstalled = true;
@@ -80,9 +88,16 @@ export const installAuthenticatedFetch = () => {
     const headers = new Headers(init?.headers || request?.headers);
 
     if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-      const token = await getValidToken();
-      if (token) {
-        headers.set('Authorization', `Bearer ${token}`);
+      if (isAuthEnabled()) {
+        const token = await getValidToken();
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+      } else {
+        // When auth is disabled locally, supply a mock administrative token header so backend RoleAuthenticationUtil can decode it
+        // The mock token payload below corresponds to: {"preferred_username":"shaukat","roles":["admin"]}
+        const mockJwt = "eyJhbGciOiJIUzI1NiJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzaGF1a2F0Iiwicm9sZXMiOlsiYWRtaW4iXX0.mocksignature";
+        headers.set('Authorization', `Bearer ${mockJwt}`);
       }
     }
 

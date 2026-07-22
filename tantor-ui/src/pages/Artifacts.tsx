@@ -5,6 +5,7 @@ import {
   Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
 import orangeBanner from '../assets/orange.png';
 
@@ -70,6 +71,15 @@ const artifactServiceOptions = [
     helper: 'Kafka binaries appear in the parcel list and can be distributed to hosts.',
   },
   {
+    value: 'KAFKA_EXPORTER',
+    label: 'Kafka Exporter',
+    versionPlaceholder: 'e.g. 1.9.0',
+    directoryPlaceholder: 'custom/kafka-exporter (under configured repository root)',
+    fileLabel: 'Kafka exporter binary (.tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Kafka exporter binaries for metrics collection.',
+  },
+  {
     value: 'JMX_EXPORTER',
     label: 'JMX Exporter',
     versionPlaceholder: 'e.g. 0.20.0',
@@ -102,6 +112,7 @@ export function Artifacts() {
   const [hostDistributionDirs, setHostDistributionDirs] = useState<Record<string, string>>({});
   const [selectedHosts, setSelectedHosts] = useState<Record<string, string[]>>({});
   const [openArtifactMenuId, setOpenArtifactMenuId] = useState<string | null>(null);
+  const [artifactMenuAnchor, setArtifactMenuAnchor] = useState<HTMLElement | null>(null);
   const [auditModalArtifact, setAuditModalArtifact] = useState<ArtifactVersion | null>(null);
   const [artifactAuditEvents, setArtifactAuditEvents] = useState<ArtifactAuditEvent[]>([]);
   const [artifactAuditLoading, setArtifactAuditLoading] = useState(false);
@@ -464,7 +475,7 @@ export function Artifacts() {
   };
 
   return (
-    <div className="artifacts-page animate-fade-in" onClick={() => setOpenArtifactMenuId(null)}>
+    <div className="artifacts-page animate-fade-in" onClick={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
       <header className="page-header flex-between">
         <div>
           <h1>Artifacts</h1>
@@ -551,7 +562,7 @@ export function Artifacts() {
                         <div className="version-title-row">
                           <span className="version-name">Kafka {ver.version}</span>
                           {ver.available ? (
-                            <span className="status-badge available">Available</span>
+                            <span className="status-badge available">Avaiable</span>
                           ) : (
                             <span className="status-badge unavailable">Not downloaded</span>
                           )}
@@ -570,13 +581,17 @@ export function Artifacts() {
                       <div className="artifact-menu-anchor" onClick={event => event.stopPropagation()}>
                         <button
                           className="artifact-menu-button"
-                          onClick={() => setOpenArtifactMenuId(openArtifactMenuId === ver.id ? null : ver.id)}
+                          onClick={event => {
+                            const opening = openArtifactMenuId !== ver.id;
+                            setOpenArtifactMenuId(opening ? ver.id : null);
+                            setArtifactMenuAnchor(opening ? event.currentTarget : null);
+                          }}
                           title="Artifact actions"
                         >
                           <MoreVertical size={15} />
                         </button>
-                        {openArtifactMenuId === ver.id && (
-                          <div className="artifact-action-menu">
+                        {openArtifactMenuId === ver.id && artifactMenuAnchor && (
+                          <AnchoredMenu anchor={artifactMenuAnchor} className="artifact-action-menu" onClose={() => { setOpenArtifactMenuId(null); setArtifactMenuAnchor(null); }}>
                             <button onClick={() => openArtifactLogs(ver)}>
                               <FileText size={14} />
                               View Log
@@ -592,7 +607,7 @@ export function Artifacts() {
                                 Delete
                               </button>
                             )}
-                          </div>
+                          </AnchoredMenu>
                         )}
                       </div>
                       <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>
@@ -706,14 +721,16 @@ export function Artifacts() {
 
       {canManage && showUploadModal && (
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Upload Parcel Binary</h2>
+          <div className="modal upload-parcel-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header upload-parcel-header">
+              <div className="upload-parcel-heading">
+                <h2>Upload Parcel Binary</h2>
+                <p className="modal-subtitle">Upload a Kafka .tgz binary or a JMX .jar to the internal artifact repository.</p>
+              </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
               </button>
             </div>
-            <p className="modal-subtitle">Upload a Kafka <code>.tgz</code> binary or a JMX <code>.jar</code> to the internal artifact repository.</p>
 
             <form onSubmit={handleUploadSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               <div className="modal-body">
@@ -761,7 +778,9 @@ export function Artifacts() {
                 <div className="form-group">
                   <label>Binary File (.tgz or .jar)</label>
                   <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
-                    <Upload size={28} className="upload-dropzone-icon" />
+                    <span className="upload-dropzone-icon-shell">
+                      <Upload size={22} className="upload-dropzone-icon" />
+                    </span>
                     {file ? (
                       <>
                         <span className="dropzone-filename">{file.name}</span>
@@ -803,31 +822,33 @@ export function Artifacts() {
             <div className="modal-header">
               <h2>Artifacts Logs</h2>
               <button className="modal-close" onClick={() => setAuditModalArtifact(null)}>
-                <X size={14} />
+                <X size={18} />
               </button>
             </div>
 
-            {artifactAuditLoading ? (
-              <div className="artifact-log-empty"><Loader2 size={18} className="spin" /> Loading audit log...</div>
-            ) : artifactAuditEvents.length === 0 ? (
-              <div className="artifact-log-empty">No audit log entries found for this artifact.</div>
-            ) : (
-              <div className="artifact-log-box">
-                {artifactAuditEvents.map(event => {
-                  const created = event.createdAt ? new Date(event.createdAt) : new Date();
-                  const dateStr = created.toLocaleDateString('en-US') + ', ' + created.toLocaleTimeString('en-US');
-                  const category = (event.category || 'PACKAGE').toUpperCase();
-                  const action = (event.action || 'PACKAGE_UPLOADED').toUpperCase();
-                  const status = (event.status || 'SUCCESS').toUpperCase();
-                  const logLine = `${dateStr}${category}${action}${status}`;
-                  return (
-                    <div key={event.id} className="log-line">
-                      {logLine}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <div className="modal-body" style={{ padding: '0 32px 24px 32px' }}>
+              {artifactAuditLoading ? (
+                <div className="artifact-log-empty"><Loader2 size={18} className="spin" /> Loading audit log...</div>
+              ) : artifactAuditEvents.length === 0 ? (
+                <div className="artifact-log-empty">No audit log entries found for this artifact.</div>
+              ) : (
+                <div className="artifact-log-box">
+                  {artifactAuditEvents.map(event => {
+                    const created = event.createdAt ? new Date(event.createdAt) : new Date();
+                    const dateStr = created.toLocaleDateString('en-US') + ', ' + created.toLocaleTimeString('en-US');
+                    const category = (event.category || 'PACKAGE').toUpperCase();
+                    const action = (event.action || 'PACKAGE_UPLOADED').toUpperCase();
+                    const status = (event.status || 'SUCCESS').toUpperCase();
+                    const logLine = `${dateStr} ${category} ${action} ${status}`;
+                    return (
+                      <div key={event.id} className="log-line">
+                        {logLine}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="modal-footer">
               <button type="button" className="btn btn-cancel-purple-outline" onClick={() => setAuditModalArtifact(null)}>
@@ -891,4 +912,3 @@ function actionIcon(action: ParcelAction) {
     remove: Trash2,
   }[action];
 }
-

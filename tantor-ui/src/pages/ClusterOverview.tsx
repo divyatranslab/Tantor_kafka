@@ -219,19 +219,19 @@ export function ClusterOverview() {
           </div>
           <div className="overview-grid partitions-grid">
             <div className="overview-item">
-              <div className="overview-label">Online <span className="status-dot green"></span></div>
+              <div className="overview-label">Online</div>
               <div className="overview-value">{partitions.online} of {partitions.total}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">URP <span className="status-dot green"></span></div>
+              <div className="overview-label">URP</div>
               <div className="overview-value">{partitions.underReplicated}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">In Sync Replicas <span className="status-dot green"></span></div>
+              <div className="overview-label">In Sync Replicas</div>
               <div className="overview-value">{partitions.inSyncReplicas} of {partitions.totalReplicas}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">Out Of Sync Replicas <span className="status-dot green"></span></div>
+              <div className="overview-label">Out Of Sync Replicas</div>
               <div className="overview-value">{partitions.outOfSyncReplicas}</div>
             </div>
             <div className="overview-item">
@@ -239,51 +239,52 @@ export function ClusterOverview() {
               <div className="overview-value">{uptime.controllerType || '-'}</div>
             </div>
           </div>
-        </div>
 
-        <div className="overview-table-wrap">
-          <table className="data-table overview-table">
-            <thead>
-              <tr>
-                <th>Broker ID</th>
-                <th>Disk usage</th>
-                <th>In sync replicas</th>
-                <th>Replicas</th>
-                <th>Replicas skew</th>
-                <th>Leaders</th>
-                <th>Leaders skew</th>
-                <th>Port</th>
-                <th>Host</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overview.brokers.map(broker => (
-                <tr key={broker.brokerId}>
-                  <td>
-                    <div className="overview-broker-id">
-                      <CheckCircle2 size={16} color="#069B68" />
-                      <span>{broker.brokerId}</span>
-                    </div>
-                  </td>
-                  <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
-                  <td>{broker.inSyncReplicas}</td>
-                  <td>{broker.replicas}</td>
-                  <td>{formatSkew(broker.replicaSkewPct)}</td>
-                  <td>{broker.leaders}</td>
-                  <td>{formatSkew(broker.leaderSkewPct)}</td>
-                  <td>{broker.port ? broker.port : '-'}</td>
-                  <td>{broker.host}</td>
+          <div className="overview-table-wrap">
+            <table className="data-table overview-table">
+              <thead>
+                <tr>
+                  <th>Broker ID</th>
+                  <th>Disk usage</th>
+                  <th>In sync replicas</th>
+                  <th>Replicas</th>
+                  <th>Replicas skew</th>
+                  <th>Leaders</th>
+                  <th>Leaders skew</th>
+                  <th>Port</th>
+                  <th>Host</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                 {overview.brokers.map(broker => (
+                  <tr key={broker.brokerId}>
+                    <td>
+                      <div className="overview-broker-id">
+                        <span>{broker.brokerId}</span>
+                      </div>
+                    </td>
+                    <td>{formatBytes(broker.diskUsageBytes)}, {broker.logReplicaCount} replica(s)</td>
+                    <td>{broker.inSyncReplicas}</td>
+                    <td>{broker.replicas}</td>
+                    <td>{formatSkew(broker.replicaSkewPct)}</td>
+                    <td>{broker.leaders}</td>
+                    <td>{formatSkew(broker.leaderSkewPct)}</td>
+                    <td>{broker.port ? broker.port : '-'}</td>
+                    <td>{broker.host}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       {overview.originType === 'EXTERNAL' && overview.controllers && overview.controllers.length > 0 && (
         <section className="overview-section">
-          <h2>Controller Voters</h2>
           <div className="overview-band">
+            <div className="section-header-row">
+              <h2>Controller Voters</h2>
+            </div>
             <div className="overview-table-wrap">
               <table className="data-table overview-table">
                 <thead>
@@ -298,7 +299,6 @@ export function ClusterOverview() {
                     <tr key={c.nodeId}>
                       <td>
                         <div className="overview-broker-id">
-                          <CheckCircle2 size={15} />
                           <span>{c.nodeId}</span>
                         </div>
                       </td>
@@ -315,10 +315,9 @@ export function ClusterOverview() {
 
       {overview.originType === 'EXTERNAL' && overview.nodePaths && (
         <section className="overview-section">
-          <h2>Paths & Directories</h2>
           <div className="overview-band">
-            <div className="text-muted text-sm mb-2" style={{ marginBottom: '12px', fontFamily: 'Satoshi, sans-serif', color: '#818181' }}>
-              Path details available for {overview.nodePaths.filter(p => p.hasTelemetry).length} of {overview.nodePaths.length} nodes
+            <div className="section-header-row">
+              <h2>Paths & Directories</h2>
             </div>
             <div className="overview-table-wrap">
               <table className="data-table overview-table">
@@ -346,7 +345,7 @@ export function ClusterOverview() {
                       <td>{p.logDir || <span className="text-muted">Not reported</span>}</td>
                       <td>
                         {p.hasTelemetry ? (
-                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14}/> Managed</span>
+                          <span className="text-green text-sm flex items-center gap-1"><CheckCircle2 size={14} /> Managed</span>
                         ) : (
                           <span className="text-muted text-sm">Bootstrap metadata</span>
                         )}

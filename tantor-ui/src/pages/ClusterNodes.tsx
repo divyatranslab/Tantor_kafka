@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -59,7 +60,7 @@ export function ClusterNodes() {
       setSelectedAgents({});
       await fetchNodes();
     } catch (e) {
-      alert('Failed to bind agents');
+      notifyAction('Failed to bind agents');
     } finally {
       setBinding(false);
     }
@@ -77,12 +78,11 @@ export function ClusterNodes() {
   return (
     <div className="cluster-nodes-page animate-fade-in">
       <header className="page-header">
-        <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 500, color: '#3E1363', margin: 0 }}>Cluster Nodes</h2>
+        <h2 className="cluster-section-heading">Cluster Nodes</h2>
       </header>
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">
           <thead><tr>
-            {canBindAgents && <th style={{ width: '40px', textAlign: 'center' }}></th>}
             <th>Node ID</th>
             <th>Host</th>
             <th>IP Address</th>
@@ -95,26 +95,6 @@ export function ClusterNodes() {
               const hostKey = node.hostname || node.hostId || node.ipAddress;
               return (
               <tr key={`${node.hostId}-${node.role}-${node.nodeId ?? index}`}>
-                {canBindAgents && (
-                  <td style={{ textAlign: 'center' }}>
-                    <input 
-                      type="checkbox"
-                      checked={node.status === 'Managed' || !!selectedAgents[hostKey]}
-                      disabled={!node.agentAvailable}
-                      style={{ cursor: !node.agentAvailable ? 'not-allowed' : 'pointer' }}
-                      onChange={(e) => {
-                        if (!node.agentAvailable) return;
-                        const newSelection = { ...selectedAgents };
-                        if (e.target.checked) {
-                          newSelection[hostKey] = node.availableAgentId!;
-                        } else {
-                          delete newSelection[hostKey];
-                        }
-                        setSelectedAgents(newSelection);
-                      }}
-                    />
-                  </td>
-                )}
                 <td><code>{node.nodeId ?? '-'}</code></td>
                 <td><span className="cluster-node-host">{node.hostname || node.hostId}</span></td>
                 <td><span className="cluster-node-ip">{node.ipAddress || '-'}</span></td>

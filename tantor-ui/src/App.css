@@ -26,8 +26,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  background: var(--bg-base);
+  overflow: auto;
+  background: var(--page-grey);
 }
 
 .auth-shell {

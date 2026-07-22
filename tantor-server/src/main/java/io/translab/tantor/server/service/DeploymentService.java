@@ -96,6 +96,7 @@ public class DeploymentService {
             applyActiveParcelParams(params, hostId, version);
 
             injectJmxArtifactUrl(params, agentArtifactUrl);
+            injectKafkaExporterArtifactUrl(params);
             applyAgentKafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, agentArtifactUrl);
 
             task.setParameters(objectMapper.writeValueAsString(params));
@@ -169,6 +170,39 @@ public class DeploymentService {
 
     private Optional<String> resolveJmxExporterArtifactId() {
         return resolveJmxExporterArtifact().map(artifact -> artifact.get("id"));
+    }
+
+    private void injectKafkaExporterArtifactUrl(Map<String, Object> params) {
+        Optional<Map<String, String>> artifact = resolveKafkaExporterArtifact();
+        if (artifact.isEmpty()) {
+            log.info("No available KAFKA_EXPORTER artifact found.");
+            return;
+        }
+
+        String artifactId = artifact.get().get("id");
+        params.put("kafka_exporter_artifact_id", artifactId);
+        params.put("kafka_exporter_download_url", joinArtifactRepoBase("/api/v1/artifacts/" + artifactId + "/download"));
+        if (hasText(artifact.get().get("checksum"))) {
+            params.put("kafka_exporter_checksum", artifact.get().get("checksum"));
+        }
+    }
+
+    private Optional<Map<String, String>> resolveKafkaExporterArtifact() {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT id::text, COALESCE(checksum, '')
+                    FROM kf_artifact
+                    WHERE service_type = 'KAFKA_EXPORTER'
+                      AND status = 'AVAILABLE'
+                    ORDER BY created_time DESC
+                    LIMIT 1
+                    """, rs -> rs.next()
+                            ? Optional.of(Map.of("id", rs.getString(1), "checksum", rs.getString(2)))
+                            : Optional.empty());
+        } catch (Exception e) {
+            log.warn("Could not auto-resolve KAFKA_EXPORTER artifact from kf_artifact", e);
+            return Optional.empty();
+        }
     }
 
     private Optional<Map<String, String>> resolveJmxExporterArtifact() {
@@ -255,6 +289,7 @@ public class DeploymentService {
                 throw new IllegalStateException("Kafka " + targetVersion + " is not active on host " + hostId + ".");
             }
             injectJmxArtifactUrl(params, String.valueOf(params.get("artifact_url")));
+            injectKafkaExporterArtifactUrl(params);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {

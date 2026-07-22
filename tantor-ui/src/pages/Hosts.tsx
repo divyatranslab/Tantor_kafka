@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Trash2, X } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './Hosts.css';
 
 export function Hosts() {
@@ -24,18 +25,18 @@ export function Hosts() {
 
   const deleteHost = async (id: string) => {
     if (!canManage) return;
-    if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
+    if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
         const errorData = await res.json().catch(() => ({}));
-        alert(errorData.message || 'Failed to disconnect node.');
+        notifyAction(errorData.message || 'Failed to disconnect node.');
       }
     } catch (e) {
       console.error(e);
-      alert('An error occurred while disconnecting the node.');
+      notifyAction('An error occurred while disconnecting the node.');
     }
   };
 
@@ -119,7 +120,7 @@ export function Hosts() {
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;
       if (failed > 0) {
-        alert(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
+        notifyAction(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
       }
       setSelectedPendingIds({});
       await fetchHosts();
@@ -136,12 +137,13 @@ export function Hosts() {
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
-          <button className="btn icon-only round" onClick={fetchHosts} title="Sync inventory">
+          <button className="btn icon-only round" onClick={fetchHosts} title="Refresh" aria-label="Refresh hosts">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
           {canManage && (
-            <button className="btn btn-primary-action" style={{ background: '#3E1363', borderColor: '#3E1363' }} onClick={() => setShowEnrollModal(true)}>
-              + Agent Connectivity
+            <button className="btn btn-primary-action agent-connectivity-btn" onClick={() => setShowEnrollModal(true)}>
+              <Plus size={20} strokeWidth={2} aria-hidden="true" />
+              <span>Agent Connectivity</span>
             </button>
           )}
         </div>
@@ -263,7 +265,7 @@ export function Hosts() {
 
       {canManage && showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal agent-connectivity-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Agent Connectivity</h2>
               <button className="modal-close" onClick={() => setShowEnrollModal(false)}>

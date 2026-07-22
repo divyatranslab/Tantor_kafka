@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
 import './JobStatusPage.css';
 
 type Job = {
@@ -122,7 +123,7 @@ export function JobStatusPage() {
   };
 
   const handleRollback = async () => {
-    if (!window.confirm('Rollback all successfully completed steps for this job?')) return;
+    if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
