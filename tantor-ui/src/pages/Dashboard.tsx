@@ -347,7 +347,9 @@ export function Dashboard() {
       <section className="db-main-grid">
         <article className="db-panel large">
           <PanelTitle title="Host Disk Usage" detail="From latest host heartbeat" />
-          {dashboard.hostDiskUsage.length ? (
+          {summary.activeHosts === 0 ? (
+            <EmptyPanel text="No hosts connected yet. Connect a host agent to view disk metrics." />
+          ) : dashboard.hostDiskUsage.length ? (
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
                 <CartesianGrid stroke="#eeeae3" horizontal={false} />

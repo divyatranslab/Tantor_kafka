@@ -138,9 +138,9 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
             No new nodes discovered. Run the agent script on a VM to discover it.
           </div>
         ) : (
-          <div style={{ background: '#F8FAFC', borderRadius: '12px', margin: '0 32px 24px 32px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 500 }}>Discovered Nodes</span>
+          <div style={{ margin: '0 32px 24px 32px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Discovered Nodes</span>
               <label className="pending-select-all" style={{ margin: 0, padding: 0, border: 'none', background: 'transparent', gap: '8px', cursor: 'pointer' }}>
                 <input 
                   type="checkbox" 
@@ -152,7 +152,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
               </label>
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
+            <div style={{ background: '#F8FAFC', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '400px', overflowY: 'auto' }}>
               {pendingHosts.map(host => (
                 <div 
                   key={host.id} 
@@ -160,14 +160,14 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                   onClick={() => togglePendingHost(host.id)} 
                   style={{ 
                     background: '#FFFFFF', 
-                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #F1F5F9', 
+                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #E2E8F0', 
                     borderRadius: '8px', 
-                    padding: '16px', 
+                    padding: '14px 16px', 
                     margin: 0, 
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '16px'
+                    gap: '14px'
                   }}
                 >
                   <label className="pending-node-select" onClick={event => event.stopPropagation()} style={{ margin: 0, display: 'flex' }}>
@@ -179,7 +179,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     />
                   </label>
                   <div className="pending-node-info" style={{ flex: 1 }}>
-                    <p className="name" style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 4px 0' }}>{host.agentName || host.hostname}</p>
+                    <p className="name" style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 3px 0' }}>{host.agentName || host.hostname}</p>
                     <p className="ip" style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                   </div>
                   <div className="pending-node-actions">

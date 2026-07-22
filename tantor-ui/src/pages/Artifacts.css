@@ -401,10 +401,10 @@
 }
 
 .status-badge.available {
-  background: #FEF3C7;
-  /* Orange / Light Yellow */
-  color: #D97706;
-  /* Orange text */
+  background: #D1FAE5;
+  /* Light green */
+  color: #065F46;
+  /* Dark green */
 }
 
 .status-badge.unavailable {
