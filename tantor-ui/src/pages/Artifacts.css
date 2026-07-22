@@ -128,9 +128,9 @@
 }
 
 .upload-msg.ok {
-  background: #FEF3C7;
-  color: #D97706;
-  border: 1px solid rgba(217, 119, 6, 0.15);
+  background: #DCFCE7;
+  color: #15803D;
+  border: 1px solid rgba(21, 128, 61, 0.18);
 }
 
 .upload-msg.err {
