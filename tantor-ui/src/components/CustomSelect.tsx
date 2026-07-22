@@ -1,0 +1,69 @@
+import { useState, useRef } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { AnchoredMenu } from './AnchoredMenu';
+import './CustomSelect.css';
+
+interface Option {
+  value: string;
+  label: string;
+}
+
+interface CustomSelectProps {
+  value: string;
+  onChange: (value: string) => void;
+  options: Option[];
+  width?: string;
+  placeholder?: string;
+}
+
+export function CustomSelect({ value, onChange, options, width = '209px', placeholder }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find(opt => opt.value === value);
+
+  return (
+    <div className="custom-select-container" ref={containerRef} style={{ width }}>
+      <button
+        type="button"
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
+        onClick={() => setIsOpen(!isOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="custom-select-value">
+          {selectedOption ? selectedOption.label : placeholder || 'Select option'}
+        </span>
+        <ChevronDown size={18} className="custom-select-chevron" />
+      </button>
+
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="custom-select-options-wrapper"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
+          <div className="app-custom-select-options" role="listbox">
+            {options.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                className={`app-custom-select-option ${option.value === value ? 'selected' : ''}`}
+                role="option"
+                aria-selected={option.value === value}
+                onClick={() => {
+                  onChange(option.value);
+                  setIsOpen(false);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </AnchoredMenu>
+      )}
+    </div>
+  );
+}

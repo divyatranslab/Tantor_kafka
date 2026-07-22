@@ -173,7 +173,6 @@ public class ConfigChangeJobHandler implements JobHandler {
         if (!rollback && payload.containsKey("clusterConfigJson")) {
             clusterRepository.findById(clusterId).ifPresent(cluster -> {
                 cluster.setConfigJson(String.valueOf(payload.get("clusterConfigJson")));
-                cluster.setUpdatedBy("system");
                 clusterRepository.save(cluster);
             });
         }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { MoreVertical, RefreshCw, Trash2, X } from 'lucide-react';
+import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './Hosts.css';
 
 export function Hosts() {
@@ -8,7 +9,6 @@ export function Hosts() {
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [openMenuHostId, setOpenMenuHostId] = useState<string | null>(null);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
@@ -24,40 +24,22 @@ export function Hosts() {
   };
 
   const deleteHost = async (id: string) => {
-    setOpenMenuHostId(null);
     if (!canManage) return;
-    if (!window.confirm('Disconnect this node? It will move back to discovered nodes and can be connected again.')) return;
+    if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
       const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
         const errorData = await res.json().catch(() => ({}));
-        alert(errorData.message || 'Failed to disconnect node.');
+        notifyAction(errorData.message || 'Failed to disconnect node.');
       }
     } catch (e) {
       console.error(e);
-      alert('An error occurred while disconnecting the node.');
+      notifyAction('An error occurred while disconnecting the node.');
     }
   };
 
-  const setHostAvailability = async (host: any, available: boolean) => {
-    setOpenMenuHostId(null);
-    if (!canManage) return;
-    try {
-      const action = available ? 'mark-available' : 'mark-unavailable';
-      const res = await fetch(`/api/v1/ui/hosts/${host.id}/${action}`, { method: 'POST' });
-      if (res.ok) {
-        fetchHosts();
-      } else {
-        const body = await res.json().catch(() => ({}));
-        alert(body.message || 'Failed to update host availability.');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Network error while updating host availability.');
-    }
-  };
   useEffect(() => {
     fetchHosts();
     const t = setInterval(fetchHosts, 5000);
@@ -138,7 +120,7 @@ export function Hosts() {
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;
       if (failed > 0) {
-        alert(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
+        notifyAction(`${failed} agent${failed === 1 ? '' : 's'} could not be connected. Refreshing the list now.`);
       }
       setSelectedPendingIds({});
       await fetchHosts();
@@ -148,44 +130,68 @@ export function Hosts() {
   };
 
   return (
-    <div className="hosts-page animate-fade-in" onClick={() => setOpenMenuHostId(null)}>
+    <div className="hosts-page animate-fade-in">
       <header className="page-header flex-between">
         <div>
-          <h1>Infrastructure fleet</h1>
+          <h1>Hosts</h1>
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
+          <button className="btn icon-only round" onClick={fetchHosts} title="Refresh" aria-label="Refresh hosts">
+            <RefreshCw size={16} className={loading ? 'spin' : ''} />
+          </button>
           {canManage && (
-            <button className="btn" onClick={() => setShowEnrollModal(true)}>
-              + Agent Connectivity
+            <button className="btn btn-primary-action agent-connectivity-btn" onClick={() => setShowEnrollModal(true)}>
+              <Plus size={20} strokeWidth={2} aria-hidden="true" />
+              <span>Agent Connectivity</span>
             </button>
           )}
-          <button className="btn" onClick={fetchHosts}>
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            Sync inventory
-          </button>
         </div>
       </header>
 
+      {activeHosts.length === 0 && !loading ? (
+        <div className="hosts-empty-state">
+          <div className="empty-illustration">
+            <svg width="102" height="74" viewBox="0 0 102 74" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="60" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="34" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="34" width="14" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="10" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="10" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="60" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
+              <rect x="60" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
+            </svg>
+          </div>
+          <h3>No Host at this movment</h3>
+          <p>Create your first rule to start identifying duplicate records and improving your data quality.</p>
+        </div>
+      ) : (
       <div className="table-container">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Status</th>
-              <th>Availability</th>
-              <th>Agent Name</th>
-              <th>Hostname</th>
-              <th>IP address</th>
-              <th>Agent</th>
-              <th>CPU</th>
-              <th>Memory</th>
-              <th>Actions</th>
+              <th style={{ width: '100px' }}>Status</th>
+              <th style={{ width: '110px' }}>Availability</th>
+              <th style={{ width: '160px' }}>Agent name</th>
+              <th style={{ width: '160px' }}>Host name</th>
+              <th style={{ width: '120px' }}>IP address</th>
+              <th style={{ width: '160px' }}>Agent</th>
+              <th style={{ width: '140px' }}>CPU</th>
+              <th style={{ width: '140px' }}>Memory</th>
             </tr>
           </thead>
           <tbody>
-            {activeHosts.length === 0 ? (
+            {loading && activeHosts.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={8}>
                   <div className="empty-state">
                     {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
                   </div>
@@ -197,83 +203,57 @@ export function Hosts() {
               const mem = host.memTotalMb > 0
                 ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
                 : 0;
-              const discoveryAgent = host.agentType === 'KAFKA_DISCOVERY';
-
               return (
                 <tr key={host.id}>
                   <td>
-                    <span className={`status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
-                      {host.agentStatus ?? 'OFFLINE'}
+                    <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
+                      {(host.agentStatus ?? 'OFFLINE').toUpperCase() === 'ONLINE' && (
+                        <span className="status-dot"></span>
+                      )}
+                      <span>
+                        {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
+                      </span>
                     </span>
                   </td>
                   <td>
                     <div className="availability-cell">
-                      <span className={`availability-badge ${host.status === 'AVAILABLE' ? 'available' : 'occupied'}`}>
-                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied - Internal Cluster' :
-                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied - External Cluster' :
-                         host.status === 'OFFLINE' ? 'Unavailable - Offline' :
-                         host.status === 'REMOVED' ? 'Removed' : 'Available'}
+                      <span className={`availability-badge ${
+                        host.status === 'OFFLINE' ? 'unavailable' :
+                        host.status === 'CRITICAL' ? 'critical' :
+                        ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
+                      }`}>
+                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
+                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
+                         host.status === 'OFFLINE' ? 'Unavailable' :
+                         host.status === 'REMOVED' ? 'Removed' :
+                         host.status === 'CRITICAL' ? 'Critical' : 'Available'}
                       </span>
-                      {host.status !== 'AVAILABLE' && (
-                        <div className="cluster-lock">
-                          <span>{host.clusterName || 'Assigned cluster'}</span>
-                          <code>{host.kafkaClusterId || host.clusterId}</code>
-                        </div>
-                      )}
                     </div>
                   </td>
-                  <td className="text-secondary">{host.agentName ?? '-'}</td>
-                  <td className="font-medium">{host.hostname}</td>
-                  <td className="text-secondary">{ip}</td>
-                  <td className="text-secondary">
+                  <td>{host.agentName ?? '-'}</td>
+                  <td>{host.hostname}</td>
+                  <td>{ip}</td>
+                  <td>
                     <div className="agent-kind-cell">
-                      <span>v{host.agentVersion || 'N/A'}</span>
-                      <small>{host.agentPath || 'Path unavailable'} · {host.agentStatus || 'OFFLINE'}</small>
+                      <span>V{host.agentVersion || 'N/A'}</span>
+                      <small>{host.agentPath || 'Path unavailable'}</small>
                     </div>
                   </td>
                   <td>
-                    <div className="metric-bar">
-                      <div className="bar-track">
-                        <div className={`bar-fill ${cpu > 80 ? 'danger' : 'normal'}`} style={{ width: `${cpu}%` }} />
-                      </div>
+                    <div className="metric-bar-stacked">
                       <span>{cpu}%</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="metric-bar">
                       <div className="bar-track">
-                        <div className={`bar-fill ${mem > 85 ? 'warning' : 'normal'}`} style={{ width: `${mem}%` }} />
+                        <div className="bar-fill normal" style={{ width: `${cpu}%` }} />
                       </div>
-                      <span>{mem}%</span>
                     </div>
                   </td>
                   <td>
-                    {discoveryAgent ? (
-                      <span className="discovery-managed-label">Managed from External Clusters</span>
-                    ) : canManage ? (
-                    <div className="actions menu-anchor" onClick={e => e.stopPropagation()}>
-                      <button
-                        className="btn icon-only"
-                        title="Node actions"
-                        onClick={() => setOpenMenuHostId(openMenuHostId === host.id ? null : host.id)}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                      {openMenuHostId === host.id && (
-                        <div className="host-action-menu">
-                          {host.status === 'OCCUPIED_INTERNAL' ? (
-                            <button onClick={() => setHostAvailability(host, true)}>Mark available</button>
-                          ) : host.status === 'AVAILABLE' ? (
-                            <button onClick={() => setHostAvailability(host, false)}>Mark occupied</button>
-                          ) : (
-                            <div className="menu-info">Externally Managed</div>
-                          )}
-                        </div>
-                      )}
+                    <div className="metric-bar-stacked">
+                      <span>{mem}%</span>
+                      <div className="bar-track">
+                        <div className="bar-fill normal" style={{ width: `${mem}%` }} />
+                      </div>
                     </div>
-                    ) : (
-                      <span className="discovery-managed-label">View only</span>
-                    )}
                   </td>
                 </tr>
               );
@@ -281,6 +261,7 @@ export function Hosts() {
           </tbody>
         </table>
       </div>
+      )}
 
       {canManage && showEnrollModal && (
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
@@ -292,18 +273,26 @@ export function Hosts() {
               </button>
             </div>
 
-            <p className="modal-section-title">Discovered nodes waiting to connect</p>
-
             {pendingHosts.length === 0 ? (
-              <div className="empty-pending">
-                No new nodes discovered. Run the agent script on a VM to discover it.
-              </div>
+              <>
+                <div className="empty-pending">
+                  <h3>No new nodes discovered</h3>
+                  <p>Run the agent script on a VM to discover it.</p>
+                </div>
+                <hr className="modal-divider" />
+                <div className="modal-footer right">
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
+                </div>
+              </>
             ) : (
               <>
-                <label className="pending-select-all">
-                  <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
-                  <span>Select all discovered agents</span>
-                </label>
+                <div className="modal-section-header">
+                  <p className="modal-section-title">Discovered Nodes</p>
+                  <label className="pending-select-all">
+                    <input type="checkbox" checked={allPendingSelected} onChange={toggleAllPendingHosts} />
+                    <span>Select all</span>
+                  </label>
+                </div>
                 {pendingHosts.map(host => (
                   <div key={host.id} className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} onClick={() => togglePendingHost(host.id)}>
                     <label className="pending-node-select" onClick={event => event.stopPropagation()}>
@@ -324,19 +313,15 @@ export function Hosts() {
                     </div>
                   </div>
                 ))}
-                <div className="pending-connect-summary">
-                  <span>{selectedCount} selected</span>
+                <hr className="modal-divider" />
+                <div className="modal-footer right">
+                  <button className="btn btn-outline" onClick={() => setShowEnrollModal(false)}>Cancel</button>
                   <button className="btn btn-primary-action" disabled={selectedCount === 0 || connectingAgents} onClick={connectSelectedAgents}>
-                    {connectingAgents ? 'Connecting...' : 'Connect selected'}
+                    {connectingAgents ? 'Connecting...' : 'Connect'}
                   </button>
                 </div>
               </>
             )}
-
-            <hr className="modal-divider" />
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowEnrollModal(false)}>Close</button>
-            </div>
           </div>
         </div>
       )}

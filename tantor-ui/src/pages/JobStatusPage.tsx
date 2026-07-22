@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Terminal, Undo2, Server, CheckCircle2, MoreVertical, Activity } from 'lucide-react';
+import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
 import './JobStatusPage.css';
 
 type Job = {
@@ -60,7 +61,6 @@ function getBusinessStepName(rawName: string): string {
     return 'Validate KRaft Cluster Health';
   }
 
-  // Rolling Config Update Steps
   if (rawName === 'PREFLIGHT') return 'Preflight Validation';
   if (rawName === 'BACKUP_ALL') return 'Global Configuration Backup';
   if (rawName === 'WRITE_CONFIG') return 'Write Configuration';
@@ -79,8 +79,7 @@ export function JobStatusPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'progress' | 'logs'>('progress');
-  const [openMenu, setOpenMenu] = useState(false);
+  const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const fetchJob = async () => {
@@ -112,7 +111,7 @@ export function JobStatusPage() {
     if (logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [job?.logs]);
+  }, [job?.logs, isLogsExpanded]);
 
   const handleRetry = async () => {
     try {
@@ -124,7 +123,7 @@ export function JobStatusPage() {
   };
 
   const handleRollback = async () => {
-    if (!window.confirm('Rollback all successfully completed steps for this job?')) return;
+    if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
@@ -191,51 +190,56 @@ export function JobStatusPage() {
     }
   }
 
-  const completedStepsCount = displaySteps.filter(s => s.status === 'SUCCESS' || s.status === 'ROLLED_BACK').length;
-  const totalSteps = displaySteps.length;
-  
-  let progressPercentage = 0;
-  if (totalSteps > 0) {
-    progressPercentage = Math.round((completedStepsCount / totalSteps) * 100);
-  } else if (isFinished && job.status === 'SUCCESS') {
-    progressPercentage = 100;
-  }
-  
-  let currentStepName = 'Setting up your environment...';
-  if (totalSteps > 0) {
-    const activeStep = displaySteps.find(s => s.status === 'IN_PROGRESS' || s.status === 'PENDING');
-    const failedStep = displaySteps.find(s => s.status === 'FAILED');
-    if (activeStep) {
-      currentStepName = getBusinessStepName(activeStep.name);
-    } else if (failedStep) {
-      currentStepName = `Failed: ${getBusinessStepName(failedStep.name)}`;
-    } else if (isFinished) {
-      currentStepName = job.status === 'SUCCESS' ? 'Deployment completed successfully' : 'Deployment finished with errors';
-    } else if (completedStepsCount === totalSteps) {
-      currentStepName = 'All steps completed';
-    }
-  } else if (isFinished) {
-    currentStepName = job.status === 'SUCCESS' ? 'Deployment completed successfully' : 'Deployment finished with errors';
-  }
-
-  const getStatusIcon = (status: string, size = 18) => {
+  const formatStatus = (status: string) => {
     switch (status) {
-      case 'SUCCESS':
-      case 'ROLLED_BACK':
-        return <CheckCircle2 size={size} />;
-      case 'FAILED':
-      case 'ROLLBACK_FAILED':
-        return <XCircle size={size} />;
-      case 'IN_PROGRESS':
-      case 'ROLLING_BACK':
-        return <RefreshCw className="spin" size={size} />;
-      case 'PARTIAL_SUCCESS':
-        return <AlertTriangle size={size} />;
-      case 'PENDING':
-      case 'ROLLBACK_PENDING':
-      default:
-        return <CheckCircle2 size={size} className="status-pending-icon" />;
+      case 'SUCCESS': return 'Success';
+      case 'FAILED': return 'Failed';
+      case 'IN_PROGRESS': return 'In - progress';
+      case 'PARTIAL_SUCCESS': return 'Partial Success';
+      case 'ROLLED_BACK': return 'Rolled Back';
+      default: return status.replace('_', ' ');
     }
+  };
+
+  const getStatusClass = (status: string) => {
+    switch (status) {
+      case 'SUCCESS': return 'badge-success';
+      case 'FAILED': return 'badge-failed';
+      case 'IN_PROGRESS': return 'badge-in-progress';
+      case 'PARTIAL_SUCCESS': return 'badge-warning';
+      case 'ROLLED_BACK': return 'badge-rolled-back';
+      default: return 'badge-pending';
+    }
+  };
+
+  const getStepIcon = (status: string, size = 20) => {
+    const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(status);
+    const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(status);
+    const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(status);
+    
+    let bgColor = '#CCCCCC'; // Pending / Default
+    if (isCompleted) bgColor = '#1F845A';
+    else if (isFailed) bgColor = '#EF4D5F';
+    else if (isRunning) bgColor = '#3E1363';
+
+    if (isRunning) {
+      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#818181', flexShrink: 0 }} />;
+    }
+
+    return (
+      <div style={{
+        width: `${size}px`,
+        height: `${size}px`,
+        borderRadius: '64px',
+        background: bgColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
+      }}>
+        <Check size={size - 8} color="#FFFFFF" strokeWidth={3} />
+      </div>
+    );
   };
 
   const renderLogs = (logsText: string) => {
@@ -252,21 +256,29 @@ export function JobStatusPage() {
     });
   };
 
+  const totalSteps = displaySteps.length;
+  const completedStepsCount = displaySteps.filter(s => ['SUCCESS', 'ROLLED_BACK'].includes(s.status)).length;
+  const progressPercentage = totalSteps === 0 ? 0 : Math.round((completedStepsCount / totalSteps) * 100);
+
   return (
-    <div className="job-status-page animate-fade-in" onClick={() => setOpenMenu(false)}>
+    <div className="job-status-page animate-fade-in">
       <div className="page-header-actions">
-        <button className="btn btn-ghost back-btn" onClick={() => navigate('/jobs')}>
-          <ArrowLeft size={16} /> Back to Jobs
-        </button>
+        <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>
+          <ArrowLeft size={16} /> 
+          <div className="back-text">
+            <span className="back-label">Job ID</span>
+            <span className="back-id">{job.id.slice(0, 8)}</span>
+          </div>
+        </div>
         <div className="action-buttons">
           {canManage && (job.status === 'FAILED' || job.status === 'PARTIAL_SUCCESS') && (
-            <button className="btn btn-primary" onClick={handleRetry}>
-              <RefreshCw size={16} /> Retry Job
+            <button className="btn btn-outline-primary" onClick={handleRetry}>
+              <RefreshCw size={14} style={{ marginRight: '6px' }} /> Retry Job
             </button>
           )}
           {canManage && job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
-            <button className="btn" onClick={handleRollback}>
-              <Undo2 size={16} /> Rollback
+            <button className="btn btn-outline-primary" onClick={handleRollback}>
+              <Undo2 size={14} style={{ marginRight: '6px' }} /> Rollback
             </button>
           )}
         </div>
@@ -279,112 +291,177 @@ export function JobStatusPage() {
         </div>
       )}
 
-      <div className="top-status-bar glass-panel">
-        <div className="status-col">
-          <div className="status-label">STATUS</div>
-          <div className={`status-value status-badge ${job.status.toLowerCase()}`}>
-            {getStatusIcon(job.status, 20)}
-            <span>{job.status}</span>
+      <div className="job-summary-wrapper">
+        <div className="summary-bar-card">
+          <div className="summary-col">
+            <div className="summary-label">Status</div>
+            <div className={`status-pill ${getStatusClass(job.status)}`}>
+              {formatStatus(job.status)}
+            </div>
           </div>
-        </div>
-        <div className="status-col">
-          <div className="status-label">JOB ID</div>
-          <div className="status-value with-icon">
-            <Server size={20} className="host-icon" />
-            <span className="truncate-id">{job.id}</span>
+          <div className="summary-divider" />
+          <div className="summary-col">
+            <div className="summary-label">Job ID</div>
+            <div className="summary-value truncate-id">{job.id}</div>
           </div>
-        </div>
-        <div className="status-col">
-          <div className="status-label">STARTED</div>
-          <div className="status-value date-val">
-            {job.startTime ? new Date(job.startTime).toLocaleString() : '-'}
+          <div className="summary-divider" />
+          <div className="summary-col">
+            <div className="summary-label">Started</div>
+            <div className="summary-value date-val">
+              {job.startTime ? new Date(job.startTime).toLocaleString() : '-'}
+            </div>
           </div>
-        </div>
-        <div className="status-col">
-          <div className="status-label">UPDATED</div>
-          <div className="status-value date-val">
-            {job.endTime ? new Date(job.endTime).toLocaleString() : (job.startTime ? new Date(job.startTime).toLocaleString() : '-')}
+          <div className="summary-divider" />
+          <div className="summary-col">
+            <div className="summary-label">Updated</div>
+            <div className="summary-value date-val">
+              {job.endTime ? new Date(job.endTime).toLocaleString() : (job.startTime ? new Date(job.startTime).toLocaleString() : '-')}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="job-main-layout">
-        <div className="job-sidebar glass-panel">
-          <h3>Deployment Steps</h3>
-          <div className="steps-list">
-            {displaySteps.map(step => (
-              <div className="step-item" key={step.id}>
-                <div className={`step-icon ${step.status.toLowerCase()}`}>
-                  {getStatusIcon(step.status, 16)}
+      {!isLogsExpanded && (
+        <h3 className="panel-title" style={{ textAlign: 'left', marginBottom: '16px', color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+      )}
+      <div className={`job-main-layout ${isLogsExpanded ? 'logs-expanded' : ''}`}>
+        {!isLogsExpanded && (
+          <div className="job-sidebar">
+            <div style={{
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              padding: '16px',
+              background: '#FFFFFF',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px',
+              boxSizing: 'border-box',
+              marginLeft: '16px'
+            }}>
+              {totalSteps > 0 && (
+                <div style={{ textAlign: 'left', fontSize: '12px', lineHeight: '16px', color: '#818181', fontFamily: 'Satoshi', fontWeight: 500 }}>
+                  {completedStepsCount} of {totalSteps} steps
                 </div>
-                <span className={`step-name ${step.status === 'PENDING' ? 'pending-text' : ''}`}>
-                  {getBusinessStepName(step.name)}
-                </span>
-              </div>
-            ))}
-            {displaySteps.length === 0 && <div className="empty-state">No steps recorded</div>}
-          </div>
-        </div>
+              )}
+              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {displaySteps.map((step, idx) => {
+                  const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
+                  const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
+                  const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);
+                  
+                  const progress = isCompleted ? 100 : isRunning ? 50 : 0;
+                  
+                  let nameColor = '#818181'; // Unstarted default
+                  let statusColor = '#818181'; // Unstarted default
+                  let barColor = '#CCCCCC'; // Unstarted default track
+                  
+                  if (isCompleted) {
+                    nameColor = '#332849';
+                    statusColor = '#1F845A';
+                    barColor = '#098C60';
+                  } else if (isFailed) {
+                    nameColor = '#332849';
+                    statusColor = '#EF4D5F';
+                    barColor = '#EF4D5F';
+                  } else if (isRunning) {
+                    nameColor = '#332849';
+                    statusColor = '#3E1363';
+                    barColor = '#3E1363';
+                  }
 
-        {viewMode === 'logs' ? (
-          <div className="job-logs-container glass-panel">
-            <div className="logs-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1 }}>
-                <Terminal size={18} />
-                <span>Live Logs</span>
-                {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+                  return (
+                    <div key={step.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
+                      {getStepIcon(step.status, 20)}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ 
+                            fontFamily: 'Satoshi', 
+                            fontSize: '12px', 
+                            fontWeight: 500, 
+                            lineHeight: '16px',
+                            color: nameColor,
+                            width: '175px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            display: 'inline-block'
+                          }} title={getBusinessStepName(step.name)}>
+                            {getBusinessStepName(step.name)}
+                          </span>
+                          <span style={{ 
+                            fontFamily: 'Satoshi', 
+                            fontSize: '12px', 
+                            fontWeight: 500, 
+                            lineHeight: '16px',
+                            color: statusColor,
+                            width: '96px',
+                            textAlign: 'right'
+                          }}>
+                            {progress}% Completed
+                          </span>
+                        </div>
+                        <div className="step-progress-track" style={{ height: '8px', background: '#CCCCCC', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
+                          {isCompleted || isFailed || isRunning ? (
+                            <>
+                              <div 
+                                className="step-progress-fill" 
+                                style={{ 
+                                  width: `${progress}%`, 
+                                  background: barColor, 
+                                  height: '100%', 
+                                  borderRadius: progress === 100 ? '2px' : '2px 0px 0px 2px', 
+                                  transition: 'width 0.5s ease' 
+                                }} 
+                              />
+                              {progress < 100 && (
+                                <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
+                              )}
+                            </>
+                          ) : (
+                            // Not Started / Pending step progress bar: partitioned rectangle 63 and rectangle 64
+                            <>
+                              <div style={{ width: '3px', background: '#CCCCCC', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
+                              <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: '#818181' }}>No steps recorded</div>}
               </div>
-              <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
-                <button className="btn icon-only" style={{ background: 'transparent', color: '#a6accd', border: 'none' }} onClick={() => setOpenMenu(prev => !prev)} title="View options">
-                  <MoreVertical size={16} />
-                </button>
-                {openMenu && (
-                  <div className="cluster-action-menu" style={{ right: 0, top: '100%' }}>
-                    <button onClick={() => { setViewMode('progress'); setOpenMenu(false); }}>
-                      <Activity size={14} /> Show progress
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="logs-content">
-              <pre className="logs-text">
-                {renderLogs(job.logs)}
-              </pre>
-              <div ref={logsEndRef} />
-            </div>
-          </div>
-        ) : (
-          <div className="job-progress-container glass-panel">
-            <div className="progress-header-wrap">
-              <div>
-                <h3>Deployment Progress</h3>
-                <p>{currentStepName}</p>
-              </div>
-              <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
-                <button className="btn icon-only" onClick={() => setOpenMenu(prev => !prev)} title="View options">
-                  <MoreVertical size={16} />
-                </button>
-                {openMenu && (
-                  <div className="cluster-action-menu" style={{ right: 0, top: '100%' }}>
-                    <button onClick={() => { setViewMode('logs'); setOpenMenu(false); }}>
-                      <Terminal size={14} /> Show live logs
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="progress-bar-wrapper">
-               <div className="progress-bar-track">
-                  <div className="progress-bar-fill" style={{ width: `${progressPercentage}%` }} />
-               </div>
-               <div className="progress-bar-stats">
-                 <span>{progressPercentage}% Complete</span>
-                 <span>{completedStepsCount} of {totalSteps} steps</span>
-               </div>
             </div>
           </div>
         )}
+
+        <div className="job-logs-container">
+          <div className="logs-header">
+            <div className="logs-header-title">
+              <span>Live Logs</span>
+              {!isFinished && <RefreshCw size={14} className="spin log-spin" />}
+            </div>
+            <button className="btn icon-only toggle-expand-btn" onClick={() => setIsLogsExpanded(!isLogsExpanded)} title={isLogsExpanded ? "Collapse" : "Expand"}>
+              {isLogsExpanded ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M 19 10 h -5 v -5" />
+                  <path d="M 5 14 h 5 v 5" />
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M 14 5 h 5 v 5" />
+                  <path d="M 10 19 H 5 v -5" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <div className="logs-content">
+            <pre className="logs-text">
+              {renderLogs(job.logs)}
+            </pre>
+            <div ref={logsEndRef} />
+          </div>
+        </div>
       </div>
     </div>
   );

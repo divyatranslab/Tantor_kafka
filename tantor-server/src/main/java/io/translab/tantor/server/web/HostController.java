@@ -26,7 +26,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.InetSocketAddress;
@@ -86,19 +85,9 @@ public class HostController {
             ));
         }
 
-        Task task = new Task();
-        task.setHostId(id);
-        task.setCommand("CHECK_PREREQUISITES");
-        task.setStatus("PENDING");
+        Task task;
         try {
-            Map<String, Object> parameters = new LinkedHashMap<>();
-            if (options != null) {
-                Object mode = options.get("mode");
-                Object requiredPorts = options.get("required_ports");
-                if (mode != null) parameters.put("mode", String.valueOf(mode));
-                if (requiredPorts != null) parameters.put("required_ports", String.valueOf(requiredPorts));
-            }
-            task.setParameters(objectMapper.writeValueAsString(parameters));
+            task = hostTask(id, "CHECK_PREREQUISITES", options);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("message", "Invalid prerequisite options."));
         }
@@ -107,6 +96,39 @@ public class HostController {
                 host.getClusterId(), "REQUESTED", null, null, null,
                 Map.of("taskId", task.getId().toString(),
                         "mode", options == null ? "" : String.valueOf(options.getOrDefault("mode", "")),
+                        "requiredPorts", options == null ? "" : String.valueOf(options.getOrDefault("required_ports", ""))));
+        return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
+    }
+
+    @PostMapping("/{id}/check-ports")
+    public ResponseEntity<?> checkPorts(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> options
+    ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
+        Host host = hostRepository.findById(id).orElse(null);
+        if (host == null) return ResponseEntity.notFound().build();
+        String effectiveStatus = hostStatusService.effectiveStatus(host);
+        if (!"ONLINE".equalsIgnoreCase(effectiveStatus)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "message",
+                    "Host must be ONLINE before ports can be checked. Current status: " + effectiveStatus
+            ));
+        }
+
+        Task task;
+        try {
+            task = hostTask(id, "CHECK_PORTS", options);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid port check options."));
+        }
+        taskRepository.save(task);
+        auditService.record("PREREQUISITE", "PORT_CHECK_REQUESTED", "HOST", id,
+                host.getClusterId(), "REQUESTED", null, null, null,
+                Map.of("taskId", task.getId().toString(),
                         "requiredPorts", options == null ? "" : String.valueOf(options.getOrDefault("required_ports", ""))));
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
@@ -127,7 +149,7 @@ public class HostController {
         task.setHostId(id);
         task.setCommand("APPLY_PREREQUISITES");
         task.setStatus("PENDING");
-        task.setParameters("{}");
+        task.setParameters(requesterParameters());
         taskRepository.save(task);
         auditService.record("PREREQUISITE", "PREREQUISITE_FIX_REQUESTED", "HOST", id,
                 host.getClusterId(), "REQUESTED", null, null, null,
@@ -173,6 +195,39 @@ public class HostController {
                         "errorMsg", task.getErrorMsg() == null ? "" : task.getErrorMsg()
                 )))
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    private Task hostTask(String hostId, String command, Map<String, Object> options) throws Exception {
+        Task task = new Task();
+        task.setHostId(hostId);
+        task.setCommand(command);
+        task.setStatus("PENDING");
+
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("requested_by", io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
+        if (options != null) {
+            copyOption(options, parameters, "mode");
+            copyOption(options, parameters, "required_ports");
+            copyOption(options, parameters, "java_home");
+            copyOption(options, parameters, "javaHome");
+        }
+        task.setParameters(objectMapper.writeValueAsString(parameters));
+        return task;
+    }
+
+    private String requesterParameters() {
+        try {
+            return objectMapper.writeValueAsString(Map.of(
+                    "requested_by", io.translab.tantor.server.security.SecurityUtils.getCurrentUsername()));
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to capture request identity", e);
+        }
+    }
+    private void copyOption(Map<String, Object> source, Map<String, Object> target, String key) {
+        Object value = source.get(key);
+        if (value != null && !String.valueOf(value).isBlank()) {
+            target.put(key, String.valueOf(value));
+        }
     }
 
     @PostMapping("/{id}/mark-unavailable")
@@ -274,7 +329,7 @@ public class HostController {
             String previousStatus = host.getStatus();
             host.setClusterId(null);
             host.setStatus("PENDING");
-            host.setAgentStatus("OFFLINE");
+
             host.setRemoved(true);
             host.setLastHeartbeat(null);
             host.setAction("HOST_REMOVED");

@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { confirmAction } from '../components/ConfirmDialog';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -54,6 +56,56 @@ const connectorTemplate = `{
     "topic": "file-source-topic"
   }
 }`;
+
+interface CustomSelectProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+      <div 
+        className="ds-custom-select-trigger" 
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+      >
+        <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
+        <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+      
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="ds-custom-select-dropdown"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
+            {options.map(opt => (
+              <div
+                key={opt.value}
+                className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+              >
+                {opt.label}
+              </div>
+            ))}
+        </AnchoredMenu>
+      )}
+    </div>
+  );
+}
 
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
@@ -121,7 +173,7 @@ export function KafkaConnect() {
         const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = rej; r.readAsText(certFile);
       });
       return btoa(text.trim());
-    } else if (certType === 'PKCS12_JKS' && certFile) {
+    } else if (certType === 'PKCS12' && certFile) {
       return await readFileAsBase64(certFile);
     }
     return undefined;
@@ -217,7 +269,7 @@ export function KafkaConnect() {
   const handleDeleteConnection = async () => {
     if (!canManage) return;
     if (!selectedConnectionId) return;
-    if (!window.confirm("Are you sure you want to delete this connection?")) return;
+    if (!(await confirmAction("Are you sure you want to delete this connection?"))) return;
     
     setLoading(true);
     try {
@@ -316,7 +368,7 @@ export function KafkaConnect() {
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
     if (!canManage) return;
-    if (action === 'delete' && !window.confirm(`Delete connector ${name}?`)) return;
+    if (action === 'delete' && !(await confirmAction(`Delete connector ${name}?`))) return;
     setSaving(true);
     setError(null);
     try {
@@ -346,24 +398,28 @@ export function KafkaConnect() {
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
   return (
-    <div className="data-services-page animate-fade-in">
-      <div className="ds-header">
-        <h2>Kafka Connect</h2>
-        <div className="ds-actions">
-          {/* ── Instance switcher ── */}
-          {savedConnections.length > 0 && (
-            <div className="ds-compat-control">
-              <span>Instance</span>
-              <select
+    <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
+      <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
+        <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: hasFetched ? 'space-between' : 'flex-end', alignItems: 'flex-end', marginBottom: hasFetched ? '0' : '24px' }}>
+          
+          {/* ── Instance Selector ── */}
+          {hasFetched && <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CustomSelect
+                className="ds-instance-select"
                 value={selectedConnectionId ?? ''}
-                onChange={e => setSelectedConnectionId(e.target.value || null)}
-              >
-                {savedConnections.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.connectionName}{c.isDefault ? ' (default)' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={val => setSelectedConnectionId(val || null)}
+                disabled={savedConnections.length === 0}
+                options={
+                  savedConnections.length > 0
+                    ? savedConnections.map(c => ({
+                        value: c.id,
+                        label: `${c.connectionName}${c.isDefault ? ' (default)' : ''}`
+                      }))
+                    : [{ value: '', label: 'Default connection' }]
+                }
+              />
               {selectedConn && (
                 <span
                   style={{
@@ -372,82 +428,329 @@ export function KafkaConnect() {
                     height: 8,
                     borderRadius: '50%',
                     background: connStatusColor(selectedConn.status),
-                    flexShrink: 0
+                    marginLeft: 4
                   }}
                   title={selectedConn.status}
                 />
               )}
             </div>
-          )}
+          </div>}
 
-          <button className="ds-button" onClick={load} disabled={loading} title="Refresh">
-            <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
-          </button>
-          {canManage && (
-            <>
-              <button className="ds-button primary" onClick={() => setShowCreate(true)}>
-                <Plus size={16} /> Create Connector
-              </button>
-              {/* Edit selected connection */}
-              <button
-                className="ds-icon-button"
-                onClick={() => openConnectionModal(selectedConn ?? undefined)}
-                disabled={!selectedConn}
-                title="Edit selected connection"
+          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* ── Buttons ── */}
+            {canManage && (
+              <button 
+                type="button"
+                onClick={() => setShowCreate(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#FFFFFF',
+                  border: '1px solid #3E1363',
+                  borderRadius: '8px',
+                  color: '#3E1363',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+                title="Upload JSON configurations"
               >
-                <MoreVertical size={18} />
+                <FileDown size={16} style={{ color: '#3E1363' }} /> Save
               </button>
-              {/* Delete selected connection */}
+            )}
+
+            {canManage && (
+              <button 
+                className="ds-button" 
+                onClick={() => openConnectionModal()} 
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#FFFFFF',
+                  border: '1px solid #3E1363',
+                  borderRadius: '8px',
+                  color: '#3E1363',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Settings size={16} style={{ color: '#3E1363' }} /> Add Connection
+              </button>
+            )}
+
+            {canManage && (
+              <button 
+                className="ds-button primary" 
+                onClick={() => setShowCreate(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '35px',
+                  padding: '8px 16px',
+                  background: '#3E1363',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#FFFFFF',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <Plus size={16} color="#FFFFFF" /> Create Connector
+              </button>
+            )}
+
+            {canManage && (
               <button
-                className="ds-icon-button"
+                className="ds-icon-button icon-gray"
                 onClick={handleDeleteConnection}
                 disabled={!selectedConn}
+                style={{
+                  width: '35px',
+                  height: '35px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#FFFFFF',
+                  border: '1px solid #D2D2D7',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  opacity: selectedConn ? 1 : 0.5
+                }}
                 title="Delete connection"
-                style={{ color: 'var(--color-danger, #e88080)' }}
               >
-                <Trash2 size={18} />
+                <Trash2 size={16} style={{ color: '#71717A' }} />
               </button>
-              {/* Add new connection */}
-              <button className="ds-button" onClick={() => openConnectionModal()} title="Add new KC instance">
-                <Settings size={16} /> Add Connection
+            )}
+
+            <button 
+              className="ds-icon-button icon-gray" 
+              onClick={load} 
+              disabled={loading}
+              style={{
+                width: '35px',
+                height: '35px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: '#FFFFFF',
+                border: '1px solid #D2D2D7',
+                borderRadius: '8px',
+                cursor: 'pointer'
+              }}
+              title="Refresh"
+            >
+              <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#71717A' }} />
+            </button>
+
+            {canManage && (
+              <button
+                className="ds-icon-button icon-gray"
+                onClick={() => openConnectionModal(selectedConn ?? undefined)}
+                disabled={!selectedConn}
+                style={{
+                  width: '35px',
+                  height: '35px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: '#FFFFFF',
+                  border: '1px solid #D2D2D7',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  opacity: selectedConn ? 1 : 0.5
+                }}
+                title="Edit connection"
+              >
+                <MoreVertical size={16} style={{ color: '#71717A' }} />
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div className="ds-panel ds-fetch-prompt">
+        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt">
+          <div className="ds-kafka-connect-illustration" aria-hidden="true">
+            {[0, 1, 2].map(row => (
+              <span className="ds-kafka-connect-illustration-row" key={row}>
+                <i />
+                <i />
+              </span>
+            ))}
+            <span className="ds-kafka-connect-illustration-feet"><i /><i /></span>
+          </div>
           <p>Kafka Connect data is not loaded automatically.</p>
-          <button className="ds-button primary" onClick={load} disabled={loading}>
-            <RefreshCw size={16} /> Fetch Kafka Connect for this cluster
+          <button 
+            className="ds-fetch-link"
+            type="button" 
+            onClick={load} 
+            disabled={loading}
+          >
+            {loading ? 'Fetching Kafka Connect...' : 'Fetch Kafka Connect for this cluster'}
           </button>
         </div>
       ) : <>
-      <div className="ds-metrics">
-        <div className="ds-metric-card total"><span>Total Connectors</span><strong>{summary?.connectorCount ?? 0}</strong></div>
-        <div className="ds-metric-card running"><span>Running Connectors</span><strong>{summary?.runningConnectors ?? 0}</strong></div>
-        <div className="ds-metric-card paused"><span>Paused Connectors</span><strong>{summary?.pausedConnectors ?? 0}</strong></div>
-        <div className="ds-metric-card failed"><span>Failed Connectors</span><strong>{summary?.failedConnectors ?? 0}</strong></div>
+      <div className="ds-metrics ds-kc-metrics" style={{
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: '0 0 24px 0',
+        gap: '16px',
+        background: 'transparent',
+        borderRadius: '0',
+        marginBottom: '24px',
+        boxSizing: 'border-box',
+        width: '100%'
+      }}>
+        {/* Total Connectors */}
+        <div className="ds-kc-metric-card" style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '8px',
+          background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Total Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.connectorCount ?? 0}</strong>
+        </div>
+
+        {/* Running Connectors */}
+        <div className="ds-kc-metric-card" style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '8px',
+          background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Running Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.runningConnectors ?? 0}</strong>
+        </div>
+
+        {/* Paused Connectors */}
+        <div className="ds-kc-metric-card" style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '8px',
+          background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Paused Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.pausedConnectors ?? 0}</strong>
+        </div>
+
+        {/* Failed Connectors */}
+        <div className="ds-kc-metric-card" style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '16px',
+          gap: '8px',
+          background: '#FFFFFF',
+          border: '1px solid #E4E4E7',
+          borderRadius: '8px',
+          flex: '1 1 0px'
+        }}>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Failed Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.failedConnectors ?? 0}</strong>
+        </div>
       </div>
 
-      <div className="ds-tabs">
-        <button className={`ds-tab ${activeTab === 'clusters' ? 'active' : ''}`} onClick={() => setActiveTab('clusters')}>
-          <Plug size={16} /> Clusters
+      <div className="ds-tabs ds-kc-tabs" style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #CCCCCC', marginBottom: '20px' }}>
+        <button 
+          className={activeTab === 'clusters' ? 'active' : ''}
+          onClick={() => setActiveTab('clusters')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'clusters' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'clusters' ? '#3E1363' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'clusters' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Clusters
         </button>
-        <button className={`ds-tab ${activeTab === 'connectors' ? 'active' : ''}`} onClick={() => setActiveTab('connectors')}>
-          <Plug size={16} /> Connectors
+        <button 
+          className={activeTab === 'connectors' ? 'active' : ''}
+          onClick={() => setActiveTab('connectors')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'connectors' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'connectors' ? '#3E1363' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'connectors' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Connectors
         </button>
-        <button className={`ds-tab ${activeTab === 'plugins' ? 'active' : ''}`} onClick={() => setActiveTab('plugins')}>
-          <Plug size={16} /> Plugins
+        <button 
+          className={activeTab === 'plugins' ? 'active' : ''}
+          onClick={() => setActiveTab('plugins')}
+          style={{
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'plugins' ? '2px solid #3E1363' : '2px solid transparent',
+            color: activeTab === 'plugins' ? '#3E1363' : '#818181',
+            fontFamily: 'Satoshi, sans-serif',
+            fontWeight: activeTab === 'plugins' ? 500 : 400,
+            fontSize: '14px',
+            padding: '8px 12px 12px 12px',
+            cursor: 'pointer',
+            marginBottom: '-1px'
+          }}
+        >
+          Plugins
         </button>
       </div>
 
-      <div className="ds-panel">
+      <div className="ds-panel ds-kc-panel">
         {activeTab === 'clusters' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table">
             <thead>
               <tr><th>Name</th><th>Version</th><th>Connectors</th><th>Running Tasks</th><th>REST Endpoint</th></tr>
             </thead>
@@ -458,7 +761,20 @@ export function KafkaConnect() {
                   <td>{cluster.version}</td>
                   <td>{cluster.connectors}</td>
                   <td>{cluster.runningTasks}</td>
-                  <td>{summary?.connection || '-'}</td>
+                  <td>
+                    {summary?.connection ? (
+                      <a 
+                        href={summary.connection} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ color: '#3E1363', textDecoration: 'underline' }}
+                      >
+                        {summary.connection}
+                      </a>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -466,7 +782,7 @@ export function KafkaConnect() {
         )}
 
         {activeTab === 'connectors' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table ds-kc-connectors-table">
             <thead>
               <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th>{canManage && <th>Actions</th>}</tr>
             </thead>
@@ -478,7 +794,7 @@ export function KafkaConnect() {
                   <tr key={connector.name}>
                     <td>{connector.name}</td>
                     <td>{connector.class || '-'}</td>
-                    <td><span className={statusClass(connector.state)}>{connector.state}</span></td>
+                    <td><span className={statusClass(connector.state)}>{connector.state.charAt(0) + connector.state.slice(1).toLowerCase()}</span></td>
                     <td>{connector.runningTasks} / {connector.tasks}</td>
                     {canManage && (
                       <td>
@@ -508,7 +824,7 @@ export function KafkaConnect() {
         )}
 
         {activeTab === 'plugins' && (
-          <table className="ds-table">
+          <table className="ds-table ds-kc-table">
             <thead>
               <tr><th>Class</th><th>Type</th><th>Version</th></tr>
             </thead>
@@ -533,17 +849,18 @@ export function KafkaConnect() {
       {/* ── Connection modal ── */}
       {canManage && showConnection && (
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ds-modal ds-connection-modal">
-            <div className="ds-modal-header">
+          <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: '12px', background: '#FFFFFF', padding: '24px', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
+            <div className="ds-modal-header" style={{ border: 'none', padding: '0 0 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3>{editingConnectionId ? 'Edit Connection' : 'Add Kafka Connect Connection'}</h3>
-                <span className="ds-muted-line">{formConnectionName || 'New connection'}</span>
+                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#332849', margin: 0 }}>Add Kafka Connect Connection</h3>
+                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', marginTop: '4px', display: 'block' }}>New connection</span>
               </div>
-              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close">
-                <X size={16} />
+              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#818181' }}>
+                <X size={20} />
               </button>
             </div>
-            <div className="ds-form ds-compact-form">
+            
+            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: '#F9F9F9', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
               {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
               {selectedConn?.status && editingConnectionId && (
                 <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
@@ -552,84 +869,208 @@ export function KafkaConnect() {
                   {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
                 </div>
               )}
-              <div className="ds-field">
-                <label>Connection Name</label>
+              
+              <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Connection Name</label>
                 <input
                   value={formConnectionName}
                   onChange={e => setFormConnectionName(e.target.value)}
                   placeholder="e.g. ETL Kafka Connect"
                   required
+                  style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
                 />
               </div>
-              <div className="ds-form-grid three">
-                <div className="ds-field">
-                  <label>Protocol</label>
-                  <select value={protocol} onChange={e => setProtocol(e.target.value)}>
-                    <option value="http">http://</option>
-                    <option value="https">https://</option>
-                  </select>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Protocol</label>
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      value={protocol} 
+                      onChange={e => setProtocol(e.target.value)}
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="http">http://</option>
+                      <option value="https">https://</option>
+                    </select>
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
-                <div className="ds-field">
-                  <label>Host / IP</label>
-                  <input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.161" required />
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Host / IP</label>
+                  <input 
+                    value={customIp} 
+                    onChange={e => setCustomIp(e.target.value)} 
+                    placeholder="Host or IP address"
+                    required 
+                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                  />
                 </div>
-                <div className="ds-field">
-                  <label>Port</label>
-                  <input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8083" required />
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Port</label>
+                  <input 
+                    type="number" 
+                    value={customPort} 
+                    onChange={e => setCustomPort(e.target.value)} 
+                    placeholder="8083" 
+                    required 
+                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                  />
                 </div>
               </div>
-              <div className="ds-form-grid two">
-                <div className="ds-field">
-                  <label>Certificate Type</label>
-                  <select value={certType} onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}>
-                    <option value="PEM">PEM</option>
-                    <option value="PKCS12_JKS">PKCS12 / JKS</option>
-                  </select>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate Type</label>
+                  <div style={{ position: 'relative' }}>
+                    <select 
+                      value={certType} 
+                      onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                    >
+                      <option value="PEM">PEM</option>
+                      <option value="PKCS12">PKCS12</option>
+                    </select>
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
-                <div className="ds-field">
-                  <label>Certificate / Truststore</label>
-                  <label className="ds-upload-control">
-                    <Upload size={16} /> {certFileName || 'Upload file'}
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate / Truststore</label>
+                  <label 
+                    className="ds-upload-control"
+                    style={{
+                      boxSizing: 'border-box',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      width: '100%',
+                      height: '40px',
+                      background: '#FFFFFF',
+                      border: '1px solid #7F56D9',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontSize: '14px',
+                      color: '#7F56D9',
+                      fontWeight: 500
+                    }}
+                  >
+                    <FileDown size={16} style={{ color: '#7F56D9' }} /> {certFileName || 'Choose file'}
                     <input
                       type="file"
-                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx,.jks'}
+                      accept={certType === 'PEM' ? '.pem,.crt,.cer' : '.p12,.pfx'}
                       onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }}
+                      style={{ display: 'none' }}
                     />
                   </label>
-                  {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> {certFileName}</span>}
+                  {certFileName && <span className="ds-secret-note" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '12px', color: '#36AD8F', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}><CheckCircle size={14} /> {certFileName}</span>}
                 </div>
               </div>
-              {certType === 'PKCS12_JKS' && (
-                <div className="ds-field">
-                  <label>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
-                  <input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" />
+
+              {certType === 'PKCS12' && (
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
+                  <div style={{ position: 'relative' }}>
+                    <input 
+                      type="password" 
+                      value={certPassword} 
+                      onChange={e => setCertPassword(e.target.value)} 
+                      placeholder="Password" 
+                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                    />
+                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
+                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                    </span>
+                  </div>
                 </div>
               )}
-              <div className="ds-default-toggle-row">
-                <label className="ds-toggle-switch" htmlFor="kc-is-default">
+
+              <div className="ds-default-toggle-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+                <label className="ds-toggle-switch" htmlFor="kc-is-default" style={{ position: 'relative', display: 'inline-block', width: '33px', height: '18px', cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="kc-is-default"
                     checked={formIsDefault}
                     onChange={e => setFormIsDefault(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
                   />
-                  <span className="ds-toggle-track">
-                    <span className="ds-toggle-thumb" />
+                  <span className="ds-toggle-track" style={{
+                    boxSizing: 'border-box',
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: '1.5px',
+                    width: '33px',
+                    height: '18px',
+                    background: formIsDefault ? '#3E1363' : '#ADADAD',
+                    border: formIsDefault ? '0.75px solid #3E1363' : '0.75px solid #ADADAD',
+                    borderRadius: '9px',
+                    transition: 'background-color 0.2s, border-color 0.2s'
+                  }}>
+                    <span className="ds-toggle-thumb" style={{
+                      width: '13.5px',
+                      height: '13.5px',
+                      background: '#FFFFFF',
+                      borderRadius: '50%',
+                      position: 'absolute',
+                      left: formIsDefault ? '16.5px' : '1.5px',
+                      transition: 'left 0.2s',
+                      transform: 'none'
+                    }} />
                   </span>
                 </label>
-                <label htmlFor="kc-is-default" className="ds-toggle-label">
+                <label htmlFor="kc-is-default" className="ds-toggle-label" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', cursor: 'pointer' }}>
                   Set as default connection for this cluster
                 </label>
               </div>
             </div>
-            <div className="ds-modal-footer">
-              <button className="ds-button" onClick={() => setShowConnection(false)} disabled={connectSaving}>Cancel</button>
+
+            <div className="ds-modal-footer" style={{ border: 'none', padding: '0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button 
+                className="ds-button" 
+                onClick={() => setShowConnection(false)} 
+                disabled={connectSaving}
+                style={{
+                  height: '38px',
+                  padding: '0 20px',
+                  background: '#FFFFFF',
+                  border: '1px solid #CCCCCC',
+                  borderRadius: '8px',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#332849',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
               <button
                 className="ds-button primary"
                 onClick={handleSaveConnection}
                 disabled={connectSaving || !customIp.trim() || !customPort.trim()}
+                style={{
+                  height: '38px',
+                  padding: '0 20px',
+                  background: '#3E1363',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  opacity: (connectSaving || !customIp.trim() || !customPort.trim()) ? 0.6 : 1
+                }}
               >
-                {connectSaving ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />} Save & Connect
+                {connectSaving ? <RefreshCw size={16} className="spin" style={{ marginRight: '8px' }} /> : null} Save & Connect
               </button>
             </div>
           </div>

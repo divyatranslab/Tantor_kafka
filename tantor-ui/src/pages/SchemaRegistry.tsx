@@ -1,21 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, ChevronRight, Edit3, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, Upload, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import orangeBanner from '../assets/orange.png';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
   subject: string;
   type: string;
   version: number;
-  id: number;
+  id: number | null;
   schemaType: string;
   schema: string;
 }
 
 interface SchemaVersion {
   version: number;
-  id: number;
+  id: number | null;
   schemaType: string;
   schema: string;
 }
@@ -35,6 +37,8 @@ interface SchemaSummary {
   valueSubjects: number;
 }
 
+type CertificateType = 'PEM' | 'PKCS12';
+
 interface SavedConnection {
   id: string;
   connectionName: string;
@@ -45,7 +49,7 @@ interface SavedConnection {
   isDefault: boolean;
   certificateConfigured: boolean;
   truststoreConfigured: boolean;
-  certificateType?: string;
+  certificateType?: CertificateType;
 }
 
 const emptySchema = `{
@@ -65,6 +69,103 @@ const compatibilityOptions = [
   'FULL_TRANSITIVE'
 ];
 
+/**
+ * Schema Registry returns JSON-based schemas as an escaped string. Format those
+ * schemas for display while leaving formats such as Protobuf untouched.
+ */
+const formatSchema = (schema: unknown, fallback = '{}'): string => {
+  if (schema === null || schema === undefined || schema === '') return fallback;
+
+  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+
+  try {
+    const parsed = JSON.parse(source);
+
+    // Some responses contain a JSON document encoded inside another JSON string.
+    if (typeof parsed === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(parsed), null, 2);
+      } catch {
+        return parsed;
+      }
+    }
+
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return source;
+  }
+};
+
+const formatSchemaCompact = (schema: unknown, fallback = '{}'): string => {
+  if (schema === null || schema === undefined || schema === '') return fallback;
+
+  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+
+  try {
+    const parsed = JSON.parse(source);
+    if (typeof parsed === 'string') {
+      try {
+        return JSON.stringify(JSON.parse(parsed));
+      } catch {
+        return parsed;
+      }
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    return source;
+  }
+};
+
+interface CustomSelectProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: { value: string; label: string }[];
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+}
+
+function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+      <div 
+        className="ds-custom-select-trigger" 
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+      >
+        <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
+        <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+      
+      {isOpen && containerRef.current && (
+        <AnchoredMenu
+          anchor={containerRef.current}
+          className="ds-custom-select-dropdown"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
+            {options.map(opt => (
+              <div
+                key={opt.value}
+                className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+              >
+                {opt.label}
+              </div>
+            ))}
+        </AnchoredMenu>
+      )}
+    </div>
+  );
+}
+
 type View = 'list' | 'detail' | 'edit';
 
 export function SchemaRegistry() {
@@ -77,6 +178,8 @@ export function SchemaRegistry() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [subjectToDelete, setSubjectToDelete] = useState<string | null>(null);
   const [selected, setSelected] = useState<SchemaSubject | null>(null);
   const [details, setDetails] = useState<SubjectDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -84,6 +187,17 @@ export function SchemaRegistry() {
   const [compareVersionA, setCompareVersionA] = useState<number | null>(null);
   const [compareVersionB, setCompareVersionB] = useState<number | null>(null);
   const [expandedVersions, setExpandedVersions] = useState<Set<number>>(new Set());
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const handleCopy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
 
   // Edit form state
   const [editSchemaType, setEditSchemaType] = useState('AVRO');
@@ -105,7 +219,7 @@ export function SchemaRegistry() {
   const [customIp, setCustomIp] = useState('');
   const [customPort, setCustomPort] = useState('');
   const [protocol, setProtocol] = useState('http');
-  const [certType, setCertType] = useState('PEM');
+  const [certType, setCertType] = useState<CertificateType>('PEM');
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certFileName, setCertFileName] = useState('');
   const [certPassword, setCertPassword] = useState('');
@@ -124,6 +238,19 @@ export function SchemaRegistry() {
     () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
     [savedConnections, selectedConnectionId]
   );
+
+  const comparableVersions = useMemo(() => {
+    const versions = [...(details?.versions || [])];
+    const latest = details?.latest;
+
+    if (latest && !versions.some(version => version.version === latest.version)) {
+      versions.push(latest);
+    }
+
+    return versions
+      .filter(version => Number.isFinite(version.version))
+      .sort((a, b) => b.version - a.version);
+  }, [details]);
 
   // ── Cert helpers ──────────────────────────────────────────────
 
@@ -167,7 +294,7 @@ export function SchemaRegistry() {
     if (certType === 'PEM') {
       if (certPasteMode && certPasteText.trim()) return safeBase64Encode(certPasteText.trim());
       if (!certPasteMode && certFile) return safeBase64Encode(await readFileAsText(certFile));
-    } else if (certType === 'PKCS12_JKS' && certFile) {
+    } else if (certType === 'PKCS12' && certFile) {
       return await readFileAsBase64(certFile);
     }
     return undefined;
@@ -225,9 +352,9 @@ export function SchemaRegistry() {
         protocol,
         host: customIp.trim(),
         port: parseInt(customPort.trim()) || 8081,
-        certificateType: certType,
-        certificateData: certData,
-        truststorePassword: certPassword || undefined,
+        certificateType: protocol === 'https' ? certType : null,
+        certificateData: protocol === 'https' ? certData : null,
+        truststorePassword: protocol === 'https' ? (certPassword || null) : null,
         isDefault: formIsDefault
       };
 
@@ -257,11 +384,12 @@ export function SchemaRegistry() {
     }
   };
 
-  const handleDeleteConnection = async () => {
-    if (!canManage) return;
-    if (!selectedConnectionId) return;
-    if (!window.confirm("Are you sure you want to delete this connection?")) return;
-    
+  const handleDeleteConnection = () => {
+    if (!canManage || !selectedConnectionId) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteConnection = async () => {
     setLoading(true);
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections/${selectedConnectionId}`, {
@@ -292,6 +420,7 @@ export function SchemaRegistry() {
     setHasFetched(true);
     setLoading(true);
     setError(null);
+
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
       const data = await res.json().catch(() => ({}));
@@ -322,6 +451,7 @@ export function SchemaRegistry() {
     setLoadingDetails(true);
     setError(null);
     setExpandedVersions(new Set());
+
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
       const data = await res.json().catch(() => ({}));
@@ -348,7 +478,7 @@ export function SchemaRegistry() {
     if (!selected || !latest) return;
     setEditSchemaType(latest.schemaType || 'AVRO');
     setEditCompatibility(subjectCompatibility);
-    setNewSchema(latest.schema || emptySchema);
+    setNewSchema(formatSchemaCompact(latest.schema || emptySchema));
     setView('edit');
   };
 
@@ -366,15 +496,18 @@ export function SchemaRegistry() {
   };
 
   const openCompare = () => {
-    const versions = [...(details?.versions || [])].sort((a, b) => b.version - a.version);
-    if (versions.length < 2) return;
-    setCompareVersionA(versions[0].version);
-    setCompareVersionB(versions[1].version);
+    if (comparableVersions.length < 2) {
+      setError('At least two schema versions are required to compare.');
+      return;
+    }
+    setError(null);
+    setCompareVersionA(comparableVersions[0].version);
+    setCompareVersionB(comparableVersions[1].version);
     setShowCompare(true);
   };
 
-  const comparedSchemaA = details?.versions.find(v => v.version === compareVersionA);
-  const comparedSchemaB = details?.versions.find(v => v.version === compareVersionB);
+  const comparedSchemaA = comparableVersions.find(v => v.version === compareVersionA);
+  const comparedSchemaB = comparableVersions.find(v => v.version === compareVersionB);
   const schemasAreIdentical = Boolean(
     comparedSchemaA && comparedSchemaB && comparedSchemaA.schema === comparedSchemaB.schema
   );
@@ -445,9 +578,12 @@ export function SchemaRegistry() {
     }
   };
 
-  const deleteSubject = async (name: string) => {
+  const deleteSubject = (name: string) => {
     if (!canManage) return;
-    if (!window.confirm(`Delete schema subject "${name}"?`)) return;
+    setSubjectToDelete(name);
+  };
+
+  const confirmDeleteSubject = async (name: string) => {
     setSaving(true);
     setError(null);
     try {
@@ -465,13 +601,14 @@ export function SchemaRegistry() {
     }
   };
 
-  const saveGlobalCompatibility = async () => {
+  const saveGlobalCompatibility = async (val: string) => {
+    setGlobalCompatibility(val);
     if (!canManage) return;
     setSaving(true); setError(null);
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ compatibility: globalCompatibility })
+        body: JSON.stringify({ compatibility: val })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to update global compatibility.');
@@ -507,89 +644,163 @@ export function SchemaRegistry() {
       {/* ── LIST VIEW ─────────────────────────────────────────── */}
       {view === 'list' && (
         <>
-          <div className="ds-header">
-            <h2>Schema Registry</h2>
+          <div className="ds-header ds-sr-header">
             <div className="ds-actions">
-              {/* ── Instance switcher ── */}
-              {savedConnections.length > 0 && (
-                <div className="ds-compat-control">
-                  <span>Instance</span>
-                  <select
-                    value={selectedConnectionId ?? ''}
-                    onChange={e => setSelectedConnectionId(e.target.value || null)}
-                  >
-                    {savedConnections.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.connectionName}{c.isDefault ? ' (default)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedConn && (
-                    <span
-                      className="ds-instance-status-dot"
-                      style={{
-                        display: 'inline-block',
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        background: connStatusColor(selectedConn.status),
-                        flexShrink: 0
-                      }}
-                      title={selectedConn.status}
+              <div className="ds-selectors-group">
+                {/* ── Instance Selector ── */}
+                <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance Selector</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <CustomSelect
+                      className="ds-instance-select"
+                      value={selectedConnectionId ?? ''}
+                      onChange={val => setSelectedConnectionId(val || null)}
+                      disabled={savedConnections.length === 0}
+                      options={
+                        savedConnections.length > 0
+                          ? savedConnections.map(c => ({
+                              value: c.id,
+                              label: c.isDefault ? 'Default connection' : c.connectionName
+                            }))
+                          : [{ value: '', label: 'Default connection' }]
+                      }
                     />
-                  )}
+                  </div>
                 </div>
-              )}
-              {canManage && <div className="ds-compat-control">
-                <span>Global compatibility</span>
-                <select value={globalCompatibility} onChange={e => setGlobalCompatibility(e.target.value)}>
-                  {compatibilityOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                <button className="ds-icon-button" onClick={saveGlobalCompatibility} disabled={saving} title="Save global compatibility">
-                  <Save size={16} />
-                </button>
-              </div>}
-              <button className="ds-button" onClick={load} disabled={loading}>
-                <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
-              </button>
-              {canManage && (
-                <>
-                  <button className="ds-button primary" onClick={() => setShowCreate(true)}>
+
+                {/* ── Global Compatibility Selector ── */}
+                <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Global Compatibility Selector</span>
+                  <CustomSelect
+                    className="ds-compat-select"
+                    value={globalCompatibility}
+                    onChange={saveGlobalCompatibility}
+                    disabled={!canManage}
+                    options={compatibilityOptions.map(o => ({
+                      value: o,
+                      label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="ds-buttons-group">
+                {/* ── Buttons ── */}
+                {canManage && (
+                  <button 
+                    className="ds-sr-save-button"
+                    onClick={() => saveGlobalCompatibility(globalCompatibility)} 
+                    disabled={saving}
+                    style={{
+                      boxSizing: 'border-box',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0 8px',
+                      gap: '8px',
+                      height: '32px',
+                      background: '#FFFFFF',
+                      border: '1px solid #3E1363',
+                      borderRadius: '8px',
+                      color: '#3E1363',
+                      fontFamily: 'Satoshi, sans-serif',
+                      fontWeight: 500,
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <Save size={16} /> Save
+                  </button>
+                )}
+
+                {canManage && (
+                  <button className="ds-button add-connection" onClick={() => openConnectionModal()}>
+                    <Plus size={16} /> Add Connection
+                  </button>
+                )}
+
+                {canManage && (
+                  <button className="ds-button create-schema" onClick={() => setShowCreate(true)}>
                     <Plus size={16} /> Create Schema
                   </button>
-                  <button className="ds-icon-button" onClick={() => openConnectionModal(selectedConn ?? undefined)} disabled={!selectedConn} title="Edit connection">
-                    <MoreVertical size={18} />
+                )}
+
+                {canManage && (
+                  <button className="ds-icon-button icon-gray" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection" style={{ width: '35px', height: '35px' }}>
+                    <Trash2 size={16} />
                   </button>
-                  <button className="ds-icon-button" onClick={handleDeleteConnection} disabled={!selectedConn} title="Delete connection" style={{ color: 'var(--color-danger, #e88080)' }}>
-                    <Trash2 size={18} />
+                )}
+
+                <button className="ds-icon-button icon-gray" onClick={load} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
+                  <RefreshCw size={16} className={loading ? 'spin' : ''} />
+                </button>
+
+                {canManage && (
+                  <button className="ds-icon-button icon-gray" onClick={() => selectedConn && openConnectionModal(selectedConn)} disabled={!selectedConn} title="Edit connection" style={{ width: '35px', height: '35px' }}>
+                    <MoreVertical size={16} />
                   </button>
-                  <button className="ds-button" onClick={() => openConnectionModal()} title="Add new SR instance">
-                    <Settings size={16} /> Add Connection
-                  </button>
-                </>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           {error && <div className="ds-alert">{error}</div>}
 
           {!hasFetched ? (
-            <div className="ds-panel ds-fetch-prompt">
+            <div className="ds-fetch-prompt ds-sr-fetch-prompt">
               <p>Schema Registry data is not loaded automatically.</p>
-              <button className="ds-button primary" onClick={load} disabled={loading}>
-                <RefreshCw size={16} /> Fetch Schema Registry for this cluster
+              <button 
+                className="ds-sr-fetch-button"
+                type="button" 
+                onClick={load} 
+                disabled={loading}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  height: '32px',
+                  padding: '0 16px',
+                  borderRadius: '8px',
+                  background: '#3E1363',
+                  color: '#fff',
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
+                {loading ? 'Fetching Schema Registry...' : 'Fetch Schema Registry for this cluster'}
               </button>
             </div>
           ) : <>
-          <div className="ds-metrics">
+          <div className="ds-metrics ds-sr-metrics">
             <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
             <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
-            <div className="ds-metric-card"><span>REST Endpoint</span><strong style={{ fontSize: 16 }}>{summary?.connection || '-'}</strong></div>
+            <div className="ds-metric-card">
+              <span>REST Endpoint</span>
+              <strong className="ds-sr-endpoint-value">
+                {summary?.connection ? (
+                  <a 
+                    href={summary.connection} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                  >
+                    {summary.connection}
+                  </a>
+                ) : (
+                  '-'
+                )}
+              </strong>
+            </div>
           </div>
 
-          <div className="ds-panel">
-            <table className="ds-table">
+          <div className="ds-panel ds-sr-subjects-panel">
+            <table className="ds-table ds-sr-subjects-table">
               <thead>
                 <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
               </thead>
@@ -607,8 +818,8 @@ export function SchemaRegistry() {
                       {canManage && (
                         <td>
                           <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
-                            <button className="ds-button danger" onClick={() => deleteSubject(item.subject)} disabled={saving}>
-                              <Trash2 size={15} /> Delete
+                            <button className="ds-table-delete-btn" onClick={() => deleteSubject(item.subject)} disabled={saving}>
+                              <Trash2 size={14} /> Delete
                             </button>
                           </div>
                         </td>
@@ -629,19 +840,20 @@ export function SchemaRegistry() {
       {view === 'detail' && selected && (
         <>
           {/* Breadcrumb bar */}
-          <div className="ds-page-bar">
+          <div className="ds-page-bar ds-sr-detail-bar">
             <div className="ds-breadcrumb-nav">
-              <button className="ds-breadcrumb-link" onClick={backToList}>Schema Registry</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
+              <button className="ds-detail-back-button" onClick={backToList} aria-label="Back to Schema Registry">
+                <ChevronLeft size={16} />
+              </button>
               <span className="ds-breadcrumb-current">{selected.subject}</span>
             </div>
             <div className="ds-inline-actions">
-              <button className="ds-button" onClick={openCompare} disabled={(details?.versions.length || 0) < 2} title="Compare versions">
+              <button type="button" className="ds-button outlined" onClick={openCompare} disabled={loadingDetails} title="Compare versions">
                 <GitCompare size={16} /> Compare Versions
               </button>
               {canManage && (
                 <>
-                  <button className="ds-button" onClick={openEdit} disabled={!details?.latest}>
+                  <button className="ds-button primary" onClick={openEdit} disabled={!details?.latest}>
                     <Edit3 size={16} /> Edit Schema
                   </button>
                   <button className="ds-icon-button" onClick={() => deleteSubject(selected.subject)} disabled={saving} title="Delete subject">
@@ -655,29 +867,47 @@ export function SchemaRegistry() {
           {error && <div className="ds-alert">{error}</div>}
 
           {/* Actual version */}
-          <div className="ds-schema-shell">
+          <div className="ds-schema-shell ds-sr-detail-shell">
             <div className="ds-schema-code-card">
-              <h4>Actual version</h4>
+              <div className="ds-schema-card-header">
+                <button
+                  type="button"
+                  className="ds-schema-copy-btn"
+                  onClick={() => handleCopy(details?.latest?.schema || selected.schema)}
+                  title="Copy schema to clipboard"
+                >
+                  {copiedText === (details?.latest?.schema || selected.schema) ? (
+                    <span className="ds-copied-text">Copied!</span>
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </button>
+              </div>
               <pre className="ds-schema-code">
-                {loadingDetails ? 'Loading schema...' : (details?.latest?.schema || selected.schema || '{}')}
+                {loadingDetails ? 'Loading schema...' : formatSchemaCompact(details?.latest?.schema || selected.schema)}
               </pre>
             </div>
             <div className="ds-schema-meta-card">
-              <div><span>Latest version</span><strong>{details?.latest?.version ?? selected.version ?? '-'}</strong></div>
-              <div><span>ID</span><strong>{details?.latest?.id ?? selected.id ?? '-'}</strong></div>
-              <div><span>Type</span><strong>{details?.latest?.schemaType || selected.schemaType || '-'}</strong></div>
-              <div><span>Subject</span><strong>{selected.subject}</strong></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-                <span>Compatibility</span>
-                <div className="ds-compat-inline">
-                  <select value={subjectCompatibility} onChange={e => setSubjectCompatibility(e.target.value)} disabled={!canManage}>
-                    {compatibilityOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {canManage && (
-                    <button className="ds-icon-button" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
-                      <Save size={15} />
-                    </button>
-                  )}
+              <div className="ds-schema-card-header" />
+              <div className="ds-meta-content">
+                <div className="ds-meta-row"><span>Latest version</span><strong>{details?.latest?.version ?? selected.version ?? '-'}</strong></div>
+                <div className="ds-meta-row"><span>ID</span><strong>{details?.latest?.id ?? selected.id ?? '-'}</strong></div>
+                <div className="ds-meta-row"><span>Type</span><strong>{details?.latest?.schemaType || selected.schemaType || '-'}</strong></div>
+                <div className="ds-meta-row ds-compat-row-block">
+                  <span>Compatibility</span>
+                  <div className="ds-compat-inline-custom">
+                    <CustomSelect
+                      value={subjectCompatibility}
+                      onChange={setSubjectCompatibility}
+                      disabled={!canManage}
+                      options={compatibilityOptions.map(o => ({ value: o, label: o }))}
+                    />
+                    {canManage && (
+                      <button className="ds-icon-button ds-compat-save-btn" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
+                        <FileDown size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -685,8 +915,8 @@ export function SchemaRegistry() {
 
           {/* Old versions */}
           <h4 className="ds-section-title">Old versions</h4>
-          <div className="ds-panel">
-            <table className="ds-table">
+          <div className="ds-panel ds-sr-versions-panel">
+            <table className="ds-table ds-sr-versions-table">
               <thead>
                 <tr>
                   <th style={{ width: 40 }}></th>
@@ -701,7 +931,7 @@ export function SchemaRegistry() {
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
                         <button className="ds-mini-button ds-expand-btn">
-                          {expandedVersions.has(version.version) ? '−' : '+'}
+                          {expandedVersions.has(version.version) ? '−' : '—'}
                         </button>
                       </td>
                       <td>{version.version}</td>
@@ -710,8 +940,24 @@ export function SchemaRegistry() {
                     </tr>
                     {expandedVersions.has(version.version) && (
                       <tr key={`${version.version}-schema`} className="ds-version-expand-row">
-                        <td colSpan={4} style={{ padding: 0 }}>
-                          <pre className="ds-version-schema-code">{version.schema}</pre>
+                        <td colSpan={4} style={{ padding: '16px 20px' }}>
+                          <div className="ds-expanded-schema-container">
+                            <div className="ds-schema-card-header">
+                              <button
+                                type="button"
+                                className="ds-schema-copy-btn"
+                                onClick={() => handleCopy(version.schema)}
+                                title="Copy schema to clipboard"
+                              >
+                                {copiedText === version.schema ? (
+                                  <span className="ds-copied-text">Copied!</span>
+                                ) : (
+                                  <Copy size={16} />
+                                )}
+                              </button>
+                            </div>
+                            <pre className="ds-version-schema-code">{formatSchema(version.schema)}</pre>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -726,52 +972,69 @@ export function SchemaRegistry() {
         </>
       )}
       {showCompare && details && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
-          <div className="ds-modal ds-compare-modal">
+        <div className="ds-modal-backdrop ds-compare-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
+          <div className="ds-modal ds-compare-modal animate-fade-in">
             <div className="ds-modal-header">
               <div>
-                <h3 id="compare-versions-title">Compare Versions</h3>
+                <h3 id="compare-versions-title" style={{ fontSize: '18px', fontWeight: 700 }}>Compare Versions</h3>
                 <span className="ds-muted-line">{details.subject}</span>
               </div>
-              <button type="button" className="ds-icon-button" onClick={() => setShowCompare(false)} title="Close">
-                <X size={16} />
+              <button type="button" className="ds-close-btn" onClick={() => setShowCompare(false)} title="Close">
+                <X size={20} />
               </button>
             </div>
+            
             <div className="ds-compare-selectors">
-              <label>
-                Version A
-                <select value={compareVersionA ?? ''} onChange={e => setCompareVersionA(Number(e.target.value))}>
-                  {details.versions.map(version => (
-                    <option key={version.version} value={version.version}>Version {version.version}</option>
-                  ))}
-                </select>
-              </label>
-              <GitCompare size={20} />
-              <label>
-                Version B
-                <select value={compareVersionB ?? ''} onChange={e => setCompareVersionB(Number(e.target.value))}>
-                  {details.versions.map(version => (
-                    <option key={version.version} value={version.version}>Version {version.version}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="ds-field">
+                <label>Version A</label>
+                <CustomSelect
+                  value={compareVersionA ? String(compareVersionA) : ''}
+                  onChange={val => setCompareVersionA(Number(val))}
+                  options={comparableVersions.map(v => ({
+                    value: String(v.version),
+                    label: `Version ${v.version} (ID ${v.id ?? 'Unavailable'})`
+                  }))}
+                />
+              </div>
+              <div className="ds-field">
+                <label>Version B</label>
+                <CustomSelect
+                  value={compareVersionB ? String(compareVersionB) : ''}
+                  onChange={val => setCompareVersionB(Number(val))}
+                  options={comparableVersions.map(v => ({
+                    value: String(v.version),
+                    label: `Version ${v.version} (ID ${v.id ?? 'Unavailable'})`
+                  }))}
+                />
+              </div>
             </div>
+
             {compareVersionA === compareVersionB ? (
-              <div className="ds-alert">Select two different versions to compare.</div>
+              <div className="ds-compare-alert warning">Select two different versions to compare.</div>
             ) : (
               <>
-                <div className={schemasAreIdentical ? 'ds-compare-result identical' : 'ds-compare-result different'}>
+                <div className={`ds-compare-alert ${schemasAreIdentical ? 'success' : 'different'}`}>
                   {schemasAreIdentical ? 'The selected schema versions are identical.' : 'The selected schema versions are different.'}
                 </div>
                 <div className="ds-compare-grid">
-                  <section>
-                    <h4>Version {compareVersionA}</h4>
-                    <pre>{comparedSchemaA?.schema || 'Schema unavailable'}</pre>
-                  </section>
-                  <section>
-                    <h4>Version {compareVersionB}</h4>
-                    <pre>{comparedSchemaB?.schema || 'Schema unavailable'}</pre>
-                  </section>
+                  <div className="ds-compare-card">
+                    <div className="ds-schema-card-header">
+                      <span>Version {compareVersionA}</span>
+                      <span>Schema ID: {comparedSchemaA?.id ?? '-'}</span>
+                    </div>
+                    <pre className="ds-compare-code">
+                      {formatSchema(comparedSchemaA?.schema, 'Schema unavailable')}
+                    </pre>
+                  </div>
+                  <div className="ds-compare-card">
+                    <div className="ds-schema-card-header">
+                      <span>Version {compareVersionB}</span>
+                      <span>Schema ID: {comparedSchemaB?.id ?? '-'}</span>
+                    </div>
+                    <pre className="ds-compare-code">
+                      {formatSchema(comparedSchemaB?.schema, 'Schema unavailable')}
+                    </pre>
+                  </div>
                 </div>
               </>
             )}
@@ -781,51 +1044,89 @@ export function SchemaRegistry() {
 
       {/* ── EDIT VIEW ─────────────────────────────────────────── */}
       {canManage && view === 'edit' && selected && (
-        <form onSubmit={submitEditSchema}>
+        <form className="ds-sr-edit-form" onSubmit={submitEditSchema}>
           {/* Breadcrumb bar */}
-          <div className="ds-page-bar">
+          <div className="ds-page-bar ds-sr-detail-bar ds-sr-edit-bar">
             <div className="ds-breadcrumb-nav">
-              <button type="button" className="ds-breadcrumb-link" onClick={backToList}>Schema Registry</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
-              <button type="button" className="ds-breadcrumb-link" onClick={backToDetail}>{selected.subject}</button>
-              <ChevronRight size={14} className="ds-breadcrumb-sep" />
-              <span className="ds-breadcrumb-current">Edit</span>
+              <button type="button" className="ds-detail-back-button" onClick={backToDetail} aria-label="Back to subject details">
+                <ChevronLeft size={16} />
+              </button>
+              <span className="ds-breadcrumb-current">{selected.subject}</span>
             </div>
-            <button type="submit" className="ds-button primary" disabled={saving}>
-              {saving ? <RefreshCw size={16} className="spin" /> : <Save size={16} />} Submit
-            </button>
           </div>
 
           {error && <div className="ds-alert">{error}</div>}
 
           {/* Type + Compatibility selectors */}
           <div className="ds-edit-controls">
-            <div className="ds-field">
-              <label>Type</label>
-              <select value={editSchemaType} onChange={e => setEditSchemaType(e.target.value)}>
-                <option value="AVRO">AVRO</option>
-                <option value="JSON">JSON</option>
-                <option value="PROTOBUF">PROTOBUF</option>
-              </select>
+            <div className="ds-edit-selectors">
+              <div className="ds-field">
+                <label>Type</label>
+                <CustomSelect
+                  value={editSchemaType}
+                  onChange={setEditSchemaType}
+                  options={[
+                    { value: 'AVRO', label: 'Avro' },
+                    { value: 'JSON', label: 'Json' },
+                    { value: 'PROTOBUF', label: 'Protobuf' }
+                  ]}
+                />
+              </div>
+              <div className="ds-field">
+                <label>Compatibility level</label>
+                <CustomSelect
+                  value={editCompatibility}
+                  onChange={setEditCompatibility}
+                  options={compatibilityOptions.map(o => ({
+                    value: o,
+                    label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
+                  }))}
+                />
+              </div>
             </div>
-            <div className="ds-field">
-              <label>Compatibility level</label>
-              <select value={editCompatibility} onChange={e => setEditCompatibility(e.target.value)}>
-                {compatibilityOptions.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
+            <button type="submit" className="ds-button primary ds-edit-submit" disabled={saving}>
+              {saving && <RefreshCw size={14} className="spin" />} Submit
+            </button>
           </div>
 
           {/* Side-by-side editors */}
           <div className="ds-edit-shell">
             <div className="ds-edit-pane">
-              <div className="ds-edit-pane-header">Latest schema</div>
+              <div className="ds-edit-pane-header">
+                <span>Latest Schema</span>
+                <button
+                  type="button"
+                  className="ds-schema-copy-btn"
+                  onClick={() => handleCopy(details?.latest?.schema || selected.schema || '{}')}
+                  title="Copy schema to clipboard"
+                >
+                  {copiedText === (details?.latest?.schema || selected.schema || '{}') ? (
+                    <span className="ds-copied-text">Copied!</span>
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </button>
+              </div>
               <pre className="ds-edit-code ds-edit-readonly">
-                {details?.latest?.schema || selected.schema || '{}'}
+                {formatSchemaCompact(details?.latest?.schema || selected.schema || '{}')}
               </pre>
             </div>
             <div className="ds-edit-pane">
-              <div className="ds-edit-pane-header">New schema</div>
+              <div className="ds-edit-pane-header">
+                <span>New Schema</span>
+                <button
+                  type="button"
+                  className="ds-schema-copy-btn"
+                  onClick={() => handleCopy(newSchema)}
+                  title="Copy schema to clipboard"
+                >
+                  {copiedText === newSchema ? (
+                    <span className="ds-copied-text">Copied!</span>
+                  ) : (
+                    <Copy size={16} />
+                  )}
+                </button>
+              </div>
               <textarea
                 className="ds-edit-code ds-edit-editable"
                 value={newSchema}
@@ -845,96 +1146,134 @@ export function SchemaRegistry() {
             <div className="ds-modal-header">
               <div>
                 <h3>{editingConnectionId ? 'Edit Connection' : 'Add Schema Registry Connection'}</h3>
-                <span className="ds-muted-line">{formConnectionName || 'New connection'}</span>
+                <span className="ds-muted-line">{formConnectionName ? formConnectionName : 'New connection'}</span>
               </div>
-              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)}><X size={16} /></button>
+              <button type="button" className="ds-close-btn" onClick={() => setShowConnection(false)}><X size={20} /></button>
             </div>
-            <div className="ds-form ds-compact-form">
-              {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
-              {selectedConn?.status && editingConnectionId && (
-                <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
-                  Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
-                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>✓ Cert Configured</span>}
-                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
-                </div>
-              )}
-              <div className="ds-field">
-                <label>Connection Name</label>
-                <input
-                  value={formConnectionName}
-                  onChange={e => setFormConnectionName(e.target.value)}
-                  placeholder="e.g. Team A Registry"
-                  required
-                />
-              </div>
-              <div className="ds-form-grid three">
-                <div className="ds-field"><label>Protocol</label><select value={protocol} onChange={e => setProtocol(e.target.value)}><option value="http">http://</option><option value="https">https://</option></select></div>
-                <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="192.168.3.222" required /></div>
-                <div className="ds-field"><label>Port</label><input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8081" required /></div>
-              </div>
-              <div className="ds-form-grid two">
-                <div className="ds-field">
-                  <label>Certificate Type</label>
-                  <select value={certType} onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
-                    <option value="PEM">PEM (.pem / .crt)</option>
-                    <option value="PKCS12_JKS">PKCS12 / JKS (.p12, .jks)</option>
-                  </select>
-                </div>
-                {certType === 'PEM' ? (
-                  <div className="ds-field">
-                    <label>
-                      <span>Certificate</span>
-                      <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
-                        {certPasteMode ? '📎 Upload file' : '📋 Paste text'}
-                      </button>
-                    </label>
-                    {certPasteMode ? (
-                      <textarea value={certPasteText} onChange={e => setCertPasteText(e.target.value)}
-                        placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDXTCCAkWgAwIBAgIJAMEn...&#10;-----END CERTIFICATE-----"
-                        rows={5} style={{ fontFamily: 'monospace', fontSize: 12 }} />
-                    ) : (
-                      <>
-                        <label className="ds-upload-control">
-                          <Upload size={16} /> {certFileName || 'Upload certificate (.pem, .crt)'}
-                          <input type="file" accept=".pem,.crt,.cer" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} />
-                        </label>
-                        {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> File selected: {certFileName}</span>}
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="ds-field">
-                    <label>Truststore File (.p12 / .jks)</label>
-                    <label className="ds-upload-control">
-                      <Upload size={16} /> {certFileName || 'Upload truststore'}
-                      <input type="file" accept=".p12,.pfx,.jks" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} />
-                    </label>
-                    {certFileName && <span className="ds-secret-note"><CheckCircle size={14} /> File selected: {certFileName}</span>}
+            <div className="ds-form ds-compact-form" style={{ padding: 0 }}>
+              <div className="ds-modal-inner-card">
+                {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
+                {selectedConn?.status && editingConnectionId && (
+                  <div style={{ padding: '10px 14px', background: '#FFFFFF', borderRadius: 8, border: '1px solid #E8E6E1', fontSize: 13, color: '#282F49' }}>
+                    Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
+                    {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>✓ Cert Configured</span>}
+                    {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
                   </div>
                 )}
-              </div>
-              {certType === 'PKCS12_JKS' && <div className="ds-field"><label>Truststore Password {selectedConn?.truststoreConfigured ? '(Leave blank to keep existing)' : ''}</label><input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" /></div>}
-              <div className="ds-default-toggle-row">
-                <label className="ds-toggle-switch" htmlFor="sr-is-default">
+                <div className="ds-field">
+                  <label>Connection Name</label>
                   <input
-                    type="checkbox"
-                    id="sr-is-default"
-                    checked={formIsDefault}
-                    onChange={e => setFormIsDefault(e.target.checked)}
+                    value={formConnectionName}
+                    onChange={e => setFormConnectionName(e.target.value)}
+                    placeholder="e.g. Team A Registry"
+                    required
                   />
-                  <span className="ds-toggle-track">
-                    <span className="ds-toggle-thumb" />
-                  </span>
-                </label>
-                <label htmlFor="sr-is-default" className="ds-toggle-label">
-                  Set as default connection for this cluster
-                </label>
+                </div>
+              </div>
+
+              <div className="ds-modal-inner-card">
+                <div className="ds-form-grid three">
+                  <div className="ds-field">
+                    <label>Protocol</label>
+                    <CustomSelect
+                      value={protocol}
+                      onChange={setProtocol}
+                      options={[
+                        { value: 'http', label: 'http://' },
+                        { value: 'https', label: 'https://' }
+                      ]}
+                    />
+                  </div>
+                  <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="Host or IP address" required /></div>
+                  <div className="ds-field"><label>Port</label><input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8081" required /></div>
+                </div>
+                <div className="ds-form-grid two">
+                  <div className="ds-field">
+                    <label>Certificate Type</label>
+                    <CustomSelect
+                      value={certType}
+                      onChange={val => {
+                        setCertType(val as CertificateType);
+                        setCertFile(null);
+                        setCertFileName('');
+                        setCertPasteText('');
+                      }}
+                      options={[
+                        { value: 'PEM', label: 'PEM (.pem / .crt)' },
+                        { value: 'PKCS12', label: 'PKCS12 (.p12 / .pfx)' }
+                      ]}
+                    />
+                  </div>
+                  {certType === 'PEM' ? (
+                    <div className="ds-field">
+                      <label>
+                        <span>Certificate</span>
+                        <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
+                          {certPasteMode ? '📎 Upload file' : '📋 Paste text'}
+                        </button>
+                      </label>
+                      {certPasteMode ? (
+                        <textarea value={certPasteText} onChange={e => setCertPasteText(e.target.value)}
+                          placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDXTCCAkWgAwIBAgIJAMEn...&#10;-----END CERTIFICATE-----"
+                          rows={5} style={{ fontFamily: 'monospace', fontSize: 12 }} />
+                      ) : (
+                        <div className="ds-file-upload-row">
+                          <label className="ds-upload-btn-label">
+                            <FileText size={16} /> Choose file
+                            <input type="file" accept=".pem,.crt,.cer" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} style={{ display: 'none' }} />
+                          </label>
+                          {certFileName && (
+                            <div className="ds-uploaded-file-pill">
+                              <FileText size={16} />
+                              <span>{certFileName}</span>
+                              <button type="button" className="ds-clear-file-btn" onClick={() => { setCertFile(null); setCertFileName(''); }}><X size={14} /></button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="ds-field">
+                      <label>Truststore File (.p12 / .pfx)</label>
+                      <div className="ds-file-upload-row">
+                        <label className="ds-upload-btn-label">
+                          <FileText size={16} /> Choose file
+                          <input type="file" accept=".p12,.pfx" onChange={e => { const f = e.target.files?.[0] || null; setCertFile(f); setCertFileName(f ? f.name : ''); }} style={{ display: 'none' }} />
+                        </label>
+                        {certFileName && (
+                          <div className="ds-uploaded-file-pill">
+                            <FileText size={16} />
+                            <span>{certFileName}</span>
+                            <button type="button" className="ds-clear-file-btn" onClick={() => { setCertFile(null); setCertFileName(''); }}><X size={14} /></button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {certType === 'PKCS12' && <div className="ds-field"><label>Truststore Password {selectedConn?.truststoreConfigured ? '(Leave blank to keep existing)' : ''}</label><input type="password" value={certPassword} onChange={e => setCertPassword(e.target.value)} placeholder="Password" /></div>}
+                <div className="ds-default-toggle-row" style={{ border: 'none', paddingTop: 0, marginTop: 4 }}>
+                  <label className="ds-toggle-switch" htmlFor="sr-is-default">
+                    <input
+                      type="checkbox"
+                      id="sr-is-default"
+                      checked={formIsDefault}
+                      onChange={e => setFormIsDefault(e.target.checked)}
+                    />
+                    <span className="ds-toggle-track">
+                      <span className="ds-toggle-thumb" />
+                    </span>
+                  </label>
+                  <label htmlFor="sr-is-default" className="ds-toggle-label" style={{ color: '#818181', fontSize: '13px', cursor: 'pointer' }}>
+                    Set as default connection for this cluster
+                  </label>
+                </div>
               </div>
             </div>
             <div className="ds-modal-footer">
               <button className="ds-button" onClick={() => setShowConnection(false)} disabled={connectSaving}>Cancel</button>
               <button className="ds-button primary" onClick={handleSaveConnection} disabled={connectSaving || !customIp.trim() || !customPort.trim()}>
-                {connectSaving ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />} Save & Connect
+                {connectSaving ? 'Saving...' : 'Save & Connect'}
               </button>
             </div>
           </div>
@@ -946,19 +1285,89 @@ export function SchemaRegistry() {
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <form className="ds-modal" onSubmit={submitCreateSchema}>
             <div className="ds-modal-header">
-              <h3>Create Schema</h3>
-              <button type="button" className="ds-icon-button" onClick={() => setShowCreate(false)}><X size={16} /></button>
+              <div>
+                <h3>Create Schema</h3>
+                <span className="ds-muted-line">Register a new schema subject</span>
+              </div>
+              <button type="button" className="ds-close-btn" onClick={() => setShowCreate(false)}><X size={20} /></button>
             </div>
-            <div className="ds-form">
-              <div className="ds-field"><label>Subject</label><input value={createSubject} onChange={e => setCreateSubject(e.target.value)} placeholder="orders-value" required /></div>
-              <div className="ds-field"><label>Schema Type</label><select value={createSchemaType} onChange={e => setCreateSchemaType(e.target.value)}><option value="AVRO">AVRO</option><option value="JSON">JSON</option><option value="PROTOBUF">PROTOBUF</option></select></div>
-              <div className="ds-field"><label>Schema</label><textarea value={createSchema} onChange={e => setCreateSchema(e.target.value)} required /></div>
+            <div className="ds-form" style={{ padding: 0 }}>
+              <div className="ds-modal-inner-card">
+                <div className="ds-field"><label>Subject</label><input value={createSubject} onChange={e => setCreateSubject(e.target.value)} placeholder="orders-value" required /></div>
+                <div className="ds-field">
+                  <label>Schema Type</label>
+                  <CustomSelect
+                    value={createSchemaType}
+                    onChange={setCreateSchemaType}
+                    options={[
+                      { value: 'AVRO', label: 'AVRO' },
+                      { value: 'JSON', label: 'JSON' },
+                      { value: 'PROTOBUF', label: 'PROTOBUF' }
+                    ]}
+                  />
+                </div>
+                <div className="ds-field"><label>Schema</label><textarea value={createSchema} onChange={e => setCreateSchema(e.target.value)} required /></div>
+              </div>
             </div>
             <div className="ds-modal-footer">
               <button type="button" className="ds-button" onClick={() => setShowCreate(false)}>Cancel</button>
-              <button type="submit" className="ds-button primary" disabled={saving}>{saving ? <RefreshCw size={16} className="spin" /> : <Plus size={16} />} Save</button>
+              <button type="submit" className="ds-button primary" disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* ── Custom Delete Connection Confirmation Modal ── */}
+      {showDeleteConfirm && (
+        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="ds-delete-confirm-modal animate-fade-in">
+            <div className="ds-delete-modal-banner">
+              <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
+              <button className="ds-delete-modal-close" onClick={() => setShowDeleteConfirm(false)}><X size={20} /></button>
+            </div>
+            <div className="ds-delete-confirm-content">
+              <div className="ds-delete-confirm-title-row">
+                <AlertOctagon className="ds-delete-alert-icon" size={24} />
+                <h2>{selectedConn ? `${selectedConn.host || selectedConn.connectionName} says` : 'Delete Connection'}</h2>
+              </div>
+              <p className="ds-delete-confirm-desc">Are you sure you want to delete this connection?</p>
+              <div className="ds-delete-modal-footer">
+                <button className="ds-delete-btn-cancel" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+                <button className="ds-delete-btn-ok" onClick={() => {
+                  setShowDeleteConfirm(false);
+                  confirmDeleteConnection();
+                }}>OK</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Delete Subject Confirmation Modal ── */}
+      {subjectToDelete && (
+        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="ds-delete-confirm-modal animate-fade-in">
+            <div className="ds-delete-modal-banner">
+              <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
+              <button className="ds-delete-modal-close" onClick={() => setSubjectToDelete(null)}><X size={20} /></button>
+            </div>
+            <div className="ds-delete-confirm-content">
+              <div className="ds-delete-confirm-title-row">
+                <AlertOctagon className="ds-delete-alert-icon" size={24} />
+                <h2>{selectedConn ? `${selectedConn.host || selectedConn.connectionName} says` : 'Delete Subject'}</h2>
+              </div>
+              <p className="ds-delete-confirm-desc">Are you sure you want to delete this subject?</p>
+              <div className="ds-delete-modal-footer">
+                <button className="ds-delete-btn-cancel" onClick={() => setSubjectToDelete(null)}>Cancel</button>
+                <button className="ds-delete-btn-ok" onClick={() => {
+                  confirmDeleteSubject(subjectToDelete);
+                  setSubjectToDelete(null);
+                }}>OK</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

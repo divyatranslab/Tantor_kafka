@@ -1,7 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Server } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Monitoring.css';
+
+interface MonitoringNode {
+  nodeId?: string | null;
+  hostId?: string | null;
+  hostname?: string | null;
+  hostIp?: string | null;
+  role?: string | null;
+}
 
 interface MonitoringCluster {
   id: string;
@@ -11,6 +21,7 @@ interface MonitoringCluster {
   kafkaExporterTarget?: string;
   jmxAvailable?: boolean;
   warning?: string;
+  nodes?: MonitoringNode[];
 }
 
 interface MonitoringOverview {
@@ -35,6 +46,8 @@ interface MonitoringOverview {
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
+  selectedNodeId?: string | null;
+  nodes?: MonitoringNode[];
 }
 
 interface MonitoringSample {
@@ -54,13 +67,13 @@ interface MonitoringSample {
 }
 
 const formatNumber = (value?: number | null, digits = 0) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '-';
+  if (value === undefined || value === null || Number.isNaN(value)) return '0';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 };
 
 const formatBytes = (value?: number | null) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '-';
-  if (value <= 0) return '0 B/s';
+  if (value === undefined || value === null || Number.isNaN(value)) return '0 B';
+  if (value <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let next = value;
   let unit = 0;
@@ -68,133 +81,131 @@ const formatBytes = (value?: number | null) => {
     next /= 1024;
     unit += 1;
   }
-  return `${next.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}/s`;
+  return `${next.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
 };
 
 const hasValue = (value?: number | null) => value !== undefined && value !== null && !Number.isNaN(value);
 
 const chartNumber = (value?: number | null) => hasValue(value) ? Number(value) : null;
 
-const boundedPercent = (value?: number | null) => {
-  if (!hasValue(value)) return 0;
-  return Math.max(0, Math.min(100, Number(value)));
+const nodeValue = (node: MonitoringNode) => String(node.nodeId || '');
+
+const nodeLabel = (node: MonitoringNode) => {
+  const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
+  const host = node.hostname || node.hostIp;
+  const role = node.role;
+  return [nodeName, host, role].filter(Boolean).join(' - ');
 };
 
-function ResourceBar({ label, value, detail, tone = 'blue' }: {
-  label: string;
-  value?: number | null;
-  detail?: string;
-  tone?: 'blue' | 'green' | 'purple';
-}) {
-  const percent = boundedPercent(value);
-  return (
-    <div className="monitoring-resource-row">
-      <div className="monitoring-resource-row-header">
-        <span>{label}{detail ? ` (${detail})` : ''}</span>
-        <strong>{hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}</strong>
-      </div>
-      <div className="monitoring-resource-track">
-        <div className={`monitoring-resource-fill ${tone}`} style={{ width: `${percent}%` }} />
-      </div>
-    </div>
-  );
-}
-
-function BrokerStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="monitoring-broker-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function GraphPanel({ title, value, source, children, emptyText }: {
-  title: string;
-  value: string;
-  source: string;
-  children: ReactNode;
-  emptyText: string;
-}) {
-  return (
-    <div className="monitoring-graph-card">
-      <div className="monitoring-graph-header">
-        <div>
-          <span>{source}</span>
-          <h3>{title}</h3>
-        </div>
-        <strong>{value}</strong>
-      </div>
-      <div className="monitoring-chart-body">
-        {children || <div className="monitoring-chart-empty">{emptyText}</div>}
-      </div>
-    </div>
-  );
-}
-
 export function Monitoring() {
-  const [type, setType] = useState<'INTERNAL' | 'EXTERNAL' | ''>('');
+  const [selectedType, setSelectedType] = useState<'INTERNAL' | 'EXTERNAL'>('INTERNAL');
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const [nodes, setNodes] = useState<{ value: string, label: string }[]>([]);
+
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
-  const [loadingClusters, setLoadingClusters] = useState(false);
-  const [loadingOverview, setLoadingOverview] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
+  const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
+  const liveDropdownRef = useRef<HTMLDivElement>(null);
 
-  const selectedCluster = useMemo(
-    () => clusters.find(cluster => cluster.id === selectedClusterId),
-    [clusters, selectedClusterId],
-  );
-
-  const loadClusters = useCallback(async (nextType = type) => {
-    if (!nextType) return;
-    setLoadingClusters(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/v1/monitoring/clusters?type=${nextType}`);
-      if (!res.ok) throw new Error('Failed to load monitoring clusters');
-      const data: MonitoringCluster[] = await res.json();
-      setClusters(data);
-      setSelectedClusterId(current => {
-        if (current && data.some(cluster => cluster.id === current)) return current;
-        return data[0]?.id || '';
+  // Load nodes when selectedClusterId changes
+  useEffect(() => {
+    if (!selectedClusterId) {
+      setNodes([]);
+      setSelectedNodeId('');
+      return;
+    }
+    fetch(`/api/v1/ui/clusters/${selectedClusterId}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
+          const formatted = data.hosts.map((host: any, index: number) => ({
+            value: host.hostId || `node-${index}`,
+            label: [host.hostname || `Node ${index + 1}`, host.ipAddress, host.role].filter(Boolean).join(' - ')
+          }));
+          setNodes(formatted);
+          setSelectedNodeId(formatted[0].value);
+        } else {
+          setNodes([]);
+          setSelectedNodeId('');
+        }
+      })
+      .catch(() => {
+        setNodes([]);
+        setSelectedNodeId('');
       });
-    } catch (err: any) {
-      setError(err.message || 'Failed to load monitoring clusters');
+  }, [selectedClusterId]);
+
+  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
+
+
+  // 1. Load clusters and hosts on mount
+  const loadInitialData = async () => {
+    if (!selectedType) {
       setClusters([]);
       setSelectedClusterId('');
-    } finally {
-      setLoadingClusters(false);
+      return;
     }
-  }, [type]);
-
-  const loadOverview = useCallback(async (silent = false) => {
-    if (!selectedClusterId) return;
-    if (!silent) setLoadingOverview(true);
+    setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview`);
-      if (!res.ok) throw new Error('Failed to load Prometheus metrics');
-      setOverview(await res.json());
+      const clustersRes = await fetch(`/api/v1/monitoring/clusters?type=${selectedType}`);
+      let clusterList: MonitoringCluster[] = [];
+      if (clustersRes.ok) {
+        clusterList = await clustersRes.json();
+        setClusters(clusterList);
+      }
+
+      setSelectedClusterId(current =>
+        clusterList.some(cluster => cluster.id === current)
+          ? current
+          : (clusterList[0]?.id || '')
+      );
     } catch (err: any) {
-      if (!silent) setError(err.message || 'Failed to load Prometheus metrics');
-      setOverview(null);
+      console.error(err);
+      setError('Failed to load initial monitoring data.');
     } finally {
-      if (!silent) setLoadingOverview(false);
+      setLoading(false);
     }
-  }, [selectedClusterId]);
+  };
 
   useEffect(() => {
     setOverview(null);
     setHistory([]);
-    setClusters([]);
-    setSelectedClusterId('');
-    if (type) {
-      loadClusters(type);
+    setSelectedNodeId('');
+    loadInitialData();
+  }, [selectedType]);
+
+
+
+  // Fetch overview metrics for the selected cluster
+  const loadOverview = useCallback(async (silent = false) => {
+    if (!selectedClusterId) return;
+    if (!silent) setLoading(true);
+    try {
+      // 1. Fetch Prometheus Metrics
+      const params = new URLSearchParams();
+      if (selectedNodeId) {
+        params.set('nodeId', selectedNodeId);
+      }
+      const query = params.toString();
+      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        setOverview(data);
+      }
+
+    } catch (err) {
+      console.error(err);
+    } finally {
+      if (!silent) setLoading(false);
     }
-  }, [type, loadClusters]);
+  }, [selectedClusterId, selectedNodeId]);
 
   useEffect(() => {
     if (selectedClusterId) {
@@ -203,6 +214,7 @@ export function Monitoring() {
     }
   }, [selectedClusterId, loadOverview]);
 
+  // Append sample to history when overview updates
   useEffect(() => {
     if (!overview) return;
     setHistory(current => {
@@ -221,214 +233,502 @@ export function Monitoring() {
         brokerCpu: chartNumber(overview.brokerCpuPercent),
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
-      return [...current, next].slice(-24);
+      return [...current, next].slice(-15); // keep 15 samples
     });
   }, [overview]);
 
+  // Auto refresh loop
   useEffect(() => {
     if (!autoRefresh || !selectedClusterId) return;
     const timer = window.setInterval(() => {
       if (!document.hidden) {
         loadOverview(true);
       }
-    }, 15000);
+    }, refreshInterval * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, loadOverview, selectedClusterId]);
+  }, [autoRefresh, refreshInterval, loadOverview, selectedClusterId]);
 
-  const warnings = [
-    ...(selectedCluster?.warning ? [selectedCluster.warning] : []),
+  // Mock initial history if empty to generate pretty graphs immediately
+  const graphHistory = history;
+  const clusterTitle = overview?.name || selectedCluster?.name || 'Select a cluster';
+  const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
+  const selectedNode = nodes.find(node => node.value === selectedNodeId);
+  const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
+  const jmxHealthy = overview?.jmxUp === 1;
+  const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
+  const kafkaExporterLabel = overview
+    ? (kafkaExporterHealthy ? 'KAFKA_EXPORTER UP' : 'KAFKA_EXPORTER REQUIRED')
+    : 'KAFKA_EXPORTER';
+  const jmxLabel = overview
+    ? (jmxHealthy ? 'JMX UP' : 'JMX REQUIRED')
+    : 'JMX';
+  const warningMessages = [
+    selectedCluster?.warning,
     ...(overview?.warnings || []),
-  ].filter((warning, index, all) => warning && all.indexOf(warning) === index);
-
-  const kafkaExporterReady = Boolean(overview?.kafkaExporterUp && overview.kafkaExporterUp > 0);
-  const jmxReady = Boolean(overview?.jmxUp && overview.jmxUp > 0);
-  const jmxMetricEmptyText = jmxReady ? 'No JMX samples for this metric' : 'JMX exporter required';
-  const trafficEmptyText = kafkaExporterReady || jmxReady ? 'No traffic samples available' : 'JMX or kafka_exporter required';
-  const hasTrafficSeries = history.some(sample => hasValue(sample.messagesIn) || hasValue(sample.lag));
-  const hasCpuSeries = history.some(sample => hasValue(sample.brokerCpu) || hasValue(sample.systemCpu));
-  const hasHeapSeries = history.some(sample => hasValue(sample.heap) || hasValue(sample.hostMemory));
+  ].filter((message): message is string => Boolean(message && message.trim()));
+  const clusterTypeLabel = overview?.originType || selectedCluster?.originType || selectedType;
+  const displayCpuUsage = overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
+  const displayMemoryUsage = overview?.jvmHeapUsedPercent ?? overview?.hostMemoryUsedPercent;
 
   return (
     <div className="monitoring-container animate-fade-in">
-      <div className="header-section">
-        <div className="title-area">
-          <Activity size={32} className="title-icon" />
-          <div>
-            <h1>Live Monitoring</h1>
-            <p className="subtitle">Prometheus-backed Kafka metrics from kafka_exporter and JMX exporter.</p>
+      <div className="monitoring-white-box">
+        {/* Header Section */}
+        <div className="header-section">
+          <div className="title-area">
+            <div>
+              <h1>Monitoring</h1>
+              <p className="subtitle">Real-time Kafka & system metrics</p>
+            </div>
           </div>
-        </div>
 
-        <div className="controls-area">
-          <select className="tantor-select" value={type} onChange={event => setType(event.target.value as 'INTERNAL' | 'EXTERNAL' | '')}>
-            <option value="">Select source</option>
-            <option value="INTERNAL">Internal</option>
-            <option value="EXTERNAL">External</option>
-          </select>
-
-          {type && (
-            <select className="tantor-select" value={selectedClusterId} onChange={event => setSelectedClusterId(event.target.value)}>
-              {clusters.length === 0 && <option value="">No clusters</option>}
-              {clusters.map(cluster => (
-                <option key={cluster.id} value={cluster.id}>{cluster.name}</option>
-              ))}
-            </select>
-          )}
-
-          {type && (
-            <label className="auto-refresh-toggle">
-              <input type="checkbox" checked={autoRefresh} onChange={event => setAutoRefresh(event.target.checked)} />
-              <span>Live {autoRefresh ? '15s' : 'off'}</span>
+          {/* Controls */}
+          <div className="controls-area">
+            <label className="monitoring-control-field">
+              <span>Cluster type</span>
+              <select
+                className="tantor-select"
+                value={selectedType}
+                onChange={event => {
+                  setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
+                  setSelectedClusterId('');
+                }}
+              >
+                <option value="INTERNAL">Internal</option>
+                <option value="EXTERNAL">External</option>
+              </select>
             </label>
-          )}
 
-          {type && (
-            <button className="tantor-btn primary" onClick={() => selectedClusterId ? loadOverview() : loadClusters()} disabled={loadingClusters || loadingOverview}>
-              <RefreshCw size={16} className={loadingClusters || loadingOverview ? 'spin' : ''} />
-              Refresh
-            </button>
-          )}
-        </div>
-      </div>
 
-      {!type && (
-        <div className="monitoring-choice-empty">
-          <Activity size={42} />
-          <h3>Select a monitoring source</h3>
-          <p>Choose Internal or External. Monitoring stays separate from the agent heartbeat and deployment flow.</p>
-        </div>
-      )}
-
-      {error && (
-        <div className="error-banner">
-          <p>{error}</p>
-        </div>
-      )}
-
-      {type && warnings.length > 0 && (
-        <div className="monitoring-warning-list">
-          {warnings.map(warning => (
-            <div className="monitoring-warning" key={warning}>
-              <AlertTriangle size={16} />
-              <span>{warning}</span>
+            {/* CLUSTER NAME Selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Cluster Name
+              </span>
+              <CustomSelect
+                value={selectedClusterId}
+                onChange={val => {
+                  setSelectedClusterId(val);
+                  setSelectedNodeId('');
+                  setOverview(null);
+                  setHistory([]);
+                }}
+                options={clusters.length > 0 ? clusters.map(c => ({ value: c.id, label: c.name })) : [{ value: '', label: 'No clusters found' }]}
+                width="160px"
+                placeholder="Select Cluster"
+              />
             </div>
-          ))}
-        </div>
-      )}
 
-      {type && selectedCluster && (
-        <div className="monitoring-node-card">
-          <div className="monitoring-node-header">
-            <div className="monitoring-node-title">
-              <Server size={22} />
-              <div>
-                <h2>{selectedCluster.name}</h2>
-                <p>Exporter target: {overview?.kafkaExporterTarget || selectedCluster.kafkaExporterTarget || 'Not configured'}</p>
+            {/* NODE NAME Selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Node Name
+              </span>
+              <CustomSelect
+                value={selectedNodeId}
+                onChange={val => setSelectedNodeId(val)}
+                options={nodes}
+                width="360px"
+                placeholder="Select Node"
+              />
+            </div>
+
+            {/* Live indicator Pill Box */}
+            <div ref={liveDropdownRef} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
+              <div
+                className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
+                onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  height: '40px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: autoRefresh ? '#10B981' : '#94A3B8',
+                  display: 'inline-block'
+                }}></span>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Live</span>
+                <div
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    borderRadius: '4px',
+                    border: '1px solid #CBD5E1',
+                    background: autoRefresh ? '#3B82F6' : '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginLeft: '4px'
+                  }}
+                >
+                  {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
+                </div>
               </div>
-              <span className="monitoring-node-pill">{selectedCluster.originType}</span>
-            </div>
-            <div className="monitoring-status-pills">
-              <span className={kafkaExporterReady ? 'pill good' : 'pill warn'}>
-                kafka_exporter {kafkaExporterReady ? 'up' : 'required'}
-              </span>
-              <span className={jmxReady ? 'pill good' : 'pill warn'}>
-                JMX {jmxReady ? 'up' : 'required'}
-              </span>
-            </div>
-          </div>
 
-          <div className="monitoring-node-body">
-            <div className="monitoring-section-title">
-              <Activity size={16} />
-              <span>Real-time performance</span>
-            </div>
-
-            <div className="monitoring-performance-grid">
-              <GraphPanel title="CPU Usage" value={overview?.brokerCpuPercent == null ? '-' : `${formatNumber(overview.brokerCpuPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
-                {hasCpuSeries ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
-                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                      <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="brokerCpu" name="Broker CPU %" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                      <Line type="monotone" dataKey="systemCpu" name="System CPU %" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : null}
-              </GraphPanel>
-
-              <GraphPanel title="Memory Usage" value={overview?.jvmHeapUsedPercent == null ? '-' : `${formatNumber(overview.jvmHeapUsedPercent, 1)}%`} source="JMX exporter" emptyText={jmxMetricEmptyText}>
-                {hasHeapSeries ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
-                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                      <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} />
-                      <Tooltip />
-                      <Line type="monotone" dataKey="heap" name="JVM heap %" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                      <Line type="monotone" dataKey="hostMemory" name="Host RAM %" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : null}
-              </GraphPanel>
-
-              <GraphPanel title="Messages In" value={formatNumber(overview?.messagesInPerSecond, 1)} source="JMX / kafka_exporter" emptyText={trafficEmptyText}>
-                {hasTrafficSeries ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={history} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#edf1f7" />
-                      <XAxis dataKey="time" tick={{ fontSize: 11 }} minTickGap={24} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip />
-                      <Area type="monotone" dataKey="messagesIn" name="Messages/sec" stroke="#ef4444" fill="#fee2e2" strokeWidth={2} connectNulls />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : null}
-              </GraphPanel>
+              {showIntervalDropdown && liveDropdownRef.current && (
+                <AnchoredMenu
+                  anchor={liveDropdownRef.current}
+                  className="live-dropdown-menu"
+                  onClose={() => setShowIntervalDropdown(false)}
+                  align="start"
+                  minWidth={180}
+                >
+                  {[5, 10, 15, 30, 60].map((sec) => (
+                    <div
+                      key={sec}
+                      className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
+                      onClick={() => {
+                        setRefreshInterval(sec);
+                        setAutoRefresh(true);
+                        setShowIntervalDropdown(false);
+                      }}
+                    >
+                      <span className="live-pill-dot active"></span>
+                      Live | {sec} Sec
+                    </div>
+                  ))}
+                  <div className="dropdown-divider" />
+                  <div
+                    className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
+                    onClick={() => {
+                      setAutoRefresh(!autoRefresh);
+                      setShowIntervalDropdown(false);
+                    }}
+                  >
+                    <span className="live-pill-dot"></span>
+                    {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
+                  </div>
+                </AnchoredMenu>
+              )}
             </div>
 
-            <div className="monitoring-detail-grid">
-              <section className="monitoring-resource-panel">
-                <div className="monitoring-section-title">
-                  <HardDrive size={16} />
-                  <span>System resources</span>
-                </div>
-                <ResourceBar label="Broker CPU" value={overview?.brokerCpuPercent} tone="blue" />
-                <ResourceBar label="System CPU" value={overview?.systemCpuPercent} tone="green" />
-                <ResourceBar label="JVM Heap" value={overview?.jvmHeapUsedPercent} tone="purple" />
-                <ResourceBar label="Host Memory" value={overview?.hostMemoryUsedPercent} detail="Agent heartbeat" tone="blue" />
-              </section>
-
-              <section className="monitoring-broker-panel">
-                <div className="monitoring-section-title">
-                  <Database size={16} />
-                  <span>Kafka broker</span>
-                </div>
-                <div className="monitoring-broker-grid">
-                  <BrokerStat label="Msg in/sec" value={formatNumber(overview?.messagesInPerSecond, 2)} />
-                  <BrokerStat label="Bytes in/sec" value={formatBytes(overview?.bytesInPerSecond)} />
-                  <BrokerStat label="Bytes out/sec" value={formatBytes(overview?.bytesOutPerSecond)} />
-                  <BrokerStat label="Partitions" value={formatNumber(overview?.partitionCount)} />
-                  <BrokerStat label="Under-replicated" value={formatNumber(overview?.underReplicatedPartitions)} />
-                  <BrokerStat label="Consumer lag" value={formatNumber(overview?.consumerLag)} />
-                  <BrokerStat label="Brokers" value={formatNumber(overview?.brokerCount)} />
-                  <BrokerStat label="Topics" value={formatNumber(overview?.topicCount)} />
-                </div>
-              </section>
+            {/* Refresh interval status display */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
+              borderRadius: '8px',
+              padding: '8px 16px',
+              height: '40px',
+              fontSize: '14px',
+              fontWeight: 600,
+              color: '#334155',
+              boxSizing: 'border-box'
+            }}>
+              {refreshInterval} Sec
             </div>
+
+            {/* Manual Refresh Button */}
+            <button
+              className="manual-refresh-button"
+              onClick={() => {
+                if (selectedClusterId) {
+                  loadOverview();
+                } else {
+                  loadInitialData();
+                }
+              }}
+              disabled={loading}
+              style={{
+                height: '40px',
+                width: '40px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #E2E8F0',
+                borderRadius: '8px',
+                background: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              <RefreshCw size={18} className={loading ? 'spin' : ''} />
+            </button>
           </div>
         </div>
-      )}
 
-      {type && !loadingClusters && clusters.length === 0 && (
-        <div className="monitoring-choice-empty">
-          <Database size={42} />
-          <h3>No {type.toLowerCase()} clusters found</h3>
-          <p>Register or deploy a cluster first, then enable kafka_exporter for Prometheus discovery.</p>
-        </div>
-      )}
+        {selectedClusterId === '' ? (
+          <div className="monitoring-empty-state-card">
+            <div className="monitoring-empty-illustration">
+              <svg width="120" height="96" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Card 1 */}
+                <g filter="url(#shadow-1)">
+                  <rect x="10" y="2" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
+                  <rect x="22" y="12" width="16" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="46" y="12" width="40" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                </g>
+
+                {/* Card 2 */}
+                <g filter="url(#shadow-2)">
+                  <rect x="10" y="34" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
+                  <rect x="22" y="44" width="36" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="66" y="44" width="20" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                </g>
+
+                {/* Card 3 */}
+                <g filter="url(#shadow-3)">
+                  <rect x="10" y="66" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
+                  <rect x="22" y="76" width="12" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="42" y="76" width="30" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                </g>
+
+                <defs>
+                  <filter id="shadow-1" x="6" y="0" width="108" height="32" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#0F172A" floodOpacity="0.04" />
+                  </filter>
+                  <filter id="shadow-2" x="6" y="32" width="108" height="32" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#0F172A" floodOpacity="0.04" />
+                  </filter>
+                  <filter id="shadow-3" x="6" y="64" width="108" height="32" filterUnits="userSpaceOnUse" colorInterpolationFilters="sRGB">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#0F172A" floodOpacity="0.04" />
+                  </filter>
+                </defs>
+              </svg>
+            </div>
+            <h2>Select a cluster to monitor</h2>
+            <p>Choose a cluster from the dropdown above to display its real-time metrics and nodes.</p>
+          </div>
+        ) : (
+          <>
+            {error && (
+              <div className="error-banner">
+                <p>{error}</p>
+              </div>
+            )}
+
+            {warningMessages.length > 0 && (
+              <div className="monitoring-warning-list">
+                {warningMessages.map(message => (
+                  <div className="monitoring-warning" key={message}>
+                    <AlertTriangle size={16} />
+                    <span>{message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Broker Details Header Card */}
+            <div className="broker-details-card">
+              <div className="broker-info">
+                <h2>
+                  {clusterTitle}
+                  <span className={`cluster-source-tag ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
+                    {selectedType === 'INTERNAL' ? 'Internal' : 'External'}
+                  </span>
+                </h2>
+                <p className="broker-meta">
+                  {[exporterTarget?.split(':')[0], selectedNode?.label].filter(Boolean).join(' | ') || 'Monitoring endpoint unavailable'}
+                </p>
+              </div>
+              <div className="monitoring-status-right">
+                <span className={`kafka-running-badge ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
+                  <span className="status-dot"></span>
+                  {kafkaRunning ? 'Kafka running' : 'Kafka offline'}
+                </span>
+              </div>
+            </div>
+
+            <div className="monitoring-data-panel">
+              {/* Real-time Performance Section */}
+              <div className="section-header-row">
+                <div className="performance-header-left">
+                  <h3>Real-time Performance</h3>
+                  <span className="live-performance-badge">
+                    Live
+                  </span>
+                </div>
+                <div className="monitoring-status-pills-row">
+                  <span className={`monitoring-connection-pill ${kafkaExporterHealthy ? 'up' : 'down'}`}>
+                    {kafkaExporterHealthy ? 'Kafka Exporter UP' : 'Kafka Exporter DOWN'}
+                  </span>
+                  <span className={`monitoring-connection-pill ${jmxHealthy ? 'up' : 'down'}`}>
+                    {jmxHealthy ? 'Jmx Indicator UP' : 'Jmx Indicator DOWN'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="performance-section-card">
+                <div className="charts-grid-row">
+                  {/* CPU Usage Chart */}
+                  <div className="chart-box-wrapper">
+                    <div className="chart-box-header">
+                      <span>CPU Usage</span>
+                      <span className="chart-stat-value green">
+                        {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="chart-body-container">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                          <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[0, 100]} />
+                          <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                          <Line type="monotone" dataKey="systemCpu" stroke="#3b82f6" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Memory Usage Chart */}
+                  <div className="chart-box-wrapper">
+                    <div className="chart-box-header">
+                      <span>Memory Usage</span>
+                      <span className="chart-stat-value green">
+                        {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : '-'}
+                      </span>
+                    </div>
+                    <div className="chart-body-container">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                          <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[0, 100]} />
+                          <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                          <Line type="monotone" dataKey="heap" stroke="#10b981" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Messages In Chart */}
+                  <div className="chart-box-wrapper">
+                    <div className="chart-box-header">
+                      <span>Messages In</span>
+                      <span className="chart-stat-value red">
+                        {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : '-'}
+                      </span>
+                    </div>
+                    <div className="chart-body-container">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                          <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                          <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                          <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                          <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Kafka Broker Section */}
+              <div className="monitoring-bottom-section">
+                <h3 className="monitoring-section-title-custom">Kafka Broker</h3>
+                <div className="monitoring-kpi-row">
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">MSG IN/Sec</span>
+                    <strong className="kpi-card-val">{formatNumber(overview?.messagesInPerSecond, 2)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Bytes IN/Sec</span>
+                    <strong className="kpi-card-val">{formatBytes(overview?.bytesInPerSecond)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Bytes Out/Sec</span>
+                    <strong className="kpi-card-val">{formatBytes(overview?.bytesOutPerSecond)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Partition</span>
+                    <strong className="kpi-card-val">{overview?.partitionCount != null ? formatNumber(overview.partitionCount) : '-'}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Under-replication</span>
+                    <strong className="kpi-card-val">{formatNumber(overview?.underReplicatedPartitions)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Consumer Lag</span>
+                    <strong className="kpi-card-val">{formatNumber(overview?.consumerLag)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Broker</span>
+                    <strong className="kpi-card-val">{formatNumber(overview?.brokerCount)}</strong>
+                  </div>
+                  <div className="kpi-card-box">
+                    <span className="kpi-card-label">Topics</span>
+                    <strong className="kpi-card-val">{overview?.topicCount != null ? formatNumber(overview.topicCount) : '-'}</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* System Resources Section */}
+              <div className="monitoring-bottom-section">
+                <h3 className="monitoring-section-title-custom">System Resources</h3>
+                <div className="resources-cards-grid">
+                  <ResourceCard
+                    label="Broker CPU"
+                    value={overview?.brokerCpuPercent}
+                    tone="purple"
+                    subtext="Load: 0.09 / 0.07 / 0.02"
+                  />
+                  <ResourceCard
+                    label="System CPU"
+                    value={overview?.systemCpuPercent}
+                    tone="green"
+                    subtext="13245 MB available"
+                  />
+                  <ResourceCard
+                    label="JVM Heap"
+                    value={overview?.jvmHeapUsedPercent}
+                    tone="purple"
+                    subtext="8.6 GB free"
+                  />
+                  <ResourceCard
+                    label="Host Memory (Agent Heartbeat)"
+                    value={overview?.hostMemoryUsedPercent}
+                    tone="blue"
+                    subtext="8.6 GB free"
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+      </div>
     </div>
   );
 }
+
+const boundedPercent = (value?: number | null) => {
+  if (!hasValue(value)) return 0;
+  return Math.max(0, Math.min(100, Number(value)));
+};
+
+function ResourceCard({ label, value, subtext, tone = 'blue' }: {
+  label: string;
+  value?: number | null;
+  subtext?: string;
+  tone?: 'blue' | 'green' | 'purple';
+}) {
+  const percent = boundedPercent(value);
+  return (
+    <div className="resource-card">
+      <div className="resource-card-header">
+        <span className="resource-card-label">{label}</span>
+        <strong className="resource-card-value">
+          {hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}
+        </strong>
+      </div>
+      <div className="progress-track-bg">
+        <div className={`progress-fill-bar ${tone}`} style={{ width: `${percent}%` }} />
+      </div>
+      {subtext && <span className="resource-subtitle-info">{subtext}</span>}
+    </div>
+  );
+}
+

@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight,
+  AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight,
   Clock3, Database, Edit3, Gauge, KeyRound, MessageSquare,
   MoreVertical, RefreshCw, RotateCcw, Save, Search, Send, Settings2,
-  ShieldCheck, Trash2, Users, X
+  ShieldCheck, Trash2, Users, X, Share2, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { CustomSelect } from '../components/CustomSelect';
+import { AnchoredMenu } from '../components/AnchoredMenu';
 import './TopicDetails.css';
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
@@ -116,8 +118,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: 'messages', label: 'Messages', icon: MessageSquare },
   { id: 'consumers', label: 'Consumers', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings2 },
-  { id: 'statistics', label: 'Statistics', icon: BarChart3 },
-  { id: 'acls', label: 'ACLs', icon: ShieldCheck }
+  { id: 'statistics', label: 'Statistics', icon: BarChart3 }
 ];
 
 async function responseError(response: Response) {
@@ -155,6 +156,7 @@ export function TopicDetails() {
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'recreate' | 'remove' | null>(null);
   const [acting, setActing] = useState(false);
   const [showProduce, setShowProduce] = useState(false);
@@ -175,10 +177,39 @@ export function TopicDetails() {
   const [editingConfig, setEditingConfig] = useState<TopicConfig | null>(null);
   const [configValue, setConfigValue] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [statistics, setStatistics] = useState<TopicStatistics | null>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [acls, setAcls] = useState<AclRow[]>([]);
   const [tabLoading, setTabLoading] = useState(false);
+
+  const [keyDeserializer, setKeyDeserializer] = useState('string');
+  const [valueDeserializer, setValueDeserializer] = useState('string');
+
+  const orderOptions = [
+    { value: 'newest', label: 'Newest first' },
+    { value: 'oldest', label: 'Oldest first' }
+  ];
+
+  const partitionOptions = useMemo(() => {
+    const opts = [{ value: '', label: 'All partitions' }];
+    if (detail?.partitions) {
+      detail.partitions.forEach(p => {
+        opts.push({ value: String(p.partition), label: `Partition ${p.partition}` });
+      });
+    }
+    return opts;
+  }, [detail]);
+
+  const keyDeserializerOptions = [
+    { value: 'string', label: 'Key: String' },
+    { value: 'raw', label: 'Key: Raw UTF-8' }
+  ];
+
+  const valueDeserializerOptions = [
+    { value: 'string', label: 'Value: String' },
+    { value: 'raw', label: 'Value: Raw UTF-8' }
+  ];
 
   const baseUrl = '/api/v1/clusters/' + id + '/topics/' + encodeURIComponent(topicName);
 
@@ -186,9 +217,9 @@ export function TopicDetails() {
     if (!id || !topicName) return;
     setLoadingDetail(true);
     try {
-      const response = await fetch(baseUrl);
-      if (!response.ok) throw new Error(await responseError(response));
-      setDetail(await response.json());
+      const res = await fetch(baseUrl);
+      if (!res.ok) throw new Error(`Failed to load topic: ${res.statusText}`);
+      setDetail(await res.json());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load topic');
     } finally {
@@ -201,12 +232,14 @@ export function TopicDetails() {
     setMessagesLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ order: messageOrder, limit: '100' });
-      if (messagePartition) params.set('partitions', messagePartition);
-      if (messageSearch.trim()) params.set('search', messageSearch.trim());
-      const response = await fetch(baseUrl + '/messages?' + params);
-      if (!response.ok) throw new Error(await responseError(response));
-      setMessages(await response.json());
+      const url = new URL(`${window.location.origin}${baseUrl}/messages`);
+      if (messagePartition !== null && String(messagePartition) !== '-1') url.searchParams.append('partition', messagePartition.toString());
+      if (messageSearch) url.searchParams.append('search', messageSearch);
+      if (messageOrder) url.searchParams.append('order', messageOrder);
+
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error(`Failed to browse messages: ${res.statusText}`);
+      setMessages(await res.json());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to browse messages');
     } finally {
@@ -218,12 +251,12 @@ export function TopicDetails() {
     setTabLoading(true);
     setError(null);
     try {
-      const response = await fetch(baseUrl + '/' + tab);
-      if (!response.ok) throw new Error(await responseError(response));
-      const body = await response.json();
-      if (tab === 'consumers') setConsumers(body);
-      if (tab === 'configs') setConfigs(body);
-      if (tab === 'acls') setAcls(body);
+      const res = await fetch(`${baseUrl}/${tab}`);
+      if (!res.ok) throw new Error(`Failed to load ${tab}: ${res.statusText}`);
+      const data = await res.json();
+      if (tab === 'consumers') setConsumers(data);
+      if (tab === 'configs') setConfigs(data);
+      if (tab === 'acls') setAcls(data);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load ' + tab);
     } finally {
@@ -235,9 +268,9 @@ export function TopicDetails() {
     setStatisticsLoading(true);
     setError(null);
     try {
-      const response = await fetch(baseUrl + '/statistics?limit=10000');
-      if (!response.ok) throw new Error(await responseError(response));
-      setStatistics(await response.json());
+      const res = await fetch(`${baseUrl}/statistics`);
+      if (!res.ok) throw new Error(`Failed to analyze topic: ${res.statusText}`);
+      setStatistics(await res.json());
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to analyze topic');
     } finally {
@@ -339,6 +372,14 @@ export function TopicDetails() {
     }
   };
 
+  const handleCancelConfigEdit = () => {
+    if (editingConfig && configValue !== (editingConfig.value || '')) {
+      setShowUnsavedWarning(true);
+    } else {
+      setEditingConfig(null);
+    }
+  };
+
   const resetConfig = async (config: TopicConfig) => {
     if (!canManage) return;
     try {
@@ -370,21 +411,25 @@ export function TopicDetails() {
         <div>
           <button className="topic-back" onClick={() => navigate('/clusters/' + id + '/topics')}><ArrowLeft size={15} /> Topics</button>
           <div className="topic-detail-title">
-            <div className="topic-resource-icon"><Database size={20} /></div>
-            <div><p>Topic</p><h2>{detail.name}</h2></div>
+            <h2>{detail.name}</h2>
             {detail.internal && <span className="topic-type-badge">Internal</span>}
           </div>
         </div>
         {canManage && <div className="topic-heading-actions">
-          <button className="topic-detail-button primary" onClick={() => setShowProduce(true)}><Send size={16} /> Produce message</button>
-          <div className="detail-menu-wrap">
+          <button className="topic-detail-button primary" onClick={() => setShowProduce(true)}><Plus size={16} /> Produce message</button>
+          <div ref={actionMenuRef} className="detail-menu-wrap">
             <button className="detail-icon-button" aria-label="Topic actions" onClick={() => setActionMenu(current => !current)}><MoreVertical size={19} /></button>
-            {actionMenu && (
-              <div className="detail-action-menu">
+            {actionMenu && actionMenuRef.current && (
+              <AnchoredMenu
+                anchor={actionMenuRef.current}
+                className="detail-action-menu"
+                onClose={() => setActionMenu(false)}
+                minWidth={180}
+              >
                 <button onClick={() => { setConfirmAction('clear'); setActionMenu(false); }}>Clear messages</button>
                 <button onClick={() => { setConfirmAction('recreate'); setActionMenu(false); }}>Recreate topic</button>
                 <button onClick={() => { setConfirmAction('remove'); setActionMenu(false); }}>Remove topic</button>
-              </div>
+              </AnchoredMenu>
             )}
           </div>
         </div>}
@@ -393,7 +438,7 @@ export function TopicDetails() {
       <nav className="topic-detail-tabs" aria-label="Topic sections">
         {tabs.map(tab => (
           <button key={tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => changeTab(tab.id)}>
-            <tab.icon size={15} /> {tab.label}
+            {tab.label}
           </button>
         ))}
       </nav>
@@ -406,35 +451,54 @@ export function TopicDetails() {
         {activeTab === 'messages' && (
           <div className="messages-tab">
             <div className="message-toolbar">
-              <select value={messageOrder} onChange={event => setMessageOrder(event.target.value)}>
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-              </select>
-              <select value={messagePartition} onChange={event => setMessagePartition(event.target.value)}>
-                <option value="">All partitions</option>
-                {detail.partitions.map(partition => <option key={partition.partition} value={partition.partition}>Partition {partition.partition}</option>)}
-              </select>
-              <select aria-label="Key deserializer" defaultValue="string"><option value="string">Key: String</option><option value="raw">Key: Raw UTF-8</option></select>
-              <select aria-label="Value deserializer" defaultValue="string"><option value="string">Value: String</option><option value="raw">Value: Raw UTF-8</option></select>
-              <button onClick={loadMessages} disabled={messagesLoading}><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /> Refresh</button>
+              <CustomSelect
+                value={messageOrder}
+                onChange={setMessageOrder}
+                options={orderOptions}
+                width="135px"
+              />
+              <CustomSelect
+                value={messagePartition}
+                onChange={setMessagePartition}
+                options={partitionOptions}
+                width="145px"
+              />
+              <CustomSelect
+                value={keyDeserializer}
+                onChange={setKeyDeserializer}
+                options={keyDeserializerOptions}
+                width="130px"
+              />
+              <CustomSelect
+                value={valueDeserializer}
+                onChange={setValueDeserializer}
+                options={valueDeserializerOptions}
+                width="140px"
+              />
               <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMessages()} placeholder="Search key or value" /></label>
+              <button className="message-refresh-btn" onClick={loadMessages} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
             </div>
-            {messages && <div className="message-fetch-meta"><span><Clock3 size={13} /> {messages.elapsedMs} ms</span><span>{formatBytes(messages.bytes)}</span><span>{messages.count} messages consumed</span></div>}
+
             <div className="detail-table-wrap">
               <table className="detail-table messages-table">
-                <thead><tr><th /><th>Offset</th><th>Partition</th><th>Timestamp</th><th>Key preview</th><th>Value preview</th></tr></thead>
+                <thead><tr><th>Offset</th><th>Partition</th><th>Timestamp</th><th>Key preview</th><th>Value preview</th></tr></thead>
                 <tbody>
-                  {messagesLoading && !messages ? <LoadingRow columns={6} /> : !messages?.messages.length ? <EmptyRow columns={6} text="No messages matched this request." /> : messages.messages.map(message => {
+                  {messagesLoading && !messages ? <LoadingRow columns={5} /> : !messages?.messages.length ? <EmptyRow columns={5} text="No messages matched this request." /> : messages.messages.map(message => {
                     const rowId = message.partition + '-' + message.offset;
                     const expanded = expandedMessage === rowId;
                     return [
                       <tr key={rowId} onClick={() => setExpandedMessage(expanded ? null : rowId)}>
-                        <td><button className="expand-button">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button></td>
-                        <td>{message.offset}</td><td>{message.partition}</td><td>{formatDate(message.timestamp)}</td>
+                        <td className="offset-cell-wrapper">
+                          <span className="expand-chevron-inline">
+                            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                          <span>{message.offset}</span>
+                        </td>
+                        <td>{message.partition}</td><td>{formatDate(message.timestamp)}</td>
                         <td className="preview-cell">{message.key ?? <span className="null-value">null</span>}</td>
                         <td className="preview-cell">{message.value ?? <span className="null-value">null</span>}</td>
                       </tr>,
-                      expanded && <tr className="message-expanded" key={rowId + '-expanded'}><td colSpan={6}>
+                      expanded && <tr className="message-expanded" key={rowId + '-expanded'}><td colSpan={5}>
                         <div><section><h4>Key · {formatBytes(message.keySize)}</h4><pre>{message.key ?? 'null'}</pre></section><section><h4>Value · {formatBytes(message.valueSize)}</h4><pre>{message.value ?? 'null'}</pre></section></div>
                         {Object.keys(message.headers).length > 0 && <section><h4>Headers</h4><pre>{JSON.stringify(message.headers, null, 2)}</pre></section>}
                       </td></tr>
@@ -448,32 +512,59 @@ export function TopicDetails() {
 
         {activeTab === 'consumers' && (
           <div>
-            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')}><RefreshCw size={15} /> Refresh</button></div>
-            <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Consumer group ID</th><th>Active consumers</th><th>Consumer lag</th><th>Coordinator</th><th>State</th></tr></thead>
-              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td><strong>{group.groupId}</strong></td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '—'}</td><td><span className={'state-pill ' + group.state.toLowerCase()}>{group.state}</span></td></tr>)}</tbody>
+            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></button></div>
+            <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
+              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '—'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
 
         {activeTab === 'settings' && (
           <div>
-            <div className="tab-toolbar"><label><Search size={16} /><input value={configSearch} onChange={event => setConfigSearch(event.target.value)} placeholder="Search settings" /></label><span>{filteredConfigs.length} settings</span></div>
-            <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default value</th><th>Source</th><th /></tr></thead>
-              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td><strong>{config.name}</strong></td><td>{config.sensitive ? '••••••' : config.value ?? '—'}</td><td>{config.defaultValue ?? '—'}</td><td><span className="source-pill">{config.source.replaceAll('_', ' ')}</span></td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <><button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={14} /></button>{config.source !== 'DEFAULT_CONFIG' && <button title="Reset to default" onClick={() => resetConfig(config)}><RotateCcw size={14} /></button>}</>}</td></tr>)}</tbody>
+            <div className="tab-toolbar">
+              <label>
+                <Search size={16} />
+                <input value={configSearch} onChange={event => setConfigSearch(event.target.value)} placeholder="Search key or value" />
+              </label>
+              <button onClick={() => loadSimpleTab('configs')} disabled={tabLoading} aria-label="Refresh settings">
+                <RefreshCw className={tabLoading ? 'spin' : ''} size={15} />
+              </button>
+            </div>
+            <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th><th /></tr></thead>
+              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '••••••' : config.value ?? '—'}</td><td>{config.defaultValue ?? '—'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
 
         {activeTab === 'statistics' && (
           <div className="statistics-tab">
-            <div className="statistics-heading"><div><p>Message analysis</p><span>{statistics ? 'Analyzed ' + formatDate(statistics.analyzedAt) + (statistics.truncated ? ' · capped at ' + statistics.sampleLimit.toLocaleString() : '') : 'Scan a bounded sample from the topic.'}</span></div><button onClick={loadStatistics} disabled={statisticsLoading}><RefreshCw className={statisticsLoading ? 'spin' : ''} size={15} /> Restart analysis</button></div>
-            {statisticsLoading && !statistics ? <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messages…</div> : statistics && <StatisticsView statistics={statistics} />}
+            <div className="tab-toolbar" style={{ marginBottom: '24px' }}>
+              <label style={{ width: '612px', flex: 'none' }}>
+                <Search size={16} />
+                <input placeholder="Search key or value" disabled />
+              </label>
+              <button onClick={loadStatistics} disabled={statisticsLoading} aria-label="Refresh statistics">
+                <RefreshCw className={statisticsLoading ? 'spin' : ''} size={15} />
+              </button>
+            </div>
+            <div className="statistics-figma-heading">
+              <h3 style={{ margin: 0, color: '#5B327F', fontSize: '16px', fontWeight: 500, fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
+              <button className="restart-analysis-btn" onClick={loadStatistics} disabled={statisticsLoading}>
+                <RefreshCw className={statisticsLoading ? 'spin' : ''} size={12} />
+                <span>Restart analysis</span>
+              </button>
+            </div>
+            {statisticsLoading && !statistics ? (
+              <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messages…</div>
+            ) : (
+              statistics && <StatisticsView statistics={statistics} />
+            )}
           </div>
         )}
 
         {activeTab === 'acls' && (
           <div>
-            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')}><RefreshCw size={15} /> Refresh</button></div>
+            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Principal</th><th>Host</th><th>Operation</th><th>Permission</th><th>Pattern</th></tr></thead>
               <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} · {acl.resourceName}</td></tr>)}</tbody>
             </table></div>
@@ -482,37 +573,157 @@ export function TopicDetails() {
       </div>
 
       {canManage && showProduce && (
-        <div className="detail-modal-backdrop" onMouseDown={() => setShowProduce(false)}>
-          <div className="detail-modal produce-modal" onMouseDown={event => event.stopPropagation()}>
-            <header><div><span>Write to topic</span><h3>Produce message</h3></div><button onClick={() => setShowProduce(false)}><X size={18} /></button></header>
+        <div className="topic-modal-backdrop" onMouseDown={() => setShowProduce(false)}>
+          <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>
+            <header className="create-topic-header">
+              <div className="modal-title-area">
+                <h2>Write to topic</h2>
+                <h3 style={{ textTransform: 'none', color: '#3E1363', fontSize: '15px' }}>Produce message</h3>
+              </div>
+              <button className="create-topic-close" onClick={() => setShowProduce(false)} aria-label="Close modal">
+                <X size={20} />
+              </button>
+            </header>
             <form onSubmit={produceMessage}>
-              <label>Partition<select value={produceForm.partition} onChange={event => setProduceForm(current => ({ ...current, partition: event.target.value }))}><option value="">Automatic</option>{detail.partitions.map(partition => <option key={partition.partition} value={partition.partition}>Partition {partition.partition}</option>)}</select></label>
-              <label>Key <span className="optional">optional</span><textarea rows={3} value={produceForm.key} onChange={event => setProduceForm(current => ({ ...current, key: event.target.value }))} placeholder="Message key" /></label>
-              <label>Value<textarea rows={7} required value={produceForm.value} onChange={event => setProduceForm(current => ({ ...current, value: event.target.value }))} placeholder="Message value" /></label>
-              <footer><button type="button" onClick={() => setShowProduce(false)}>Cancel</button><button className="primary" disabled={producing}><Send size={15} /> {producing ? 'Producing…' : 'Produce message'}</button></footer>
+              <div className="figma-topic-modal-body" style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <label className="figma-form-field full-width">
+                  <span>Partition</span>
+                  <select value={produceForm.partition} onChange={event => setProduceForm(current => ({ ...current, partition: event.target.value }))}>
+                    <option value="">Automatic</option>
+                    {detail.partitions.map(partition => (
+                      <option key={partition.partition} value={partition.partition}>Partition {partition.partition}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="figma-form-field full-width">
+                  <span>Key (Optional)</span>
+                  <input
+                    value={produceForm.key}
+                    onChange={event => setProduceForm(current => ({ ...current, key: event.target.value }))}
+                    placeholder="message key"
+                  />
+                </label>
+                <label className="figma-form-field full-width">
+                  <span>Value</span>
+                  <input
+                    required
+                    value={produceForm.value}
+                    onChange={event => setProduceForm(current => ({ ...current, value: event.target.value }))}
+                    placeholder="message Value"
+                  />
+                </label>
+              </div>
+              <footer className="create-topic-footer">
+                <button type="button" className="topic-button outline cancel-btn" onClick={() => setShowProduce(false)}>
+                  Cancel
+                </button>
+                <button className="topic-button filled create-btn" disabled={producing}>
+                  {producing ? 'Producing…' : 'Produce message'}
+                </button>
+              </footer>
             </form>
           </div>
         </div>
       )}
 
       {canManage && confirmAction && (
-        <div className="detail-modal-backdrop" onMouseDown={() => !acting && setConfirmAction(null)}>
-          <div className="detail-modal confirm-modal" onMouseDown={event => event.stopPropagation()}>
-            <div className="confirm-warning"><AlertTriangle size={22} /></div>
-            <h3>{confirmAction === 'clear' ? 'Clear all messages?' : confirmAction === 'recreate' ? 'Recreate this topic?' : 'Remove this topic?'}</h3>
-            <p>{confirmAction === 'clear' ? 'Every currently readable record will become inaccessible.' : confirmAction === 'recreate' ? 'All messages will be deleted. Partition assignments and explicit settings will be restored.' : 'The topic and all of its data will be permanently deleted.'}</p>
-            <code>{detail.name}</code>
-            <footer><button onClick={() => setConfirmAction(null)} disabled={acting}>Cancel</button><button className="danger" onClick={runAction} disabled={acting}>{acting ? 'Working…' : confirmAction === 'clear' ? 'Clear messages' : confirmAction === 'recreate' ? 'Recreate topic' : 'Remove topic'}</button></footer>
+        <div className="topic-modal-backdrop" onMouseDown={() => !acting && setConfirmAction(null)}>
+          <div className="topic-modal figma-topic-modal figma-confirm-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '543px', borderRadius: '16px', padding: 0 }}>
+            <div className="confirm-modal-banner">
+              <button onClick={() => setConfirmAction(null)} className="confirm-modal-close-btn" aria-label="Close modal">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="confirm-modal-body">
+              <div className="confirm-modal-title-row">
+                <AlertOctagon size={24} color="#FFFFFF" fill="#EF4D5F" style={{ marginRight: '8px' }} />
+                <h2>
+                  {confirmAction === 'clear' ? 'Clear all messages' : confirmAction === 'recreate' ? 'Recreate this topic?' : 'Remove this topic?'}
+                </h2>
+              </div>
+              <p className="confirm-modal-desc">
+                {confirmAction === 'clear' ? 'Every currently readable record will become inaccessible.' : confirmAction === 'recreate' ? 'All messages will be deleted. Partition assignments and explicit settings will be restored.' : 'The topic and all of its data will be permanently deleted.'}
+              </p>
+              <div style={{ marginTop: '4px' }}>
+                <span className="confirm-modal-topic-name">{detail.name}</span>
+              </div>
+              <div className="confirm-modal-footer">
+                <button type="button" className="confirm-btn-outline" onClick={() => setConfirmAction(null)} disabled={acting}>
+                  Cancel
+                </button>
+                <button className="confirm-btn-filled" onClick={runAction} disabled={acting}>
+                  {acting ? 'Working…' : confirmAction === 'clear' ? 'Clear messages' : confirmAction === 'recreate' ? 'Recreate topic' : 'Remove topic'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
       {canManage && editingConfig && (
-        <div className="detail-modal-backdrop" onMouseDown={() => setEditingConfig(null)}>
-          <div className="detail-modal config-modal" onMouseDown={event => event.stopPropagation()}>
-            <header><div><span>Topic setting</span><h3>{editingConfig.name}</h3></div><button onClick={() => setEditingConfig(null)}><X size={18} /></button></header>
-            <div className="config-edit-body"><label>Value<input autoFocus value={configValue} onChange={event => setConfigValue(event.target.value)} /></label><p>Default: {editingConfig.defaultValue ?? 'not defined'}</p></div>
-            <footer><button onClick={() => setEditingConfig(null)}>Cancel</button><button className="primary" onClick={saveConfig} disabled={savingConfig}><Save size={15} /> {savingConfig ? 'Saving…' : 'Save setting'}</button></footer>
+        <div className="topic-modal-backdrop" onMouseDown={handleCancelConfigEdit}>
+          <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>
+            <header className="create-topic-header">
+              <div className="modal-title-area">
+                <h2>Topic setting</h2>
+                <h3 style={{ textTransform: 'none', color: '#3E1363', fontSize: '15px' }}>
+                  {editingConfig.name.charAt(0).toUpperCase() + editingConfig.name.slice(1)}
+                </h3>
+              </div>
+              <button className="create-topic-close" onClick={handleCancelConfigEdit} aria-label="Close modal">
+                <X size={20} />
+              </button>
+            </header>
+            <div className="figma-topic-modal-body" style={{ padding: '24px 32px' }}>
+              <label className="figma-form-field full-width">
+                <span>Value</span>
+                <input
+                  autoFocus
+                  value={configValue}
+                  onChange={event => setConfigValue(event.target.value)}
+                />
+              </label>
+              <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>
+                Default value {editingConfig.defaultValue ?? '-1'}
+              </p>
+            </div>
+            <footer className="create-topic-footer">
+              <button type="button" className="topic-button outline cancel-btn" onClick={handleCancelConfigEdit}>
+                Cancel
+              </button>
+              <button className="topic-button filled create-btn" onClick={saveConfig} disabled={savingConfig}>
+                {savingConfig ? 'Saving…' : 'Save setting'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      {showUnsavedWarning && (
+        <div className="topic-modal-backdrop" onMouseDown={() => setShowUnsavedWarning(false)}>
+          <div className="topic-modal figma-topic-modal figma-confirm-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '543px', borderRadius: '16px', padding: 0 }}>
+            <div className="confirm-modal-banner">
+              <button onClick={() => setShowUnsavedWarning(false)} className="confirm-modal-close-btn" aria-label="Close warning">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="confirm-modal-body">
+              <div className="confirm-modal-title-row">
+                <AlertOctagon size={24} color="#FFFFFF" fill="#EF4D5F" style={{ marginRight: '8px' }} />
+                <h2>Your details are not saved.</h2>
+              </div>
+              <p className="confirm-modal-desc">
+                Would you like to save the settings?
+              </p>
+              <div className="confirm-modal-footer">
+                <button type="button" className="confirm-btn-outline" onClick={() => { setShowUnsavedWarning(false); setEditingConfig(null); }}>
+                  Discard
+                </button>
+                <button className="confirm-btn-filled" onClick={() => { setShowUnsavedWarning(false); saveConfig(); }}>
+                  Save settings
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -522,22 +733,61 @@ export function TopicDetails() {
 
 function OverviewTab({ detail }: { detail: TopicDetail }) {
   const cards = [
-    ['Partitions', detail.partitionCount.toLocaleString(), Database],
-    ['Replication factor', detail.replicationFactor.toLocaleString(), CopyIcon],
-    ['Under-replicated', detail.underReplicated.toLocaleString(), AlertTriangle],
-    ['In-sync replicas', detail.inSyncReplicas + ' of ' + detail.totalReplicas, CheckCircle2],
-    ['Stored data', formatBytes(detail.storedBytes), Gauge],
-    ['Messages', detail.messageCount.toLocaleString(), MessageSquare],
-    ['Cleanup policy', detail.cleanupPolicy.toUpperCase(), Trash2],
-    ['Segment count', detail.segmentCount === null ? 'Not exposed' : detail.segmentCount.toLocaleString(), BarChart3]
+    ['Partitions', detail.partitionCount.toLocaleString()],
+    ['Replication factor', detail.replicationFactor.toLocaleString()],
+    ['Under-replicated', detail.underReplicated.toLocaleString()],
+    ['In-sync replicas', detail.inSyncReplicas + ' of ' + detail.totalReplicas],
+    ['Stored data', formatBytes(detail.storedBytes)],
+    ['Messages', detail.messageCount.toLocaleString()],
+    ['Cleanup policy', detail.cleanupPolicy.toUpperCase()],
+    ['Segment count', detail.segmentCount === null ? 'Not exposed' : detail.segmentCount.toLocaleString()]
   ];
-  return <div className="overview-tab">
-    <div className="topic-metric-grid">{cards.map(([label, value, Icon]) => <article key={String(label)}><div><span>{String(label)}</span><strong>{String(value)}</strong></div><Icon size={18} /></article>)}</div>
-    <div className="overview-note"><Gauge size={16} /><span>Stored data is calculated from broker replica log sizes. Kafka does not expose physical segment count through the Admin API.</span></div>
-    <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Partition ID</th><th>Leader</th><th>Replicas</th><th>In-sync replicas</th><th>First offset</th><th>Next offset</th><th>Messages</th></tr></thead>
-      <tbody>{detail.partitions.map(partition => <tr key={partition.partition}><td><strong>{partition.partition}</strong></td><td>{partition.leader ?? '—'}</td><td>{partition.replicas.join(', ')}</td><td className={partition.underReplicated ? 'replicas-warning' : 'replicas-ok'}>{partition.inSyncReplicas.join(', ')}</td><td>{partition.firstOffset.toLocaleString()}</td><td>{partition.nextOffset.toLocaleString()}</td><td>{partition.messageCount.toLocaleString()}</td></tr>)}</tbody>
-    </table></div>
-  </div>;
+  return (
+    <div className="overview-tab">
+      <div className="topic-overview-container" style={{ marginBottom: '24px' }}>
+        <div className="topic-metric-grid">
+          {cards.map(([label, value], idx) => (
+            <article key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px' }}>
+              <span style={{ fontSize: '12px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>{label}</span>
+              <strong style={{ fontSize: '18px', color: '#332849', fontFamily: 'Satoshi, sans-serif' }}>{value}</strong>
+            </article>
+          ))}
+        </div>
+      </div>
+      <div className="overview-note">
+        <Gauge size={16} />
+        <span>Stored data is calculated from broker replica log sizes. Kafka does not expose physical segment count through the Admin API.</span>
+      </div>
+      <div className="detail-table-wrap">
+        <table className="detail-table">
+          <thead>
+            <tr>
+              <th>Partition ID</th>
+              <th>Leader</th>
+              <th>Replicas</th>
+              <th>In-sync Replicas</th>
+              <th>First Offset</th>
+              <th>Next Offset</th>
+              <th>Messages</th>
+            </tr>
+          </thead>
+          <tbody>
+            {detail.partitions.map(partition => (
+              <tr key={partition.partition}>
+                <td><strong>{partition.partition}</strong></td>
+                <td>{partition.leader ?? '—'}</td>
+                <td>{partition.replicas.join(', ')}</td>
+                <td className={partition.underReplicated ? 'replicas-warning' : 'replicas-ok'}>{partition.inSyncReplicas.join(', ')}</td>
+                <td>{partition.firstOffset.toLocaleString()}</td>
+                <td>{partition.nextOffset.toLocaleString()}</td>
+                <td>{partition.messageCount.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function CopyIcon({ size }: { size?: number }) {
@@ -546,34 +796,122 @@ function CopyIcon({ size }: { size?: number }) {
 
 function StatisticsView({ statistics }: { statistics: TopicStatistics }) {
   return <div>
-    <h3 className="stat-section-title">Messages</h3>
-    <div className="statistics-grid message-stats">
-      <StatCard label="Total number" value={statistics.messageCount.toLocaleString()} />
-      <StatCard label="Offsets min–max" value={statistics.minOffset + ' – ' + statistics.maxOffset} />
-      <StatCard label="Timestamp min–max" value={formatDate(statistics.minTimestamp) + ' – ' + formatDate(statistics.maxTimestamp)} wide />
-      <StatCard label="Null keys" value={statistics.nullKeys.toLocaleString()} />
-      <StatCard label="Unique keys" value={statistics.uniqueKeys.toLocaleString()} />
-      <StatCard label="Null values" value={statistics.nullValues.toLocaleString()} />
-      <StatCard label="Unique values" value={statistics.uniqueValues.toLocaleString()} />
+    <div className="statistics-banner-container">
+      <div className="statistics-banner-row">
+        <div className="stat-card-white">
+          <span className="stat-card-label">Total messages</span>
+          <strong className="stat-card-value">{statistics.messageCount.toLocaleString()}</strong>
+        </div>
+        <div className="stat-card-white">
+          <span className="stat-card-label">Offset range</span>
+          <strong className="stat-card-value">{statistics.minOffset + '—' + statistics.maxOffset}</strong>
+        </div>
+        <div className="stat-card-white timestamp-card" style={{ flexGrow: 1, minWidth: '321px' }}>
+          <span className="stat-card-label">Timestamp range</span>
+          <strong className="stat-card-value">{formatDate(statistics.minTimestamp) + ' – ' + formatDate(statistics.maxTimestamp)}</strong>
+        </div>
+        <div className="stat-card-white">
+          <span className="stat-card-label">Null keys</span>
+          <strong className="stat-card-value">{statistics.nullKeys.toLocaleString()}</strong>
+        </div>
+        <div className="stat-card-white">
+          <span className="stat-card-label">Unique keys</span>
+          <strong className="stat-card-value">{statistics.uniqueKeys.toLocaleString()}</strong>
+        </div>
+        <div className="stat-card-white">
+          <span className="stat-card-label">Null values</span>
+          <strong className="stat-card-value">{statistics.nullValues.toLocaleString()}</strong>
+        </div>
+        <div className="stat-card-white">
+          <span className="stat-card-label">Unique values</span>
+          <strong className="stat-card-value">{statistics.uniqueValues.toLocaleString()}</strong>
+        </div>
+      </div>
     </div>
+
     <SizeStatSection title="Key size" stats={statistics.keySize} />
     <SizeStatSection title="Value size" stats={statistics.valueSize} />
-    <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Partition ID</th><th>Total messages</th><th>Min offset</th><th>Max offset</th></tr></thead><tbody>{statistics.partitions.map(partition => <tr key={partition.partition}><td>{partition.partition}</td><td>{partition.totalMessages}</td><td>{partition.minOffset}</td><td>{partition.maxOffset}</td></tr>)}</tbody></table></div>
+
+    <div className="detail-table-wrap">
+      <table className="detail-table statistics-table">
+        <thead>
+          <tr>
+            <th>Partition ID</th>
+            <th>Total Messages</th>
+            <th>Min Offset</th>
+            <th>Max Offset</th>
+          </tr>
+        </thead>
+        <tbody>
+          {statistics.partitions.map(partition => (
+            <tr key={partition.partition}>
+              <td>{partition.partition}</td>
+              <td>{partition.totalMessages.toLocaleString()}</td>
+              <td>{partition.minOffset.toLocaleString()}</td>
+              <td>{partition.maxOffset.toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   </div>;
 }
 
 function SizeStatSection({ title, stats }: { title: string; stats: SizeStatistics }) {
-  return <div className="size-stat-section"><h3 className="stat-section-title">{title}</h3><div className="statistics-grid size-stats">
-    <StatCard label="Total size" value={formatBytes(stats.total)} /><StatCard label="Min size" value={formatBytes(stats.min)} />
-    <StatCard label="Max size" value={formatBytes(stats.max)} /><StatCard label="Average" value={formatBytes(Math.round(stats.average))} />
-    <StatCard label="Percentile 50" value={formatBytes(stats.p50)} /><StatCard label="Percentile 75" value={formatBytes(stats.p75)} />
-    <StatCard label="Percentile 95" value={formatBytes(stats.p95)} /><StatCard label="Percentile 99" value={formatBytes(stats.p99)} />
-    <StatCard label="Percentile 999" value={formatBytes(stats.p999)} />
-  </div></div>;
+  return (
+    <div className="size-stat-section">
+      <h3 style={{ margin: '16px 0 8px 0', color: '#5B327F', fontSize: '16px', fontWeight: 500, fontFamily: 'Satoshi, sans-serif' }}>{title}</h3>
+      <div className="statistics-banner-container">
+        <div className="statistics-banner-row">
+          <div className="stat-card-white">
+            <span className="stat-card-label">Total size</span>
+            <strong className="stat-card-value">{formatBytes(stats.total)}</strong>
+          </div>
+          <div className="stat-card-white">
+            <span className="stat-card-label">Minimum size</span>
+            <strong className="stat-card-value">{formatBytes(stats.min)}</strong>
+          </div>
+          <div className="stat-card-white">
+            <span className="stat-card-label">Maximum size</span>
+            <strong className="stat-card-value">{formatBytes(stats.max)}</strong>
+          </div>
+          <div className="stat-card-white">
+            <span className="stat-card-label">Average size</span>
+            <strong className="stat-card-value">{formatBytes(Math.round(stats.average))}</strong>
+          </div>
+          <div className="stat-card-white" style={{ minWidth: '101px' }}>
+            <span className="stat-card-label">50th percentile</span>
+            <strong className="stat-card-value">{formatBytes(stats.p50)}</strong>
+          </div>
+        </div>
+        <div className="statistics-banner-row" style={{ marginTop: '8px' }}>
+          <div className="stat-card-white">
+            <span className="stat-card-label">75th percentile</span>
+            <strong className="stat-card-value">{formatBytes(stats.p75)}</strong>
+          </div>
+          <div className="stat-card-white">
+            <span className="stat-card-label">95th percentile</span>
+            <strong className="stat-card-value">{formatBytes(stats.p95)}</strong>
+          </div>
+          <div className="stat-card-white">
+            <span className="stat-card-label">99th percentile</span>
+            <strong className="stat-card-value">{formatBytes(stats.p99)}</strong>
+          </div>
+          <div className="stat-card-white" style={{ flexGrow: 1.5 }}>
+            <span className="stat-card-label">99.9th percentile</span>
+            <strong className="stat-card-value">{formatBytes(stats.p999)}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function StatCard({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return <article className={wide ? 'wide' : ''}><span>{label}</span><strong>{value}</strong></article>;
+  return <article className={wide ? 'wide' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px' }}>
+    <span style={{ fontSize: '12px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>{label}</span>
+    <strong style={{ fontSize: '18px', color: '#332849', fontFamily: 'Satoshi, sans-serif' }}>{value}</strong>
+  </article>;
 }
 
 function LoadingRow({ columns }: { columns: number }) {

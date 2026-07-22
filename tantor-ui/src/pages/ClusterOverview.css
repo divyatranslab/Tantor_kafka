@@ -1,200 +1,172 @@
 .overview-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
-  background: #f5f4f1;
+  gap: 10px;
   min-height: 100%;
+  color: #332849;
 }
 
-.overview-toolbar {
+.overview-section {
   display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
 }
 
-.overview-meta {
-  display: flex;
-  gap: 14px;
-  color: #8f8d87;
-  font-size: 12px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-}
-
-.overview-export {
-  border: 0.5px solid #d9d7d0;
-  background: #ffffff;
-  color: #1a1a18;
-  border-radius: 8px;
-  padding: 8px 12px;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 500;
-}
-
-.overview-export:hover {
-  background: #fafaf8;
-}
-
+.overview-card,
 .overview-band {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.overview-band h2 {
-  margin: 0;
-  color: #1a1a18;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.overview-grid {
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-  border: 0.5px solid #e8e6e1;
-  border-radius: 10px;
-  background: #ffffff;
-}
-
-.overview-grid.uptime {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.overview-grid.partitions {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.overview-tile {
-  min-height: 86px;
-  padding: 18px 20px;
-  border-right: 0.5px solid #e8e6e1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   gap: 8px;
-}
-
-.overview-tile:last-child {
-  border-right: none;
-}
-
-.overview-tile-label {
-  color: #5f5e5a;
-  font-size: 12.5px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.overview-tile-main {
-  color: #1a1a18;
-  font-size: 22px;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.overview-tile-icon {
-  width: 36px;
-  height: 36px;
+  padding: 12px;
+  background: #fafafa;
   border-radius: 8px;
-  background: #e9f1f8;
-  color: #185fa5;
+}
+
+.section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 20px;
+}
+
+.overview-section h2 {
+  margin: 0;
+  color: #5b327f;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 100%;
+  letter-spacing: 0;
+}
+
+.overview-export {
+  height: 28px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  border: 1px solid #5b327f;
+  border-radius: 4px;
+  background: #fff;
+  color: #5b327f;
+  cursor: pointer;
+  font: 500 12px/100% 'Satoshi', sans-serif;
 }
 
-.status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+.overview-export:hover { background: #fcf8ff; }
+.overview-export svg { width: 12px; height: 12px; }
+
+.overview-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.overview-grid.identity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.overview-grid.uptime-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.overview-grid.partitions-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+.overview-item {
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  background: #fff;
+  border-radius: 6px;
+}
+
+.overview-label,
+.overview-value {
+  overflow: hidden;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  line-height: 14px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-label {
+  display: flex;
+  align-items: center;
+  color: #818181;
+  font-weight: 400;
+}
+
+.overview-value {
+  color: #332849;
+  font-weight: 500;
+}
+
+.status-dot.green {
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
   display: inline-block;
-}
-
-.status-dot.ok {
-  background: #1d9e75;
-}
-
-.status-dot.warn {
-  background: #ba7517;
+  border-radius: 50%;
+  background: #85c96f;
 }
 
 .overview-table-wrap {
-  background: #ffffff;
-  border: 0.5px solid #e8e6e1;
-  border-radius: 10px;
+  width: 100%;
   overflow-x: auto;
+  box-sizing: border-box;
+  border: 1px solid #cccccc;
+  border-radius: 6px;
+  background: #fff;
 }
 
 .overview-table {
-  min-width: 1050px;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
 }
 
-.overview-broker-id {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #1d9e75;
-  font-weight: 600;
+.overview-table th,
+.overview-table td {
+  height: 36px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #cccccc;
+  text-align: left;
+  white-space: nowrap;
 }
 
-.overview-broker-id span:not(.controller-badge) {
-  color: #1a1a18;
+.overview-dashboard .overview-table th {
+  color: #332849;
+  font: 500 12px/16px 'Satoshi', sans-serif;
 }
+
+.overview-dashboard .overview-table td {
+  color: #4b4654;
+  font: 400 12px/16px 'Satoshi', sans-serif;
+}
+
+.overview-table tr:last-child td { border-bottom: 0; }
 
 .overview-alert {
-  border-radius: 8px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  border-radius: 7px;
+  font: 400 11px/16px 'Satoshi', sans-serif;
 }
 
-.overview-alert.error {
-  background: #fcebeb;
-  border: 0.5px solid #e8b4b4;
-  color: #791f1f;
-}
-
-.overview-alert.warning {
-  background: #fff7e8;
-  border: 0.5px solid #edd09a;
-  color: #7a4d10;
-}
+.overview-alert.error { border: 1px solid #e8b4b4; background: #fcebeb; color: #791f1f; }
+.overview-alert.warning { border: 1px solid #edd09a; background: #fff7e8; color: #7a4d10; }
 
 @media (max-width: 1100px) {
-  .overview-grid.uptime,
-  .overview-grid.partitions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .overview-tile {
-    border-bottom: 0.5px solid #e8e6e1;
-  }
+  .overview-grid.partitions-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-@media (max-width: 720px) {
-  .overview-toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .overview-grid.uptime,
-  .overview-grid.partitions {
-    grid-template-columns: 1fr;
-  }
-
-  .overview-tile {
-    border-right: none;
-  }
+@media (max-width: 760px) {
+  .overview-grid.identity-grid,
+  .overview-grid.uptime-grid,
+  .overview-grid.partitions-grid { grid-template-columns: 1fr; }
 }

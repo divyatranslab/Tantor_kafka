@@ -64,11 +64,7 @@ public class AgentService {
         if (!selectedIps.isEmpty()) {
             host.setHostIp(selectedIps.get(0));
         }
-        try {
-            host.setIpAddresses(objectMapper.writeValueAsString(selectedIps));
-        } catch (JsonProcessingException e) {
-            log.warn("Failed to serialize IPs for host {}", dto.getHostId(), e);
-        }
+
         String selectedHostIp = selectedIps.isEmpty() ? sourceIp : selectedIps.get(0);
         String agentName = firstNonBlank(dto.getAgentName(), host.getAgentName(), dto.getHostname(), dto.getHostId());
         String agentPath = firstNonBlank(dto.getAgentPath(), host.getAgentPath(), "/srv/tantor-agent/tantor-agent-linux");
@@ -83,7 +79,7 @@ public class AgentService {
         host.setAgentVersion(dto.getAgentVersion());
         host.setAgentName(agentName);
         host.setAgentPath(agentPath);
-        host.setAgentStatus("ONLINE");
+
         if (host.getStatus() == null) {
             host.setStatus("PENDING");
         } else if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
@@ -124,7 +120,7 @@ public class AgentService {
             host.setDiskUsedGb(dto.getDiskUsedGb());
             host.setJavaVersion(dto.getJavaVersion());
             host.setLastHeartbeat(OffsetDateTime.now());
-            host.setAgentStatus("ONLINE");
+
             host.setRemoved(false);
             if (!"PENDING".equals(host.getStatus()) && !"OCCUPIED".equalsIgnoreCase(host.getStatus())) {
                 host.setStatus("ONLINE");
@@ -237,7 +233,7 @@ public class AgentService {
         try {
             UUID taskId = UUID.fromString(dto.getTaskId());
             taskRepository.findById(taskId).ifPresent(task -> {
-                if ("IN_PROGRESS".equals(dto.getStatus()) && dto.getCurrentStep() != null) {
+                if (!isTerminalTaskStatus(dto.getStatus())) {
                     task.setCurrentStep(dto.getCurrentStep());
                     try {
                         Map<String, String> stepLogsMap = new java.util.LinkedHashMap<>();
@@ -256,20 +252,24 @@ public class AgentService {
                     taskRepository.save(task);
                 } else {
                     task.setStatus(dto.getStatus());
-                    if (dto.getLogOutput() != null) {
-                        task.setLogOutput(dto.getLogOutput());
+                    String resultOutput = resultOutput(dto);
+                    if (resultOutput != null) {
+                        task.setLogOutput(resultOutput);
                     }
                     task.setErrorMsg(dto.getErrorMsg());
-                    task.setFailedReason(dto.getFailedReason());
+                    if ((task.getErrorMsg() == null || task.getErrorMsg().isBlank())
+                            && dto.getFailedReason() != null && !dto.getFailedReason().isBlank()) {
+                        task.setErrorMsg(dto.getFailedReason());
+                    }
                     task.setCurrentStep(dto.getCurrentStep());
                     try {
-                        if (dto.getCurrentStep() != null && dto.getLogOutput() != null && !dto.getLogOutput().isEmpty()) {
+                        if (dto.getCurrentStep() != null && resultOutput != null && !resultOutput.isEmpty()) {
                             Map<String, String> stepLogsMap = new java.util.LinkedHashMap<>();
                             if (task.getStepLogs() != null && !task.getStepLogs().isBlank()) {
                                 stepLogsMap = objectMapper.readValue(task.getStepLogs(), new TypeReference<Map<String, String>>() {});
                             }
                             String existingLog = stepLogsMap.getOrDefault(dto.getCurrentStep(), "");
-                            stepLogsMap.put(dto.getCurrentStep(), existingLog + dto.getLogOutput());
+                            stepLogsMap.put(dto.getCurrentStep(), existingLog + resultOutput);
                             task.setStepLogs(objectMapper.writeValueAsString(stepLogsMap));
                         }
                     } catch (Exception e) {}
@@ -281,6 +281,7 @@ public class AgentService {
                             task.getClusterId(), "IN_PROGRESS", dto.getStatus(), dto.getStatus(), null,
                             dto.getErrorMsg());
                     if ("CHECK_PREREQUISITES".equals(task.getCommand())
+                            || "CHECK_PORTS".equals(task.getCommand())
                             || "APPLY_PREREQUISITES".equals(task.getCommand())) {
                         Map<String, Object> prerequisiteDetails = new java.util.LinkedHashMap<>();
                         prerequisiteDetails.put("taskId", taskId.toString());
@@ -293,13 +294,24 @@ public class AgentService {
                             prerequisiteDetails.put("failedReason", dto.getFailedReason());
                         }
                         String action = "APPLY_PREREQUISITES".equals(task.getCommand())
-                                ? "PREREQUISITE_FIX_COMPLETED" : "PREREQUISITE_CHECK_COMPLETED";
-                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                                ? "PREREQUISITE_FIX_COMPLETED"
+                                : "CHECK_PORTS".equals(task.getCommand())
+                                ? "PORT_CHECK_COMPLETED"
+                                : "PREREQUISITE_CHECK_COMPLETED";
+                        String auditActor = taskParameter(task, "requested_by");
+                        if (auditActor == null || auditActor.isBlank()) {
+                            auditActor = "agent:" + task.getHostId();
+                        }
+                        auditService.recordAs(auditActor, "AGENT", null,
                                 "PREREQUISITE", action, "HOST", task.getHostId(),
                                 task.getClusterId(), dto.getStatus(), null, null, null, prerequisiteDetails);
                     }
                     if ("REBOOT_HOST".equals(task.getCommand())) {
-                        auditService.recordAs("agent:" + task.getHostId(), "AGENT", null,
+                        String auditActor = taskParameter(task, "requested_by");
+                        if (auditActor == null || auditActor.isBlank()) {
+                            auditActor = "agent:" + task.getHostId();
+                        }
+                        auditService.recordAs(auditActor, "AGENT", null,
                                 "RESTART", "HOST_REBOOT_SCHEDULED", "HOST", task.getHostId(), task.getClusterId(),
                                 dto.getStatus(), null, null, null,
                                 Map.of("taskId", taskId.toString(), "result", dto.getStatus()));
@@ -349,6 +361,24 @@ public class AgentService {
             log.error("Invalid task ID format: {}", dto.getTaskId(), e);
         }
     }
+
+    private String resultOutput(TaskResultDto dto) {
+        StringBuilder output = new StringBuilder(dto.getLogOutput() == null ? "" : dto.getLogOutput());
+        if (dto.getPlanHash() != null && !dto.getPlanHash().isBlank()) {
+            if (!output.isEmpty()) output.append("\n");
+            output.append("plan_hash=").append(dto.getPlanHash());
+        }
+        if (dto.getChecks() != null && !dto.getChecks().isEmpty()) {
+            try {
+                if (!output.isEmpty()) output.append("\n");
+                output.append("checks=").append(objectMapper.writeValueAsString(dto.getChecks()));
+            } catch (JsonProcessingException e) {
+                log.warn("Failed to serialize task checks for {}", dto.getTaskId(), e);
+            }
+        }
+        return output.isEmpty() ? null : output.toString();
+    }
+
     private void cancelPendingClusterDeploymentTasks(Task failedTask) {
         if (failedTask.getClusterId() == null
                 || !"INSTALL_KAFKA".equals(failedTask.getCommand())
@@ -412,7 +442,7 @@ public class AgentService {
                 }
             }
         }
-        cluster.setUpdatedBy("system");
+        // Preserve the actor that initiated the deployment. This callback runs asynchronously without the user security context, so replacing updatedBy with system caused completed deployment audit events to be attributed to system.
         clusterRepository.save(cluster);
     }
 
@@ -422,6 +452,9 @@ public class AgentService {
         return error.contains("Rollback completed") || logs.contains("Rollback completed");
     }
 
+    private boolean isTerminalTaskStatus(String status) {
+        return "SUCCESS".equalsIgnoreCase(status) || "FAILED".equalsIgnoreCase(status);
+    }
     @SuppressWarnings("unchecked")
     private String taskParameter(Task task, String name) {
         if (task.getParameters() == null || task.getParameters().isBlank()) {

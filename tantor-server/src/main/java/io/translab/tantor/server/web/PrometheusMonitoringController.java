@@ -35,20 +35,15 @@ public class PrometheusMonitoringController {
     }
 
     @GetMapping("/api/v1/monitoring/clusters/{clusterId}/overview")
-    public ResponseEntity<?> overview(@PathVariable UUID clusterId) {
+    public ResponseEntity<?> overview(
+            @PathVariable UUID clusterId,
+            @RequestParam(required = false) String nodeId
+    ) {
         try {
-            return ResponseEntity.ok(monitoringService.overview(clusterId));
+            return ResponseEntity.ok(monitoringService.overview(clusterId, nodeId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.notFound().build();
         }
     }
 
-    @GetMapping("/api/v1/monitoring/clusters/{clusterId}/exporter-plan")
-    public ResponseEntity<?> exporterPlan(@PathVariable UUID clusterId) {
-        try {
-            return ResponseEntity.ok(monitoringService.exporterPlan(clusterId));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
 }

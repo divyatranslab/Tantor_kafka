@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './DeploymentLogs.css';
 
 interface Task {
@@ -56,11 +57,13 @@ const DEPLOYMENT_STEPS = [
 
 export function DeploymentLogs() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isConsoleMaximized, setIsConsoleMaximized] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
 
   const fetchTasks = async () => {
@@ -72,11 +75,16 @@ export function DeploymentLogs() {
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
         const nextTasks: Task[] = await tasksRes.json();
-        setTasks(nextTasks);
-        setSelectedTaskId(current => current && nextTasks.some(task => task.id === current) ? current : nextTasks[0]?.id || '');
+        const availableTasks = Array.isArray(nextTasks) ? nextTasks : [];
+        setTasks(availableTasks);
+        setSelectedTaskId(current => current && availableTasks.some(task => task.id === current) ? current : availableTasks[0]?.id || '');
+      } else {
+        throw new Error('Tasks request failed');
       }
     } catch (error) {
-      console.error(error);
+      console.error('Failed to load deployment logs', error);
+      setTasks([]);
+      setSelectedTaskId('');
     } finally {
       setLoading(false);
     }
@@ -139,7 +147,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to retry task.");
+      notifyAction("Failed to retry task.");
     } finally {
       setActionLoading(false);
     }
@@ -147,7 +155,7 @@ export function DeploymentLogs() {
 
   const handleRollback = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)")) return;
+    if (!(await confirmAction("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)"))) return;
     
     setActionLoading(true);
     try {
@@ -155,7 +163,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger rollback.");
+      notifyAction("Failed to trigger rollback.");
     } finally {
       setActionLoading(false);
     }
@@ -169,7 +177,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to resume task.");
+      notifyAction("Failed to resume task.");
     } finally {
       setActionLoading(false);
     }
@@ -177,7 +185,7 @@ export function DeploymentLogs() {
 
   const handleCleanup = async () => {
     if (!id || !selectedTask) return;
-    if (!confirm("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)")) return;
+    if (!(await confirmAction("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)"))) return;
     
     setActionLoading(true);
     try {
@@ -185,7 +193,7 @@ export function DeploymentLogs() {
       fetchTasks();
     } catch (e) {
       console.error(e);
-      alert("Failed to trigger cleanup.");
+      notifyAction("Failed to trigger cleanup.");
     } finally {
       setActionLoading(false);
     }
@@ -210,36 +218,211 @@ export function DeploymentLogs() {
   const isSuccess = selectedTask.status === 'SUCCESS';
 
   return (
-    <div className="deployment-log-view animate-fade-in">
-      <div className="deployment-log-toolbar">
-        <div>
-          <strong>Task output</strong>
-          <span>{tasks.length} task{tasks.length === 1 ? '' : 's'} recorded</span>
+    <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch' }}>
+      
+      {/* Title Row with Task output & refresh icon */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '16px', lineHeight: '22px', color: '#282F49', margin: 0 }}>Task output</h2>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181' }}>
+            {tasks.length} task{tasks.length === 1 ? '' : 's'} recorded
+          </span>
         </div>
-        <div className="deployment-log-actions">
-          <button onClick={() => navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '')} title="Copy selected logs"><Copy size={14} /> Copy</button>
-          <button onClick={fetchTasks} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button 
+            onClick={() => navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '')}
+            style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              width: '40px',
+              height: '40px',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              cursor: 'pointer'
+            }}
+            title="Copy logs"
+          >
+            <Copy size={16} style={{ color: '#818181' }} />
+          </button>
+          <button 
+            onClick={fetchTasks} 
+            disabled={loading} 
+            style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              width: '40px',
+              height: '40px',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              cursor: 'pointer'
+            }}
+            title="Refresh"
+          >
+            <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#818181' }} />
+          </button>
         </div>
       </div>
 
-      <div className="deployment-task-picker">
-        <label htmlFor="deployment-task">Task</label>
-        <select id="deployment-task" value={selectedTask.id} onChange={event => setSelectedTaskId(event.target.value)}>
-          {tasks.map(task => (
-            <option key={task.id} value={task.id}>
-              {task.command} · {task.hostId} · {task.status}
-            </option>
-          ))}
-        </select>
+      {/* Task dropdown selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
+        <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '16px', lineHeight: '22px', color: '#282F49', width: '33px' }}>
+          Task
+        </span>
+        <div style={{ position: 'relative', flexGrow: 1 }}>
+          <select 
+            id="deployment-task" 
+            value={selectedTask.id} 
+            onChange={event => setSelectedTaskId(event.target.value)}
+            style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: '10px 16px',
+              width: '100%',
+              height: '40px',
+              background: '#FFFFFF',
+              border: '1px solid #8E77BB',
+              borderRadius: '8px',
+              fontFamily: 'Satoshi, sans-serif',
+              fontWeight: 400,
+              fontSize: '14px',
+              color: '#8E77BB',
+              appearance: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            {tasks.map(task => (
+              <option key={task.id} value={task.id}>
+                {`${task.command} - ${task.hostId} - ${task.status}`}
+              </option>
+            ))}
+          </select>
+          <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: '#8E77BB' }}>
+            <ChevronDown size={20} />
+          </div>
+        </div>
       </div>
 
-      <div className="deployment-task-summary">
-        <div><span>Status</span><strong className={`log-status ${selectedTask.status.toLowerCase()}`}>{statusIcon(selectedTask.status)} {selectedTask.status}</strong></div>
-        <div><span>Host</span><strong><Server size={14} /> {selectedTask.hostId}</strong></div>
-        <div><span>Started</span><strong>{new Date(selectedTask.createdAt).toLocaleString()}</strong></div>
-        <div><span>Updated</span><strong>{new Date(selectedTask.updatedAt).toLocaleString()}</strong></div>
+      {/* Metadata Table */}
+      <div style={{
+        boxSizing: 'border-box',
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        border: '1px solid #CCCCCC',
+        borderRadius: '8px',
+        overflow: 'hidden'
+      }}>
+        {/* Table Header */}
+        <div style={{ display: 'flex', background: '#F9F9F9', borderBottom: '1px solid #CCCCCC', height: '54px', alignItems: 'center' }}>
+          <div style={{ width: '56px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Status</div>
+          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Host</div>
+          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Started</div>
+          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Updated</div>
+        </div>
+        {/* Table Body Row */}
+        <div 
+          style={{ display: 'flex', background: '#FFFFFF', height: '52px', alignItems: 'center', cursor: 'default' }}
+        >
+          <div style={{ width: '56px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818181' }}>
+            {statusIcon(selectedTask.status)}
+          </div>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+            {selectedTask.status}
+          </div>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selectedTask.hostId}>
+            {selectedTask.hostId}
+          </div>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+            {new Date(selectedTask.createdAt).toLocaleString()}
+          </div>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+            {new Date(selectedTask.updatedAt).toLocaleString()}
+          </div>
+        </div>
       </div>
 
+      {/* Full width Log CodeBlock console */}
+      <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+        {/* Dark purple header bar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          padding: '10px 20px',
+          height: '44px',
+          background: '#332849',
+          borderRadius: '8px 8px 0px 0px'
+        }}>
+          <button 
+            onClick={() => setIsConsoleMaximized(!isConsoleMaximized)}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              padding: 0
+            }}
+            title={isConsoleMaximized ? "Collapse logs" : "Expand logs"}
+          >
+            {isConsoleMaximized ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#FFFFFF' }}>
+                <path d="M13 7v4h4" />
+                <path d="M11 17v-4H7" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#FFFFFF' }}>
+                <path d="M17 11V7H13" />
+                <path d="M13 15V11H9" />
+              </svg>
+            )}
+          </button>
+        </div>
+        
+        {/* Log body */}
+        <div style={{
+          boxSizing: 'border-box',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          padding: '20px',
+          width: '100%',
+          minHeight: isConsoleMaximized ? '650px' : '245px',
+          maxHeight: isConsoleMaximized ? 'none' : '400px',
+          overflowY: 'auto',
+          background: '#000000',
+          borderRadius: '0px 0px 16px 16px'
+        }} ref={logBodyRef}>
+          <pre style={{
+            margin: 0,
+            width: '100%',
+            fontFamily: 'Source Code Pro, monospace',
+            fontStyle: 'normal',
+            fontWeight: 400,
+            fontSize: '14px',
+            lineHeight: '20px',
+            color: '#FFFFFF',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all'
+          }}>
+            {selectedTask.logOutput || selectedTask.errorMsg || 'No output recorded.'}
+          </pre>
+        </div>
+      </div>
+
+      {/* Action buttons if failed */}
       {isFailed && selectedTask.command === 'INSTALL_KAFKA' && (
         <div className="deployment-action-bar">
            <button className="btn-primary" onClick={handleRetry} disabled={actionLoading}>
@@ -264,6 +447,7 @@ export function DeploymentLogs() {
         </div>
       )}
 
+      {/* Technical details if error */}
       {selectedTask.errorMsg && (
         <div className="deployment-task-error">
           <strong>What happened</strong>
@@ -276,51 +460,8 @@ export function DeploymentLogs() {
         </div>
       )}
 
-      <div className="deployment-layout-split">
-        {selectedTask.command === 'INSTALL_KAFKA' && (
-          <div className="deployment-steps-panel">
-            <h3>Deployment Steps</h3>
-            <div className="steps-list">
-              {DEPLOYMENT_STEPS.map((step, idx) => {
-                let stepState = 'pending'; // pending, running, completed, failed
-                
-                if (isSuccess) {
-                  stepState = 'completed';
-                } else if (isFailed) {
-                  if (activeStepIndex === idx) stepState = 'failed';
-                  else if (idx < activeStepIndex || (activeStepIndex === -1 && stepLogsObj[step])) stepState = 'completed';
-                } else {
-                  if (activeStepIndex === idx) stepState = 'running';
-                  else if (idx < activeStepIndex) stepState = 'completed';
-                }
 
-                return (
-                  <div key={step} className={`step-item ${stepState}`}>
-                    <div className="step-icon">
-                      {stepState === 'completed' && <CheckCircle2 size={16} />}
-                      {stepState === 'running' && <Loader2 size={16} className="spin" />}
-                      {stepState === 'failed' && <XCircle size={16} />}
-                      {stepState === 'pending' && <div className="step-dot" />}
-                    </div>
-                    <div className="step-name">{step}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        <div className="deployment-console" style={{ flex: 1, minHeight: 400 }}>
-          <div className="deployment-console-header"><Terminal size={14} /><span>Live Logs {selectedTask.currentStep ? `(${selectedTask.currentStep})` : ''}</span></div>
-          <div className="deployment-console-body" ref={logBodyRef}>
-            <pre>
-              {selectedTask.currentStep && stepLogsObj[selectedTask.currentStep]
-                ? stepLogsObj[selectedTask.currentStep]
-                : (selectedTask.logOutput || 'Waiting for the agent to report output...')}
-            </pre>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

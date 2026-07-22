@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { notifyAction } from '../components/ConfirmDialog';
 import './ClusterNodes.css';
 
 interface ClusterNode {
@@ -32,11 +33,13 @@ export function ClusterNodes() {
   const fetchNodes = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/ui/clusters/${id}`);
-      if (response.ok) {
-        const cluster: ClusterResponse = await response.json();
-        setNodes(cluster.hosts || []);
-      }
+      const res = await fetch(`/api/v1/clusters/${id}/nodes`);
+      if (!res.ok) throw new Error('Failed to fetch nodes');
+      const data = await res.json();
+      setNodes(data || []);
+    } catch (e: any) {
+      console.error(e);
+      setNodes([]);
     } finally {
       setLoading(false);
     }
@@ -57,7 +60,7 @@ export function ClusterNodes() {
       setSelectedAgents({});
       await fetchNodes();
     } catch (e) {
-      alert('Failed to bind agents');
+      notifyAction('Failed to bind agents');
     } finally {
       setBinding(false);
     }
@@ -74,19 +77,8 @@ export function ClusterNodes() {
 
   return (
     <div className="cluster-nodes-page animate-fade-in">
-      <header>
-        <div>
-          <h2>Cluster Nodes</h2>
-          <p>Every broker, controller, and ZooKeeper service assigned to this cluster.</p>
-        </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {canBindAgents && Object.keys(selectedAgents).length > 0 && (
-            <button className="btn primary" onClick={bindAgents} disabled={binding}>
-              {binding ? <RefreshCw size={14} className="spin" /> : 'Connect Agent'}
-            </button>
-          )}
-          <button onClick={fetchNodes}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button>
-        </div>
+      <header className="page-header">
+        <h2 className="cluster-section-heading">Cluster Nodes</h2>
       </header>
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">
@@ -94,10 +86,10 @@ export function ClusterNodes() {
             {canBindAgents && <th style={{ width: '40px', textAlign: 'center' }}></th>}
             <th>Node ID</th>
             <th>Host</th>
-            <th>IP address</th>
+            <th>IP Address</th>
             <th>Role</th>
             <th>Status</th>
-            <th>Last heartbeat</th>
+            <th>Last updated</th>
           </tr></thead>
           <tbody>
             {nodes.map((node, index) => {
@@ -125,12 +117,12 @@ export function ClusterNodes() {
                   </td>
                 )}
                 <td><code>{node.nodeId ?? '-'}</code></td>
-                <td><span className="cluster-node-host"><Server size={14} /> {node.hostname || node.hostId}</span></td>
-                <td><code>{node.ipAddress || '-'}</code></td>
-                <td><span className="cluster-node-role">{String(node.role || 'unknown').replaceAll('_', ' ')}</span></td>
+                <td><span className="cluster-node-host">{node.hostname || node.hostId}</span></td>
+                <td><span className="cluster-node-ip">{node.ipAddress || '-'}</span></td>
+                <td><span className="cluster-node-role">{String(node.role || 'unknown').toLowerCase() === 'broker_controller' ? 'Broker Controller' : String(node.role || 'unknown').replaceAll('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span></td>
                 <td>
                   <span className={`cluster-node-status ${(node.status || '').toLowerCase()}`}>
-                    {node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN'}
+                    {node.status === 'SUCCESS' ? 'Success' : node.status === 'OCCUPIED' ? 'Occupied' : (node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN')}
                   </span>
                 </td>
                 <td>{node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleString() : '-'}</td>

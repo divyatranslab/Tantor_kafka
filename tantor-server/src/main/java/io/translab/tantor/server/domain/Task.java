@@ -50,8 +50,10 @@ public class Task {
     @Column(name = "current_step")
     private String currentStep;
 
-    @Column(name = "failed_reason")
-    private String failedReason;
+    @Transient
+    public String getFailedReason() {
+        return getErrorMsg();
+    }
 
     @Column(name = "step_logs", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)

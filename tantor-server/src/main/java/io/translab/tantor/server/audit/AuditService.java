@@ -41,7 +41,7 @@ public class AuditService {
                          UUID clusterId, String status, Object oldValue, Object newValue,
                          Object approval, Object details) {
         AuditLog event = new AuditLog();
-        event.setUserName(resolveActor(actorOverride));
+        event.setCreatedBy(resolveActor(actorOverride));
         event.setOrigin(text(source, "MANAGEMENT_SERVER"));
         event.setCategory(text(category, "SYSTEM").toUpperCase(Locale.ROOT));
         event.setAction(text(action, "UNKNOWN").toUpperCase(Locale.ROOT));
@@ -49,11 +49,10 @@ public class AuditService {
         event.setResourceId(resourceId);
         event.setResource(resourceId);
         event.setClusterId(clusterId);
-        event.setStatus(text(status, "SUCCESS").toUpperCase(Locale.ROOT));
+        event.setStatus(auditStatus(status));
         event.setDetails(json(details));
         event.setCreatedTime(Instant.now());
-        event.setCreatedBy(event.getUserName());
-        event.setUserId(event.getUserName());
+
 
         if ("ARTIFACT".equalsIgnoreCase(event.getResourceType()) && event.getResourceId() != null) {
             try {
@@ -119,7 +118,8 @@ public class AuditService {
             equalIgnoreCase(predicates, cb, root.get("action"), action);
             equalIgnoreCase(predicates, cb, root.get("status"), status);
             equalIgnoreCase(predicates, cb, root.get("resourceType"), resourceType);
-            if (actor != null && !actor.isBlank()) predicates.add(cb.equal(root.get("userName"), actor));
+            predicates.add(cb.upper(root.get("status")).in("SUCCESS", "FAILED"));
+            if (actor != null && !actor.isBlank()) predicates.add(cb.equal(root.get("createdBy"), actor));
             if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("createdTime"), from));
             if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdTime"), to));
             if (search != null && !search.isBlank()) {
@@ -129,7 +129,7 @@ public class AuditService {
                         cb.like(cb.lower(root.get("resource")), like),
                         cb.like(cb.lower(root.get("hostName")), like),
                         cb.like(cb.lower(root.get("hostIp")), like),
-                        cb.like(cb.lower(root.get("userName")), like),
+                        cb.like(cb.lower(root.get("createdBy")), like),
                         cb.like(cb.lower(root.get("action")), like),
                         cb.like(cb.lower(root.get("resourceType")), like)));
             }
@@ -154,11 +154,11 @@ public class AuditService {
     }
 
     public String displayResourceId(AuditLog event) {
-        String kafkaClusterId = kafkaClusterId(event);
-        if (kafkaClusterId != null) return kafkaClusterId;
         if (isType(event, "ARTIFACT")) return blankToNull(event.getResourceId());
-        if (isType(event, "HOST")) return blankToNull(event.getHostId());
-        return firstNonBlank(event.getResourceId(), event.getResource(), event.getHostId());
+        if (isType(event, "HOST")) return firstNonBlank(event.getHostId(), event.getResourceId());
+        if (isType(event, "CLUSTER")) return firstNonBlank(event.getResourceId(), id(event.getClusterId()));
+        if (event.getClusterId() != null) return event.getClusterId().toString();
+        return firstNonBlank(event.getResourceId(), event.getHostId(), event.getResource());
     }
 
     public String verifyIntegrity() {
@@ -289,5 +289,14 @@ public class AuditService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value;
+    }
+
+    private String id(UUID value) {
+        return value == null ? null : value.toString();
+    }
+
+    private String auditStatus(String value) {
+        String normalized = text(value, "SUCCESS").toUpperCase(Locale.ROOT);
+        return normalized.contains("FAIL") || normalized.equals("ERROR") ? "FAILED" : "SUCCESS";
     }
 }

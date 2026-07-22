@@ -48,8 +48,8 @@ public class AuditController {
     private Map<String, Object> eventView(AuditLog event) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", event.getId());
-        view.put("actor", event.getUserName());
-        view.put("userName", event.getUserName());
+        view.put("actor", event.getCreatedBy());
+        view.put("userName", event.getCreatedBy());
         view.put("category", event.getCategory());
         view.put("action", event.getAction());
         view.put("resourceType", event.getResourceType());
@@ -61,7 +61,7 @@ public class AuditController {
         view.put("hostId", event.getHostId());
         view.put("hostIp", event.getHostIp());
         view.put("hostName", event.getHostName());
-        view.put("userId", event.getUserId());
+
         view.put("status", event.getStatus());
         view.put("details", event.getDetails());
         view.put("createdAt", event.getCreatedTime());

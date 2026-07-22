@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle, Clock, Database, HardDrive, RefreshCw, Server,
-  ShieldAlert
+  AlertTriangle, CheckCircle, RefreshCw,
+  Shield, Activity
 } from 'lucide-react';
 import './Alerts.css';
 
@@ -51,97 +51,178 @@ export function Alerts() {
   }, [alerts]);
 
   return (
-    <div className="alerts-page animate-fade-in">
-      <header className="alerts-hero">
-        <div>
-          <span className={`alerts-state ${alerts.length ? 'needs-attention' : 'healthy'}`}>
-            {alerts.length ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
-            {alerts.length ? 'Live system needs attention' : 'All systems healthy'}
-          </span>
-          <h1>Active Alerts</h1>
-          <p>Runtime health, failed tasks, storage pressure, and cluster availability signals.</p>
-        </div>
-        <button className="alerts-refresh" onClick={fetchAlerts}>
-          <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          Refresh
-        </button>
-      </header>
-
-      {error && <div className="alerts-banner">{error}</div>}
-
-      <section className="alerts-summary">
-        <SummaryCard label="Critical" value={summary.critical} tone={summary.critical ? 'bad' : 'good'} icon={ShieldAlert} />
-        <SummaryCard label="Warnings" value={summary.warning} tone={summary.warning ? 'warn' : 'good'} icon={AlertTriangle} />
-        <SummaryCard label="Impacted Clusters" value={summary.clusters} tone={summary.clusters ? 'bad' : 'good'} icon={Database} />
-      </section>
-
-      <section className="alerts-panel">
-        {loading ? (
-          <div className="alerts-empty">
-            <RefreshCw className="spin" size={24} />
-            <strong>Loading alerts...</strong>
-            <span>Checking cluster tasks, hosts, disk usage, and runtime state.</span>
+    <div className="alerts-container">
+      {/* Frame 1000004628 */}
+      <div className="alerts-wrapper">
+        
+        <header className="alerts-header">
+          {/* Left side info */}
+          <div className="alerts-header-info">
+            <h1>Alerts</h1>
+            <p className="alerts-subtitle">Runtime health, failed tasks, storage pressure, and cluster availability signals.</p>
           </div>
-        ) : alerts.length === 0 ? (
-          <div className="alerts-empty healthy">
-            <CheckCircle size={44} />
-            <strong>No active alerts</strong>
-            <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
+          
+          {/* Right side actions */}
+          <div className="alerts-header-actions">
+            <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
+              {alerts.length ? 'Live system needs attention' : 'Live system healthy'}
+            </span>
+            <button className="alerts-refresh-btn" onClick={fetchAlerts} aria-label="Refresh alerts">
+              <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
+            </button>
           </div>
-        ) : (
-          <div className="alerts-list">
-            {alerts.map(alert => (
-              <article key={alert.id} className={`alert-card ${severityTone(alert.severity)}`}>
-                <div className="alert-card-icon">
-                  {alert.source === 'host' ? <Server size={18} /> : alert.source === 'task' ? <Clock size={18} /> : <HardDrive size={18} />}
+        </header>
+
+        {error && <div className="alerts-banner-error">{error}</div>}
+
+        {/* Frame 1000005223 */}
+        <div className="alerts-content-body">
+          
+          {/* Frame 1000005211 (KPI Gradient Container) */}
+          <section className="alerts-kpi-banner">
+            <div className="alerts-kpi-row">
+              
+              {/* Critical KPI Card */}
+              <div className="alerts-kpi-card">
+                <div className="alerts-kpi-header">
+                  <div className="alerts-kpi-icon-container critical">
+                    <Shield size={24} className="alerts-kpi-icon" />
+                  </div>
+                  <span className="alerts-kpi-title">Critical</span>
                 </div>
-                <div className="alert-card-body">
-                  <div className="alert-card-top">
-                    <div>
-                      <span className="alert-source">{sourceLabel(alert.source)}</span>
-                      <h2>{alert.title}</h2>
+                <div className="alerts-kpi-value-row">
+                  <span className="alerts-kpi-value">{String(summary.critical).padStart(2, '0')}</span>
+                </div>
+              </div>
+
+              {/* Warnings KPI Card */}
+              <div className="alerts-kpi-card">
+                <div className="alerts-kpi-header">
+                  <div className="alerts-kpi-icon-container warning">
+                    <AlertTriangle size={24} className="alerts-kpi-icon" />
+                  </div>
+                  <span className="alerts-kpi-title">Warnings</span>
+                </div>
+                <div className="alerts-kpi-value-row">
+                  <span className="alerts-kpi-value">{String(summary.warning).padStart(2, '0')}</span>
+                </div>
+              </div>
+
+              {/* Impacted Clusters KPI Card */}
+              <div className="alerts-kpi-card">
+                <div className="alerts-kpi-header">
+                  <div className="alerts-kpi-icon-container report">
+                    <Activity size={24} className="alerts-kpi-icon" />
+                  </div>
+                  <span className="alerts-kpi-title">Impacted Clusters</span>
+                </div>
+                <div className="alerts-kpi-value-row">
+                  <span className="alerts-kpi-value">{String(summary.clusters).padStart(2, '0')}</span>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          {/* Frame 1000005212 (Details Panel) */}
+          <section className="alerts-details-panel">
+            <h2>Details Activity</h2>
+
+            {/* Frame 1000005221 */}
+            <div className="alerts-details-list">
+              {loading ? (
+                <div className="alerts-empty-state">
+                  <RefreshCw className="spin" size={24} />
+                  <strong>Loading alerts...</strong>
+                </div>
+              ) : alerts.length === 0 ? (
+                <div className="alerts-empty-state healthy">
+                  <CheckCircle size={44} />
+                  <strong>No active alerts</strong>
+                  <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
+                </div>
+              ) : (
+                alerts.map(alert => (
+                  /* Frame 1000005219 / 1000005225 */
+                  <article key={alert.id} className="alerts-detail-card">
+                    {/* Frame 1000005354 */}
+                    <div className="alerts-detail-card-content">
+                      {/* Frame 1000005353 */}
+                      <div className="alerts-detail-title-row">
+                        <span className={`alerts-detail-severity-icon ${severityTone(alert.severity)}`}>
+                          <AlertTriangle size={24} />
+                        </span>
+                        
+                        {/* Frame 1000005218 */}
+                        <div className="alerts-detail-info-col">
+                          {/* Frame 1000005217 */}
+                          <div className="alerts-detail-header-text">
+                            {/* Frame 1000005352 */}
+                            <div className="alerts-detail-title-line">
+                              <h3>{alert.title}</h3>
+                              <span className="alerts-detail-category-pill">{sourceLabel(alert.source)}</span>
+                            </div>
+                            
+                            {/* Frame 1000005355 */}
+                            {alert.description && (
+                              <p className="alerts-detail-desc">{alert.description}</p>
+                            )}
+                            
+                            {/* Frame 1000005356 (Metadata Grid) */}
+                            <div className="alerts-detail-metadata">
+                              {/* Cluster */}
+                              <div className="alerts-meta-block">
+                                <span className="meta-block-label">Cluster</span>
+                                <span className="meta-block-val">{clusterLabel(alert)}</span>
+                              </div>
+                              <div className="alerts-meta-separator" />
+                              
+                              {/* Cluster ID */}
+                              <div className="alerts-meta-block">
+                                <span className="meta-block-label">Cluster ID</span>
+                                <span className="meta-block-val mono">{alert.clusterId || '-'}</span>
+                              </div>
+                              <div className="alerts-meta-separator" />
+                              
+                              {/* Host / IP */}
+                              <div className="alerts-meta-block">
+                                <span className="meta-block-label">Host / IP</span>
+                                <span className="meta-block-val">{hostLabel(alert)}</span>
+                              </div>
+                              <div className="alerts-meta-separator" />
+                              
+                              {/* Detected */}
+                              <div className="alerts-meta-block">
+                                <span className="meta-block-label">Detected</span>
+                                <span className="meta-block-val">{formatDateTime(alert.createdAt) || '-'}</span>
+                              </div>
+                              <div className="alerts-meta-separator" />
+
+                              {/* Status Badge */}
+                              <div className="alerts-meta-status-container">
+                                <span className="alerts-detail-status-pill">Active</span>
+                              </div>
+                            </div>
+
+                            {/* Frame 1000005357 (Logs box) */}
+                            {alert.errorLog && (
+                              <div className="alerts-detail-log-box">
+                                <pre>{alert.errorLog}</pre>
+                              </div>
+                            )}
+
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <span className={`alert-severity ${severityTone(alert.severity)}`}>{alert.severity || 'INFO'}</span>
-                  </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
 
-                  {alert.description && <p>{alert.description}</p>}
-
-                  <div className="alert-meta">
-                    <Meta label="Cluster" value={clusterLabel(alert)} />
-                    <Meta label="Cluster ID" value={alert.clusterId || '-'} mono />
-                    <Meta label="Host / IP" value={hostLabel(alert)} />
-                    <Meta label="Status" value={alert.status || '-'} />
-                    <Meta label="Detected" value={formatDateTime(alert.createdAt) || '-'} />
-                  </div>
-
-                  {alert.errorLog && (
-                    <pre className="alert-log">{alert.errorLog}</pre>
-                  )}
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function SummaryCard({ label, value, tone, icon: Icon }: { label: string; value: number; tone: string; icon: any }) {
-  return (
-    <article className={`alerts-summary-card ${tone}`}>
-      <div><Icon size={17} /></div>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
-function Meta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="alert-meta-item">
-      <span>{label}</span>
-      <b className={mono ? 'mono' : ''}>{value}</b>
+        </div>
+      </div>
     </div>
   );
 }

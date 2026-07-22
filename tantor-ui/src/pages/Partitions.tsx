@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Database, Search, ChevronLeft, ChevronRight, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react';
+import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 
 interface PartitionSummaryDto {
   topicName: string;
@@ -30,7 +30,7 @@ export function Partitions() {
   const [data, setData] = useState<PaginatedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [searchInput, setSearchInput] = useState('');
@@ -74,117 +74,190 @@ export function Partitions() {
 
   const renderSortIcon = (field: string) => {
     if (sortBy === field) {
-        if (field === 'messageCount') return <ArrowDown size={14} style={{display: 'inline', marginLeft: 4}} />;
-        return <ArrowUp size={14} style={{display: 'inline', marginLeft: 4}} />;
+      if (field === 'messageCount') return <ArrowDown size={14} style={{ display: 'inline', marginLeft: 4 }} />;
+      return <ArrowUp size={14} style={{ display: 'inline', marginLeft: 4 }} />;
     }
     return null;
   };
 
   return (
-    <div className="partitions-tab animate-fade-in">
-      <div className="topics-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2>Partitions Dashboard</h2>
+    <div className="partitions-tab animate-fade-in" style={{ width: '100%' }}>
+      <div className="topics-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
+        <h2 className="cluster-section-heading">Partitions Dashboard</h2>
         
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-secondary)' }} />
-            <input 
-              type="text" 
-              placeholder="Search topic name..." 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              style={{ padding: '0.5rem 0.5rem 0.5rem 2rem', borderRadius: '6px', border: '1px solid var(--border-color)', width: '250px', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}
-            />
-          </div>
-          <button type="submit" className="btn btn-secondary">Search</button>
-        </form>
+        {/* -- Figma Toolbar Search Bar & Refresh Button -- */}
+        <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>
+          <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
+            <label style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: '6px 8px',
+              gap: '8px',
+              width: '612px',
+              height: '36px',
+              background: '#FFFFFF',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px'
+            }}>
+              <Search size={16} style={{ color: '#818181' }} />
+              <input 
+                type="text" 
+                placeholder="Search key or value" 
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  fontFamily: 'Satoshi, sans-serif',
+                  fontWeight: 400,
+                  fontSize: '14px',
+                  color: '#23252D',
+                  width: '100%',
+                  background: 'transparent'
+                }}
+              />
+            </label>
+          </form>
+          <button 
+            type="button"
+            onClick={fetchPartitions} 
+            disabled={loading} 
+            style={{
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '8px',
+              width: '40px',
+              height: '40px',
+              background: '#FFFFFF',
+              border: '1px solid #CCCCCC',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              color: '#818181'
+            }}
+            aria-label="Refresh partitions"
+          >
+            <RefreshCw className={loading ? 'spin' : ''} size={15} />
+          </button>
+        </div>
       </div>
 
       {error && (
-        <div className="alert-box" style={{ backgroundColor: '#fef2f2', color: '#b91c1c', padding: '1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <AlertTriangle size={20} />
-          <span>Error loading partitions: {error}</span>
+        <div className="error-alert" style={{ marginBottom: '1rem' }}>
+          {error}
         </div>
       )}
 
-      <div className="table-card" style={{ backgroundColor: 'var(--bg-surface)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+      <div className="table-card" style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', border: '1px solid #CCCCCC', overflow: 'hidden', width: '100%' }}>
         {loading && !data ? (
           <div className="empty-state" style={{ padding: '4rem 2rem', textAlign: 'center' }}>Loading partitions from backend...</div>
         ) : !data || data.content.length === 0 ? (
           <div className="empty-state" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
-            <Database size={48} style={{ color: 'var(--text-secondary)', marginBottom: '1rem', margin: '0 auto' }} />
-            <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>No partitions found</p>
+            <Database size={32} style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }} />
+            <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>No partitions found</p>
             <p style={{ color: 'var(--text-secondary)' }}>Try adjusting your search criteria.</p>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', backgroundColor: 'var(--bg-surface-hover)' }}>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('topicName')}>Topic Name {renderSortIcon('topicName')}</th>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('partitionId')}>Partition {renderSortIcon('partitionId')}</th>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('leaderBroker')}>Leader Broker {renderSortIcon('leaderBroker')}</th>
-                  <th style={{ padding: '1rem' }}>Replicas</th>
-                  <th style={{ padding: '1rem' }}>ISR</th>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('messageCount')}>Offsets (E / L) {renderSortIcon('messageCount')}</th>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('messageCount')}>Message Count {renderSortIcon('messageCount')}</th>
-                  <th style={{ padding: '1rem', cursor: 'pointer' }} onClick={() => handleSort('health')}>Health Status {renderSortIcon('health')}</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div style={{ overflowX: 'auto', width: '100%' }}>
+            <div className="figma-table" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+              {/* Header Row */}
+              <div className="figma-table-header" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '54px', background: '#F9F9F9', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', flex: 1, height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('topicName')}>
+                  <span>Topic Name</span>{renderSortIcon('topicName')}
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '100px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('partitionId')}>
+                  <span>Partition</span>{renderSortIcon('partitionId')}
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '220px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('leaderBroker')}>
+                  <span>Leader Broker</span>{renderSortIcon('leaderBroker')}
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '100px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
+                  Replicas
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '100px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
+                  ISR
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '130px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('messageCount')}>
+                  <span>Offsets ( / L)</span>{renderSortIcon('messageCount')}
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '150px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('messageCount')}>
+                  <span>Message Count</span>{renderSortIcon('messageCount')}
+                </div>
+                <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '130px', flex: 'none', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('health')}>
+                  <span>Health Status</span>{renderSortIcon('health')}
+                </div>
+              </div>
+
+              {/* Table Body */}
+              <div className="figma-table-body" style={{ display: 'flex', flexDirection: 'column' }}>
                 {data.content.map((p, idx) => (
-                  <tr key={`${p.topicName}-${p.partitionId}-${idx}`} style={{ borderBottom: '1px solid var(--border-color)', transition: 'background-color 0.2s ease' }} className="table-row-hover">
-                    <td style={{ padding: '1rem', fontWeight: 500 }}>{p.topicName}</td>
-                    <td style={{ padding: '1rem' }}>{p.partitionId}</td>
-                    <td style={{ padding: '1rem' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div key={`${p.topicName}-${p.partitionId}-${idx}`} className="figma-table-row table-row-hover" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '52px', background: '#FFFFFF', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', flex: 1, height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.topicName}
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '100px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      {p.partitionId}
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '220px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '4px' }}>
                         <span style={{ fontWeight: 500 }}>{p.leaderBroker === -1 ? 'None' : p.leaderBroker}</span>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{p.leaderHostname}</span>
+                        <span style={{ fontSize: '12px', color: '#818181' }}>({p.leaderHostname})</span>
                       </div>
-                    </td>
-                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>[{p.replicaBrokers.join(', ')}]</td>
-                    <td style={{ padding: '1rem', fontSize: '0.9rem' }}>[{p.isrBrokers.join(', ')}]</td>
-                    <td style={{ padding: '1rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{p.earliestOffset} / {p.latestOffset}</td>
-                    <td style={{ padding: '1rem', fontWeight: 600 }}>{p.messageCount.toLocaleString()}</td>
-                    <td style={{ padding: '1rem' }}>
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '100px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      [{p.replicaBrokers.join(', ')}]
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '100px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      [{p.isrBrokers.join(', ')}]
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '130px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      {p.earliestOffset} / {p.latestOffset}
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '150px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                      {p.messageCount.toLocaleString()}
+                    </div>
+                    <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '130px', flex: 'none', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
                       {p.health === 'CRITICAL' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#fef2f2', color: '#b91c1c', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 500 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#ef4444' }}></div> 
-                          Offline Leader
+                        <span style={{ boxSizing: 'border-box', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', padding: '4px 8px', gap: '10px', width: '63px', height: '27px', backgroundColor: 'rgba(239, 77, 95, 0.25)', borderRadius: '100px', color: '#EF4D5F', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', textAlign: 'center' }}>
+                          Offline
                         </span>
                       )}
                       {p.health === 'WARNING' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#fffbeb', color: '#b45309', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 500 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#f59e0b' }}></div> 
-                          Under Replicated
+                        <span style={{ boxSizing: 'border-box', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', padding: '4px 8px', gap: '10px', width: '63px', height: '27px', backgroundColor: 'rgba(224, 142, 64, 0.25)', borderRadius: '100px', color: '#E08E40', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', textAlign: 'center' }}>
+                          Warning
                         </span>
                       )}
-                      {p.health === 'HEALTHY' && (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#f0fdf4', color: '#15803d', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 500 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e' }}></div> 
+                      {(p.health === 'HEALTHY' || !p.health) && (
+                        <span style={{ boxSizing: 'border-box', display: 'inline-flex', justifyContent: 'center', alignItems: 'center', padding: '4px 8px', gap: '10px', width: '63px', height: '27px', backgroundColor: 'rgba(42, 199, 146, 0.25)', borderRadius: '100px', color: '#1F845A', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', textAlign: 'center' }}>
                           Healthy
                         </span>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
           </div>
         )}
 
-        {data && data.content.length > 0 && (
-          <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        {/* Pagination Controls */}
+        {data && data.totalPages > 1 && (
+          <div className="pagination" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid #CCCCCC' }}>
+            <div style={{ fontSize: '0.875rem', color: '#818181' }}>
               Showing page {data.page + 1} of {data.totalPages === 0 ? 1 : data.totalPages} (Total {data.totalElements} partitions)
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <select 
                 value={size} 
                 onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)', color: 'var(--text-primary)' }}
+                style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid #CCCCCC', backgroundColor: '#FFFFFF', color: '#23252D' }}
               >
                 <option value={10}>10 per page</option>
+                <option value={25}>25 per page</option>
                 <option value={50}>50 per page</option>
                 <option value={100}>100 per page</option>
                 <option value={500}>500 per page</option>
@@ -192,18 +265,18 @@ export function Partitions() {
               
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
-                  className="btn btn-secondary" 
+                  className="pagination-btn" 
                   disabled={data.page === 0} 
                   onClick={() => setPage(p => Math.max(0, p - 1))}
-                  style={{ padding: '0.4rem', display: 'flex', alignItems: 'center' }}
+                  style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '6px', cursor: data.page === 0 ? 'not-allowed' : 'pointer', opacity: data.page === 0 ? 0.5 : 1 }}
                 >
                   <ChevronLeft size={16} />
                 </button>
                 <button 
-                  className="btn btn-secondary" 
+                  className="pagination-btn" 
                   disabled={!data.hasNext} 
                   onClick={() => setPage(p => p + 1)}
-                  style={{ padding: '0.4rem', display: 'flex', alignItems: 'center' }}
+                  style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '6px', cursor: !data.hasNext ? 'not-allowed' : 'pointer', opacity: !data.hasNext ? 0.5 : 1 }}
                 >
                   <ChevronRight size={16} />
                 </button>
@@ -212,11 +285,6 @@ export function Partitions() {
           </div>
         )}
       </div>
-      <style>{`
-        .table-row-hover:hover {
-          background-color: var(--bg-surface-hover);
-        }
-      `}</style>
     </div>
   );
 }

@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, BarChart3, Bot, Clock, Database, ExternalLink,
-  HardDrive, Network, Plus, RefreshCw, Server, ShieldCheck
+  Activity, AlertTriangle, Bot, Database, ExternalLink,
+  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck
 } from 'lucide-react';
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
+  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
+import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Dashboard.css';
+import { NewClusterModal } from '../components/NewClusterModal';
 
 interface DashboardSummary {
   totalHosts: number;
@@ -133,8 +136,8 @@ const emptyDashboard: DashboardPayload = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  SUCCESS: '#1D9E75',
-  ONLINE: '#1D9E75',
+  SUCCESS: '#36AD8F',
+  ONLINE: '#36AD8F',
   RUNNING: '#378ADD',
   IN_PROGRESS: '#378ADD',
   PENDING: '#BA7517',
@@ -144,12 +147,41 @@ const STATUS_COLORS: Record<string, string> = {
   UNKNOWN: '#8b8982',
 };
 
+const renderTaskLegend = (props: any) => {
+  const { payload } = props;
+  return (
+    <div className="task-legend">
+      {payload.map((entry: any, index: number) => (
+        <span key={`item-${index}`} className="task-legend-item">
+          <i style={{ background: entry.color }} />
+          {entry.value}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+import { useAuth } from '../contexts/AuthContext';
+import { ClusterDeployment } from './ClusterDeployment';
+
 export function Dashboard() {
   const navigate = useNavigate();
+  const { decodedToken } = useAuth();
   const { canManage } = usePermissions();
   const [dashboard, setDashboard] = useState<DashboardPayload>(emptyDashboard);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showDeploymentModal, setShowDeploymentModal] = useState(false);
+  const [deploymentStep, setDeploymentStep] = useState<'choice' | 'deploy'>('choice');
+  const [serviceTab, setServiceTab] = useState<'running' | 'failed'>('running');
+  const [taskTab, setTaskTab] = useState<'success' | 'failed'>('success');
+  const [openInfo, setOpenInfo] = useState<'overview' | 'cluster-health' | null>(null);
+
+  // Capitalize the first letter of username
+  const username = useMemo(() => {
+    const rawName = decodedToken?.preferred_username || decodedToken?.name || 'User';
+    return rawName.charAt(0).toUpperCase() + rawName.slice(1);
+  }, [decodedToken]);
 
   const fetchDashboard = async () => {
     setLoading(true);
@@ -170,114 +202,125 @@ export function Dashboard() {
   }, []);
 
   const summary = dashboard.summary;
-  const platformState = summary.failedServices > 0 || summary.failedTasks > 0 || summary.offlineHosts > 0
-    ? 'Attention'
-    : 'Healthy';
+
 
   const kpis = useMemo(() => [
     {
       label: 'Active Hosts',
-      value: `${summary.activeHosts}/${summary.totalHosts}`,
-      detail: `${summary.offlineHosts} offline, ${summary.pendingHosts} pending`,
+      value: `${summary.activeHosts.toString().padStart(2, '0')}`,
+      detail: `${summary.offlineHosts} Offline | ${summary.pendingHosts} Pending`,
       icon: Server,
-      tone: summary.offlineHosts > 0 ? 'warn' : 'good',
+      tone: 'cyan',
     },
     {
       label: 'Clusters',
-      value: String(summary.totalClusters),
-      detail: `${summary.internalClusters} internal, ${summary.externalClusters} external`,
+      value: `${summary.totalClusters.toString().padStart(2, '0')}`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: Network,
-      tone: summary.failedClusters > 0 ? 'bad' : 'blue',
+      tone: 'purple',
     },
     {
       label: 'External Clusters',
-      value: String(summary.externalClusters),
-      detail: summary.externalClusters > 0 ? 'Connected inventory' : 'No external clusters',
+      value: `${summary.externalClusters.toString().padStart(2, '0')}`,
+      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
       icon: ExternalLink,
-      tone: summary.externalClusters > 0 ? 'purple' : 'muted',
+      tone: 'indigo',
     },
     {
-      label: 'Failed Services',
-      value: String(summary.failedServices),
-      detail: `${summary.failedTasks} failed tasks, ${summary.failedParcels} parcel issues`,
+      label: 'Failed Service',
+      value: `${summary.failedServices.toString().padStart(2, '0')}`,
+      detail: `${summary.failedServices} Failed | ${summary.failedParcels} Issues`,
       icon: AlertTriangle,
-      tone: summary.failedServices > 0 ? 'bad' : 'good',
+      tone: 'pink',
     },
     {
-      label: 'Running Services',
-      value: String(summary.runningServices),
-      detail: `${summary.activeParcels} active parcels`,
+      label: 'Running Service',
+      value: `${summary.runningServices.toString().padStart(2, '0')}`,
+      detail: `${summary.activeParcels} Active parcel`,
       icon: Activity,
-      tone: 'good',
-    },
-    {
-      label: 'Last Activity',
-      value: relativeTime(summary.lastActivityAt),
-      detail: formatDateTime(summary.lastActivityAt) || 'Waiting for activity',
-      icon: Clock,
-      tone: 'blue',
+      tone: 'green',
     },
   ], [summary]);
 
   const serviceIcon = (type: string) => {
-    if (type === 'agent') return Bot;
-    if (type === 'kafka') return Network;
-    if (type === 'external') return ExternalLink;
-    if (type === 'parcel') return Database;
-    if (type === 'task') return Activity;
-    if (type === 'cleanup') return RefreshCw;
-    if (type === 'storage') return HardDrive;
-    return ShieldCheck;
+    return FileCheck;
   };
 
   return (
     <div className="db animate-fade-in">
       <header className="db-hero">
         <div>
-          <div className={`db-live-pill ${platformState === 'Healthy' ? 'good' : 'warn'}`}>
-            <span />
-            {platformState === 'Healthy' ? 'Live system healthy' : 'Live system needs attention'}
+          <div>
+            <h1>👋 Welcome {username}!</h1>
+            <p className="db-subtitle-wrap">
+              Dashboard overview
+              <span className="db-info-wrap">
+                <button
+                  type="button"
+                  className="db-info-button hero"
+                  aria-label="About the dashboard overview"
+                  aria-expanded={openInfo === 'overview'}
+                  onClick={() => setOpenInfo(current => current === 'overview' ? null : 'overview')}
+                >
+                  <Info size={14} />
+                </button>
+                {openInfo === 'overview' && (
+                  <span className="db-info-popover overview" role="status">
+                    A summary of your Kafka environment, hosts, clusters, and service status.
+                  </span>
+                )}
+              </span>
+            </p>
           </div>
-          {platformState !== 'Healthy' && (
-            <button className="db-alert-link" onClick={() => navigate('/alerts')}>
-              View alerts
+          <div className="db-hero-actions">
+            <span className="db-generated">Last update: {relativeTime(dashboard.generatedAt)}</span>
+            <button className="db-btn ghost" onClick={fetchDashboard} aria-label="Refresh dashboard" title="Refresh">
+              <RefreshCw size={14} className={loading ? 'spin' : ''} />
             </button>
-          )}
-          <h1>Tantor Kafka Operations</h1>
-          <p>Real-time inventory, service health, task activity, and agent heartbeat state.</p>
+            {canManage && (
+              <button className="db-btn primary" onClick={() => { setDeploymentStep('choice'); setShowDeploymentModal(true); }}>
+                <Plus size={14} />
+                New Cluster
+              </button>
+            )}
+          </div>
         </div>
-        <div className="db-hero-actions">
-          <span className="db-generated">Updated {relativeTime(dashboard.generatedAt)}</span>
-          <button className="db-btn ghost" onClick={fetchDashboard}>
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            Refresh
-          </button>
-          {canManage && (
-            <button className="db-btn primary" onClick={() => navigate('/cluster-deployment')}>
-              <Plus size={14} />
-              New cluster
-            </button>
-          )}
+
+        <div className="db-kpi-grid">
+          {kpis.map(kpi => (
+            <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
+              <div className="db-kpi-icon"><kpi.icon size={18} /></div>
+              <div>
+                <span>{kpi.label}</span>
+                <strong>{kpi.value}</strong>
+                <small>{kpi.detail}</small>
+              </div>
+            </article>
+          ))}
         </div>
       </header>
 
       {error && <div className="db-banner error">{error}</div>}
 
-      <section className="db-kpi-grid">
-        {kpis.map(kpi => (
-          <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
-            <div className="db-kpi-icon"><kpi.icon size={18} /></div>
-            <div>
-              <span>{kpi.label}</span>
-              <strong>{kpi.value}</strong>
-              <small>{kpi.detail}</small>
-            </div>
-          </article>
-        ))}
-      </section>
-
       <section className="db-cluster-health">
-        <PanelTitle icon={Network} title="Cluster Health" detail={`${dashboard.clusterHealth.length} tracked clusters`} />
+        <PanelTitle title="Cluster Health" detail={(
+          <span className="db-info-wrap">
+            <button
+              type="button"
+              className="db-info-button neutral"
+              aria-label="About cluster health"
+              aria-expanded={openInfo === 'cluster-health'}
+              onClick={() => setOpenInfo(current => current === 'cluster-health' ? null : 'cluster-health')}
+            >
+              <Info size={16} />
+            </button>
+            {openInfo === 'cluster-health' && (
+              <span className="db-info-popover cluster-health" role="status">
+                Shows the current health and status of each configured Kafka cluster.
+              </span>
+            )}
+          </span>
+        )} />
         {dashboard.clusterHealth.length ? (
           <div className="db-cluster-list">
             {dashboard.clusterHealth.map(cluster => (
@@ -303,7 +346,7 @@ export function Dashboard() {
 
       <section className="db-main-grid">
         <article className="db-panel large">
-          <PanelTitle icon={HardDrive} title="Host Disk Usage" detail="From latest host heartbeat" />
+          <PanelTitle title="Host Disk Usage" detail="From latest host heartbeat" />
           {dashboard.hostDiskUsage.length ? (
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
@@ -311,7 +354,7 @@ export function Dashboard() {
                 <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
                 <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
                 <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#378ADD" barSize={16} />
+                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#16ABC2" barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -320,55 +363,60 @@ export function Dashboard() {
         </article>
 
         <article className="db-panel">
-          <PanelTitle icon={Network} title="Cluster Status" detail={`${summary.totalClusters} cluster records`} />
+          <PanelTitle title="Cluster Status" detail={`${summary.totalClusters} cluster records`} />
           <StatusDonut data={dashboard.clusterStatus} />
         </article>
 
         <article className="db-panel">
-          <PanelTitle icon={Server} title="Host Fleet" detail={`${summary.activeHosts} active of ${summary.totalHosts}`} />
+          <PanelTitle title="Host Fleet" detail={`${summary.activeHosts} active of ${summary.totalHosts}`} />
           <StatusDonut data={dashboard.hostStatus} />
         </article>
       </section>
 
       <section className="db-main-grid lower">
         <article className="db-panel large">
-          <PanelTitle icon={BarChart3} title="Task Activity" detail="Last seven days" />
+          <PanelTitle
+            title="Task Activity"
+            detail={
+              <select className="db-panel-select">
+                <option>Last 7 days</option>
+                <option>Last 30 days</option>
+              </select>
+            }
+          />
           <ResponsiveContainer width="100%" height={235}>
-            <AreaChart data={dashboard.taskTimeline} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
+            <LineChart data={dashboard.taskTimeline} margin={{ top: 8, right: 18, bottom: 8, left: 0 }}>
               <CartesianGrid stroke="#eeeae3" vertical={false} />
               <XAxis dataKey="label" stroke="#8b8982" fontSize={11} tickLine={false} />
               <YAxis allowDecimals={false} stroke="#8b8982" fontSize={11} tickLine={false} />
               <Tooltip />
-              <Legend />
-              <Area type="monotone" dataKey="success" stackId="1" stroke="#1D9E75" fill="#dff3e8" name="Success" />
-              <Area type="monotone" dataKey="running" stackId="1" stroke="#378ADD" fill="#e4f0fb" name="Running" />
-              <Area type="monotone" dataKey="failed" stackId="1" stroke="#A32D2D" fill="#f7dddd" name="Failed" />
-            </AreaChart>
+              <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
+              <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
+              <Line type="monotone" dataKey="running" stroke="#FFCF57" strokeWidth={2} dot={false} name="Running" />
+              <Line type="monotone" dataKey="success" stroke="#098C60" strokeWidth={2} dot={false} name="Success" />
+            </LineChart>
           </ResponsiveContainer>
         </article>
 
-        <article className="db-panel">
-          <PanelTitle icon={ShieldCheck} title="Running Services" detail={`${summary.runningServices} active units`} />
-          <ServiceList rows={dashboard.runningServices} iconFor={serviceIcon} />
-        </article>
-
-        <article className="db-panel">
-          <PanelTitle icon={AlertTriangle} title="Failed Services" detail={summary.failedServices > 0 ? 'Needs review' : 'No failures'} />
-          {dashboard.failedServices.length ? (
-            <ServiceList rows={dashboard.failedServices} iconFor={serviceIcon} />
-          ) : (
-            <EmptyPanel text="No failed services right now." compact />
-          )}
+        <article className="db-panel services-panel">
+          <PanelTitle title="Services" detail="" />
+          <div className="tab-headers">
+            <button type="button" className={serviceTab === 'running' ? 'active-tab' : ''} onClick={() => setServiceTab('running')}>Running ({summary.runningServices})</button>
+            <button type="button" className={serviceTab === 'failed' ? 'active-tab' : ''} onClick={() => setServiceTab('failed')}>Failed ({summary.failedServices})</button>
+          </div>
+          <div className="tab-content">
+            <ServiceList rows={serviceTab === 'running' ? dashboard.runningServices : dashboard.failedServices} iconFor={serviceIcon} />
+          </div>
         </article>
       </section>
 
       <section className="db-bottom-grid">
         <article className="db-panel">
-          <PanelTitle icon={Clock} title="Recent Activities" detail="Latest platform events" />
+          <PanelTitle title="Activity Feed" detail="View all" onDetailClick={() => navigate('/audit')} />
           <div className="db-feed">
             {dashboard.recentActivities.length ? dashboard.recentActivities.map(item => (
               <div key={item.id} className="db-feed-row">
-                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}>{item.level || 'INFO'}</span>
+                <span className={`db-feed-level ${item.level?.toLowerCase() || 'info'}`}><FileCheck size={16} /></span>
                 <div>
                   <strong>{item.message}</strong>
                   <small>{formatDateTime(item.createdAt)}</small>
@@ -379,33 +427,113 @@ export function Dashboard() {
         </article>
 
         <article className="db-panel">
-          <PanelTitle icon={Activity} title="Recent Tasks" detail="Deploy, upgrade, parcel, and cleanup jobs" />
+          <PanelTitle title="Recent Tasks" detail="View all" onDetailClick={() => navigate('/jobs')} />
+          <div className="tab-headers" role="tablist" aria-label="Recent task outcome">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'success'}
+              className={taskTab === 'success' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('success')}
+            >
+              {statusLabel('SUCCESS')} ({dashboard.recentTasks.filter(isSuccessfulTask).length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={taskTab === 'failed'}
+              className={taskTab === 'failed' ? 'active-tab' : ''}
+              onClick={() => setTaskTab('failed')}
+            >
+              {statusLabel('FAILED')} ({dashboard.recentTasks.filter(t => !isSuccessfulTask(t)).length})
+            </button>
+          </div>
           <div className="db-task-list">
-            {dashboard.recentTasks.length ? dashboard.recentTasks.map(task => (
-              <div key={task.id} className="db-task-row">
-                <span className={`db-task-status ${task.status?.toLowerCase()}`}>{task.status}</span>
-                <div>
-                  <strong>{prettyCommand(task.command)}</strong>
-                  <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
-                  {task.errorMsg && <em>{task.errorMsg}</em>}
+            {dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).length
+              ? dashboard.recentTasks.filter(task => taskTab === 'success' ? isSuccessfulTask(task) : !isSuccessfulTask(task)).map(task => (
+                <div key={task.id} className="db-task-row">
+                  <span className={`db-task-status ${task.status?.toLowerCase()}`}><Bot size={16} /></span>
+                  <div>
+                    <strong>{prettyCommand(task.command)}</strong>
+                    <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
+                    {task.errorMsg && <em>{task.errorMsg}</em>}
+                  </div>
                 </div>
-              </div>
-            )) : <EmptyPanel text="No tasks have run yet." compact />}
+              ))
+              : <EmptyPanel text={taskTab === 'success' ? 'No successful tasks found.' : 'No failed tasks found.'} compact />}
           </div>
         </article>
       </section>
+
+      {showDeploymentModal && createPortal(
+        <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
+          {deploymentStep === 'choice' ? (
+            <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
+              <div className="cd-deployment-modal-header">
+                <div className="cd-deployment-modal-header-content">
+                  <h2>Cluster Development</h2>
+                  <p>Create a managed Kafka cluster or connect an exiting external cluster.</p>
+                </div>
+                <button className="cd-icon-btn close-btn" onClick={() => setShowDeploymentModal(false)} title="Close">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+                </button>
+              </div>
+
+              <div className="cd-deployment-cards-wrapper">
+                <div className="cd-deployment-choice-grid">
+                  <div className="cd-deployment-card">
+                    <div className="cd-deployment-card-content">
+                      <svg className="cluster-choice-icon managed" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <circle cx="12" cy="4.5" r="3.25" />
+                        <path d="M12 7.75v6M5 13.75h14M5 13.75V17M19 13.75V17" fill="none" stroke="currentColor" strokeWidth="2.5" />
+                        <rect x="2" y="17" width="6" height="5" rx="0.5" />
+                        <rect x="16" y="17" width="6" height="5" rx="0.5" />
+                      </svg>
+                      <h3>Create your Cluster</h3>
+                      <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
+                    </div>
+                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
+                  </div>
+
+                  <div className="cd-deployment-card">
+                    <div className="cd-deployment-card-content">
+                      <svg className="cluster-choice-icon existing" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <path d="M22 11V3h-7v3H9V3H2v8h7V8h2v10h4v3h7v-8h-7v3h-2V8h2v3h7v-8zM7 9H4V5h3v4zm13-4h-3V5h3v4zm0 14h-3v-4h3v4z" />
+                      </svg>
+                      <h3>Existing Cluster</h3>
+                      <p>Connect or discover an external Kafka cluster</p>
+                    </div>
+                    <button className="cd-deployment-btn outline" onClick={(e) => { e.stopPropagation(); setShowDeploymentModal(false); navigate('/external-clusters'); }}>Explorer</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="cd-modal-container" onClick={e => e.stopPropagation()}>
+              <button className="cd-modal-close" onClick={() => setShowDeploymentModal(false)}>
+                <X size={20} />
+              </button>
+              <div className="cd-modal-content">
+                <ClusterDeployment onClose={() => setShowDeploymentModal(false)} />
+              </div>
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
-function PanelTitle({ icon: Icon, title, detail }: { icon: any; title: string; detail: string }) {
+function PanelTitle({ title, detail, onDetailClick }: { title: React.ReactNode; detail?: string | React.ReactNode; onDetailClick?: () => void }) {
   return (
     <div className="db-panel-title">
       <div>
-        <Icon size={16} />
         <h2>{title}</h2>
       </div>
-      <span>{detail}</span>
+      {onDetailClick ? (
+        <button type="button" className="db-panel-detail" onClick={onDetailClick}>{detail}</button>
+      ) : <span>{detail}</span>}
     </div>
   );
 }
@@ -420,6 +548,18 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
 
   return (
     <div className="db-donut-wrap">
+      <div className="db-donut-legend">
+        {clean.map(row => {
+          const isGreen = row.status?.toUpperCase() === 'SUCCESS' || row.status?.toUpperCase() === 'ONLINE';
+          const label = row.status?.toUpperCase() === 'SUCCESS' ? 'Success' : `${row.name} ${row.value}`;
+          return (
+            <span key={row.status || row.name} className={isGreen ? 'green-pill' : 'default-pill'}>
+              <i style={{ background: STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN }} />
+              {label}
+            </span>
+          );
+        })}
+      </div>
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
           <Pie data={clean} dataKey="value" nameKey="name" innerRadius={54} outerRadius={78} paddingAngle={3}>
@@ -428,31 +568,23 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
           <Tooltip />
         </PieChart>
       </ResponsiveContainer>
-      <div className="db-donut-legend">
-        {clean.map(row => (
-          <span key={row.status || row.name}>
-            <i style={{ background: STATUS_COLORS[row.status || 'UNKNOWN'] || STATUS_COLORS.UNKNOWN }} />
-            {row.name}: {row.value}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
 
 function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+  if (!rows.length) return <EmptyPanel text="No services found for this status." compact />;
   return (
     <div className="db-service-list">
       {rows.map(row => {
         const Icon = iconFor(row.type);
         return (
           <div key={`${row.name}-${row.status}`} className="db-service-row">
-            <div className={`db-service-icon ${row.status.toLowerCase()}`}><Icon size={15} /></div>
+            <div className={`db-service-icon ${row.status.toLowerCase()}`}><Icon size={18} strokeWidth={2} /></div>
             <div>
               <strong>{row.name}</strong>
               <small>{row.description}</small>
             </div>
-            <span className={`db-service-state ${row.status.toLowerCase()}`}>{row.status}</span>
           </div>
         );
       })}
@@ -461,10 +593,7 @@ function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: st
 }
 
 function healthTone(status: string) {
-  const normalized = status?.toUpperCase();
-  if (normalized === 'HEALTHY' || normalized === 'SUCCESS') return 'good';
-  if (normalized === 'WARNING' || normalized === 'DELETING' || normalized === 'PENDING' || normalized === 'RUNNING') return 'warn';
-  return 'bad';
+  return clusterStatusTone(status) === 'state-positive' ? 'good' : 'bad';
 }
 
 function statusLabel(status: string) {
@@ -513,4 +642,8 @@ function formatDateTime(value?: string) {
 function prettyCommand(command?: string) {
   if (!command) return 'Task';
   return command.toLowerCase().split('_').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
+}
+
+function isSuccessfulTask(task: TaskRow) {
+  return ['SUCCESS', 'SUCCEEDED', 'COMPLETED', 'COMPLETED_SUCCESSFULLY'].includes(task.status?.toUpperCase() || '');
 }

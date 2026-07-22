@@ -14,9 +14,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -33,16 +36,45 @@ public class DeploymentService {
     @Value("${tantor.artifact-repo.jmx-exporter-artifact-id:}")
     private String jmxExporterArtifactId;
 
+    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
+    private String artifactRepoUrl;
+
+    @Value("${tantor.kafka-deployment.runtime-user:}")
+    private String defaultRuntimeUser;
+
+    @Value("${tantor.kafka-deployment.runtime-group:}")
+    private String defaultRuntimeGroup;
+
+    @Value("${tantor.kafka-deployment.java-home:}")
+    private String defaultJavaHome;
+
+    @Value("${tantor.kafka-deployment.limit-nofile:100000}")
+    private String defaultLimitNoFile;
+
+    @Value("${tantor.kafka-deployment.security-mode:PLAINTEXT}")
+    private String defaultSecurityMode;
+
+    @Value("${tantor.kafka-deployment.service-prefix:tantor-kafka-}")
+    private String defaultServicePrefix;
+
+    private static final Pattern ARTIFACT_DOWNLOAD_PATTERN = Pattern.compile("/api/v1/artifacts/([^/]+)/download");
+
     @Transactional
     public UUID deployKafkaToHost(UUID clusterId, String hostId, String version, String artifactUrl, String checksum, String nodeId, String quorumVoters, String role, String configJsonStr) {
         log.info("Scheduling Kafka {} deployment on host {}", version, hostId);
 
         Task task = createTask(clusterId, hostId, "INSTALL_KAFKA");
-        task.setArtifactUrl(artifactUrl);
-        task.setChecksum(checksum);
+        String agentArtifactUrl = normalizeArtifactRepoUrl(artifactUrl);
+        task.setArtifactUrl(agentArtifactUrl);
         
         try {
-            Map<String, Object> params = new java.util.HashMap<>();
+            String resolvedChecksum = firstNonBlank(checksum, resolveArtifactChecksum(agentArtifactUrl).orElse(""));
+            if (!hasText(resolvedChecksum)) {
+                throw new IllegalArgumentException("Kafka artifact checksum is required for V9 agent deployment. Upload/select an artifact with SHA-256 metadata.");
+            }
+            task.setChecksum(resolvedChecksum);
+
+            Map<String, Object> params = new LinkedHashMap<>();
             params.put("version", version);
             params.put("node_id", nodeId != null ? nodeId : "1");
             params.put("quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093");
@@ -53,7 +85,7 @@ public class DeploymentService {
             params.put("systemd_service", systemdServiceName(normalizedRole));
             params.put("jmx_port", "7071");
             if (clusterId != null) {
-                params.put("cluster_id", clusterId.toString());
+                params.put("db_cluster_id", clusterId.toString());
             }
             addHostIdentity(params, hostId);
 
@@ -63,7 +95,9 @@ public class DeploymentService {
             applyDefaultKafkaPaths(params);
             applyActiveParcelParams(params, hostId, version);
 
-            injectJmxArtifactUrl(params, artifactUrl);
+            injectJmxArtifactUrl(params, agentArtifactUrl);
+            injectKafkaExporterArtifactUrl(params);
+            applyAgentKafkaDeploymentParams(params, version, normalizedRole, resolvedChecksum, agentArtifactUrl);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -97,39 +131,133 @@ public class DeploymentService {
         return value != null && !value.isBlank();
     }
 
+    private String normalizeArtifactRepoUrl(String artifactUrl) {
+        if (!hasText(artifactUrl) || !artifactUrl.contains("/api/v1/artifacts/")) {
+            return artifactUrl;
+        }
+        int pathStart = artifactUrl.indexOf("/api/v1/artifacts/");
+        return joinArtifactRepoBase(artifactUrl.substring(pathStart));
+    }
+
+    private String joinArtifactRepoBase(String pathAndQuery) {
+        String base = hasText(artifactRepoUrl) ? artifactRepoUrl.trim() : "http://localhost:8081";
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String path = pathAndQuery == null ? "" : pathAndQuery.trim();
+        if (path.isBlank()) return base;
+        return base + (path.startsWith("/") ? path : "/" + path);
+    }
+
     private void injectJmxArtifactUrl(Map<String, Object> params, String artifactUrl) {
         if (!hasText(artifactUrl) || !artifactUrl.contains("/api/v1/artifacts/")) {
             return;
         }
 
-        Optional<String> artifactId = resolveJmxExporterArtifactId();
-        if (artifactId.isEmpty()) {
+        Optional<Map<String, String>> artifact = resolveJmxExporterArtifact();
+        if (artifact.isEmpty()) {
             log.info("No available JMX exporter artifact found. Agent will use fallback behavior.");
             return;
         }
 
-        String baseUrl = artifactUrl.substring(0, artifactUrl.indexOf("/api/v1/artifacts/") + 18);
-        params.put("jmx_artifact_url", baseUrl + artifactId.get() + "/download");
+        String artifactId = artifact.get().get("id");
+        params.put("jmx_artifact_id", artifactId);
+        params.put("jmx_artifact_url", joinArtifactRepoBase("/api/v1/artifacts/" + artifactId + "/download"));
+        if (hasText(artifact.get().get("checksum"))) {
+            params.put("jmx_checksum", artifact.get().get("checksum"));
+        }
     }
 
     private Optional<String> resolveJmxExporterArtifactId() {
+        return resolveJmxExporterArtifact().map(artifact -> artifact.get("id"));
+    }
+
+    private void injectKafkaExporterArtifactUrl(Map<String, Object> params) {
+        Optional<Map<String, String>> artifact = resolveKafkaExporterArtifact();
+        if (artifact.isEmpty()) {
+            log.info("No available KAFKA_EXPORTER artifact found.");
+            return;
+        }
+
+        String artifactId = artifact.get().get("id");
+        params.put("kafka_exporter_artifact_id", artifactId);
+        params.put("kafka_exporter_download_url", joinArtifactRepoBase("/api/v1/artifacts/" + artifactId + "/download"));
+        if (hasText(artifact.get().get("checksum"))) {
+            params.put("kafka_exporter_checksum", artifact.get().get("checksum"));
+        }
+    }
+
+    private Optional<Map<String, String>> resolveKafkaExporterArtifact() {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT id::text, COALESCE(checksum, '')
+                    FROM kf_artifact
+                    WHERE service_type = 'KAFKA_EXPORTER'
+                      AND status = 'AVAILABLE'
+                    ORDER BY created_time DESC
+                    LIMIT 1
+                    """, rs -> rs.next()
+                            ? Optional.of(Map.of("id", rs.getString(1), "checksum", rs.getString(2)))
+                            : Optional.empty());
+        } catch (Exception e) {
+            log.warn("Could not auto-resolve KAFKA_EXPORTER artifact from kf_artifact", e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<Map<String, String>> resolveJmxExporterArtifact() {
         if (hasText(jmxExporterArtifactId)) {
-            return Optional.of(jmxExporterArtifactId.trim());
+            String id = jmxExporterArtifactId.trim();
+            return Optional.of(Map.of(
+                    "id", id,
+                    "checksum", resolveArtifactChecksumById(id).orElse("")
+            ));
         }
 
         try {
             return jdbcTemplate.query("""
-                    SELECT id::text
+                    SELECT id::text, COALESCE(checksum, '')
                     FROM kf_artifact
                     WHERE service_type = 'JMX_EXPORTER'
                       AND status = 'AVAILABLE'
                     ORDER BY created_time DESC
                     LIMIT 1
-                    """, rs -> rs.next() ? Optional.of(rs.getString(1)) : Optional.empty());
+                    """, rs -> rs.next()
+                            ? Optional.of(Map.of("id", rs.getString(1), "checksum", rs.getString(2)))
+                            : Optional.empty());
         } catch (Exception e) {
             log.warn("Could not auto-resolve JMX exporter artifact from kf_artifact", e);
             return Optional.empty();
         }
+    }
+
+    private Optional<String> resolveArtifactChecksum(String artifactUrl) {
+        return extractArtifactId(artifactUrl).flatMap(this::resolveArtifactChecksumById);
+    }
+
+    private Optional<String> resolveArtifactChecksumById(String artifactId) {
+        if (!hasText(artifactId)) {
+            return Optional.empty();
+        }
+        try {
+            return jdbcTemplate.query("""
+                    SELECT COALESCE(checksum, '')
+                    FROM kf_artifact
+                    WHERE id::text = ?
+                    LIMIT 1
+                    """, rs -> rs.next() && hasText(rs.getString(1)) ? Optional.of(rs.getString(1)) : Optional.empty(), artifactId);
+        } catch (Exception e) {
+            log.warn("Could not resolve artifact checksum for {}", artifactId, e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> extractArtifactId(String artifactUrl) {
+        if (!hasText(artifactUrl)) {
+            return Optional.empty();
+        }
+        Matcher matcher = ARTIFACT_DOWNLOAD_PATTERN.matcher(artifactUrl);
+        return matcher.find() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
     @Transactional
@@ -161,6 +289,7 @@ public class DeploymentService {
                 throw new IllegalStateException("Kafka " + targetVersion + " is not active on host " + hostId + ".");
             }
             injectJmxArtifactUrl(params, String.valueOf(params.get("artifact_url")));
+            injectKafkaExporterArtifactUrl(params);
 
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -387,7 +516,7 @@ public class DeploymentService {
             if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
                 task.setStatus("PENDING");
                 task.setErrorMsg(null);
-                task.setFailedReason(null);
+
                 task.setLogOutput(null);
                 task.setStepLogs(null);
                 task.setCurrentStep(null);
@@ -412,7 +541,7 @@ public class DeploymentService {
             if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
                 task.setStatus("PENDING");
                 task.setErrorMsg(null);
-                task.setFailedReason(null);
+
                 try {
                     Map<String, Object> params = objectMapper.readValue(task.getParameters(), Map.class);
                     if (task.getCurrentStep() != null) {
@@ -527,6 +656,154 @@ public class DeploymentService {
         if (installDir == null || String.valueOf(installDir).isBlank()) {
             params.put("kafka_install_dir", "/opt");
         }
+    }
+
+    private void applyAgentKafkaDeploymentParams(
+            Map<String, Object> params,
+            String version,
+            String role,
+            String artifactChecksum,
+            String artifactUrl
+    ) {
+        String runtimeUser = firstParam(params, "runtime_user", "runtimeUser");
+        if (!hasText(runtimeUser)) runtimeUser = defaultRuntimeUser;
+        String runtimeGroup = firstParam(params, "runtime_group", "runtimeGroup");
+        if (!hasText(runtimeGroup)) runtimeGroup = defaultRuntimeGroup;
+        String javaHome = firstParam(params, "java_home", "javaHome");
+        if (!hasText(javaHome)) javaHome = defaultJavaHome;
+
+        String kafkaVersion = firstNonBlank(version, firstParam(params, "kafka_version", "version", "target_version"));
+        String scalaVersion = firstNonBlank(firstParam(params, "scala_version"), "2.13");
+        String installBasePath = firstParam(params, "install_base_path", "kafka_install_base_dir", "kafka_install_dir");
+        String activeSymlinkPath = firstNonBlank(firstParam(params, "active_symlink_path"), activeSymlinkPath(installBasePath));
+        String dataPaths = firstNonBlank(firstParam(params, "data_paths", "kafka_log_dirs", "log_dirs", "kafka_data_dir"), "");
+        String metadataPath = firstNonBlank(firstParam(params, "metadata_path", "kafka_metadata_dir", "metadata_log_dir"), metadataPathForRole(role, dataPaths));
+        String logPath = firstParam(params, "log_path", "kafka_app_log_dir", "service_log_dir");
+        String kafkaClusterId = firstParam(params, "cluster_uuid", "kafka_cluster_id", "cluster_id");
+        String hostIp = firstParam(params, "host_ip", "bind_address", "listen_address");
+        String brokerPort = firstParam(params, "broker_port", "listener_port");
+        String controllerPort = firstParam(params, "controller_port");
+        String heapSize = firstParam(params, "heap_size");
+        String heapXms = firstNonBlank(firstParam(params, "heap_xms"), heapSize);
+        String heapXmx = firstNonBlank(firstParam(params, "heap_xmx"), heapSize);
+        String quorumMode = firstParam(params, "kraft_quorum_mode");
+        String quorumVoters = firstParam(params, "controller_quorum_voters", "quorum_voters");
+        String quorumBootstrapServers = firstParam(params, "controller_quorum_bootstrap_servers", "quorum_bootstrap_servers", "controller_endpoints");
+        String kraftFormatMode = firstParam(params, "kraft_format_mode");
+        String initialControllers = firstParam(params, "initial_controllers");
+
+        putParamIfText(params, "runtime_user", runtimeUser);
+        putParamIfText(params, "runtime_group", runtimeGroup);
+        putParamIfText(params, "java_home", javaHome);
+        putParam(params, "kafka_version", kafkaVersion);
+        putParam(params, "scala_version", scalaVersion);
+        putParam(params, "install_base_path", installBasePath);
+        putParam(params, "active_symlink_path", activeSymlinkPath);
+        putParam(params, "data_paths", dataPaths);
+        putParam(params, "metadata_path", metadataPath);
+        putParam(params, "log_path", logPath);
+        putParam(params, "cluster_id", kafkaClusterId);
+        putParam(params, "bind_address", hostIp);
+        putParam(params, "advertised_address", firstNonBlank(firstParam(params, "advertised_address", "advertised_host", "advertised_ip"), hostIp));
+        putParam(params, "role", role);
+        putParam(params, "node_id", firstParam(params, "node_id"));
+        putParam(params, "service_name", v9ServiceName(params));
+        putParam(params, "broker_port", brokerPort);
+        putParam(params, "controller_port", controllerPort);
+        putParam(params, "jmx_enabled", firstNonBlank(firstParam(params, "jmx_enabled"), "true"));
+        putParam(params, "jmx_port", firstNonBlank(firstParam(params, "jmx_port"), "7071"));
+        if (isBrokerRole(role) && !"false".equalsIgnoreCase(firstParam(params, "jmx_enabled"))) {
+            putParam(params, "jmx_required", "true");
+        }
+        putParam(params, "heap_xms", heapXms);
+        putParam(params, "heap_xmx", heapXmx);
+        putParam(params, "limit_nofile", firstNonBlank(firstParam(params, "limit_nofile"), defaultLimitNoFile));
+        putParam(params, "security_mode", firstNonBlank(firstParam(params, "security_mode", "listener_security_protocol"), defaultSecurityMode));
+        putParam(params, "kraft_quorum_mode", quorumMode);
+        putParam(params, "controller_quorum_voters", quorumVoters);
+        putParam(params, "controller_quorum_bootstrap_servers", quorumBootstrapServers);
+        putParam(params, "kraft_format_mode", firstNonBlank(kraftFormatMode, defaultKraftFormatMode(role, quorumMode, initialControllers)));
+        putParam(params, "initial_controllers", initialControllers);
+        putParam(params, "num_partitions", firstParam(params, "num_partitions"));
+        putParam(params, "replication_factor", firstParam(params, "replication_factor", "rep_factor"));
+        putParam(params, "min_insync_replicas", firstParam(params, "min_insync_replicas"));
+        putParam(params, "artifact_url", artifactUrl);
+        putParam(params, "artifact_checksum", artifactChecksum);
+    }
+
+    private String v9ServiceName(Map<String, Object> params) {
+        String configured = firstParam(params, "v9_service_name", "kafka_service_name");
+        if (hasText(configured)) return configured;
+        String existing = firstParam(params, "service_name");
+        if (hasText(existing) && (existing.startsWith("tantor-kafka-") || existing.startsWith("kafka-"))) {
+            return existing;
+        }
+        return firstNonBlank(defaultServicePrefix, "tantor-kafka-") + firstNonBlank(firstParam(params, "node_id"), "node");
+    }
+
+    private String defaultKraftFormatMode(String role, String quorumMode, String initialControllers) {
+        if (!"dynamic".equalsIgnoreCase(quorumMode)) return "";
+        if ((role.contains("controller")) && hasText(initialControllers)) return "initial_controllers";
+        return "existing_cluster";
+    }
+
+    private boolean isBrokerRole(String role) {
+        String normalized = role == null ? "" : role.toLowerCase();
+        return normalized.contains("broker");
+    }
+
+    private String activeSymlinkPath(String installBasePath) {
+        if (!hasText(installBasePath)) return "";
+        String base = trimTrailingSlash(installBasePath.trim());
+        if (base.endsWith("/kafka")) return base;
+        return base + "/kafka";
+    }
+
+    private String metadataPathForRole(String role, String dataPaths) {
+        if (!hasText(dataPaths)) return "";
+        String firstDataPath = dataPaths.split(",")[0].trim();
+        if (!hasText(firstDataPath)) return "";
+        if (role != null && role.contains("controller") && !role.contains("broker")) {
+            return trimTrailingSlash(firstDataPath) + "/metadata";
+        }
+        return firstDataPath;
+    }
+
+    private String firstParam(Map<String, Object> params, String... keys) {
+        for (String key : keys) {
+            Object value = params.get(key);
+            if (value != null && hasText(String.valueOf(value))) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return "";
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (hasText(value)) return value.trim();
+        }
+        return "";
+    }
+
+    private void putParam(Map<String, Object> params, String key, String value) {
+        if (value != null) {
+            params.put(key, value);
+        }
+    }
+
+    private void putParamIfText(Map<String, Object> params, String key, String value) {
+        if (hasText(value)) {
+            params.put(key, value.trim());
+        }
+    }
+
+    private String trimTrailingSlash(String value) {
+        String result = value;
+        while (result.length() > 1 && result.endsWith("/")) {
+            result = result.substring(0, result.length() - 1);
+        }
+        return result;
     }
 
     private boolean applyActiveParcelParams(Map<String, Object> params, String hostId, String version) {

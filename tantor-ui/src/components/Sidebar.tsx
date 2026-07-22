@@ -1,13 +1,11 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Activity,
   Bell,
   ChevronDown,
   ChevronRight,
   LayoutDashboard,
   LineChart,
-  LogOut,
   Network,
   Package,
   PlayCircle,
@@ -17,9 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import './Sidebar.css';
-import tantorLogo from '../assets/tantor-logo.png';
 import { useAuth } from '../contexts/AuthContext';
-import { usePermissions } from '../hooks/usePermissions';
 
 type NavItem = {
   icon?: any;
@@ -35,43 +31,26 @@ type NavSection = {
 
 const navSections: NavSection[] = [
   {
-    label: 'Overview',
+    label: '',
     items: [
       { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-      {
-        icon: Network,
-        label: 'Clusters',
-        subItems: [
-          { label: 'All Clusters', path: '/clusters' },
-        ],
-      },
+      { icon: Package, label: 'Artifacts', path: '/artifacts' },
+      { icon: Network, label: 'Cluster', path: '/clusters' },
       { icon: Server, label: 'Hosts', path: '/hosts' },
-    ],
-  },
-  {
-    label: 'Observability',
-    items: [
       { icon: LineChart, label: 'Monitoring', path: '/monitoring' },
       { icon: Bell, label: 'Alerts', path: '/alerts' },
-    ],
-  },
-  {
-    label: 'Management',
-    items: [
-      { icon: Users, label: 'User Management', path: '/user-management' },
       { icon: ShieldAlert, label: 'Audits', path: '/audit' },
-      { icon: Activity, label: 'Jobs', path: '/jobs' },
-      { icon: PlayCircle, label: 'Commands', path: '/commands' },
-      { icon: Package, label: 'Artifacts', path: '/artifacts' },
-      { icon: Settings, label: 'LDAP Settings', path: '/ldap-settings' },
-      { icon: Settings, label: 'Administration', path: '/admin' },
+      { icon: PlayCircle, label: 'Jobs', path: '/jobs' },
+      { icon: Settings, label: 'LDAP', path: '/ldap-settings' },
+      { icon: Users, label: 'User Management', path: '/user-management' },
     ],
   },
 ];
 
+const hiddenNavPaths = new Set(['/user-management', '/commands', '/ldap-settings', '/admin']);
+
 export function Sidebar() {
-  const { decodedToken, logout } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { decodedToken } = useAuth();
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({
     Clusters: true,
   });
@@ -113,9 +92,8 @@ export function Sidebar() {
         to={item.path!}
         end={item.path === '/dashboard'}
         className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-        style={{ paddingLeft: `${18 + depth * 22}px` }}
       >
-        {item.icon && <item.icon size={15} className="nav-item-icon" />}
+        {item.icon && <item.icon size={20} className="nav-item-icon" />}
         {!item.icon && <span className="nav-item-dot" />}
         <span>{item.label}</span>
       </NavLink>
@@ -124,21 +102,12 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        <img
-          src={tantorLogo}
-          alt="Tantor"
-          className="sidebar-logo"
-        />
-        <span className="sidebar-tagline">Stream Intelligence</span>
-      </div>
-
       <nav className="sidebar-nav">
         {navSections.map(section => (
           <div key={section.label} className="nav-section">
-            <span className="nav-section-label">{section.label}</span>
+            {section.label && <span className="nav-section-label">{section.label}</span>}
             {section.items
-              .filter(item => isAdmin || (item.path !== '/user-management' && item.path !== '/ldap-settings'))
+              .filter(item => !item.path || !hiddenNavPaths.has(item.path))
               .map(item => renderItem(item))}
           </div>
         ))}
@@ -149,9 +118,6 @@ export function Sidebar() {
           <span className="sidebar-version-dot" />
           <span className="sidebar-user-name" title={displayName}>{displayName}</span>
         </div>
-        <button className="sidebar-logout" type="button" onClick={() => void logout()} title="Logout">
-          <LogOut size={15} />
-        </button>
       </div>
     </aside>
   );

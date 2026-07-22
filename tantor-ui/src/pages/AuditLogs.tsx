@@ -1,9 +1,53 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  CheckCircle2, Clock3, FileClock, Filter,
-  History, LockKeyhole, Package, RefreshCw, Search, UserRound, XCircle,
+  CheckCircle2, FileClock,
+  History, Info, Package, Search, XCircle, Database,
+  ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import './AuditLogs.css';
+import { AnchoredMenu } from '../components/AnchoredMenu';
+
+const CustomRefreshIcon = ({ size = 24, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
+  <svg 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke={color} 
+    strokeWidth="1.5" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+    style={{ display: 'inline-block', verticalAlign: 'middle' }}
+  >
+    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+    <path d="M16 16h5v5" />
+  </svg>
+);
+
+const StackStarIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 14.5H4.5a2 2 0 0 1-2-2V4.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2V5" />
+    <rect x="9.5" y="9.5" width="12" height="12" rx="2" />
+    <polygon points="15.5,11.7 16.4,14.2 19.1,14.3 17.0,16.0 17.7,18.6 15.5,17.1 13.3,18.6 14.0,16.0 11.9,14.3 14.6,14.2" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+const CheckCircleIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9.5" />
+    <path d="M9 12l2.5 2.5 4.5-4.5" />
+  </svg>
+);
+
+const ReportIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8.5 3.5h7l5 5v7l-5 5h-7l-5-5v-7z" />
+    <path d="M12 8v5M12 16h.01" />
+  </svg>
+);
 
 interface AuditEvent {
   id: string;
@@ -71,53 +115,79 @@ const actionLabel = (event: AuditEvent) => {
 
 const resourceTypeLabel = (event: AuditEvent) => {
   if (isHostOnboardingEvent(event)) return 'Agent';
-  if (isArtifactEvent(event)) return 'Artifact';
   return title(event.resourceType || 'SYSTEM');
 };
 
 const resourceName = (event: AuditEvent) => {
-  if (isHostOnboardingEvent(event) || isArtifactEvent(event)) return '';
-  return event.resource || event.hostName || event.hostId || event.displayResourceId || event.kafkaClusterId || 'platform';
+  return event.resource || event.displayResourceId || event.resourceId || event.hostName || event.hostId || '';
 };
-
-const scopeId = (event: AuditEvent) => event.displayResourceId || event.kafkaClusterId || event.resourceId || event.hostId || '-';
 
 const detailLabel = (event: AuditEvent) => {
-  const parsed = parseJson(event.details);
-  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-    const record = parsed as Record<string, unknown>;
-    if (isArtifactEvent(event)) {
-      const fileName = record.fileName || record.binaryFileName || record.name;
-      const version = record.version;
-      const validation = record.validationStatus || record.status || event.status;
-      return [fileName, version, validation].filter(Boolean).map(String).join(' / ');
-    }
-    if (normalized(event.resourceType) === 'CLUSTER') {
-      const version = record.kafkaVersion || record.version;
-      const mode = record.kafkaMode || record.mode;
-      const bootstrap = record.bootstrapServers || record.bootstrap;
-      const listeners = record.listeners || record.advertisedListeners || record.processRoles;
-      const status = record.status || event.status;
-      return [version, mode, bootstrap, listeners, status].filter(Boolean).map(String).join(' / ');
-    }
-    const availability = record.availability || record.available;
-    if (typeof availability === 'string') return title(availability);
-    if (typeof availability === 'boolean') return availability ? 'Available' : 'Unavailable';
-    const status = record.status || record.result || record.validationStatus;
-    if (typeof status === 'string') {
-      if (['AVAILABLE', 'ONLINE', 'SUCCESS'].includes(status.toUpperCase())) return 'Available';
-      if (['UNAVAILABLE', 'OCCUPIED', 'PENDING', 'OFFLINE', 'FAILED', 'REMOVED', 'DELETED'].includes(status.toUpperCase())) return 'Unavailable';
-    }
+  if (!event.details) return '-';
+  if (typeof event.details === 'string') return event.details;
+  try {
+    return JSON.stringify(event.details);
+  } catch {
+    return String(event.details);
   }
-  if (['AVAILABLE', 'ONLINE', 'SUCCESS'].includes(event.status.toUpperCase())) return 'Available';
-  if (['UNAVAILABLE', 'OCCUPIED', 'PENDING', 'OFFLINE', 'FAILED', 'REMOVED', 'DELETED'].includes(event.status.toUpperCase())) return 'Unavailable';
-  return title(event.status || 'Captured');
 };
+
+interface CustomDropdownProps {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (val: string) => void;
+}
+
+function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const selectedOption = options.find(opt => opt.value === value) || options[0];
+
+  return (
+    <div ref={anchorRef} className="custom-select-wrapper">
+      <div
+        className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
+        onClick={() => setIsOpen(prev => !prev)}
+      >
+        <span>{selectedOption ? selectedOption.label : value}</span>
+        <span className="custom-select-arrow">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818181" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </span>
+      </div>
+      {isOpen && anchorRef.current && (
+        <AnchoredMenu
+          anchor={anchorRef.current}
+          className="custom-select-options"
+          onClose={() => setIsOpen(false)}
+          align="start"
+          matchAnchorWidth
+        >
+          {options.map(opt => (
+            <div
+              key={opt.value}
+              className={`custom-select-option ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
+        </AnchoredMenu>
+      )}
+    </div>
+  );
+}
 
 export function AuditLogs() {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Draft filter state
   const [search, setSearch] = useState('');
   const [resourceId, setResourceId] = useState('');
   const [category, setCategory] = useState('ALL');
@@ -125,6 +195,15 @@ export function AuditLogs() {
   const [actor, setActor] = useState('ALL');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+
+  // Applied filter state
+  const [appliedFilters, setAppliedFilters] = useState({
+    search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: ''
+  });
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -155,23 +234,43 @@ export function AuditLogs() {
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
+
   const filtered = useMemo(() => events.filter(event => {
-    if (category !== 'ALL' && event.category !== category) return false;
-    if (status !== 'ALL' && event.status !== status) return false;
-    if (actor !== 'ALL' && actorOf(event) !== actor) return false;
-    if (resourceId.trim()) {
-      const needle = resourceId.trim().toLowerCase();
-    const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
+    if (appliedFilters.category !== 'ALL' && event.category !== appliedFilters.category) return false;
+    if (appliedFilters.status !== 'ALL' && event.status !== appliedFilters.status) return false;
+    if (appliedFilters.actor !== 'ALL' && actorOf(event) !== appliedFilters.actor) return false;
+    if (appliedFilters.resourceId.trim()) {
+      const needle = appliedFilters.resourceId.trim().toLowerCase();
+      const resourceHaystack = [event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostId, event.hostName, event.clusterId]
         .join(' ')
         .toLowerCase();
       if (!resourceHaystack.includes(needle)) return false;
     }
     const created = new Date(timeOf(event)).getTime();
-    if (from && created < new Date(from).getTime()) return false;
-    if (to && created > new Date(to).getTime()) return false;
+    if (appliedFilters.from && created < new Date(appliedFilters.from).getTime()) return false;
+    if (appliedFilters.to && created > new Date(appliedFilters.to).getTime()) return false;
     const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
-    return !search.trim() || haystack.includes(search.trim().toLowerCase());
-  }), [events, category, status, actor, resourceId, from, to, search]);
+    return !appliedFilters.search.trim() || haystack.includes(appliedFilters.search.trim().toLowerCase());
+  }), [events, appliedFilters]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtered.length]);
+
+  const paginatedEvents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, currentPage, pageSize]);
+
+  const applyFilters = () => {
+    setAppliedFilters({ search, resourceId, category, status, actor, from, to });
+  };
+
+  const resetFilters = () => {
+    setSearch(''); setResourceId(''); setCategory('ALL'); setStatus('ALL'); setActor('ALL'); setFrom(''); setTo('');
+    setAppliedFilters({ search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: '' });
+  };
 
   const summary = useMemo(() => ({
     total: events.length,
@@ -179,38 +278,154 @@ export function AuditLogs() {
     failed: events.filter(event => event.status === 'FAILED').length,
   }), [events]);
 
-  return <div className="audit-page animate-fade-in">
-    <header className="audit-header"><div>
-      <div className="audit-eyebrow"><LockKeyhole size={13} /> Append-only event ledger</div>
-      <h1>Audit Trail</h1><p>Who performed each action, on which resource, and whether it succeeded.</p>
-    </div><button className="btn" onClick={fetchLogs} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh</button></header>
+  const totalResults = filtered.length;
+  const startResult = totalResults === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endResult = Math.min(currentPage * pageSize, totalResults);
 
-    <section className="audit-summary-grid">
-      <article><FileClock size={18} /><div><strong>{summary.total}</strong><span>Captured events</span></div></article>
-      <article className="success"><CheckCircle2 size={18} /><div><strong>{summary.success}</strong><span>Successful</span></div></article>
-      <article className="failed"><XCircle size={18} /><div><strong>{summary.failed}</strong><span>Failed</span></div></article>
+  return <div className="audit-page animate-fade-in">
+    <header className="audit-header">
+      <div className="audit-header-title-row">
+        <h1>Audit Trail</h1>
+        <button className="btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
+        </button>
+      </div>
+      <p className="audit-subtitle">Who performed each action, on which resource, and whether it succeeded.</p>
+    </header>
+
+    <div className="audit-summary-wrapper">
+      <section className="audit-summary-grid">
+        <article className="captured">
+          <div className="card-header">
+            <div className="icon-wrap"><StackStarIcon /></div>
+            <span>Captured Events</span>
+          </div>
+          <strong>{summary.total}</strong>
+        </article>
+        <article className="success">
+          <div className="card-header">
+            <div className="icon-wrap"><CheckCircleIcon /></div>
+            <span>Successful</span>
+          </div>
+          <strong>{summary.success}</strong>
+        </article>
+        <article className="failed">
+          <div className="card-header">
+            <div className="icon-wrap"><ReportIcon /></div>
+            <span>Failed</span>
+          </div>
+          <strong>{summary.failed}</strong>
+        </article>
+      </section>
+    </div>
+
+    <section className="audit-readonly-note">
+      <Info size={24} />
+      <div>
+        <strong>Read-only audit history</strong>
+        <span>This screen has no edit or delete controls. Every application action creates a separate record.</span>
+      </div>
     </section>
 
-    <section className="audit-readonly-note"><LockKeyhole size={15} /><div><strong>Read-only audit history</strong><span>This screen has no edit or delete controls. Every application action creates a separate record.</span></div></section>
-
-    <section className="audit-filters">
-      <label className="audit-search"><Search size={14} /><input placeholder="Search user, action, resource or details" value={search} onChange={event => setSearch(event.target.value)} /></label>
-      <label><input placeholder="Resource" value={resourceId} onChange={event => setResourceId(event.target.value)} /></label>
-      <label><Filter size={13} /><select value={category} onChange={event => setCategory(event.target.value)}><option value="ALL">All events</option>{categories.map(item => <option key={item} value={item}>{title(item)}</option>)}</select></label>
-      <label><select value={status} onChange={event => setStatus(event.target.value)}><option value="ALL">All statuses</option><option>SUCCESS</option><option>FAILED</option><option>REQUESTED</option></select></label>
-      <label><UserRound size={13} /><select value={actor} onChange={event => setActor(event.target.value)}><option value="ALL">All users</option>{actors.map(item => <option key={item}>{item}</option>)}</select></label>
-      <label className="date-filter"><span>From</span><input type="datetime-local" value={from} onChange={event => setFrom(event.target.value)} /></label>
-      <label className="date-filter"><span>To</span><input type="datetime-local" value={to} onChange={event => setTo(event.target.value)} /></label>
+    <section className="audit-filters-container">
+      <h3 className="section-heading">Audit Log Filters</h3>
+      <div className="audit-filters-row-1">
+        <label className="audit-search">
+          <Search size={24} color="#818181" />
+          <input placeholder="Search configs..." value={search} onChange={e => setSearch(e.target.value)} />
+        </label>
+        <label className="audit-resource-id">
+          <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
+        </label>
+        <div className="audit-filters-actions">
+          <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
+            <RefreshCw size={14} className={loading ? 'spin' : ''} />
+          </button>
+          <button className="btn-reset" onClick={resetFilters}>Reset</button>
+          <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
+        </div>
+      </div>
+      <div className="audit-filters-row-2">
+        <div className="filter-group">
+          <label>Event</label>
+          <CustomDropdown
+            value={category}
+            options={[
+              { label: 'All Event', value: 'ALL' },
+              ...categories.map(item => ({ label: title(item), value: item }))
+            ]}
+            onChange={setCategory}
+          />
+        </div>
+        <div className="filter-group">
+          <label>Status</label>
+          <CustomDropdown
+            value={status}
+            options={[
+              { label: 'All', value: 'ALL' },
+              { label: 'SUCCESS', value: 'SUCCESS' },
+              { label: 'FAILED', value: 'FAILED' },
+              { label: 'ATTEMPTED', value: 'ATTEMPTED' },
+              { label: 'SCHEDULED', value: 'SCHEDULED' },
+              { label: 'REQUESTED', value: 'REQUESTED' }
+            ]}
+            onChange={setStatus}
+          />
+        </div>
+        <div className="filter-group">
+          <label>Actors</label>
+          <CustomDropdown
+            value={actor}
+            options={[
+              { label: 'All', value: 'ALL' },
+              ...actors.map(item => ({ label: item, value: item }))
+            ]}
+            onChange={setActor}
+          />
+        </div>
+        <div className="filter-group">
+          <label>From</label>
+          <div>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
+          </div>
+        </div>
+        <div className="filter-group">
+          <label>To</label>
+          <div>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} />
+          </div>
+        </div>
+      </div>
     </section>
 
     {error && <div className="audit-warning">{error}</div>}
     <section className="audit-ledger">
-      <div className="audit-ledger-head"><div><History size={15} /><strong>Event ledger</strong></div><span>{filtered.length} of {events.length} events</span></div>
-      {loading ? <div className="audit-empty"><RefreshCw className="spin" /><p>Loading audit records...</p></div>
-        : filtered.length === 0 ? <div className="audit-empty"><LockKeyhole /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
-        : <div className="audit-table-wrap"><table className="audit-table"><thead><tr><th>Time</th><th>Event</th><th>User</th><th>Resource</th><th>Cluster / Artifact / Host ID</th><th>Details</th><th>Status</th></tr></thead>
-          <tbody>{filtered.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
-        </table></div>}
+      <div className="audit-ledger-head">
+        <div><History size={15} /><strong>Event Ledger</strong></div>
+      </div>
+      {loading ? <div className="audit-empty"><CustomRefreshIcon className="spin" /><p>Loading audit records...</p></div>
+        : filtered.length === 0 ? <div className="audit-empty"><Info size={24} /><h3>No matching audit events</h3><p>Adjust the filters or perform an auditable operation.</p></div>
+          : <div className="audit-table-wrap">
+            <table className="audit-table">
+              <thead><tr><th>Time</th><th>Event</th><th>Actor</th><th>Resource</th><th>Cluster ID</th><th>Details</th><th>Status</th></tr></thead>
+              <tbody>{paginatedEvents.map(event => <AuditRow key={event.id} event={event} />)}</tbody>
+            </table>
+            <div className="audit-pagination">
+              <span className="pagination-info">{startResult} to {endResult} of results</span>
+              <div className="pagination-controls">
+                <span>Show per page</span>
+                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+                <div className="pagination-nav">
+                  <button className="page-btn" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}><ChevronLeft size={16} /></button>
+                  <button className="page-btn" disabled={currentPage * pageSize >= totalResults} onClick={() => setCurrentPage(p => p + 1)}><ChevronRight size={16} /></button>
+                </div>
+              </div>
+            </div>
+          </div>}
     </section>
   </div>;
 }
@@ -219,13 +434,18 @@ function AuditRow({ event }: { event: AuditEvent }) {
   const created = timeOf(event);
   const createdDate = created ? new Date(created) : null;
   const details = detailLabel(event);
+
+  const formattedTime = createdDate && !Number.isNaN(createdDate.getTime())
+    ? `${String(createdDate.getDate()).padStart(2, '0')}/${String(createdDate.getMonth() + 1).padStart(2, '0')}/${createdDate.getFullYear()} | ${createdDate.toLocaleTimeString('en-GB', { hour12: false })}`
+    : '-';
+
   return <tr>
-      <td><div className="audit-time"><Clock3 size={12} /><span>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString() : '-'}</span><small>{createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toLocaleTimeString() : ''}</small></div></td>
-      <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><strong>{actionLabel(event)}</strong><small>{title(event.category)}</small></div></div></td>
-      <td><div className="audit-actor"><UserRound size={13} /><span>{actorOf(event)}</span></div></td>
-      <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
-      <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{scopeId(event)}</small></div></td>
-      <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
-      <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status}</span></td>
-    </tr>
+    <td><div className="audit-time"><span>{formattedTime}</span></div></td>
+    <td><div className="audit-event"><span className={`category-dot ${event.category.toLowerCase()}`}>{event.category === 'PACKAGE' ? <Package size={12} /> : null}</span><div><span>{actionLabel(event)}</span></div></div></td>
+    <td><div className="audit-actor"><span>{actorOf(event)}</span></div></td>
+    <td><div className="audit-resource"><strong>{resourceTypeLabel(event)}</strong>{resourceName(event) && <small>{resourceName(event)}</small>}</div></td>
+    <td><div className="audit-resource"><small title={event.clusterId ? `Internal UUID: ${event.clusterId}` : undefined}>{event.kafkaClusterId || event.clusterId || '-'}</small></div></td>
+    <td><div className="audit-details-inline"><span title={details}>{details || '-'}</span></div></td>
+    <td><span className={`audit-status ${event.status.toLowerCase()}`}>{event.status.charAt(0).toUpperCase() + event.status.slice(1).toLowerCase()}</span></td>
+  </tr>
 }

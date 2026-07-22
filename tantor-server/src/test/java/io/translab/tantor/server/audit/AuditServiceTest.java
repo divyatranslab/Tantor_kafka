@@ -26,8 +26,28 @@ class AuditServiceTest {
         var captor = org.mockito.ArgumentCaptor.forClass(AuditLog.class);
         verify(repository).saveAndFlush(captor.capture());
         AuditLog event = captor.getValue();
-        assertThat(event.getUserName()).isEqualTo("operator-1");
+        assertThat(event.getCreatedBy()).isEqualTo("operator-1");
         assertThat(event.getDetails()).contains("approved");
         assertThat(service.verifyIntegrity()).isEqualTo("NOT_ENABLED");
+    }
+
+    @Test
+    void normalizesAuditStatusesAndUsesTypedResourceIds() {
+        AuditLogRepository repository = mock(AuditLogRepository.class);
+        when(repository.saveAndFlush(any(AuditLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        AuditService service = new AuditService(repository, new ObjectMapper());
+
+        service.recordAs("operator-1", "TEST", null, "PREREQUISITE", "CHECK_COMPLETED",
+                "HOST", "host-7", null, "RUNNING", null, null, null, null);
+
+        var captor = org.mockito.ArgumentCaptor.forClass(AuditLog.class);
+        verify(repository).saveAndFlush(captor.capture());
+        assertThat(captor.getValue().getStatus()).isEqualTo("SUCCESS");
+        assertThat(service.displayResourceId(captor.getValue())).isEqualTo("host-7");
+
+        AuditLog clusterEvent = new AuditLog();
+        clusterEvent.setResourceType("CLUSTER");
+        clusterEvent.setResourceId("cluster-9");
+        assertThat(service.displayResourceId(clusterEvent)).isEqualTo("cluster-9");
     }
 }
