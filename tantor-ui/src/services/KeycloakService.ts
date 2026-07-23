@@ -1,7 +1,7 @@
 import Keycloak from 'keycloak-js';
 
 const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL || 'https://keycloak.tantor.io',
+  url: import.meta.env.VITE_KEYCLOAK_URL,
   realm: import.meta.env.VITE_KEYCLOAK_REALM || 'Gatekeeper',
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
