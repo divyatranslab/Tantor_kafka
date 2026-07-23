@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/ConfirmDialog';
+import { withConnId as formatConnId } from '../lib/connections';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
@@ -148,16 +149,8 @@ export function KafkaConnect() {
     [savedConnections, selectedConnectionId]
   );
 
-  /**
-   * Safely appends ?connectionId=... to any URL using URLSearchParams.
-   * Works even when the base URL already contains query params.
-   */
   const withConnId = (url: string, connId: string | null = selectedConnectionId): string => {
-    if (!connId) return url;
-    const [base, existing] = url.split('?');
-    const params = new URLSearchParams(existing || '');
-    params.set('connectionId', connId);
-    return base + '?' + params.toString();
+    return formatConnId(url, connId);
   };
 
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {

@@ -7,6 +7,7 @@ import {
   ShieldCheck, Trash2, Users, X, Share2, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { apiError } from '../lib/errors';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './TopicDetails.css';
@@ -121,10 +122,6 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: 'statistics', label: 'Statistics', icon: BarChart3 }
 ];
 
-async function responseError(response: Response) {
-  const body = await response.json().catch(() => null);
-  return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
-}
 
 function formatBytes(value: number) {
   if (value < 0) return 'Unavailable';
@@ -305,7 +302,7 @@ export function TopicDetails() {
         method = 'POST';
       }
       const response = await fetch(url, { method });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       if (confirmAction === 'remove') {
         navigate('/clusters/' + id + '/topics');
         return;
@@ -337,7 +334,7 @@ export function TopicDetails() {
           headers: {}
         })
       });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       setShowProduce(false);
       setProduceForm({ partition: '', key: '', value: '' });
       setMessages(null);
@@ -361,7 +358,7 @@ export function TopicDetails() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: configValue })
       });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       setEditingConfig(null);
       await loadSimpleTab('configs');
       await loadDetail();
@@ -384,7 +381,7 @@ export function TopicDetails() {
     if (!canManage) return;
     try {
       const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(config.name), { method: 'DELETE' });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       await loadSimpleTab('configs');
       await loadDetail();
     } catch (requestError) {

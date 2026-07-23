@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { parseIpList } from '../lib/hosts';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import {
@@ -308,17 +309,6 @@ function syncCommonRows(rows: PropertyRow[], config: Record<string, any>): Prope
   });
 }
 
-function parseIpList(raw: any): string[] {
-  if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
-  if (typeof raw === 'string' && raw.startsWith('[')) {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-    } catch {}
-  }
-  if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
-  return [];
-}
 
 function displayIp(host: Host): string {
   const ips = parseIpList(host.ip_address || host.ipAddress || host.ipAddresses);
@@ -877,7 +867,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-    const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
+    const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL;
     return {
       name: clusterName.trim(),
       kafka_version: kafkaVersion,

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { parseIpList } from '../lib/hosts';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
 import { confirmAction, notifyAction } from './ConfirmDialog';
@@ -43,17 +44,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  const parseIpList = (raw: any): string[] => {
-    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
-    if (typeof raw === 'string' && raw.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
-    }
-    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
-    return [];
-  };
+
 
   const displayIp = (raw: any) => {
     const ips = parseIpList(raw);

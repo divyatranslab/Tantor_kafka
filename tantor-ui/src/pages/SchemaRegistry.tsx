@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
+import { withConnId as formatConnId } from '../lib/connections';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './DataServiceTabs.css';
 
@@ -254,16 +255,8 @@ export function SchemaRegistry() {
 
   // ── Cert helpers ──────────────────────────────────────────────
 
-  /**
-   * Safely appends ?connectionId=... to any URL using URLSearchParams.
-   * Works even if the base URL already contains query params (avoids unsafe string concatenation).
-   */
   const withConnId = (url: string, connId: string | null = selectedConnectionId): string => {
-    if (!connId) return url;
-    const [base, existing] = url.split('?');
-    const params = new URLSearchParams(existing || '');
-    params.set('connectionId', connId);
-    return base + '?' + params.toString();
+    return formatConnId(url, connId);
   };
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();

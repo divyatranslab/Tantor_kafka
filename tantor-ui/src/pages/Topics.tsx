@@ -5,6 +5,7 @@ import {
   MoreVertical, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { apiError } from '../lib/errors';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Topics.css';
@@ -47,10 +48,6 @@ const actionCopy: Record<ActionKind, { title: string; description: string; butto
   }
 };
 
-async function apiError(response: Response) {
-  const body = await response.json().catch(() => null);
-  return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
-}
 
 export function Topics() {
   const { id } = useParams<{ id: string }>();
