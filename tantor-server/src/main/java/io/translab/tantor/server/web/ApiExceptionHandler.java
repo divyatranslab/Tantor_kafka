@@ -28,6 +28,20 @@ public class ApiExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public void rethrowAccessDenied(
+            org.springframework.security.access.AccessDeniedException exception
+    ) {
+        throw exception;
+    }
+
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public void rethrowAuthentication(
+            org.springframework.security.core.AuthenticationException exception
+    ) {
+        throw exception;
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
         log.warn("Request failed", ex);
