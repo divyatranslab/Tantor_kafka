@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -122,13 +123,14 @@ export function ExternalClusters() {
   metrics_url: "http://localhost:7071/metrics"
   disable_metrics: false
   skip_precheck: false
-  tls_insecure_skip_verify: true`
+  # DEV-ONLY: Set to true for dev environments without trusted certs. Set false for production.
+  tls_insecure_skip_verify: false`
   ), [serverHint]);
 
-  const loadAgents = async () => {
+  const loadAgents = async (signal?: AbortSignal) => {
     setAgentsLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/agents');
+      const res = await fetch('/api/v1/ui/external-clusters/agents', { signal });
       if (res.ok) setAgents(await res.json());
     } catch (e) {
       console.error(e);
@@ -137,10 +139,12 @@ export function ExternalClusters() {
     }
   };
 
+  usePolling((signal) => {
+    return loadAgents(signal);
+  }, 10000);
+
   useEffect(() => {
     loadAgents();
-    const timer = window.setInterval(loadAgents, 10000);
-    return () => window.clearInterval(timer);
   }, []);
 
   const formatHeartbeat = (value?: string) => {

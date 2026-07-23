@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { parseIpList } from '../lib/hosts';
+import { usePolling } from '../hooks/usePolling';
 import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
@@ -12,10 +14,10 @@ export function Hosts() {
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
-  const fetchHosts = async () => {
+  const fetchHosts = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/hosts');
+      const res = await fetch('/api/v1/ui/hosts', { signal });
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
@@ -40,23 +42,15 @@ export function Hosts() {
     }
   };
 
+  usePolling((signal) => {
+    return fetchHosts(signal);
+  }, 5000);
+
   useEffect(() => {
     fetchHosts();
-    const t = setInterval(fetchHosts, 5000);
-    return () => clearInterval(t);
   }, []);
 
-  const parseIpList = (raw: any): string[] => {
-    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
-    if (typeof raw === 'string' && raw.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
-    }
-    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
-    return [];
-  };
+
 
   const displayIp = (raw: any) => {
     const ips = parseIpList(raw);

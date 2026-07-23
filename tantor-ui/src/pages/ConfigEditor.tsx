@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
@@ -110,6 +110,13 @@ function ExternalConfigEditor() {
   const [rollingRestart, setRollingRestart] = useState(true);
   const [applying, setApplying] = useState(false);
 
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   const fetchConfigs = async () => {
     setLoading(true);
     try {
@@ -175,10 +182,12 @@ function ExternalConfigEditor() {
       const taskId = startData.taskId;
 
       let complete = false;
-      while (!complete) {
+      while (!complete && isMounted.current) {
         await new Promise(r => setTimeout(r, 2000));
+        if (!isMounted.current) break;
         const statusRes = await fetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
         if (!statusRes.ok) break;
+        if (!isMounted.current) break;
         const statusData = await statusRes.json();
         if (statusData.status === 'SUCCESS') {
            setFetchedProperties(prev => ({ ...prev, [nodeId]: statusData.data || {} }));
@@ -192,9 +201,9 @@ function ExternalConfigEditor() {
         }
       }
     } catch (e) {
-       setReadStatus('Error reading config.');
+       if (isMounted.current) setReadStatus('Error reading config.');
     } finally {
-       setReadingConfig(false);
+       if (isMounted.current) setReadingConfig(false);
     }
   };
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
@@ -66,11 +67,11 @@ export function DeploymentLogs() {
   const [isConsoleMaximized, setIsConsoleMaximized] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (signal?: AbortSignal) => {
     try {
       const [clusterRes, tasksRes] = await Promise.all([
-        fetch(`/api/v1/ui/clusters/${id}`),
-        fetch(`/api/v1/ui/clusters/${id}/tasks`),
+        fetch(`/api/v1/ui/clusters/${id}`, { signal }),
+        fetch(`/api/v1/ui/clusters/${id}/tasks`, { signal }),
       ]);
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
@@ -97,11 +98,9 @@ export function DeploymentLogs() {
   const shouldPoll = tasks.some(task => activeStatus(task.status))
     || ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(cluster?.status || '');
 
-  useEffect(() => {
-    if (!shouldPoll) return;
-    const interval = window.setInterval(fetchTasks, 3000);
-    return () => window.clearInterval(interval);
-  }, [id, shouldPoll]);
+  usePolling((signal) => {
+    return fetchTasks(signal);
+  }, 3000, shouldPoll);
 
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0];
 

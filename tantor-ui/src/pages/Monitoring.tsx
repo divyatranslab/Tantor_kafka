@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
@@ -184,17 +185,16 @@ export function Monitoring() {
 
 
   // Fetch overview metrics for the selected cluster
-  const loadOverview = useCallback(async (silent = false) => {
+  const loadOverview = useCallback(async (silent = false, signal?: AbortSignal) => {
     if (!selectedClusterId) return;
     if (!silent) setLoading(true);
     try {
-      // 1. Fetch Prometheus Metrics
       const params = new URLSearchParams();
       if (selectedNodeId) {
         params.set('nodeId', selectedNodeId);
       }
       const query = params.toString();
-      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`);
+      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`, { signal });
       if (res.ok) {
         const data = await res.json();
         setOverview(data);
@@ -238,15 +238,9 @@ export function Monitoring() {
   }, [overview]);
 
   // Auto refresh loop
-  useEffect(() => {
-    if (!autoRefresh || !selectedClusterId) return;
-    const timer = window.setInterval(() => {
-      if (!document.hidden) {
-        loadOverview(true);
-      }
-    }, refreshInterval * 1000);
-    return () => window.clearInterval(timer);
-  }, [autoRefresh, refreshInterval, loadOverview, selectedClusterId]);
+  usePolling((signal) => {
+    return loadOverview(true, signal);
+  }, refreshInterval * 1000, autoRefresh && !!selectedClusterId);
 
   // Mock initial history if empty to generate pretty graphs immediately
   const graphHistory = history;
