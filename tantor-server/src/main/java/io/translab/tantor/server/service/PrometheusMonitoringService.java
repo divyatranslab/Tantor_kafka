@@ -107,24 +107,28 @@ public class PrometheusMonitoringService {
             TrustManager[] trustAllManagers = new TrustManager[] {
                     new X509TrustManager() {
                         @Override
-                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
-                        }
-
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {}
                         @Override
-                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
-                        }
-
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {}
                         @Override
-                        public X509Certificate[] getAcceptedIssuers() {
-                            return new X509Certificate[0];
-                        }
+                        public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
                     }
             };
             SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init(null, trustAllManagers, new SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-            HostnameVerifier trustAllHosts = (hostname, session) -> true;
-            HttpsURLConnection.setDefaultHostnameVerifier(trustAllHosts);
+            
+            org.springframework.http.client.SimpleClientHttpRequestFactory requestFactory = new org.springframework.http.client.SimpleClientHttpRequestFactory() {
+                @Override
+                protected void prepareConnection(java.net.HttpURLConnection connection, String httpMethod) throws java.io.IOException {
+                    if (connection instanceof javax.net.ssl.HttpsURLConnection) {
+                        ((javax.net.ssl.HttpsURLConnection) connection).setSSLSocketFactory(sslContext.getSocketFactory());
+                        ((javax.net.ssl.HttpsURLConnection) connection).setHostnameVerifier((hostname, session) -> true);
+                    }
+                    super.prepareConnection(connection, httpMethod);
+                }
+            };
+            restTemplate.setRequestFactory(requestFactory);
+            
             log.warn("Grafana TLS validation is disabled for monitoring proxy requests. Use only for test/self-signed environments.");
         } catch (Exception e) {
             log.warn("Could not disable Grafana TLS validation", e);

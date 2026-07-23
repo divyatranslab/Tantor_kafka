@@ -24,8 +24,8 @@ spring:
     locations: classpath:db/migration
     clean-disabled: true
     clean-on-validation-error: false
-    ignore-missing-migrations: true
-    validate-on-migrate: false
+    ignore-missing-migrations: false
+    validate-on-migrate: true
 
 server:
   port: 8443
@@ -66,7 +66,16 @@ tantor:
     grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:PBFA97CFB590B2093}
     grafana-username: ${TANTOR_GRAFANA_USERNAME:}
     grafana-password: ${TANTOR_GRAFANA_PASSWORD:}
-    grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:true}
+    grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:false}
     exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:}
     kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
     jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:7071}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    ignore-missing-migrations: true
+    validate-on-migrate: false
