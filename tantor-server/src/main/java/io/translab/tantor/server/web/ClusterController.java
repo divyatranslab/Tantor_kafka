@@ -13,7 +13,7 @@ import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.domain.JobStatus;
 import io.translab.tantor.server.domain.JobStep;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;

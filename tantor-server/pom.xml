@@ -53,21 +53,9 @@
 
         <!-- JWT -->
         <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>${jjwt.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
+            <groupId>io.translab.tantor</groupId>
+            <artifactId>tantor-security</artifactId>
+            <version>1.0.0</version>
         </dependency>
 
         <!-- Validation & Utils -->
@@ -143,3 +131,4 @@
         </plugins>
     </build>
 </project>
+

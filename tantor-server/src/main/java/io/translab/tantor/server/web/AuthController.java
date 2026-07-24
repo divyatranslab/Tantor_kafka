@@ -6,7 +6,7 @@ import io.translab.tantor.server.dto.LdapDTOs;
 import io.translab.tantor.server.repository.LdapConfigRepository;
 import io.translab.tantor.server.repository.UserRepository;
 import io.translab.tantor.server.service.LdapService;
-import io.translab.tantor.server.security.JwtUtils;
+import io.translab.tantor.security.JwtUtils;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

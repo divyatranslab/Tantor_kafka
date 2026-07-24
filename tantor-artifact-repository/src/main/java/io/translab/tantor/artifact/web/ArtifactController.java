@@ -12,7 +12,7 @@ import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
-import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -281,6 +281,6 @@ public class ArtifactController {
     }
 
     private String currentUser(String authorization) {
-        return roleAuthenticationUtil.username(authorization);
+        return roleAuthenticationUtil.extractUsername(authorization);
     }
 }

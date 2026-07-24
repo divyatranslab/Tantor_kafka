@@ -1,4 +1,4 @@
-package io.translab.tantor.artifact.security;
+package io.translab.tantor.security;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

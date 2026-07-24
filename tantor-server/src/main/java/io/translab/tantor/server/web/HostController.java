@@ -14,7 +14,7 @@ import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

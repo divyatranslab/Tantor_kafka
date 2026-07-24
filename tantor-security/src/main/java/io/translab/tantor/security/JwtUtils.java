@@ -1,4 +1,4 @@
-package io.translab.tantor.server.security;
+package io.translab.tantor.security;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

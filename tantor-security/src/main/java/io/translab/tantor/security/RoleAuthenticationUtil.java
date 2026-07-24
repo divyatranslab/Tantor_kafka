@@ -1,14 +1,18 @@
-package io.translab.tantor.server.util;
+package io.translab.tantor.security;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,16 +51,22 @@ public class RoleAuthenticationUtil {
 
     private final ObjectMapper objectMapper;
     private final Map<String, Set<String>> allowedRolesByAction;
+    private final String jwtSecret;
 
-    public RoleAuthenticationUtil(ObjectMapper objectMapper) {
+    public RoleAuthenticationUtil(ObjectMapper objectMapper, @Value("${tantor.security.jwt.secret}") String jwtSecret) {
         this.objectMapper = objectMapper;
+        this.jwtSecret = jwtSecret;
         this.allowedRolesByAction = loadAllowedRoles();
+    }
+
+    private SecretKey key() {
+        return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }
 
     public boolean canAccess(String authorizationHeader, String action) {
         Set<String> allowedRoles = allowedRolesByAction.get(normalizeAction(action));
         if (allowedRoles == null || allowedRoles.isEmpty()) {
-            return false;
+            return false; // Fail-closed explicitly handled
         }
 
         String token = bearerToken(authorizationHeader);
@@ -99,6 +109,9 @@ public class RoleAuthenticationUtil {
 
     private Map<String, Set<String>> loadAllowedRoles() {
         try (InputStream input = new ClassPathResource("config/config.json").getInputStream()) {
+            if (input == null) {
+                throw new IllegalStateException("Security config.json not found. Failing closed.");
+            }
             Map<String, List<String>> configured = objectMapper.readValue(input, new TypeReference<>() {});
             Map<String, Set<String>> normalized = new HashMap<>();
             configured.forEach((action, roles) -> {
@@ -109,8 +122,9 @@ public class RoleAuthenticationUtil {
                 normalized.put(normalizeAction(action), roleSet);
             });
             return Map.copyOf(normalized);
-        } catch (IOException e) {
-            throw new IllegalStateException("Unable to load role endpoint config", e);
+        } catch (IOException | IllegalArgumentException e) {
+            // Fail closed by throwing an exception, blocking startup if config is invalid
+            throw new IllegalStateException("Unable to load role endpoint config, failing closed.", e);
         }
     }
 
@@ -126,14 +140,16 @@ public class RoleAuthenticationUtil {
     }
 
     private Map<String, Object> decodeClaims(String token) {
-        String[] parts = token.split("\\.");
-        if (parts.length < 2) {
-            return Map.of();
-        }
         try {
-            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
-            return objectMapper.readValue(new String(payload, StandardCharsets.UTF_8), new TypeReference<>() {});
-        } catch (Exception ignored) {
+            // Cryptographically verify the token, fixing the decode-without-verify flaw
+            Claims claims = Jwts.parser()
+                    .verifyWith(key())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            return new HashMap<>(claims);
+        } catch (Exception e) {
+            // Token is invalid or signature is forged
             return Map.of();
         }
     }

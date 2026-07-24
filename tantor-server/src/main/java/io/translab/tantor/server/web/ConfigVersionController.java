@@ -6,7 +6,7 @@ import io.translab.tantor.server.domain.ConfigVersion;
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.ConfigVersionService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

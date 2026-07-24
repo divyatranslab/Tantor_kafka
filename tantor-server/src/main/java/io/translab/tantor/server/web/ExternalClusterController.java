@@ -3,7 +3,7 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.service.ExternalClusterService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

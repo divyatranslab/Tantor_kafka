@@ -15,7 +15,7 @@ import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.ActivityAlertService;
 import io.translab.tantor.server.service.JobService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

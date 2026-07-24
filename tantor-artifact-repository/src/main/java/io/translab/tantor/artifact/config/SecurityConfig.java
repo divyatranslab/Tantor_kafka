@@ -1,7 +1,7 @@
 package io.translab.tantor.artifact.config;
 
-import io.translab.tantor.artifact.security.JwtAuthenticationFilter;
-import io.translab.tantor.artifact.security.JwtUtils;
+import io.translab.tantor.security.JwtAuthenticationFilter;
+import io.translab.tantor.security.JwtUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;

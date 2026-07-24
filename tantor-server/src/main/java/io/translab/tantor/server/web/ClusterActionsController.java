@@ -5,7 +5,7 @@ import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.*;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

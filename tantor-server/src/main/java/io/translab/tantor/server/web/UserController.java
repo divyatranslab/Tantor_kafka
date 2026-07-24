@@ -4,7 +4,7 @@ import io.translab.tantor.server.domain.User;
 import io.translab.tantor.server.dto.UserDto;
 import io.translab.tantor.server.repository.UserRepository;
 import io.translab.tantor.server.audit.AuditService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;

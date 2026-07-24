@@ -3,7 +3,7 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.dto.AclDTOs.*;
 import io.translab.tantor.server.service.SecurityOperationsService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

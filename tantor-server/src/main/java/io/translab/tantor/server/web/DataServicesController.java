@@ -14,7 +14,7 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.service.DataServiceConnectionService;
 import io.translab.tantor.server.dto.ConnectionResponse;
 import io.translab.tantor.server.dto.SaveConnectionRequest;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

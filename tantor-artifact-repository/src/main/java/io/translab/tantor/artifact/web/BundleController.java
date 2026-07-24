@@ -1,7 +1,7 @@
 package io.translab.tantor.artifact.web;
 
 import io.translab.tantor.artifact.service.AirGapBundleService;
-import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
+import io.translab.tantor.security.RoleAuthenticationUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
