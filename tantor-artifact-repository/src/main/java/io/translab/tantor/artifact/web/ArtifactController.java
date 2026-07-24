@@ -12,7 +12,6 @@ import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
-import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,9 +23,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,7 +34,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -53,21 +52,19 @@ public class ArtifactController {
     private final ManifestService manifestService;
     private final ObjectMapper objectMapper;
     private final ArtifactAuditService auditService;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
                               ObjectMapper objectMapper,
-                              ArtifactAuditService auditService,
-                              RoleAuthenticationUtil roleAuthenticationUtil) {
+                              ArtifactAuditService auditService) {
         this.artifactService = artifactService;
         this.manifestService = manifestService;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
-        this.roleAuthenticationUtil = roleAuthenticationUtil;
     }
 
     @Operation(summary = "Upload an artifact (multipart)")
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ArtifactResponse> upload(
             @RequestParam ServiceType serviceType,
@@ -81,13 +78,10 @@ public class ArtifactController {
             @RequestParam(required = false) String attributesJson,
             @RequestParam(defaultValue = "false") boolean overwrite,
             @RequestParam MultipartFile file,
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            Authentication authentication,
             HttpServletRequest request) throws IOException {
 
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        String actor = currentUser(authorization);
+        String actor = currentUser(authentication);
         String fileName = file.getOriginalFilename();
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
@@ -119,6 +113,7 @@ public class ArtifactController {
     }
 
     @Operation(summary = "Upload an artifact via raw streaming PUT (bypasses multipart buffering)")
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping(consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public ResponseEntity<ArtifactResponse> uploadRaw(
             @RequestParam ServiceType serviceType,
@@ -132,13 +127,10 @@ public class ArtifactController {
             @RequestParam(required = false) String sha256,
             @RequestParam(required = false) String attributesJson,
             @RequestParam(defaultValue = "false") boolean overwrite,
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            Authentication authentication,
             HttpServletRequest request) throws IOException {
 
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        String actor = currentUser(authorization);
+        String actor = currentUser(authentication);
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
                 name != null ? name : fileName,
@@ -217,24 +209,18 @@ public class ArtifactController {
     }
 
     @Operation(summary = "Re-verify on-disk integrity against the recorded checksum")
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/verify")
-    public ResponseEntity<Map<String, Object>> verify(@PathVariable UUID id,
-                                                      @RequestHeader(value = "Authorization", required = false) String authorization) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        }
+    public ResponseEntity<Map<String, Object>> verify(@PathVariable UUID id) {
         boolean ok = artifactService.verifyIntegrity(id);
         return ResponseEntity.ok(Map.of("id", id, "verified", ok));
     }
 
     @Operation(summary = "Soft-delete an artifact (removes binary, retains audit row)")
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id,
-                                       @RequestHeader(value = "Authorization", required = false) String authorization) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_DELETE)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        String actor = currentUser(authorization);
+    public ResponseEntity<Void> delete(@PathVariable UUID id, Authentication authentication) {
+        String actor = currentUser(authentication);
         Artifact artifact = artifactService.get(id);
         artifactService.delete(id);
         safeAudit(actor, "PACKAGE_REMOVED", id.toString(), "SUCCESS",
@@ -272,15 +258,13 @@ public class ArtifactController {
         }
     }
 
-    /**
-     * Placeholder for the authenticated principal. Authentication/RBAC is
-     * delivered in Phase 3; until then uploads are attributed to "system".
-     */
     private String currentUser() {
         return "system";
     }
 
-    private String currentUser(String authorization) {
-        return roleAuthenticationUtil.username(authorization);
+    private String currentUser(Authentication authentication) {
+        return authentication == null || authentication.getName() == null
+                ? "system"
+                : authentication.getName();
     }
 }

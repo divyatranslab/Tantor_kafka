@@ -4,12 +4,12 @@ import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.TopicOperationsService;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.audit.AuditService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.Map;
@@ -25,8 +25,7 @@ public class TopicsController {
     private final io.translab.tantor.server.service.PartitionCacheService partitionCacheService;
     private final ClusterRepository clusterRepository;
     private final AuditService auditService;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
-
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
             @PathVariable UUID clusterId,
@@ -42,14 +41,12 @@ public class TopicsController {
         return ResponseEntity.ok(kafkaAdminService.listTopicsPaginated(clusterId, page, size, search, sortBy, includeInternal));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/topics")
     public ResponseEntity<Void> createTopic(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @RequestBody TopicCreateRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         kafkaAdminService.createTopic(
             clusterId, 
             request.getName(), 
@@ -62,25 +59,25 @@ public class TopicsController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/topics/{topicName}")
     public ResponseEntity<Void> deleteTopic(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable String topicName) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         kafkaAdminService.deleteTopic(clusterId, topicName);
         clusterChanged(clusterId, "TOPIC_DELETED", Map.of("topic", topicName));
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}")
     public ResponseEntity<Map<String, Object>> getTopic(
             @PathVariable UUID clusterId, @PathVariable String topicName) {
         return ResponseEntity.ok(topicOperationsService.getTopicDetails(clusterId, topicName));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}/messages")
     public ResponseEntity<Map<String, Object>> getMessages(
             @PathVariable UUID clusterId, @PathVariable String topicName,
@@ -92,76 +89,68 @@ public class TopicsController {
                 clusterId, topicName, partitions, order, limit, search));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/topics/{topicName}/messages")
     public ResponseEntity<Map<String, Object>> produceMessage(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @RequestBody ProduceMessageRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.PRODUCE_MESSAGE)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         return ResponseEntity.ok(topicOperationsService.produceMessage(
                 clusterId, topicName, request.getPartition(), request.getKey(),
                 request.getValue(), request.getHeaders()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/topics/{topicName}/messages")
     public ResponseEntity<Void> clearMessages(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable String topicName) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         topicOperationsService.clearTopic(clusterId, topicName);
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/topics/{topicName}/recreate")
     public ResponseEntity<Void> recreateTopic(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable String topicName) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         topicOperationsService.recreateTopic(clusterId, topicName);
         clusterChanged(clusterId, "TOPIC_RECREATED", Map.of("topic", topicName));
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}/consumers")
     public ResponseEntity<List<Map<String, Object>>> getConsumers(
             @PathVariable UUID clusterId, @PathVariable String topicName) {
         return ResponseEntity.ok(topicOperationsService.getTopicConsumers(clusterId, topicName));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}/configs")
     public ResponseEntity<List<Map<String, Object>>> getConfigs(
             @PathVariable UUID clusterId, @PathVariable String topicName) {
         return ResponseEntity.ok(topicOperationsService.getTopicConfigs(clusterId, topicName));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/topics/{topicName}/configs/{key}")
     public ResponseEntity<Void> alterConfig(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @PathVariable String key, @RequestBody ConfigValueRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         topicOperationsService.alterTopicConfig(clusterId, topicName, key, request.getValue());
         clusterChanged(clusterId, "TOPIC_CONFIG_CHANGED", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/topics/{topicName}/configs/{key}")
     public ResponseEntity<Void> resetConfig(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId, @PathVariable String topicName, @PathVariable String key) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         topicOperationsService.resetTopicConfig(clusterId, topicName, key);
         clusterChanged(clusterId, "TOPIC_CONFIG_RESET", Map.of("topic", topicName, "key", key));
         return ResponseEntity.noContent().build();
@@ -176,6 +165,7 @@ public class TopicsController {
                 "SUCCESS", null, null, null, details);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}/statistics")
     public ResponseEntity<Map<String, Object>> getStatistics(
             @PathVariable UUID clusterId, @PathVariable String topicName,
@@ -183,12 +173,14 @@ public class TopicsController {
         return ResponseEntity.ok(topicOperationsService.analyzeTopic(clusterId, topicName, limit));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/topics/{topicName}/acls")
     public ResponseEntity<List<Map<String, Object>>> getAcls(
             @PathVariable UUID clusterId, @PathVariable String topicName) {
         return ResponseEntity.ok(topicOperationsService.getTopicAcls(clusterId, topicName));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/partitions")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.PartitionSummaryDto>> listPartitions(
             @PathVariable UUID clusterId,

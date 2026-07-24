@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -17,6 +18,7 @@ import java.util.Map;
 public class AuditController {
     private final AuditService auditService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<Map<String, Object>> search(
             @RequestParam(required = false) String category,
@@ -40,6 +42,7 @@ public class AuditController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/integrity")
     public ResponseEntity<Map<String, String>> integrity() {
         return ResponseEntity.ok(Map.of("status", auditService.verifyIntegrity(), "mode", "APPEND_ONLY"));

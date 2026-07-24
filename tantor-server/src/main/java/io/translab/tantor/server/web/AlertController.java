@@ -15,6 +15,7 @@ import io.translab.tantor.server.service.ConsumerLagCacheService;
 import io.translab.tantor.server.service.HostStatusService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,6 +46,7 @@ public class AlertController {
     private final HostParcelRepository hostParcelRepository;
     private final ConsumerLagCacheService consumerLagCacheService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     @Transactional
     public ResponseEntity<List<Map<String, Object>>> getActiveAlerts() {

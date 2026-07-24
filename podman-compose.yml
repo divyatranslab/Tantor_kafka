@@ -18,6 +18,8 @@ services:
     build:
       context: ./tantor-artifact-repository
     container_name: tantor_artifact_repo
+    environment:
+      TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
     ports:
       - "8081:8081"
     volumes:
@@ -35,6 +37,7 @@ services:
       TANTOR_REPO_URL: http://tantor-artifact-repository:8081
       TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
       TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
+      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET}
     ports:
       - "8443:8443"
     depends_on:
@@ -46,8 +49,13 @@ services:
     build:
       context: ./tantor-ui
     container_name: tantor_ui
+    environment:
+      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET}
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - ./scratch/certs:/etc/nginx/certs:ro
     depends_on:
       - tantor-server
       - tantor-artifact-repository

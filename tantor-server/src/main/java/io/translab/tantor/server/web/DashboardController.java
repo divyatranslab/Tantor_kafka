@@ -14,6 +14,7 @@ import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -46,6 +47,7 @@ public class DashboardController {
     private final HostParcelRepository hostParcelRepository;
     private final HostStatusService hostStatusService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<Map<String, Object>> getDashboard() {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
@@ -71,6 +73,7 @@ public class DashboardController {
         return ResponseEntity.ok(response);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getOverviewStats() {
         Map<String, Object> stats = new HashMap<>();
@@ -84,6 +87,7 @@ public class DashboardController {
         return ResponseEntity.ok(stats);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/activity")
     public ResponseEntity<List<ActivityLog>> getRecentActivity() {
         return ResponseEntity.ok(activityLogRepository.findTop50ByOrderByCreatedAtDesc());

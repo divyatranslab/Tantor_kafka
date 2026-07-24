@@ -12,6 +12,12 @@ spring:
   application:
     name: tantor-artifact-repository
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${TANTOR_KEYCLOAK_ISSUER_URI:https://keycloak.tantor.io/realms/Gatekeeper}
+
   datasource:
     url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
     username: ${TANTOR_DB_USER:postgres}
@@ -42,6 +48,10 @@ spring:
 
 # Tantor artifact repository specific settings
 tantor:
+  security:
+    jwt:
+      # Optional. When set, bearer tokens must contain this audience.
+      audience: ${TANTOR_JWT_AUDIENCE:}
   repository:
     # Root of the on-disk artifact store. In k8s this is a mounted PVC.
     base-path: ${TANTOR_REPO_PATH:/var/lib/tantor/repository}

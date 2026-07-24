@@ -6,6 +6,7 @@ import io.translab.tantor.server.dto.PaginatedResponse;
 import io.translab.tantor.server.service.ConsumerLagCacheService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -17,6 +18,7 @@ public class ConsumerGroupsController {
 
     private final ConsumerLagCacheService consumerLagCacheService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<PaginatedResponse<ConsumerGroupSummaryDto>> getConsumerGroups(
             @PathVariable UUID clusterId,
@@ -30,6 +32,7 @@ public class ConsumerGroupsController {
         return ResponseEntity.ok(consumerLagCacheService.getPaginatedSummaries(clusterId, page, size, search, sortBy));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{groupId}")
     public ResponseEntity<ConsumerGroupDetailDto> getConsumerGroupDetail(
             @PathVariable UUID clusterId,

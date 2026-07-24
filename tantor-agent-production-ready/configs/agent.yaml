@@ -1,0 +1,50 @@
+# Tantor Agent runtime configuration.
+# No client-specific IP, port, username, or host ID is hard-coded in this file.
+
+agent:
+  # Leave host_id empty to generate and persist a stable UUID in paths.data_dir/host-id.
+  host_id: ""
+  # Leave agent_name empty to use the VM hostname.
+  agent_name: ""
+  # Required. Include scheme and port when the backend does not use the scheme default.
+  # Examples: http://MANAGEMENT_SERVER_IP:PORT or https://control-plane.internal:8443
+  server_url: "http://management-server.example.internal:8080"
+
+  # Optional HTTPS/mTLS settings. Keep empty for plain HTTP or system-CA HTTPS.
+  cert_file: ""
+  key_file: ""
+  ca_cert: ""
+  insecure_skip_verify: false
+
+  poll_interval_seconds: 10
+  heartbeat_interval_seconds: 30
+  log_level: "INFO"
+
+paths:
+  data_dir: "/var/lib/tantor-agent/data"
+  log_dir: "/var/log/tantor-agent"
+  artifacts_dir: "/var/lib/tantor-agent/artifacts"
+
+auth:
+  # Supported: none, bearer, basic.
+  mode: "none"
+  token: ""
+  token_file: ""
+  username: ""
+  password: ""
+  password_file: ""
+
+http:
+  request_timeout_seconds: 600
+  artifact_timeout_seconds: 1800
+  dial_timeout_seconds: 10
+  tls_handshake_timeout_seconds: 10
+  idle_conn_timeout_seconds: 90
+  # Disabled by default so an air-gapped agent does not accidentally route through HTTP_PROXY.
+  use_environment_proxy: false
+
+privilege:
+  # sudo: run the service as a limited account and elevate only privileged deployment commands.
+  # direct: invoke privileged commands directly (normally only suitable when the service itself runs as root).
+  mode: "sudo"
+  sudo_path: "/usr/bin/sudo"

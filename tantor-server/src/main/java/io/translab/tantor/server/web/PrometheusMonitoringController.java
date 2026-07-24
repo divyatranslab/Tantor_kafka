@@ -1,5 +1,6 @@
 package io.translab.tantor.server.web;
 
+import org.springframework.security.access.prepost.PreAuthorize;
 import io.translab.tantor.server.service.PrometheusMonitoringService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -19,21 +20,25 @@ public class PrometheusMonitoringController {
 
     private final PrometheusMonitoringService monitoringService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping(value = "/internal/prometheus/targets", produces = MediaType.APPLICATION_JSON_VALUE)
     public Object targets() {
         return monitoringService.prometheusTargets();
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/api/v1/monitoring/health")
     public Map<String, Object> health() {
         return Map.of("prometheusHealthy", monitoringService.prometheusHealthy());
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/api/v1/monitoring/clusters")
     public Object clusters(@RequestParam(required = false) String type) {
         return monitoringService.clusters(type);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/api/v1/monitoring/clusters/{clusterId}/overview")
     public ResponseEntity<?> overview(
             @PathVariable UUID clusterId,

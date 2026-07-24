@@ -3,6 +3,13 @@ spring:
     import: optional:file:.env[.properties]
   application:
     name: tantor-server
+    
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${TANTOR_KEYCLOAK_ISSUER_URI:https://keycloak.tantor.io/realms/Gatekeeper}
+          
   
   datasource:
     url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
@@ -38,6 +45,7 @@ server:
 
 tantor:
   security:
+    proxy-secret: ${TANTOR_PROXY_SECRET}
     encryption:
       key: ${TANTOR_ENCRYPTION_KEY:1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p}
     truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
@@ -70,3 +78,4 @@ tantor:
     exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:}
     kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
     jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:7071}
+

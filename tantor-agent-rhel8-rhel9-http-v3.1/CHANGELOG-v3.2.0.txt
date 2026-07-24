@@ -1,0 +1,26 @@
+Tantor External Discovery Agent v3.2.0 — Production Hardening
+============================================================
+
+Implemented fixes
+-----------------
+1. Startup precheck and runtime filesystem inventory use the same configured scan roots.
+2. Added discovery policies: running-only (default), running-with-offline-inventory, filesystem-only.
+3. Kafka disk metrics are taken from discovered data/log filesystem instead of always using root (/).
+4. Added localBrokerCount payload field; brokerCount remains for backend compatibility.
+5. Installer supports --service-name with systemd-safe validation.
+6. Runtime user/group must be pre-provisioned unless --create-runtime-user is explicitly used; existing identity is validated.
+7. Removed broad default scan roots; --scan-paths is mandatory.
+8. --environment and --node-name are mandatory for production installation.
+9. Unknown/custom listener security reports UNKNOWN instead of PLAINTEXT.
+10. Java-properties parsing supports continuations, escaped separators and whitespace rules.
+11. External precheck messaging no longer contains internal deployment/decommission instructions.
+12. README is generic and contains no APB/161/191 values.
+13. Installer no longer changes the delivered source binary mode before copying.
+14. Previously running nodes that disappear are reported with isRunning=false.
+15. Added --version output with build version/commit.
+
+Compatibility notes
+-------------------
+- Current backend endpoint and HTTP transport remain unchanged.
+- brokerCount is retained; backend should prefer localBrokerCount and aggregate unique node IDs for cluster totals.
+- Backend heartbeat TTL/decommission policy remains a backend responsibility and must be tested.

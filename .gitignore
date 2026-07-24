@@ -48,6 +48,8 @@ fake-bin/
 *.tgz
 
 # AI Scratch files and logs
+/scratch/
+/tantor-server/scratch/
 tantor-ui/*.txt
 tantor-ui/*.patch
 tantor-ui/audit_writes*.json

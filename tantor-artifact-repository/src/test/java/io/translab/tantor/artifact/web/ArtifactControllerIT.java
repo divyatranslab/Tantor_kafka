@@ -4,7 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -47,7 +50,11 @@ class ArtifactControllerIT {
     @Autowired
     MockMvc mockMvc;
 
+    @MockBean
+    JwtDecoder jwtDecoder;
+
     @Test
+    @WithMockUser(username = "admin", roles = "ADMIN")
     void uploadThenDownloadRoundTrip() throws Exception {
         byte[] payload = "fake-kafka-tarball-bytes".getBytes();
         MockMultipartFile file = new MockMultipartFile(

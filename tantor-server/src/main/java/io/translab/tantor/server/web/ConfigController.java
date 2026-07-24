@@ -15,12 +15,12 @@ import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.ActivityAlertService;
 import io.translab.tantor.server.service.JobService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -49,13 +49,12 @@ public class ConfigController {
     private final DiscoveryAgentRepository discoveryAgentRepository;
     private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
-
     private ResponseEntity<Map<String, Object>> unauthorized() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(Map.<String, Object>of("error", "Unauthorized"));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
@@ -181,14 +180,12 @@ public class ConfigController {
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/rolling-apply")
     public ResponseEntity<Map<String, Object>> rollingApply(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @RequestBody Map<String, Object> payload) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
-            return unauthorized();
-        }
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
 
@@ -772,16 +769,14 @@ public class ConfigController {
     }
 
     @Deprecated
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/unsafe-legacy/services/{serviceId}")
     public ResponseEntity<?> updateServiceConfig(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable UUID serviceId,
             @RequestBody ServiceConfigUpdateRequest request
     ) throws JsonProcessingException {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
-            return unauthorized();
-        }
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         ClusterServiceAssignment service = cluster.getServices() == null ? null : cluster.getServices().stream()
@@ -871,14 +866,12 @@ public class ConfigController {
         return result.toString();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/bulk")
     public ResponseEntity<?> updateConfigBulk(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @RequestBody BulkConfigRequest request) throws JsonProcessingException {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
-            return unauthorized();
-        }
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         if (request.getConfigKey() == null || !request.getConfigKey().matches("[A-Za-z0-9._-]+")) {
@@ -983,6 +976,7 @@ public class ConfigController {
         return value;
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/read")
     public ResponseEntity<Map<String, Object>> readConfig(@PathVariable UUID clusterId, @RequestBody Map<String, Object> request) {
         String nodeIdStr = String.valueOf(request.get("nodeId"));

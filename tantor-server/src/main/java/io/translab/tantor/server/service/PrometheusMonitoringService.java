@@ -204,7 +204,14 @@ public class PrometheusMonitoringService {
         Cluster cluster = clusterRepository.findWithServicesById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
 
-        List<MonitoringNodeSummary> nodes = monitoringNodes(cluster);
+        List<MonitoringNodeSummary> nodes;
+        if (isExternal(cluster)) {
+            ExternalCluster ext = externalClusterRepository.findById(cluster.getId()).orElse(null);
+            nodes = ext != null ? monitoringNodes(ext) : new ArrayList<>();
+        } else {
+            nodes = monitoringNodes(cluster);
+        }
+        
         String selectedNodeId = selectedNodeId(nodes, nodeId);
         String clusterSelector = labelSelector(cluster.getId());
         String metricSelector = labelSelector(cluster.getId(), selectedNodeId);
@@ -259,7 +266,12 @@ public class PrometheusMonitoringService {
                 cpuPercent("jvm_operatingsystem_cpuload", metricSelector)
         ));
 
-        overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
+        if (isExternal(cluster)) {
+            ExternalCluster ext = externalClusterRepository.findById(cluster.getId()).orElse(null);
+            overview.setHostMemoryUsedPercent(ext != null ? computeHostMemoryPercent(ext, selectedNodeId) : null);
+        } else {
+            overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
+        }
 
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
@@ -623,6 +635,15 @@ public class PrometheusMonitoringService {
         if (counted == 0 || totalMb <= 0) {
             return null;
         }
+        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+    }
+
+    private Double computeHostMemoryPercent(ExternalCluster cluster, String nodeId) {
+        if (cluster == null || cluster.getMemoryTotalMb() == null || cluster.getMemoryTotalMb() <= 0) {
+            return null;
+        }
+        long totalMb = cluster.getMemoryTotalMb();
+        long usedMb = cluster.getMemoryUsedMb() == null ? 0 : cluster.getMemoryUsedMb();
         return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
     }
 

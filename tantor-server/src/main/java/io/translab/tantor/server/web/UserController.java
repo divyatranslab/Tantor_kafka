@@ -4,11 +4,11 @@ import io.translab.tantor.server.domain.User;
 import io.translab.tantor.server.dto.UserDto;
 import io.translab.tantor.server.repository.UserRepository;
 import io.translab.tantor.server.audit.AuditService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -25,8 +25,6 @@ public class UserController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
-
     private UserDto.UserResponse mapToDto(User user) {
         UserDto.UserResponse dto = new UserDto.UserResponse();
         dto.setId(user.getId());
@@ -40,27 +38,21 @@ public class UserController {
         return dto;
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<List<UserDto.UserResponse>> listUsers(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
-            return ResponseEntity.status(401).build();
-        }
-        
+            ) {
         List<UserDto.UserResponse> users = userRepository.findAll().stream()
                 .map(this::mapToDto)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(users);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping
     public ResponseEntity<?> createUser(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @RequestBody UserDto.UserCreateRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
-            return ResponseEntity.status(401).build();
-        }
-
         if (userRepository.findByUsername(request.getUsername()).isPresent()) {
             return ResponseEntity.status(409).body("{\"detail\":\"Username already exists\"}");
         }
@@ -84,15 +76,12 @@ public class UserController {
         return ResponseEntity.status(201).body(mapToDto(user));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/{id}")
     public ResponseEntity<?> updateUser(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID id,
             @RequestBody UserDto.UserUpdateRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
-            return ResponseEntity.status(401).build();
-        }
-
         User user = userRepository.findById(id).orElse(null);
         if (user == null) {
             return ResponseEntity.status(404).body("{\"detail\":\"User not found\"}");
@@ -137,14 +126,11 @@ public class UserController {
         return ResponseEntity.ok(mapToDto(user));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteUser(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT)) {
-            return ResponseEntity.status(401).build();
-        }
-
         User user = userRepository.findById(id).orElse(null);
         if (user == null) {
             return ResponseEntity.status(404).body("{\"detail\":\"User not found\"}");

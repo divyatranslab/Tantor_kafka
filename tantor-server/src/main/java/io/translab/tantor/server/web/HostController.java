@@ -14,7 +14,6 @@ import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -27,6 +26,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -55,8 +55,7 @@ public class HostController {
     private final ObjectMapper objectMapper;
     private final JobService jobService;
     private final AuditService auditService;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
-
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
         Map<String, Map<String, Object>> hostsByIdentity = new LinkedHashMap<>();
@@ -66,15 +65,13 @@ public class HostController {
         return ResponseEntity.ok(List.copyOf(hostsByIdentity.values()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/check-prerequisites")
     public ResponseEntity<?> checkPrerequisites(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id,
             @RequestBody(required = false) Map<String, Object> options
     ) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
-            return unauthorized();
-        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -100,15 +97,13 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/check-ports")
     public ResponseEntity<?> checkPorts(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id,
             @RequestBody(required = false) Map<String, Object> options
     ) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
-            return unauthorized();
-        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -133,13 +128,11 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/fix-prerequisites")
     public ResponseEntity<?> fixPrerequisites(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
-            return unauthorized();
-        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
@@ -157,14 +150,12 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/reboot")
     public ResponseEntity<?> rebootHost(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id,
             @RequestBody Map<String, Object> request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_REBOOT)) {
-            return unauthorized();
-        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!Boolean.parseBoolean(String.valueOf(request.getOrDefault("confirmed", false)))) {
@@ -184,6 +175,7 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/check-prerequisites/{taskId}")
     public ResponseEntity<?> prerequisiteResult(@PathVariable String id, @PathVariable UUID taskId) {
         return taskRepository.findById(taskId)
@@ -230,13 +222,11 @@ public class HostController {
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/mark-unavailable")
     public ResponseEntity<?> markUnavailable(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_AVAILABILITY)) {
-            return unauthorized();
-        }
         return hostRepository.findById(id).map(host -> {
             String previous = host.getStatus();
             host.setStatus("OCCUPIED");
@@ -249,13 +239,11 @@ public class HostController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/mark-available")
     public ResponseEntity<?> markAvailable(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_AVAILABILITY)) {
-            return unauthorized();
-        }
         return hostRepository.findById(id).map(host -> {
             String previous = host.getStatus();
             host.setStatus("ONLINE");
@@ -267,13 +255,11 @@ public class HostController {
             return ResponseEntity.ok(hostSummary(host));
         }).orElse(ResponseEntity.notFound().build());
     }
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/approve")
     public ResponseEntity<?> approveHost(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_ONBOARDING)) {
-            return unauthorized();
-        }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
         if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
@@ -303,13 +289,11 @@ public class HostController {
     }
 
     @Transactional
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteHost(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable String id) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_REMOVE)) {
-            return unauthorized();
-        }
         return hostRepository.findById(id).map(host -> {
             Map<String, Object> oldValue = Map.of("status", String.valueOf(host.getStatus()),
                     "clusterId", String.valueOf(host.getClusterId()), "hostname", String.valueOf(host.getHostname()));
@@ -345,11 +329,7 @@ public class HostController {
             ));
         }).orElse(ResponseEntity.notFound().build());
     }
-
-    private ResponseEntity<?> unauthorized() {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-    }
-
+@PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/check-port/{port}")
     public ResponseEntity<?> checkPort(@PathVariable String id, @PathVariable int port) {
         Host host = hostRepository.findById(id).orElse(null);

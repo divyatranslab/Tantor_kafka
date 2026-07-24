@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -43,6 +44,12 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleStorage(StorageException ex) {
         log.error("Storage failure", ex);
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Storage error", ex.getMessage(), "storage-error");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        return problem(HttpStatus.FORBIDDEN, "Forbidden",
+                "The authenticated principal is not authorized for this operation", "forbidden");
     }
 
     @ExceptionHandler(Exception.class)

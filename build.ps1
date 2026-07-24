@@ -31,6 +31,11 @@ if (-Not (Test-Path $MvnCmd)) {
 
 Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 
+# 1.5. Build Shared Security Library
+Write-Host "`n=== Building Shared Security Library ===" -ForegroundColor Magenta
+cd "$PSScriptRoot\tantor-security"
+& $MvnCmd clean install
+
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-artifact-repository"

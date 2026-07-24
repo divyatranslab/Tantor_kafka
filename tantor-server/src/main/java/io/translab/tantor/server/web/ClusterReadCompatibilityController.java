@@ -2,6 +2,7 @@ package io.translab.tantor.server.web;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,11 +19,13 @@ public class ClusterReadCompatibilityController {
 
     private final ClusterController clusterController;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/overview")
     public ResponseEntity<?> overview(@PathVariable UUID id) {
         return clusterController.getClusterOverview(id);
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/nodes")
     public ResponseEntity<?> nodes(@PathVariable UUID id) {
         ResponseEntity<Map<String, Object>> response = clusterController.getCluster(id);
@@ -33,6 +36,7 @@ public class ClusterReadCompatibilityController {
         return ResponseEntity.ok(hosts instanceof List<?> list ? list : List.of());
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/brokers")
     public ResponseEntity<?> brokers(@PathVariable UUID id) {
         ResponseEntity<Map<String, Object>> response = clusterController.getClusterBrokers(id);

@@ -6,6 +6,7 @@ import io.translab.tantor.server.repository.LdapConfigRepository;
 import io.translab.tantor.server.service.LdapService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 @RestController
 @RequestMapping("/api/v1/ldap")
@@ -19,6 +20,7 @@ public class LdapController {
         this.ldapService = ldapService;
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/config")
     public ResponseEntity<LdapDTOs.LdapConfigResponse> getConfig() {
         return ldapConfigRepository.findAll().stream().findFirst()
@@ -26,6 +28,7 @@ public class LdapController {
                 .orElse(ResponseEntity.ok(null));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PutMapping("/config")
     public ResponseEntity<LdapDTOs.LdapConfigResponse> updateConfig(@RequestBody LdapDTOs.LdapConfigCreateRequest request) {
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(new LdapConfig());
@@ -53,6 +56,7 @@ public class LdapController {
         return ResponseEntity.ok(toResponse(config));
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/test")
     public ResponseEntity<LdapDTOs.LdapTestResponse> testConnection(@RequestBody LdapDTOs.LdapTestRequest request) {
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(null);

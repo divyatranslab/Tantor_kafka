@@ -1,0 +1,16 @@
+Validation Report — External Discovery Agent v3.2.0
+==================================================
+PASS: bash syntax validation
+PASS: Go unit tests
+PASS: Go race tests
+PASS: Go vet
+PASS: static Linux AMD64 build
+PASS: static Linux ARM64 build
+PASS: AMD64 --version output
+PASS: package SHA-256 verification
+
+Backend integration still required:
+- localBrokerCount compatibility
+- offline isRunning=false behavior
+- TTL/decommission behavior
+- multi-node aggregation

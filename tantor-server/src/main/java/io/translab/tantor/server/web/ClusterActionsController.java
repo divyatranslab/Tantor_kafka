@@ -5,12 +5,12 @@ import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.*;
-import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.Map;
 import java.util.UUID;
@@ -25,16 +25,12 @@ public class ClusterActionsController {
     private final JobService jobService;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
-    private final RoleAuthenticationUtil roleAuthenticationUtil;
-
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/rolling-restart")
     public ResponseEntity<Map<String, String>> startRollingRestart(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @RequestBody(required = false) RollingRestartRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        }
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     Job job = new Job();
@@ -93,13 +89,11 @@ public class ClusterActionsController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/normal-restart")
     public ResponseEntity<Map<String, String>> startNormalRestart(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        }
         return clusterRepository.findById(clusterId)
                 .map(cluster -> {
                     int count = 0;
@@ -120,15 +114,13 @@ public class ClusterActionsController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/enable-monitoring")
     public ResponseEntity<Map<String, String>> enableMonitoring(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @RequestBody MonitoringRequest request
     ) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.MONITORING_ENABLE)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        }
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     String hostId = request.hostId;
@@ -165,6 +157,7 @@ public class ClusterActionsController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/tasks/{taskId}")
     public ResponseEntity<Map<String, String>> getTaskStatus(@PathVariable UUID clusterId, @PathVariable String taskId) {
         try {
@@ -175,47 +168,39 @@ public class ClusterActionsController {
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/tasks/{taskId}/retry")
     public ResponseEntity<Void> retryTask(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable UUID taskId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         return deploymentService.retryTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/tasks/{taskId}/resume")
     public ResponseEntity<Void> resumeTask(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable UUID taskId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         return deploymentService.resumeTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/tasks/{taskId}/rollback")
     public ResponseEntity<Void> rollbackTask(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable UUID taskId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         return deploymentService.rollbackTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/tasks/{taskId}/cleanup")
     public ResponseEntity<Void> cleanupTask(
-            @RequestHeader(value = "Authorization", required = false) String authorization,
+            
             @PathVariable UUID clusterId,
             @PathVariable UUID taskId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
         return deploymentService.cleanupTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 

@@ -6,6 +6,7 @@ import io.translab.tantor.server.service.JobService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,11 +18,13 @@ public class JobController {
 
     private final JobService jobService;
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping
     public ResponseEntity<List<Job>> listJobs() {
         return ResponseEntity.ok(jobService.getAllJobs());
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}")
     public ResponseEntity<Job> getJob(@PathVariable UUID id) {
         try {
@@ -31,6 +34,7 @@ public class JobController {
         }
     }
 
+    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping("/{id}/steps")
     public ResponseEntity<List<JobStep>> getJobSteps(@PathVariable UUID id) {
         try {
@@ -41,6 +45,7 @@ public class JobController {
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/retry")
     public ResponseEntity<?> retryJob(@PathVariable UUID id) {
         try {
@@ -50,6 +55,7 @@ public class JobController {
         }
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/{id}/rollback")
     public ResponseEntity<?> rollbackJob(@PathVariable UUID id) {
         try {
