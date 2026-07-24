@@ -90,6 +90,19 @@ const artifactServiceOptions = [
   },
 ];
 
+const artifactServiceLabels: Record<string, string> = {
+  KAFKA: 'Kafka',
+  KAFKA_EXPORTER: 'Kafka Exporter',
+  JMX_EXPORTER: 'JMX Exporter',
+};
+
+const artifactServiceLabel = (serviceType: string) =>
+  artifactServiceLabels[serviceType] || serviceType
+    .toLowerCase()
+    .split('_')
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+
 export function Artifacts() {
   const { canManage } = usePermissions();
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
@@ -124,12 +137,12 @@ export function Artifacts() {
     .some(extension => file.name.toLowerCase().endsWith(extension.trim().toLowerCase()));
 
   const fetchVersions = async () => {
-    const res = await fetch('/api/v1/artifacts?serviceType=KAFKA&status=AVAILABLE');
+    const res = await fetch('/api/v1/artifacts?status=AVAILABLE&size=100');
     if (!res.ok) return;
     const data = await res.json();
     setVersions((data.content || []).map((a: any) => ({
       id: a.id,
-      service_type: a.serviceType || 'KAFKA',
+      service_type: (a.serviceType || 'KAFKA').toUpperCase(),
       version: a.version,
       available: a.status === 'AVAILABLE',
       release_date: a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '',
@@ -354,7 +367,7 @@ export function Artifacts() {
     const inUse = hostParcels.some(p => p.artifactId === ver.id && p.status !== 'REMOVED');
     if (inUse) {
       setUploadMsg({
-        text: `Remove Kafka ${ver.version} from all hosts before deleting the binary.`,
+        text: `Remove ${artifactServiceLabel(ver.service_type)} ${ver.version} from all hosts before deleting the binary.`,
         ok: false,
       });
       return;
@@ -376,7 +389,7 @@ export function Artifacts() {
         throw new Error(err.detail || err.message || err.error || 'Delete failed.');
       }
       if (expanded === ver.id) setExpanded(null);
-      setUploadMsg({ text: `Deleted Kafka ${ver.version} binary.`, ok: true });
+      setUploadMsg({ text: `Deleted ${artifactServiceLabel(ver.service_type)} ${ver.version} binary.`, ok: true });
       await refreshAll();
     } catch (e: any) {
       setUploadMsg({ text: e.message || 'Delete failed.', ok: false });
@@ -543,10 +556,11 @@ export function Artifacts() {
         </div>
       ) : (
         <div className="artifacts-list-container">
-          <h3 className="section-title">Kafka List</h3>
+          <h3 className="section-title">Artifact List</h3>
           <div className="versions-list">
             {versions.map(ver => {
-              const isOpen = expanded === ver.id;
+              const isKafkaArtifact = ver.service_type === 'KAFKA';
+              const isOpen = isKafkaArtifact && expanded === ver.id;
               const distributed = hostParcels.filter(p => p.artifactId === ver.id && p.status !== 'REMOVED').length;
               const active = hostParcels.filter(p => p.artifactId === ver.id && p.active).length;
               const deleteKey = `delete-artifact-${ver.id}`;
@@ -554,13 +568,18 @@ export function Artifacts() {
               return (
                 <div key={ver.id} className="version-card">
                   <div className="version-card-top">
-                    <button className="version-card-header" onClick={() => setExpanded(isOpen ? null : ver.id)}>
+                    <button
+                      className={`version-card-header ${isKafkaArtifact ? '' : 'non-expandable'}`}
+                      onClick={() => {
+                        if (isKafkaArtifact) setExpanded(isOpen ? null : ver.id);
+                      }}
+                    >
                       <div className="status-dot-container">
                         <span className={`status-dot ${ver.available ? 'available' : 'unavailable'}`}></span>
                       </div>
                       <div className="version-info">
                         <div className="version-title-row">
-                          <span className="version-name">Kafka {ver.version}</span>
+                          <span className="version-name">{artifactServiceLabel(ver.service_type)} {ver.version}</span>
                           {ver.available ? (
                             <span className="status-badge available">Available</span>
                           ) : (
@@ -610,13 +629,15 @@ export function Artifacts() {
                           </AnchoredMenu>
                         )}
                       </div>
-                      <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>
-                        <span className="chevron">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
-                      </div>
+                      {isKafkaArtifact && (
+                        <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>
+                          <span className="chevron">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {isOpen && (
+                  {isKafkaArtifact && isOpen && (
                     <div className="version-card-body">
                       {canManage && (
                         <div className="parcel-distribution-controls">
@@ -725,7 +746,7 @@ export function Artifacts() {
             <div className="modal-header upload-parcel-header">
               <div className="upload-parcel-heading">
                 <h2>Upload Parcel Binary</h2>
-                <p className="modal-subtitle">Upload a Kafka .tgz binary or a JMX .jar to the internal artifact repository.</p>
+                <p className="modal-subtitle">Upload a Kafka binary, Kafka Exporter binary, or JMX Exporter jar to the internal artifact repository.</p>
               </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />

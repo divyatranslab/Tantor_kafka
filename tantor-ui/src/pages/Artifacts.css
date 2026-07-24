@@ -238,6 +238,10 @@
   text-align: left;
 }
 
+.version-card-header.non-expandable {
+  cursor: default;
+}
+
 .status-dot-container {
   display: flex;
   align-items: center;
