@@ -40,9 +40,12 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
-        log.warn("Request failed", ex);
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", cleanMessage(ex)));
+    public ResponseEntity<org.springframework.http.ProblemDetail> handleRuntime(RuntimeException ex) {
+        log.error("Unexpected server error", ex);
+        org.springframework.http.ProblemDetail problem = org.springframework.http.ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred.");
+        problem.setTitle("Internal Server Error");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
     }
 
     private String cleanMessage(Exception ex) {
