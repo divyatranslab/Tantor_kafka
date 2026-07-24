@@ -584,7 +584,11 @@ public class ExternalClusterService {
         boolean isNew = cluster.getId() == null;
         cluster.setName(isNew ? report.getName().trim() : cluster.getName());
         cluster.setBootstrapServers(bootstrap);
-        cluster.setKafkaClusterId(blankToDefault(report.getKafkaClusterId(), null));
+        // Discovery agents may send partial follow-up reports. Never erase the
+        // Kafka-assigned cluster ID that was captured during registration.
+        if (report.getKafkaClusterId() != null && !report.getKafkaClusterId().isBlank()) {
+            cluster.setKafkaClusterId(report.getKafkaClusterId().trim());
+        }
         cluster.setInstallPath(blankToDefault(report.getInstallPath(), null));
         cluster.setLogDirs(blankToDefault(report.getLogDirs(), null));
         cluster.setKafkaVersion(blankToDefault(report.getKafkaVersion(), "Unknown"));
@@ -1712,6 +1716,12 @@ public class ExternalClusterService {
                 String previousStatus = cluster.getStatus();
                 Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster.getBootstrapServers());
                 boolean connected = Boolean.TRUE.equals(adminData.get("connected"));
+                String detectedKafkaClusterId = firstString(adminData, "clusterId", "kafka_cluster_id");
+                boolean kafkaClusterIdBackfilled = (cluster.getKafkaClusterId() == null || cluster.getKafkaClusterId().isBlank())
+                        && detectedKafkaClusterId != null && !detectedKafkaClusterId.isBlank();
+                if (kafkaClusterIdBackfilled) {
+                    cluster.setKafkaClusterId(detectedKafkaClusterId.trim());
+                }
                 
                 String newStatus;
                 if (!connected) {
@@ -1727,14 +1737,15 @@ public class ExternalClusterService {
                     newStatus = agentHealthy ? "SUCCESS" : "DEGRADED";
                 }
                 
-                if (!newStatus.equals(previousStatus)) {
+                boolean statusChanged = !newStatus.equals(previousStatus);
+                if (statusChanged || kafkaClusterIdBackfilled) {
                     cluster.setStatus(newStatus);
                     externalClusterRepository.save(cluster);
                     
-                    if ("DEGRADED".equals(newStatus)) {
+                    if (statusChanged && "DEGRADED".equals(newStatus)) {
                         activityAlertService.createAlert("WARNING", "External Cluster Degraded", 
                             "The Discovery Agent for external cluster '" + cluster.getName() + "' has stopped reporting, but Kafka is still reachable.", cluster.getId());
-                    } else if ("FAILED".equals(newStatus)) {
+                    } else if (statusChanged && "FAILED".equals(newStatus)) {
                         activityAlertService.createAlert("CRITICAL", "External Cluster Failed", 
                             "Kafka Admin API cannot reach external cluster '" + cluster.getName() + "'.", cluster.getId());
                     }
