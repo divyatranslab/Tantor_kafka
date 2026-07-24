@@ -21,30 +21,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @EnableConfigurationProperties(StorageProperties.class)
 public class ArtifactRepositoryApplication {
 
-    @Value("${tantor.cors.allowed-origins:http://localhost:5173,https://192.168.3.191,http://192.168.3.191}")
-    private String allowedOrigins;
-
     public static void main(String[] args) {
         SpringApplication.run(ArtifactRepositoryApplication.class, args);
-    }
-
-    @Bean
-    public WebMvcConfigurer corsConfigurer() {
-        return new WebMvcConfigurer() {
-            @Override
-            public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/**")
-                        .allowedOrigins(parseAllowedOrigins())
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                        .allowedHeaders("*");
-            }
-        };
-    }
-
-    private String[] parseAllowedOrigins() {
-        return java.util.Arrays.stream(allowedOrigins.split(","))
-                .map(String::trim)
-                .filter(origin -> !origin.isBlank())
-                .toArray(String[]::new);
     }
 }
