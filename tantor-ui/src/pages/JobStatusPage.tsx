@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/ConfirmDialog';
-import './JobStatusPage.css';
+import './JobStatusPage.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type Job = {
   id: string;
@@ -84,11 +85,11 @@ export function JobStatusPage() {
 
   const fetchJob = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}`);
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}`);
       if (res.ok) {
         setJob(await res.json());
       }
-      const stepsRes = await fetch(`/api/v1/ui/jobs/${id}/steps`);
+      const stepsRes = await apiFetch(`/api/v1/ui/jobs/${id}/steps`);
       if (stepsRes.ok) setSteps(await stepsRes.json());
     } catch (err) {
       console.error(err);
@@ -115,7 +116,7 @@ export function JobStatusPage() {
 
   const handleRetry = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
       if (res.ok) fetchJob();
     } catch (err) {
       console.error(err);
@@ -125,7 +126,7 @@ export function JobStatusPage() {
   const handleRollback = async () => {
     if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
     } catch (err) {
       console.error(err);

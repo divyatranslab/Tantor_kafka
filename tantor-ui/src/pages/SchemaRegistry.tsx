@@ -5,7 +5,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { withConnId as formatConnId } from '../lib/connections';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './DataServiceTabs.css';
+import './DataServiceTabs.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface SchemaSubject {
   subject: string;
@@ -298,7 +299,7 @@ export function SchemaRegistry() {
   /** Load all saved SR connections for the instance switcher. */
   const loadConnections = async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
       if (!res.ok) return;
       const data: SavedConnection[] = await res.json().catch(() => []);
       setSavedConnections(data);
@@ -357,7 +358,7 @@ export function SchemaRegistry() {
         ? `/api/v1/clusters/${id}/data-services/schema-registry/connections/${editingConnectionId}`
         : `/api/v1/clusters/${id}/data-services/schema-registry/connection`;
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -385,7 +386,7 @@ export function SchemaRegistry() {
   const confirmDeleteConnection = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections/${selectedConnectionId}`, {
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections/${selectedConnectionId}`, {
         method: 'DELETE'
       });
       if (!res.ok) {
@@ -403,7 +404,7 @@ export function SchemaRegistry() {
 
   const loadGlobalCompatibility = async () => {
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
       const data = await res.json().catch(() => ({}));
       if (res.ok) setGlobalCompatibility(data.compatibilityLevel || data.compatibility || 'BACKWARD');
     } catch { setGlobalCompatibility('BACKWARD'); }
@@ -415,7 +416,7 @@ export function SchemaRegistry() {
     setError(null);
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       setSummary(data);
@@ -446,7 +447,7 @@ export function SchemaRegistry() {
     setExpandedVersions(new Set());
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
@@ -521,7 +522,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(createSubject.trim())}/versions`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(createSubject.trim())}/versions`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: createSchemaType, schema: createSchema })
       });
@@ -546,7 +547,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/versions`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/versions`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: editSchemaType, schema: newSchema })
       });
@@ -554,7 +555,7 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to update schema.');
       // Also save compatibility if changed
       if (editCompatibility !== subjectCompatibility) {
-        await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
+        await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ compatibility: editCompatibility })
         });
@@ -580,7 +581,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
@@ -599,7 +600,7 @@ export function SchemaRegistry() {
     if (!canManage) return;
     setSaving(true); setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: val })
       });
@@ -615,7 +616,7 @@ export function SchemaRegistry() {
     if (!selected) return;
     setSaving(true); setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: subjectCompatibility })
       });

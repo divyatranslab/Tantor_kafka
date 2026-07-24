@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { usePolling } from '../hooks/usePolling';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
-import './JobsList.css';
+import './JobsList.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type Job = {
   id: string;
@@ -23,7 +24,7 @@ export const JobsList = () => {
     if (!silent) setLoading(true);
     setRefreshing(silent);
     try {
-      const res = await fetch('/api/v1/ui/jobs', { signal });
+      const res = await apiFetch('/api/v1/ui/jobs', { signal });
       if (res.ok) {
         const data = await res.json();
         setJobs(data);

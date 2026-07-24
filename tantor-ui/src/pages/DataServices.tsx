@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Database, Activity, Box, Server, Settings, Layers, HardDrive, CheckCircle2, X } from 'lucide-react';
 import { notifyAction } from '../components/ConfirmDialog';
-import './DataServices.css';
+import './DataServices.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 export function DataServices() {
   const [step, setStep] = useState(1);
@@ -11,7 +12,7 @@ export function DataServices() {
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/ui/hosts')
+    apiFetch('/api/v1/ui/hosts')
       .then(res => res.json())
       .then(data => setHosts(data))
       .catch(err => console.error(err));

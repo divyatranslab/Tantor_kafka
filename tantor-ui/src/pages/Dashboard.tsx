@@ -162,7 +162,8 @@ const renderTaskLegend = (props: any) => {
 };
 
 import { useAuth } from '../contexts/AuthContext';
-import { ClusterDeployment } from './ClusterDeployment';
+import { ClusterDeployment } from './ClusterDeployment';import { apiFetch } from '../lib/apiClient.ts';
+
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -187,7 +188,7 @@ export function Dashboard() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/ui/dashboard');
+      const res = await apiFetch('/api/v1/ui/dashboard');
       if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
       setDashboard(await res.json());
     } catch (e: any) {

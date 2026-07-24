@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { KeyRound, Save, TestTube, RefreshCw, X, Check } from 'lucide-react';
-import './LdapSettings.css';
+import './LdapSettings.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface LdapConfig {
   id?: string;
@@ -62,7 +63,7 @@ export function LdapSettings() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/v1/ldap/config');
+      const res = await apiFetch('/api/v1/ldap/config');
       if (res.ok) {
         const data = await res.json();
         if (data && Object.keys(data).length > 0) {
@@ -91,7 +92,7 @@ export function LdapSettings() {
         bindPassword: bindPassword || undefined,
       };
 
-      const res = await fetch('/api/v1/ldap/config', {
+      const res = await apiFetch('/api/v1/ldap/config', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -117,7 +118,7 @@ export function LdapSettings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/v1/ldap/test', {
+      const res = await apiFetch('/api/v1/ldap/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

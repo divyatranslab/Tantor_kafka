@@ -4,7 +4,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './TopNavbar.css';
-import tantorLogo from '../assets/Tantor-pink-logo.png';
+import tantorLogo from '../assets/Tantor-pink-logo.png';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterInfo {
   id: string;
@@ -51,7 +52,7 @@ export function TopNavbar() {
   useEffect(() => {
     const fetchAlerts = async () => {
       try {
-        const res = await fetch('/api/v1/ui/alerts');
+        const res = await apiFetch('/api/v1/ui/alerts');
         if (res.ok) {
           const data = await res.json();
           setAlertsCount(Array.isArray(data) ? data.length : 0);
@@ -67,7 +68,7 @@ export function TopNavbar() {
 
   // Fetch all clusters for search context
   useEffect(() => {
-    fetch('/api/v1/ui/clusters')
+    apiFetch('/api/v1/ui/clusters')
       .then(res => res.ok ? res.json() : [])
       .then(setAllClusters)
       .catch(console.error);
@@ -76,7 +77,7 @@ export function TopNavbar() {
   // Fetch topics in current cluster for search context
   useEffect(() => {
     if (activeClusterId) {
-      fetch(`/api/v1/clusters/${activeClusterId}/topics`)
+      apiFetch(`/api/v1/clusters/${activeClusterId}/topics`)
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data && Array.isArray(data.content)) {

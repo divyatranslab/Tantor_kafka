@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
+import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface PartitionSummaryDto {
   topicName: string;
@@ -41,7 +42,7 @@ export function Partitions() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Partitions are not available yet (HTTP ${res.status})`);

@@ -3,7 +3,8 @@ import {
   AlertTriangle, CheckCircle, RefreshCw,
   Shield, Activity
 } from 'lucide-react';
-import './Alerts.css';
+import './Alerts.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface AlertRow {
   id: string;
@@ -29,7 +30,7 @@ export function Alerts() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/ui/alerts');
+      const res = await apiFetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
     } catch (e: any) {

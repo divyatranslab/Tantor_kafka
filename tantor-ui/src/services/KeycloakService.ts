@@ -9,8 +9,6 @@ const keycloak = new Keycloak({
 export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
 
 let initializationPromise: Promise<boolean> | undefined;
-let authenticatedFetchInstalled = false;
-let nativeFetch: typeof window.fetch | undefined;
 
 const currentRedirectUri = () => window.location.href;
 
@@ -68,29 +66,3 @@ export const getValidToken = async () => {
   }
 };
 
-export const installAuthenticatedFetch = () => {
-  if (authenticatedFetchInstalled) return;
-
-  nativeFetch = window.fetch.bind(window);
-  authenticatedFetchInstalled = true;
-
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const request = input instanceof Request ? input : undefined;
-    const url = new URL(request?.url || input.toString(), window.location.origin);
-    const headers = new Headers(init?.headers || request?.headers);
-
-    if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
-      if (isAuthEnabled()) {
-        const token = await getValidToken();
-        if (token) {
-          headers.set('Authorization', `Bearer ${token}`);
-        }
-      }
-    }
-
-    return nativeFetch!(input, {
-      ...init,
-      headers,
-    });
-  };
-};

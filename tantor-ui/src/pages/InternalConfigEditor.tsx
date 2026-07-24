@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
-import './ConfigVersioning.css';
+import './ConfigVersioning.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface StaticConfigFile {
   id: string;
@@ -96,7 +97,7 @@ export function InternalConfigEditor() {
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config`);
+      const response = await apiFetch(`/api/v1/clusters/${id}/config`);
       if (response.ok) setPayload(await response.json());
     } finally {
       setLoading(false);
@@ -143,7 +144,7 @@ export function InternalConfigEditor() {
 
   const fetchVersions = async (serviceId?: string) => {
     if (!serviceId) { setVersions([]); return; }
-    const response = await fetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
+    const response = await apiFetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
     if (response.ok) setVersions(await response.json());
   };
 
@@ -185,7 +186,7 @@ export function InternalConfigEditor() {
     if (!selectedFile?.serviceId) return;
     setWorking('preview');
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
@@ -215,7 +216,7 @@ export function InternalConfigEditor() {
     if (!selectedFile?.serviceId || !preview?.valid) return;
     setWorking('save');
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
@@ -231,7 +232,7 @@ export function InternalConfigEditor() {
     if (!canManage) return;
     setWorking(`${action}-${version.id}`);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: action === 'apply' ? JSON.stringify({ restart }) : undefined,

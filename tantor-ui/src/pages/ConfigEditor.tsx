@@ -5,7 +5,8 @@ import { InternalConfigEditor } from './InternalConfigEditor';
 import { usePermissions } from '../hooks/usePermissions';
 import { notifyAction } from '../components/ConfirmDialog';
 import './ConfigEditor.css';
-import './ConfigVersioning.css';
+import './ConfigVersioning.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterInfo {
   id: string;
@@ -66,7 +67,7 @@ export function ConfigEditor() {
   useEffect(() => {
     let cancelled = false;
     setLoadingCluster(true);
-    fetch(`/api/v1/ui/clusters/${id}`)
+    apiFetch(`/api/v1/ui/clusters/${id}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         if (!cancelled) setCluster(data);
@@ -120,7 +121,7 @@ function ExternalConfigEditor() {
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config`);
+      const response = await apiFetch(`/api/v1/clusters/${id}/config`);
       if (response.ok) {
         const payload: ConfigPayload = await response.json();
         setTopology(payload.serviceTopology || []);
@@ -163,7 +164,7 @@ function ExternalConfigEditor() {
     setReadingConfig(true);
     setReadStatus('Initiating read_config task...');
     try {
-      const startRes = await fetch(`/api/v1/clusters/${id}/config/read`, {
+      const startRes = await apiFetch(`/api/v1/clusters/${id}/config/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId })
@@ -185,7 +186,7 @@ function ExternalConfigEditor() {
       while (!complete && isMounted.current) {
         await new Promise(r => setTimeout(r, 2000));
         if (!isMounted.current) break;
-        const statusRes = await fetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
+        const statusRes = await apiFetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
         if (!statusRes.ok) break;
         if (!isMounted.current) break;
         const statusData = await statusRes.json();
@@ -291,7 +292,7 @@ function ExternalConfigEditor() {
     
     setApplying(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/rolling-apply`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/rolling-apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

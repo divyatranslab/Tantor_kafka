@@ -4,7 +4,8 @@ import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check } from '
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './Monitoring.css';
+import './Monitoring.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface MonitoringNode {
   nodeId?: string | null;
@@ -121,7 +122,7 @@ export function Monitoring() {
       setSelectedNodeId('');
       return;
     }
-    fetch(`/api/v1/ui/clusters/${selectedClusterId}`)
+    apiFetch(`/api/v1/ui/clusters/${selectedClusterId}`)
       .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
@@ -155,7 +156,7 @@ export function Monitoring() {
     setLoading(true);
     setError(null);
     try {
-      const clustersRes = await fetch(`/api/v1/monitoring/clusters?type=${selectedType}`);
+      const clustersRes = await apiFetch(`/api/v1/monitoring/clusters?type=${selectedType}`);
       let clusterList: MonitoringCluster[] = [];
       if (clustersRes.ok) {
         clusterList = await clustersRes.json();
@@ -194,7 +195,7 @@ export function Monitoring() {
         params.set('nodeId', selectedNodeId);
       }
       const query = params.toString();
-      const res = await fetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`, { signal });
+      const res = await apiFetch(`/api/v1/monitoring/clusters/${selectedClusterId}/overview${query ? `?${query}` : ''}`, { signal });
       if (res.ok) {
         const data = await res.json();
         setOverview(data);

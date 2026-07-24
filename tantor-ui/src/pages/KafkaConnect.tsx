@@ -5,7 +5,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/ConfirmDialog';
 import { withConnId as formatConnId } from '../lib/connections';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './DataServiceTabs.css';
+import './DataServiceTabs.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ConnectorRow {
   name: string;
@@ -175,7 +176,7 @@ export function KafkaConnect() {
   // ── Load all connections (for instance switcher) ──────────────
   const loadConnections = async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
       if (!res.ok) return;
       const data: SavedConnection[] = await res.json().catch(() => []);
       setSavedConnections(data);
@@ -239,7 +240,7 @@ export function KafkaConnect() {
         ? `/api/v1/clusters/${id}/data-services/kafka-connect/connections/${editingConnectionId}`
         : `/api/v1/clusters/${id}/data-services/kafka-connect/connection`;
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -266,7 +267,7 @@ export function KafkaConnect() {
     
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections/${selectedConnectionId}`, {
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections/${selectedConnectionId}`, {
         method: 'DELETE'
       });
       if (!res.ok) {
@@ -287,7 +288,7 @@ export function KafkaConnect() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       setSummary(data);
@@ -347,7 +348,7 @@ export function KafkaConnect() {
       const payloads = connectorPayloads();
       let deployed = 0;
       for (const body of payloads) {
-        const res = await fetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/connectors'), {
+        const res = await apiFetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/connectors'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
         const data = await res.json().catch(() => ({}));
@@ -368,7 +369,7 @@ export function KafkaConnect() {
       const baseUrl = action === 'delete'
         ? `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}`
         : `/api/v1/clusters/${id}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}/${action}`;
-      const res = await fetch(withConnId(baseUrl), {
+      const res = await apiFetch(withConnId(baseUrl), {
         method: action === 'delete' ? 'DELETE' : 'PUT'
       });
       const data = await res.json().catch(() => ({}));

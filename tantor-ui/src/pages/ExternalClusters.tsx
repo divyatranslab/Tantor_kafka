@@ -13,7 +13,8 @@ import {
   X,
   Wifi,
 } from 'lucide-react';
-import './ExternalClusters.css';
+import './ExternalClusters.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface BootstrapResult {
   name?: string;
@@ -130,7 +131,7 @@ export function ExternalClusters() {
   const loadAgents = async (signal?: AbortSignal) => {
     setAgentsLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/agents', { signal });
+      const res = await apiFetch('/api/v1/ui/external-clusters/agents', { signal });
       if (res.ok) setAgents(await res.json());
     } catch (e) {
       console.error(e);
@@ -178,7 +179,7 @@ export function ExternalClusters() {
     setBanner('');
     setBootstrapResult(null);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
+      const res = await apiFetch('/api/v1/ui/external-clusters/bootstrap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -266,7 +267,7 @@ export function ExternalClusters() {
         selectedAgents: selectedAgents
       };
 
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
+      const res = await apiFetch('/api/v1/ui/external-clusters/bootstrap/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

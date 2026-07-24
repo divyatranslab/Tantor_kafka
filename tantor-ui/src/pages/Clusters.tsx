@@ -4,7 +4,8 @@ import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLi
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
-import './Clusters.css';
+import './Clusters.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterHost {
   hostId?: string;
@@ -61,7 +62,7 @@ export function Clusters() {
   const fetchClusters = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/clusters');
+      const res = await apiFetch('/api/v1/ui/clusters');
       if (res.ok) {
         const data: ClusterInfo[] = await res.json();
         const visibleData = data.map(cluster => cluster.mode === 'EXTERNAL'
@@ -94,7 +95,7 @@ export function Clusters() {
       .forEach(cluster => {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 7000);
-        fetch(`/api/v1/ui/clusters/${cluster.id}`, { signal: controller.signal })
+        apiFetch(`/api/v1/ui/clusters/${cluster.id}`, { signal: controller.signal })
           .then(res => res.ok ? res.json() : Promise.reject(new Error('Kafka health request failed')))
           .then((fresh: ClusterInfo) => {
             setClusters(prev => prev.map(current => current.id === cluster.id
@@ -144,7 +145,7 @@ export function Clusters() {
     if (!canManage) return;
     if (!(await confirmAction(`Delete cluster '${name}' and clean it from assigned VM(s)?`))) return;
     try {
-      const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setClusters(prev =>
           prev
@@ -171,7 +172,7 @@ export function Clusters() {
       : `Start rolling restart for '${cluster.name}'?`;
     if (!(await confirmAction(warning))) return;
     try {
-      const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, {
+      const res = await apiFetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmSingleNode: nodeCount === 1 }),
       });

@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';import { apiFetch } from '../lib/apiClient.ts';
+
 
 export interface Cluster {
   id: string;
@@ -40,7 +41,7 @@ export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/ui/clusters')
+    apiFetch('/api/v1/ui/clusters')
       .then(res => {
         if (!res.ok) {
           throw new Error(`Failed to fetch clusters: ${res.status} ${res.statusText}`);

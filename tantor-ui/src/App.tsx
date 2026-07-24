@@ -32,7 +32,8 @@ import { JobsList } from './pages/JobsList';
 import { JobStatusPage } from './pages/JobStatusPage';
 import { ClusterSecurity } from './pages/ClusterSecurity';
 import { usePermissions } from './hooks/usePermissions';
-import './App.css';
+import './App.css';import { apiFetch } from './lib/apiClient.ts';
+
 
 /** Guard component: redirects External clusters away from Deployment Logs */
 function DeploymentLogsGuard() {
@@ -43,7 +44,7 @@ function DeploymentLogsGuard() {
 
   useEffect(() => {
     if (!id) { setChecked(true); setAllowed(false); return; }
-    fetch(`/api/v1/ui/clusters/${id}`)
+    apiFetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(data => {
         if (data.mode === 'EXTERNAL') {

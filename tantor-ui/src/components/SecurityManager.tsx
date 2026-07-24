@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
-} from '../lib/api';
+} from '../lib/apiClient';
 import { usePermissions } from '../hooks/usePermissions';
 
 interface Props {

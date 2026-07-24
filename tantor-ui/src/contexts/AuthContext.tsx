@@ -4,7 +4,6 @@ import {
   getKeycloak,
   getToken,
   initKeycloak,
-  installAuthenticatedFetch,
   isAuthEnabled,
   login,
   logout as keycloakLogout,
@@ -108,7 +107,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!authEnabled) {
-      installAuthenticatedFetch();
       setIsInitializing(false);
       setIsAuthenticated(true);
       setDecodedToken(devDecodedToken());
@@ -133,7 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        installAuthenticatedFetch();
         syncAuthState();
         refreshTimer = window.setInterval(() => {
           void refreshToken();

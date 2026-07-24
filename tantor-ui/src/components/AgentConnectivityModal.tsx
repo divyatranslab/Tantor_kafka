@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { parseIpList } from '../lib/hosts';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
-import { confirmAction, notifyAction } from './ConfirmDialog';
+import { confirmAction, notifyAction } from './ConfirmDialog';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type AgentConnectivityModalProps = {
   onClose: () => void;
@@ -15,7 +16,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
 
   const fetchHosts = async () => {
     try {
-      const res = await fetch('/api/v1/ui/hosts');
+      const res = await apiFetch('/api/v1/ui/hosts');
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
@@ -31,7 +32,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
   const deleteHost = async (id: string) => {
     if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
@@ -100,7 +101,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     setConnectingAgents(true);
     try {
       const results = await Promise.allSettled(
-        selectedIds.map(id => fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
+        selectedIds.map(id => apiFetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
       );
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { usePolling } from '../hooks/usePolling';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
-import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
+import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/apiClient';
+import { apiFetch } from '../lib/apiClient.ts';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './DeploymentLogs.css';
 

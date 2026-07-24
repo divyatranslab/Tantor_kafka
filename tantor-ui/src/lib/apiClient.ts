@@ -1,18 +1,25 @@
 import type { UserResponse } from '../types/index.ts';
 import { getValidToken } from '../services/KeycloakService.ts';
 
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
+export async function apiFetch(url: string | URL, options?: RequestInit): Promise<Response> {
   const token = await getValidToken();
-  const headers = new Headers(options.headers || {});
+  const headers = new Headers(options?.headers || {});
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  headers.set('Content-Type', 'application/json');
+  
+  if (!headers.has('Content-Type') && !(options?.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
 
-  const res = await fetch(url, { ...options, headers });
+  return fetch(url, { ...options, headers });
+}
+
+async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const res = await apiFetch(url, options);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw { response: { data: errorData } };
+    throw new Error(errorData.detail || errorData.message || 'API Error');
   }
   const text = await res.text();
   return text ? JSON.parse(text) : null;

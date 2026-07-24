@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { notifyAction } from '../components/ConfirmDialog';
-import './ClusterNodes.css';
+import './ClusterNodes.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterNode {
   hostId: string;
@@ -33,7 +34,7 @@ export function ClusterNodes() {
   const fetchNodes = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/nodes`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/nodes`);
       if (!res.ok) throw new Error('Failed to fetch nodes');
       const data = await res.json();
       setNodes(data || []);
@@ -51,7 +52,7 @@ export function ClusterNodes() {
     setBinding(true);
     try {
       for (const [host, agentId] of Object.entries(selectedAgents)) {
-        await fetch(`/api/v1/ui/clusters/${id}/bind-agent`, {
+        await apiFetch(`/api/v1/ui/clusters/${id}/bind-agent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ host, agentId }),

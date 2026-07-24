@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, Plus, Shield, Eye, Trash2, Key, Check, X } from 'lucide-react';
-import { getUsers, createAuthUser, updateAuthUser, deleteAuthUser } from '../lib/api.ts';
+import { getUsers, createAuthUser, updateAuthUser, deleteAuthUser } from '../lib/apiClient.ts';
 import type { UserResponse } from '../types/index.ts';
 import { confirmAction } from '../components/ConfirmDialog';
 import './UserManagement.css';
@@ -38,7 +38,7 @@ export default function UserManagement() {
       setNewUser({ username: '', password: '', role: 'monitor' });
       fetchUsers();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create user';
+      const msg = (err as Error).message || 'Failed to create user';
       setError(msg);
     } finally {
       setCreating(false);
@@ -51,7 +51,7 @@ export default function UserManagement() {
       await updateAuthUser(user.id, { role: newRole });
       fetchUsers();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update role';
+      const msg = (err as Error).message || 'Failed to update role';
       setError(msg);
     }
   };
@@ -61,7 +61,7 @@ export default function UserManagement() {
       await updateAuthUser(user.id, { is_active: !user.is_active });
       fetchUsers();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update status';
+      const msg = (err as Error).message || 'Failed to update status';
       setError(msg);
     }
   };
@@ -72,7 +72,7 @@ export default function UserManagement() {
       await deleteAuthUser(user.id);
       fetchUsers();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to delete user';
+      const msg = (err as Error).message || 'Failed to delete user';
       setError(msg);
     }
   };
@@ -84,7 +84,7 @@ export default function UserManagement() {
       setEditingPassword(null);
       setNewPassword('');
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to change password';
+      const msg = (err as Error).message || 'Failed to change password';
       setError(msg);
     }
   };
