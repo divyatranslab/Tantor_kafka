@@ -1445,7 +1445,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       }} />
                     </label>
                     <button type="button" className="cd-custom-btn-download" onClick={downloadCustomTemplate}>
-                      <Download size={16} /> Download examples
+                      <Download size={16} /> Download Template
                     </button>
                   </div>
                 </div>
