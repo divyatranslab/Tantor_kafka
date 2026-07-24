@@ -203,7 +203,7 @@ class ExternalClusterServiceTest {
                 mock(AuditService.class),
                 mock(EncryptionService.class),
                 mock(TruststoreStorageService.class),
-                null
+                mock(PrometheusMonitoringService.class)
         );
     }
 }
