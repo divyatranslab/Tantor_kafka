@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ui/audit")
 @RequiredArgsConstructor

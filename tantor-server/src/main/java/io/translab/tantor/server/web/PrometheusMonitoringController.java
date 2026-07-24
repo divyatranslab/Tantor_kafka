@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 import java.util.UUID;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequiredArgsConstructor
 public class PrometheusMonitoringController {

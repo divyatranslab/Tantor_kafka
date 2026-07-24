@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/data-services")
 @RequiredArgsConstructor

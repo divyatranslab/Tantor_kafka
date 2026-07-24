@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/consumer-groups")
 @RequiredArgsConstructor

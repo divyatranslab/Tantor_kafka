@@ -18,6 +18,17 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(Map.of("message", cleanMessage(ex)));
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidationExceptions(org.springframework.web.bind.MethodArgumentNotValidException ex) {
+        String errorMessage = ex.getBindingResult().getAllErrors().stream()
+                .map(org.springframework.validation.ObjectError::getDefaultMessage)
+                .findFirst()
+                .orElse("Validation failed");
+        // We use 'message' or 'error' depending on what the UI expected, but UI generally handles both if we use standard error objects, or we can use "message" and "error".
+        // Let's use both to be safe for all endpoints.
+        return ResponseEntity.badRequest().body(Map.of("message", errorMessage, "error", errorMessage));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("Data integrity violation", ex);

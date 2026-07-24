@@ -36,6 +36,7 @@ import java.util.UUID;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ui/clusters")
 @RequiredArgsConstructor
@@ -279,12 +280,11 @@ public class ClusterController {
     public ResponseEntity<?> bindAgent(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable java.util.UUID id,
-            @RequestBody Map<String, Object> request) {
+            @jakarta.validation.Valid @RequestBody io.translab.tantor.server.dto.BindAgentRequest request) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.BIND_AGENT)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
-        String agentIdStr = (String) request.get("agentId");
-        if (agentIdStr == null || agentIdStr.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "Agent ID required"));
+        String agentIdStr = request.getAgentId();
         
         Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
         if (extClusterOpt.isEmpty()) return ResponseEntity.notFound().build();

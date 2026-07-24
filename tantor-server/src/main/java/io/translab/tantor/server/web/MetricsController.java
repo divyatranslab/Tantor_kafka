@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ui/clusters")
 @RequiredArgsConstructor

@@ -38,6 +38,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ui/hosts")
 @RequiredArgsConstructor
@@ -161,15 +162,12 @@ public class HostController {
     public ResponseEntity<?> rebootHost(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable String id,
-            @RequestBody Map<String, Object> request) {
+            @jakarta.validation.Valid @RequestBody io.translab.tantor.server.dto.HostRebootRequest request) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_REBOOT)) {
             return unauthorized();
         }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
-        if (!Boolean.parseBoolean(String.valueOf(request.getOrDefault("confirmed", false)))) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Explicit reboot confirmation is required."));
-        }
         if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE before reboot can be scheduled."));
         }
