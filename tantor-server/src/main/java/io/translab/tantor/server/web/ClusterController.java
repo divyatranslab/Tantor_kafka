@@ -791,37 +791,28 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
-        if (extClusterOpt.isPresent()) {
-            clusterRepository.findById(id)
-                    .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
-                    .ifPresent(this::markClusterDeleted);
-            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
-            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_DELETED", "CLUSTER", extCluster.getId().toString(),
-                    extCluster.getId(), "SUCCESS", null, null, null,
-                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+
+        java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
+        if (external.isPresent()) {
+            ExternalCluster cluster = external.get();
+            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_DELETED");
+            externalClusterService.deleteExternalCluster(id);
             activityAlertService.logActivity("INFO", "Deleted external cluster", id);
             return ResponseEntity.ok().build();
         }
 
-        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
-        if (optionalCluster.isPresent()) {
-            Cluster cluster = optionalCluster.get();
-            if ("EXTERNAL".equals(cluster.getMode())) {
-                markClusterDeleted(cluster);
-                activityAlertService.logActivity("INFO", "Deleted external cluster", id);
-            } else {
-                if (initiateClusterCleanup(cluster)) {
-                    activityAlertService.logActivity("INFO", "Initiated cleanup for cluster", id);
-                } else {
-                    markClusterDeleted(cluster);
-                    activityAlertService.logActivity("INFO", "Deleted cluster with no host assignments", id);
-                }
-            }
-            return ResponseEntity.ok().build();
-        } 
+        java.util.Optional<Cluster> existing = clusterRepository.findById(id);
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
 
-        return ResponseEntity.notFound().build();
+        Cluster cluster = existing.get();
+        boolean cleanupScheduled = !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                && initiateClusterCleanup(cluster);
+        hardDeleteCluster(cluster, "CLUSTER_DELETED", cleanupScheduled);
+        activityAlertService.logActivity("INFO",
+                cleanupScheduled ? "Deleted cluster after dispatching VM cleanup" : "Deleted cluster", id);
+        return ResponseEntity.ok().build();
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -832,36 +823,30 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        java.util.Optional<io.translab.tantor.server.domain.ExternalCluster> extClusterOpt = externalClusterRepository.findById(id);
-        if (extClusterOpt.isPresent()) {
-            clusterRepository.findById(id)
-                    .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
-                    .ifPresent(this::markClusterDeleted);
-            io.translab.tantor.server.domain.ExternalCluster extCluster = externalClusterService.deleteExternalCluster(id).orElse(extClusterOpt.get());
-            auditService.record("CLUSTER_CHANGE", "EXTERNAL_CLUSTER_FORCE_DELETED", "CLUSTER", extCluster.getId().toString(),
-                    extCluster.getId(), "SUCCESS", null, null, null,
-                    Map.of("clusterName", extCluster.getName(), "createdBy", extCluster.getCreatedBy()));
+
+        java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
+        if (external.isPresent()) {
+            ExternalCluster cluster = external.get();
+            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_FORCE_DELETED");
+            externalClusterService.deleteExternalCluster(id);
             activityAlertService.logActivity("INFO", "Force-deleted external cluster", id);
             return ResponseEntity.ok().build();
         }
 
-        java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
-        if (optionalCluster.isPresent()) {
-            Cluster cluster = optionalCluster.get();
-            if (cluster.getServices() == null || cluster.getServices().isEmpty() || "EXTERNAL".equals(cluster.getMode())) {
-                markClusterDeleted(cluster);
-                activityAlertService.logActivity("INFO", "Force-deleted cluster without VM cleanup task", id);
-            } else {
-                activityAlertService.logActivity("WARN", "Force-delete requested; VM cleanup task dispatched before deleting cluster", id);
-                initiateClusterCleanup(cluster);
-                markClusterDeleted(cluster);
-            }
-            return ResponseEntity.ok().build();
-        } 
+        java.util.Optional<Cluster> existing = clusterRepository.findById(id);
+        if (existing.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
 
-        return ResponseEntity.notFound().build();
+        Cluster cluster = existing.get();
+        boolean cleanupScheduled = cluster.getServices() != null && !cluster.getServices().isEmpty()
+                && !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                && initiateClusterCleanup(cluster);
+        hardDeleteCluster(cluster, "CLUSTER_FORCE_DELETED", cleanupScheduled);
+        activityAlertService.logActivity("WARN",
+                cleanupScheduled ? "Force-deleted cluster after dispatching VM cleanup" : "Force-deleted cluster", id);
+        return ResponseEntity.ok().build();
     }
-
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/upgrade")
     public ResponseEntity<Map<String, String>> upgradeCluster(
@@ -1175,6 +1160,8 @@ public class ClusterController {
         if (request.getName() == null || request.getName().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Cluster name is required."));
         }
+        clusterRepository.findByNameAndStatus(request.getName(), "DELETED")
+                .forEach(cluster -> clusterRepository.purgeById(cluster.getId()));
         if (clusterRepository.findByNameAndStatusNot(request.getName(), "DELETED").isPresent()) {
             return ResponseEntity.badRequest().body(Map.of("error", "A non-deleted cluster with this name already exists."));
         }
@@ -2478,11 +2465,36 @@ public class ClusterController {
         return true;
     }
 
-    private void markClusterDeleted(Cluster cluster) {
-        cluster.setStatus("DELETED");
-        cluster.setDeletedAt(java.time.Instant.now());
+    private void hardDeleteCluster(Cluster cluster, String action, boolean cleanupScheduled) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("clusterName", cluster.getName());
+        details.put("kafkaClusterId", cluster.getKafkaClusterId());
+        details.put("kafkaVersion", cluster.getKafkaVersion());
+        details.put("mode", cluster.getMode());
+        details.put("environment", cluster.getEnvironment());
+        details.put("bootstrapServers", cluster.getBootstrapServers());
+        details.put("createdAt", cluster.getCreatedAt());
+        details.put("cleanupScheduled", cleanupScheduled);
+
+        auditService.record("CLUSTER_CHANGE", action, "CLUSTER", cluster.getId().toString(),
+                cluster.getId(), "SUCCESS", null, null, null, details);
         clearClusterHostAssignments(cluster);
-        clusterRepository.save(cluster);
+        clusterRepository.purgeById(cluster.getId());
+    }
+
+    private void recordExternalClusterDeletion(ExternalCluster cluster, String action) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("clusterName", cluster.getName());
+        details.put("kafkaClusterId", cluster.getKafkaClusterId());
+        details.put("kafkaVersion", cluster.getKafkaVersion());
+        details.put("mode", cluster.getKafkaMode());
+        details.put("environment", cluster.getEnvironment());
+        details.put("bootstrapServers", cluster.getBootstrapServers());
+        details.put("createdAt", cluster.getCreatedAt());
+        details.put("createdBy", cluster.getCreatedBy());
+
+        auditService.record("CLUSTER_CHANGE", action, "CLUSTER", cluster.getId().toString(),
+                cluster.getId(), "SUCCESS", null, null, null, details);
     }
 
     private void clearClusterHostAssignments(Cluster cluster) {

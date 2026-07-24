@@ -7,10 +7,24 @@ import java.util.UUID;
 
 public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     java.util.List<Cluster> findByStatusNot(String status);
+    java.util.List<Cluster> findByNameAndStatus(String name, String status);
     java.util.Optional<Cluster> findByNameAndStatusNot(String name, String status);
     java.util.List<Cluster> findByModeAndStatusNot(String mode, String status);
     java.util.Optional<Cluster> findByModeAndNameAndStatusNot(String mode, String name, String status);
     java.util.Optional<Cluster> findByModeAndBootstrapServersAndStatusNot(String mode, String bootstrapServers, String status);
     @EntityGraph(attributePaths = "services")
     java.util.Optional<Cluster> findWithServicesById(UUID id);
+
+    @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
+    @org.springframework.data.jpa.repository.Query(value = """
+            WITH cleared_hosts AS (
+                UPDATE kf_hosts SET cluster_id = NULL WHERE cluster_id = :clusterId RETURNING id
+            ), deleted_connections AS (
+                DELETE FROM kf_data_service_connections WHERE cluster_id = :clusterId RETURNING id
+            ), deleted_nodes AS (
+                DELETE FROM kf_nodes WHERE cluster_id = :clusterId RETURNING id
+            )
+            DELETE FROM kf_clusters WHERE id = :clusterId
+            """, nativeQuery = true)
+    int purgeById(@org.springframework.data.repository.query.Param("clusterId") UUID clusterId);
 }

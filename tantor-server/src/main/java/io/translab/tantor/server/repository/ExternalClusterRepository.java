@@ -13,6 +13,7 @@ public interface ExternalClusterRepository extends JpaRepository<ExternalCluster
     Optional<ExternalCluster> findByName(String name);
     Optional<ExternalCluster> findByKafkaClusterId(String kafkaClusterId);
     Optional<ExternalCluster> findByBootstrapServers(String bootstrapServers);
+    List<ExternalCluster> findByStatus(String status);
     List<ExternalCluster> findByStatusNot(String status);
     Optional<ExternalCluster> findByNameAndStatusNot(String name, String status);
     Optional<ExternalCluster> findByBootstrapServersAndStatusNot(String bootstrapServers, String status);

@@ -260,6 +260,7 @@ public class ExternalClusterService {
 
         // Create the ExternalCluster entity based on AdminClient data (source of truth)
         String clusterId = String.valueOf(inspection.get("clusterId"));
+        purgeDeletedExternalClusterRemnants(clusterId, request.getName(), bootstrap);
         savedCluster = findReusableExternalCluster(clusterId, request.getName(), bootstrap).orElseGet(ExternalCluster::new);
         savedCluster.setName(request.getName() != null ? request.getName().trim() : savedCluster.getName());
         savedCluster.setBootstrapServers(mergeBootstrapServers(savedCluster.getBootstrapServers(), bootstrap));
@@ -543,21 +544,22 @@ public class ExternalClusterService {
         }
 
         ExternalCluster cluster = clusterOpt.get();
-        cluster.setStatus("DELETED");
-        cluster.setIsRunning(false);
-        ExternalCluster saved = externalClusterRepository.save(cluster);
-
-        externalClusterNodeRepository.deleteByClusterId(id);
 
         List<DiscoveryAgent> linkedAgents = discoveryAgentRepository.findByClusterId(id);
         for (DiscoveryAgent agent : linkedAgents) {
             agent.setClusterId(null);
         }
         discoveryAgentRepository.saveAll(linkedAgents);
+        externalClusterNodeRepository.deleteByClusterId(id);
+        pendingDiscoveries.entrySet().removeIf(entry -> matchesExternalCluster(entry.getValue(), cluster));
 
-        pendingDiscoveries.entrySet().removeIf(entry -> matchesExternalCluster(entry.getValue(), saved));
+        // Remove both the inventory mirror and the external source row. Audit rows
+        // intentionally remain independent and retain the deleted cluster details.
+        clusterRepository.purgeById(id);
+        externalClusterRepository.delete(cluster);
+        externalClusterRepository.flush();
 
-        return Optional.of(saved);
+        return Optional.of(cluster);
     }
 
     @Transactional
@@ -913,32 +915,20 @@ public class ExternalClusterService {
     }
 
     private Optional<ExternalCluster> findReusableExternalCluster(String kafkaClusterId, String name, String bootstrapServers) {
-        Optional<ExternalCluster> activeCluster = findExternalCluster(kafkaClusterId, name, bootstrapServers);
-        if (activeCluster.isPresent()) {
-            return activeCluster;
-        }
-        if (kafkaClusterId != null && !kafkaClusterId.isBlank()) {
-            Optional<ExternalCluster> byKafkaId = externalClusterRepository.findByKafkaClusterId(kafkaClusterId.trim());
-            if (byKafkaId.isPresent()) {
-                return byKafkaId;
-            }
-        }
-        if (bootstrapServers != null && !bootstrapServers.isBlank()) {
-            Optional<ExternalCluster> byBootstrap = externalClusterRepository.findByBootstrapServers(bootstrapServers.trim());
-            if (byBootstrap.isPresent()) {
-                return byBootstrap;
-            }
-            for (ExternalCluster cluster : externalClusterRepository.findAll()) {
-                if (!"DELETED".equalsIgnoreCase(cluster.getStatus())
-                        && bootstrapServersOverlap(cluster.getBootstrapServers(), bootstrapServers)) {
-                    return Optional.of(cluster);
-                }
-            }
-        }
-        if (name != null && !name.isBlank()) {
-            return externalClusterRepository.findByName(name.trim());
-        }
-        return Optional.empty();
+        // Deleted clusters are never reused: a reconnect must receive a fresh UUID
+        // and fresh createdAt timestamp instead of reviving historical state.
+        return findExternalCluster(kafkaClusterId, name, bootstrapServers);
+    }
+
+    private void purgeDeletedExternalClusterRemnants(String kafkaClusterId, String name, String bootstrapServers) {
+        List<UUID> staleIds = externalClusterRepository.findByStatus("DELETED").stream()
+                .filter(cluster -> safeEquals(cluster.getKafkaClusterId(), kafkaClusterId)
+                        || safeEquals(cluster.getName(), name)
+                        || bootstrapServersOverlap(cluster.getBootstrapServers(), bootstrapServers))
+                .map(ExternalCluster::getId)
+                .filter(id -> id != null)
+                .toList();
+        staleIds.forEach(this::deleteExternalCluster);
     }
 
     private Map<String, Object> toSummary(ExternalCluster cluster) {
@@ -1552,6 +1542,7 @@ public class ExternalClusterService {
         List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("name", cluster.getName());
+        details.put("kafkaClusterId", cluster.getKafkaClusterId());
         details.put("bootstrapServers", cluster.getBootstrapServers());
         details.put("kafkaVersion", blankToDefault(cluster.getKafkaVersion(), "Unknown"));
         details.put("kafkaMode", blankToDefault(cluster.getKafkaMode(), "Unknown"));

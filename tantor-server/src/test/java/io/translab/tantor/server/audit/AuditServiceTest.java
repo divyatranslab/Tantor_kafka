@@ -50,4 +50,17 @@ class AuditServiceTest {
         clusterEvent.setResourceId("cluster-9");
         assertThat(service.displayResourceId(clusterEvent)).isEqualTo("cluster-9");
     }
+
+    @Test
+    void readsKafkaClusterIdFromDeletionSnapshotAfterClusterRowIsGone() {
+        AuditLogRepository repository = mock(AuditLogRepository.class);
+        AuditService service = new AuditService(repository, new ObjectMapper());
+        AuditLog event = new AuditLog();
+        event.setResourceType("CLUSTER");
+        event.setResourceId(java.util.UUID.randomUUID().toString());
+        event.setDetails("{\"clusterName\":\"deleted-cluster\",\"kafkaClusterId\":\"kafka-id-7\"}");
+        when(repository.findClusterInfo(event.getResourceId())).thenReturn(java.util.List.of());
+
+        assertThat(service.kafkaClusterId(event)).isEqualTo("kafka-id-7");
+    }
 }
