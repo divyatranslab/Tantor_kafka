@@ -248,7 +248,7 @@ export function DeploymentLogs() {
             <Copy size={16} style={{ color: '#818181' }} />
           </button>
           <button 
-            onClick={fetchTasks} 
+            onClick={() => fetchTasks()} 
             disabled={loading} 
             style={{
               boxSizing: 'border-box',
