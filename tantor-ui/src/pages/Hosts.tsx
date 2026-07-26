@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
+import { parseIpList } from '../lib/hosts';
+import { usePolling } from '../hooks/usePolling';
 import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
-import './Hosts.css';
+import './Hosts.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 export function Hosts() {
   const { canManage } = usePermissions();
@@ -12,10 +15,10 @@ export function Hosts() {
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
-  const fetchHosts = async () => {
+  const fetchHosts = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/hosts');
+      const res = await apiFetch('/api/v1/ui/hosts', { signal });
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
@@ -27,7 +30,7 @@ export function Hosts() {
     if (!canManage) return;
     if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
@@ -40,23 +43,15 @@ export function Hosts() {
     }
   };
 
+  usePolling((signal) => {
+    return fetchHosts(signal);
+  }, 5000);
+
   useEffect(() => {
     fetchHosts();
-    const t = setInterval(fetchHosts, 5000);
-    return () => clearInterval(t);
   }, []);
 
-  const parseIpList = (raw: any): string[] => {
-    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
-    if (typeof raw === 'string' && raw.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
-    }
-    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
-    return [];
-  };
+
 
   const displayIp = (raw: any) => {
     const ips = parseIpList(raw);
@@ -115,7 +110,7 @@ export function Hosts() {
     setConnectingAgents(true);
     try {
       const results = await Promise.allSettled(
-        selectedIds.map(id => fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
+        selectedIds.map(id => apiFetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
       );
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;
@@ -137,7 +132,7 @@ export function Hosts() {
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
-          <button className="btn icon-only round" onClick={fetchHosts} title="Refresh" aria-label="Refresh hosts">
+          <button className="btn icon-only round" onClick={() => fetchHosts()} title="Refresh" aria-label="Refresh hosts">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
           </button>
           {canManage && (

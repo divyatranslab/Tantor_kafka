@@ -7,9 +7,11 @@ import {
   ShieldCheck, Trash2, Users, X, Share2, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { apiError } from '../lib/errors';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './TopicDetails.css';
+import './TopicDetails.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
 
@@ -121,10 +123,6 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: 'statistics', label: 'Statistics', icon: BarChart3 }
 ];
 
-async function responseError(response: Response) {
-  const body = await response.json().catch(() => null);
-  return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
-}
 
 function formatBytes(value: number) {
   if (value < 0) return 'Unavailable';
@@ -217,7 +215,7 @@ export function TopicDetails() {
     if (!id || !topicName) return;
     setLoadingDetail(true);
     try {
-      const res = await fetch(baseUrl);
+      const res = await apiFetch(baseUrl);
       if (!res.ok) throw new Error(`Failed to load topic: ${res.statusText}`);
       setDetail(await res.json());
     } catch (requestError) {
@@ -237,7 +235,7 @@ export function TopicDetails() {
       if (messageSearch) url.searchParams.append('search', messageSearch);
       if (messageOrder) url.searchParams.append('order', messageOrder);
 
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (!res.ok) throw new Error(`Failed to browse messages: ${res.statusText}`);
       setMessages(await res.json());
     } catch (requestError) {
@@ -251,7 +249,7 @@ export function TopicDetails() {
     setTabLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${baseUrl}/${tab}`);
+      const res = await apiFetch(`${baseUrl}/${tab}`);
       if (!res.ok) throw new Error(`Failed to load ${tab}: ${res.statusText}`);
       const data = await res.json();
       if (tab === 'consumers') setConsumers(data);
@@ -268,7 +266,7 @@ export function TopicDetails() {
     setStatisticsLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${baseUrl}/statistics`);
+      const res = await apiFetch(`${baseUrl}/statistics`);
       if (!res.ok) throw new Error(`Failed to analyze topic: ${res.statusText}`);
       setStatistics(await res.json());
     } catch (requestError) {
@@ -304,8 +302,8 @@ export function TopicDetails() {
         url += '/recreate';
         method = 'POST';
       }
-      const response = await fetch(url, { method });
-      if (!response.ok) throw new Error(await responseError(response));
+      const response = await apiFetch(url, { method });
+      if (!response.ok) throw new Error(await apiError(response));
       if (confirmAction === 'remove') {
         navigate('/clusters/' + id + '/topics');
         return;
@@ -327,7 +325,7 @@ export function TopicDetails() {
     setProducing(true);
     setError(null);
     try {
-      const response = await fetch(baseUrl + '/messages', {
+      const response = await apiFetch(baseUrl + '/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -337,7 +335,7 @@ export function TopicDetails() {
           headers: {}
         })
       });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       setShowProduce(false);
       setProduceForm({ partition: '', key: '', value: '' });
       setMessages(null);
@@ -356,12 +354,12 @@ export function TopicDetails() {
     if (!editingConfig) return;
     setSavingConfig(true);
     try {
-      const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(editingConfig.name), {
+      const response = await apiFetch(baseUrl + '/configs/' + encodeURIComponent(editingConfig.name), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: configValue })
       });
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await apiError(response));
       setEditingConfig(null);
       await loadSimpleTab('configs');
       await loadDetail();
@@ -383,8 +381,8 @@ export function TopicDetails() {
   const resetConfig = async (config: TopicConfig) => {
     if (!canManage) return;
     try {
-      const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(config.name), { method: 'DELETE' });
-      if (!response.ok) throw new Error(await responseError(response));
+      const response = await apiFetch(baseUrl + '/configs/' + encodeURIComponent(config.name), { method: 'DELETE' });
+      if (!response.ok) throw new Error(await apiError(response));
       await loadSimpleTab('configs');
       await loadDetail();
     } catch (requestError) {

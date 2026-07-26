@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/consumer-groups")
 @RequiredArgsConstructor
@@ -26,7 +27,7 @@ public class ConsumerGroupsController {
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "groupId") String sortBy) {
-        
+
         if (size > 500) size = 500;
 
         return ResponseEntity.ok(consumerLagCacheService.getPaginatedSummaries(clusterId, page, size, search, sortBy));
@@ -37,7 +38,7 @@ public class ConsumerGroupsController {
     public ResponseEntity<ConsumerGroupDetailDto> getConsumerGroupDetail(
             @PathVariable UUID clusterId,
             @PathVariable String groupId) {
-        
+
         ConsumerGroupDetailDto detail = consumerLagCacheService.getDetail(clusterId, groupId);
         if (detail == null) {
             return ResponseEntity.notFound().build();

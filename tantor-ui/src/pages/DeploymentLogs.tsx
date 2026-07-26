@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { useParams, useNavigate } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
-import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
+import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/apiClient';
+import { apiFetch } from '../lib/apiClient.ts';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
 import './DeploymentLogs.css';
 
@@ -66,11 +68,11 @@ export function DeploymentLogs() {
   const [isConsoleMaximized, setIsConsoleMaximized] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (signal?: AbortSignal) => {
     try {
       const [clusterRes, tasksRes] = await Promise.all([
-        fetch(`/api/v1/ui/clusters/${id}`),
-        fetch(`/api/v1/ui/clusters/${id}/tasks`),
+        fetch(`/api/v1/ui/clusters/${id}`, { signal }),
+        fetch(`/api/v1/ui/clusters/${id}/tasks`, { signal }),
       ]);
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
@@ -97,11 +99,9 @@ export function DeploymentLogs() {
   const shouldPoll = tasks.some(task => activeStatus(task.status))
     || ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(cluster?.status || '');
 
-  useEffect(() => {
-    if (!shouldPoll) return;
-    const interval = window.setInterval(fetchTasks, 3000);
-    return () => window.clearInterval(interval);
-  }, [id, shouldPoll]);
+  usePolling((signal) => {
+    return fetchTasks(signal);
+  }, 3000, shouldPoll);
 
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0];
 
@@ -156,7 +156,7 @@ export function DeploymentLogs() {
   const handleRollback = async () => {
     if (!id || !selectedTask) return;
     if (!(await confirmAction("Are you sure you want to rollback this deployment? (Services will be stopped but logs and configs remain)"))) return;
-    
+
     setActionLoading(true);
     try {
       await rollbackTask(id, selectedTask.id);
@@ -186,7 +186,7 @@ export function DeploymentLogs() {
   const handleCleanup = async () => {
     if (!id || !selectedTask) return;
     if (!(await confirmAction("Are you sure you want to completely clean up this deployment? (All files and logs on the node will be deleted)"))) return;
-    
+
     setActionLoading(true);
     try {
       await cleanupTask(id, selectedTask.id);
@@ -219,7 +219,7 @@ export function DeploymentLogs() {
 
   return (
     <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch' }}>
-      
+
       {/* Title Row with Task output & refresh icon */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -229,7 +229,7 @@ export function DeploymentLogs() {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button 
+          <button
             onClick={() => navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '')}
             style={{
               boxSizing: 'border-box',
@@ -248,9 +248,9 @@ export function DeploymentLogs() {
           >
             <Copy size={16} style={{ color: '#818181' }} />
           </button>
-          <button 
-            onClick={fetchTasks} 
-            disabled={loading} 
+          <button
+            onClick={() => fetchTasks()}
+            disabled={loading}
             style={{
               boxSizing: 'border-box',
               display: 'flex',
@@ -277,9 +277,9 @@ export function DeploymentLogs() {
           Task
         </span>
         <div style={{ position: 'relative', flexGrow: 1 }}>
-          <select 
-            id="deployment-task" 
-            value={selectedTask.id} 
+          <select
+            id="deployment-task"
+            value={selectedTask.id}
             onChange={event => setSelectedTaskId(event.target.value)}
             style={{
               boxSizing: 'border-box',
@@ -331,7 +331,7 @@ export function DeploymentLogs() {
           <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Updated</div>
         </div>
         {/* Table Body Row */}
-        <div 
+        <div
           style={{ display: 'flex', background: '#FFFFFF', height: '52px', alignItems: 'center', cursor: 'default' }}
         >
           <div style={{ width: '56px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818181' }}>
@@ -364,7 +364,7 @@ export function DeploymentLogs() {
           background: '#332849',
           borderRadius: '8px 8px 0px 0px'
         }}>
-          <button 
+          <button
             onClick={() => setIsConsoleMaximized(!isConsoleMaximized)}
             style={{
               background: 'none',
@@ -390,7 +390,7 @@ export function DeploymentLogs() {
             )}
           </button>
         </div>
-        
+
         {/* Log body */}
         <div style={{
           boxSizing: 'border-box',

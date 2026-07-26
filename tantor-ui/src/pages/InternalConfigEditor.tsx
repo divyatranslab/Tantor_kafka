@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
-import './ConfigVersioning.css';
+import './ConfigVersioning.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface StaticConfigFile {
   id: string;
@@ -96,7 +97,7 @@ export function InternalConfigEditor() {
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config`);
+      const response = await apiFetch(`/api/v1/clusters/${id}/config`);
       if (response.ok) setPayload(await response.json());
     } finally {
       setLoading(false);
@@ -143,7 +144,7 @@ export function InternalConfigEditor() {
 
   const fetchVersions = async (serviceId?: string) => {
     if (!serviceId) { setVersions([]); return; }
-    const response = await fetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
+    const response = await apiFetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
     if (response.ok) setVersions(await response.json());
   };
 
@@ -185,7 +186,7 @@ export function InternalConfigEditor() {
     if (!selectedFile?.serviceId) return;
     setWorking('preview');
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
@@ -215,7 +216,7 @@ export function InternalConfigEditor() {
     if (!selectedFile?.serviceId || !preview?.valid) return;
     setWorking('save');
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
       const data = await response.json().catch(() => ({}));
@@ -231,7 +232,7 @@ export function InternalConfigEditor() {
     if (!canManage) return;
     setWorking(`${action}-${version.id}`);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/versions/${version.id}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: action === 'apply' ? JSON.stringify({ restart }) : undefined,
@@ -310,30 +311,30 @@ export function InternalConfigEditor() {
         padding: '0px',
         marginBottom: '1.25rem'
       }}>
-        <button 
-          onClick={reviewChange} 
-          disabled={!!working || !selectedFile?.serviceId} 
+        <button
+          onClick={reviewChange}
+          disabled={!!working || !selectedFile?.serviceId}
           style={flowButtonStyle(!!working || !selectedFile?.serviceId)}
         >
           <GitCompare size={14} /> Diff
         </button>
-        <button 
-          onClick={reviewChange} 
-          disabled={!!working || !selectedFile?.serviceId} 
+        <button
+          onClick={reviewChange}
+          disabled={!!working || !selectedFile?.serviceId}
           style={flowButtonStyle(!!working || !selectedFile?.serviceId)}
         >
           <FileCheck size={14} /> Validate
         </button>
-        <button 
-          onClick={saveVersion} 
-          disabled={!preview?.valid || !!working} 
+        <button
+          onClick={saveVersion}
+          disabled={!preview?.valid || !!working}
           style={flowButtonStyle(!preview?.valid || !!working)}
         >
           <Download size={14} /> Save version
         </button>
-        <button 
-          onClick={() => latestApplyableVersion && versionAction(latestApplyableVersion, 'apply')} 
-          disabled={!latestApplyableVersion || !!working} 
+        <button
+          onClick={() => latestApplyableVersion && versionAction(latestApplyableVersion, 'apply')}
+          disabled={!latestApplyableVersion || !!working}
           style={flowButtonStyle(!latestApplyableVersion || !!working)}
         >
           <UploadCloud size={14} /> Backup &amp; apply
@@ -347,9 +348,9 @@ export function InternalConfigEditor() {
         </div>
         <div className="node-config-hosts">
           {hosts.map(host => (
-            <button 
-              key={host.id} 
-              className={selectedHostId === host.id ? 'active' : ''} 
+            <button
+              key={host.id}
+              className={selectedHostId === host.id ? 'active' : ''}
               onClick={() => selectHost(host.id)}
               style={selectedHostId === host.id ? {
                 background: '#FAF5FF',
@@ -370,9 +371,9 @@ export function InternalConfigEditor() {
         </div>
         <div className="node-config-files">
           {hostFiles.map(file => (
-            <button 
-              key={file.id} 
-              className={selectedFile?.id === file.id ? 'active' : ''} 
+            <button
+              key={file.id}
+              className={selectedFile?.id === file.id ? 'active' : ''}
               onClick={() => setSelectedFileId(file.id)}
               style={selectedFile?.id === file.id ? {
                 background: '#FAF5FF',
@@ -412,19 +413,19 @@ export function InternalConfigEditor() {
 
           {canManage && (
             <div className="node-config-add" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.8fr) minmax(220px, 1.2fr) auto', gap: '8px', marginTop: '1rem' }}>
-              <input 
-                placeholder="property.key" 
-                value={newKey} 
-                onChange={event => setNewKey(event.target.value)} 
+              <input
+                placeholder="property.key"
+                value={newKey}
+                onChange={event => setNewKey(event.target.value)}
                 style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}
               />
-              <input 
-                placeholder="value" 
-                value={newValue} 
-                onChange={event => setNewValue(event.target.value)} 
+              <input
+                placeholder="value"
+                value={newValue}
+                onChange={event => setNewValue(event.target.value)}
                 style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}
               />
-              <button 
+              <button
                 onClick={addProperty}
                 style={{
                   display: 'inline-flex',
@@ -450,8 +451,8 @@ export function InternalConfigEditor() {
               Target: {selectedFile.hostId}Node: {selectedFile.nodeId}Service: {selectedFile.role}
             </span>
             {canManage && (
-              <button 
-                onClick={reviewChange} 
+              <button
+                onClick={reviewChange}
                 disabled={!!working}
                 style={{
                   display: 'inline-flex',
@@ -468,7 +469,7 @@ export function InternalConfigEditor() {
                   cursor: !!working ? 'not-allowed' : 'pointer'
                 }}
               >
-                {working === 'preview' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} 
+                {working === 'preview' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
                 Review &amp; validate
               </button>
             )}
@@ -500,8 +501,8 @@ export function InternalConfigEditor() {
           <div className="config-review-footer" style={{ marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '12px', color: '#64748b' }}>{preview.valid ? 'Validation passed. Saving creates history only; it does not apply the file.' : 'Fix validation errors before saving.'}</span>
             {canManage && (
-              <button 
-                onClick={saveVersion} 
+              <button
+                onClick={saveVersion}
                 disabled={!preview.valid || !!working}
                 style={{
                   display: 'inline-flex',

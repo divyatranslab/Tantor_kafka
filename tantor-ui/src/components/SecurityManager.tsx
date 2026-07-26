@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
-} from '../lib/api';
+} from '../lib/apiClient';
 import { usePermissions } from '../hooks/usePermissions';
 
 interface Props {
@@ -150,11 +150,11 @@ export default function SecurityManager({ clusterId }: Props) {
         <div style={{ display: 'flex', gap: '1rem', flex: 1 }}>
           <div style={{ position: 'relative', flex: 1, maxWidth: '240px' }}>
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <input 
-              type="text" 
-              placeholder="Filter by principle..." 
-              value={aclFilterPrincipal} 
-              onChange={e => setAclFilterPrincipal(e.target.value)} 
+            <input
+              type="text"
+              placeholder="Filter by principle..."
+              value={aclFilterPrincipal}
+              onChange={e => setAclFilterPrincipal(e.target.value)}
               style={{
                 width: '100%',
                 padding: '10px 12px 10px 36px',
@@ -169,11 +169,11 @@ export default function SecurityManager({ clusterId }: Props) {
           </div>
           <div style={{ position: 'relative', flex: 1, maxWidth: '240px' }}>
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-            <input 
-              type="text" 
-              placeholder="Filter by resources..." 
-              value={aclFilterResource} 
-              onChange={e => setAclFilterResource(e.target.value)} 
+            <input
+              type="text"
+              placeholder="Filter by resources..."
+              value={aclFilterResource}
+              onChange={e => setAclFilterResource(e.target.value)}
               style={{
                 width: '100%',
                 padding: '10px 12px 10px 36px',
@@ -190,9 +190,9 @@ export default function SecurityManager({ clusterId }: Props) {
 
         {/* Right side: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button 
-            onClick={fetchAcls} 
-            disabled={aclsLoading} 
+          <button
+            onClick={fetchAcls}
+            disabled={aclsLoading}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -211,8 +211,8 @@ export default function SecurityManager({ clusterId }: Props) {
             <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
           </button>
           {canManage && (
-            <button 
-              onClick={() => setShowCreateAcl(true)} 
+            <button
+              onClick={() => setShowCreateAcl(true)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -286,8 +286,8 @@ export default function SecurityManager({ clusterId }: Props) {
               borderBottom: '1px solid #f1f5f9'
             }}>
               <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 500, color: '#332849' }}>Add New ACL Binding</h3>
-              <button 
-                onClick={() => setShowCreateAcl(false)} 
+              <button
+                onClick={() => setShowCreateAcl(false)}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -315,10 +315,10 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Principle (Username) */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Principle (Username)</label>
-                  <select 
-                    value={aclPrincipal} 
-                    onChange={e => setAclPrincipal(e.target.value)} 
-                    required 
+                  <select
+                    value={aclPrincipal}
+                    onChange={e => setAclPrincipal(e.target.value)}
+                    required
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -347,12 +347,12 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Host */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Host</label>
-                  <input 
-                    type="text" 
-                    value={aclHost} 
-                    onChange={e => setAclHost(e.target.value)} 
+                  <input
+                    type="text"
+                    value={aclHost}
+                    onChange={e => setAclHost(e.target.value)}
                     placeholder="* or client IP"
-                    required 
+                    required
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -369,9 +369,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Resource Type */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Type</label>
-                  <select 
-                    value={aclResourceType} 
-                    onChange={e => setAclResourceType(e.target.value)} 
+                  <select
+                    value={aclResourceType}
+                    onChange={e => setAclResourceType(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -393,12 +393,12 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Resource Name */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Name</label>
-                  <input 
-                    type="text" 
-                    value={aclResourceName} 
-                    onChange={e => setAclResourceName(e.target.value)} 
-                    placeholder="e.g. topics_name" 
-                    required 
+                  <input
+                    type="text"
+                    value={aclResourceName}
+                    onChange={e => setAclResourceName(e.target.value)}
+                    placeholder="e.g. topics_name"
+                    required
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -415,9 +415,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Pattern Type */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Pattern Type</label>
-                  <select 
-                    value={aclPatternType} 
-                    onChange={e => setAclPatternType(e.target.value)} 
+                  <select
+                    value={aclPatternType}
+                    onChange={e => setAclPatternType(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -442,9 +442,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Permission */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Permission</label>
-                  <select 
-                    value={aclPermission} 
-                    onChange={e => setAclPermission(e.target.value)} 
+                  <select
+                    value={aclPermission}
+                    onChange={e => setAclPermission(e.target.value)}
                     style={{
                       width: '100%',
                       padding: '10px 12px',
@@ -479,9 +479,9 @@ export default function SecurityManager({ clusterId }: Props) {
                   {OPERATIONS.map(op => {
                     const isSelected = aclOperations.includes(op);
                     return (
-                      <button 
-                        type="button" 
-                        key={op} 
+                      <button
+                        type="button"
+                        key={op}
                         onClick={() => toggleAclOperation(op)}
                         style={{
                           padding: '8px 16px',
@@ -511,9 +511,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 paddingTop: '20px',
                 marginTop: '10px'
               }}>
-                <button 
-                  type="button" 
-                  onClick={() => setShowCreateAcl(false)} 
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAcl(false)}
                   style={{
                     height: '38px',
                     padding: '0 24px',
@@ -528,9 +528,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={aclCreating} 
+                <button
+                  type="submit"
+                  disabled={aclCreating}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -634,7 +634,7 @@ export default function SecurityManager({ clusterId }: Props) {
                 ✕
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
               <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -643,7 +643,7 @@ export default function SecurityManager({ clusterId }: Props) {
                   Confirm action
                 </h2>
               </div>
-              
+
               <p style={{ margin: 0, fontSize: '15px', color: '#5F6368', lineHeight: '1.5' }}>
                 Are you sure you want to delete this ACL binding?
                 <br />
@@ -651,7 +651,7 @@ export default function SecurityManager({ clusterId }: Props) {
                   Delete ACL for {aclToDelete.principal} on {aclToDelete.resourceType} {aclToDelete.resourceName}?
                 </span>
               </p>
-              
+
               {/* Footer Actions */}
               <div style={{
                 display: 'flex',
@@ -659,9 +659,9 @@ export default function SecurityManager({ clusterId }: Props) {
                 gap: '12px',
                 marginTop: '8px'
               }}>
-                <button 
-                  type="button" 
-                  onClick={() => setAclToDelete(null)} 
+                <button
+                  type="button"
+                  onClick={() => setAclToDelete(null)}
                   style={{
                     height: '38px',
                     padding: '0 24px',
@@ -676,12 +676,12 @@ export default function SecurityManager({ clusterId }: Props) {
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={async () => {
                     const acl = aclToDelete;
                     setAclToDelete(null);
                     await confirmDeleteAcl(acl);
-                  }} 
+                  }}
                   style={{
                     height: '38px',
                     padding: '0 24px',
@@ -730,7 +730,7 @@ export default function SecurityManager({ clusterId }: Props) {
                 ✕
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
               <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -739,19 +739,19 @@ export default function SecurityManager({ clusterId }: Props) {
                   Notice
                 </h2>
               </div>
-              
+
               <p style={{ margin: 0, fontSize: '15px', color: '#5F6368', lineHeight: '1.5' }}>
                 {alertMessage}
               </p>
-              
+
               {/* Footer Actions */}
               <div style={{
                 display: 'flex',
                 justifyContent: 'flex-end',
                 marginTop: '8px'
               }}>
-                <button 
-                  onClick={() => setAlertMessage(null)} 
+                <button
+                  onClick={() => setAlertMessage(null)}
                   style={{
                     height: '38px',
                     padding: '0 28px',

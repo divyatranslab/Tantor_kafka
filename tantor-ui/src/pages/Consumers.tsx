@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
-import './Consumers.css';
+import './Consumers.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ConsumerGroupSummaryDto {
   groupId: string;
@@ -63,7 +64,7 @@ export function Consumers() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Failed to load consumer groups (HTTP ${res.status})`);
@@ -98,7 +99,7 @@ export function Consumers() {
     setDetailLoading(true);
     setDetailData(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/consumer-groups/${encodeURIComponent(groupId)}`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/consumer-groups/${encodeURIComponent(groupId)}`);
       if (res.ok) {
         setDetailData(await res.json());
       }
@@ -149,10 +150,10 @@ export function Consumers() {
               />
             </label>
           </form>
-          <button 
+          <button
             type="button"
-            onClick={fetchGroups} 
-            disabled={loading} 
+            onClick={fetchGroups}
+            disabled={loading}
             style={{
               boxSizing: 'border-box',
               display: 'flex',

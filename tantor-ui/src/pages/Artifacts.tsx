@@ -7,7 +7,8 @@ import {
 import { usePermissions } from '../hooks/usePermissions';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
-import orangeBanner from '../assets/orange.png';
+import orangeBanner from '../assets/orange.png';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ArtifactVersion {
   id: string;
@@ -124,7 +125,7 @@ export function Artifacts() {
     .some(extension => file.name.toLowerCase().endsWith(extension.trim().toLowerCase()));
 
   const fetchVersions = async () => {
-    const res = await fetch('/api/v1/artifacts?serviceType=KAFKA&status=AVAILABLE');
+    const res = await apiFetch('/api/v1/artifacts?serviceType=KAFKA&status=AVAILABLE');
     if (!res.ok) return;
     const data = await res.json();
     setVersions((data.content || []).map((a: any) => ({
@@ -141,13 +142,13 @@ export function Artifacts() {
   };
 
   const fetchHosts = async () => {
-    const res = await fetch('/api/v1/ui/hosts');
+    const res = await apiFetch('/api/v1/ui/hosts');
     if (!res.ok) return;
     setHosts(await res.json());
   };
 
   const fetchParcelState = async () => {
-    const res = await fetch('/api/v1/ui/parcels');
+    const res = await apiFetch('/api/v1/ui/parcels');
     if (!res.ok) return;
     setHostParcels(await res.json());
   };
@@ -188,7 +189,7 @@ export function Artifacts() {
     form.append('overwrite', 'false');
 
     try {
-      const res = await fetch('/api/v1/artifacts', { method: 'POST', body: form });
+      const res = await apiFetch('/api/v1/artifacts', { method: 'POST', body: form });
       if (res.ok) {
         setUploadMsg({ text: `Uploaded ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`, ok: true });
         setShowUploadModal(false);
@@ -225,7 +226,7 @@ export function Artifacts() {
     setActingKey(key);
     setUploadMsg(null);
     try {
-      const res = await fetch(`/api/v1/ui/parcels/${ver.id}/${action}`, {
+      const res = await apiFetch(`/api/v1/ui/parcels/${ver.id}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -266,7 +267,7 @@ export function Artifacts() {
     const key = `distribute-all-${ver.id}`;
     setActingKey(key);
     try {
-      const res = await fetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
+      const res = await apiFetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -306,7 +307,7 @@ export function Artifacts() {
     const key = `distribute-selected-${ver.id}`;
     setActingKey(key);
     try {
-      const res = await fetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
+      const res = await apiFetch(`/api/v1/ui/parcels/${ver.id}/distribute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -368,7 +369,7 @@ export function Artifacts() {
     setUploadMsg(null);
     setDeleteConfirmVer(null);
     try {
-      const res = await fetch(`/api/v1/artifacts/${ver.id}`, {
+      const res = await apiFetch(`/api/v1/artifacts/${ver.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -391,7 +392,7 @@ export function Artifacts() {
     setArtifactAuditEvents([]);
     setArtifactAuditLoading(true);
     try {
-      const res = await fetch(`/api/v1/artifacts/audit/${ver.id}`);
+      const res = await apiFetch(`/api/v1/artifacts/audit/${ver.id}`);
       if (!res.ok) throw new Error('Unable to load artifact logs.');
       const body = await res.json();
       setArtifactAuditEvents(body.events || []);

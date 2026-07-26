@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/ConfirmDialog';
-import './JobStatusPage.css';
+import './JobStatusPage.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type Job = {
   id: string;
@@ -43,7 +44,7 @@ function getBusinessStepName(rawName: string): string {
       else if (role === 'controller') role = 'Controller';
       else if (role === 'zookeeper') role = 'ZooKeeper';
       else role = role.charAt(0).toUpperCase() + role.slice(1);
-      
+
       return `Provision ${role} Node ${match[2]}`;
     }
     return 'Provision Kafka Node';
@@ -84,11 +85,11 @@ export function JobStatusPage() {
 
   const fetchJob = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}`);
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}`);
       if (res.ok) {
         setJob(await res.json());
       }
-      const stepsRes = await fetch(`/api/v1/ui/jobs/${id}/steps`);
+      const stepsRes = await apiFetch(`/api/v1/ui/jobs/${id}/steps`);
       if (stepsRes.ok) setSteps(await stepsRes.json());
     } catch (err) {
       console.error(err);
@@ -115,7 +116,7 @@ export function JobStatusPage() {
 
   const handleRetry = async () => {
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
       if (res.ok) fetchJob();
     } catch (err) {
       console.error(err);
@@ -125,7 +126,7 @@ export function JobStatusPage() {
   const handleRollback = async () => {
     if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
+      const res = await apiFetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
     } catch (err) {
       console.error(err);
@@ -151,14 +152,14 @@ export function JobStatusPage() {
   }
 
   const isFinished = ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job.status);
-  
+
   let displaySteps = steps;
-  
+
   if (steps.length === 0 && job?.logs) {
     const reconstructed: JobStep[] = [];
     const lines = job.logs.split('\n');
     let order = 0;
-    
+
     for (const line of lines) {
       const compMatch = line.match(/\]\s*(.+?)\s+completed/);
       if (compMatch) {
@@ -171,7 +172,7 @@ export function JobStatusPage() {
           retryCount: 0
         });
       }
-      
+
       const failMatch = line.match(/\]\s*Job execution failed:\s*(.+)/);
       if (failMatch) {
         reconstructed.push({
@@ -184,7 +185,7 @@ export function JobStatusPage() {
         });
       }
     }
-    
+
     if (reconstructed.length > 0) {
       displaySteps = reconstructed;
     }
@@ -216,7 +217,7 @@ export function JobStatusPage() {
     const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(status);
     const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(status);
     const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(status);
-    
+
     let bgColor = '#CCCCCC'; // Pending / Default
     if (isCompleted) bgColor = '#1F845A';
     else if (isFailed) bgColor = '#EF4D5F';
@@ -264,7 +265,7 @@ export function JobStatusPage() {
     <div className="job-status-page animate-fade-in">
       <div className="page-header-actions">
         <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>
-          <ArrowLeft size={16} /> 
+          <ArrowLeft size={16} />
           <div className="back-text">
             <span className="back-label">Job ID</span>
             <span className="back-id">{job.id.slice(0, 8)}</span>
@@ -283,7 +284,7 @@ export function JobStatusPage() {
           )}
         </div>
       </div>
-      
+
       {job.status === 'FAILED' && steps.some(s => s.name === 'ROLLBACK' && s.status === 'SUCCESS') && (
         <div className="overview-alert error" style={{ marginBottom: '16px' }}>
           <AlertTriangle size={17} />
@@ -348,13 +349,13 @@ export function JobStatusPage() {
                   const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
                   const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
                   const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);
-                  
+
                   const progress = isCompleted ? 100 : isRunning ? 50 : 0;
-                  
+
                   let nameColor = '#818181'; // Unstarted default
                   let statusColor = '#818181'; // Unstarted default
                   let barColor = '#CCCCCC'; // Unstarted default track
-                  
+
                   if (isCompleted) {
                     nameColor = '#332849';
                     statusColor = '#1F845A';
@@ -374,10 +375,10 @@ export function JobStatusPage() {
                       {getStepIcon(step.status, 20)}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ 
-                            fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                          <span style={{
+                            fontFamily: 'Satoshi',
+                            fontSize: '12px',
+                            fontWeight: 500,
                             lineHeight: '16px',
                             color: nameColor,
                             width: '175px',
@@ -388,10 +389,10 @@ export function JobStatusPage() {
                           }} title={getBusinessStepName(step.name)}>
                             {getBusinessStepName(step.name)}
                           </span>
-                          <span style={{ 
-                            fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                          <span style={{
+                            fontFamily: 'Satoshi',
+                            fontSize: '12px',
+                            fontWeight: 500,
                             lineHeight: '16px',
                             color: statusColor,
                             width: '96px',
@@ -403,15 +404,15 @@ export function JobStatusPage() {
                         <div className="step-progress-track" style={{ height: '8px', background: '#CCCCCC', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
                           {isCompleted || isFailed || isRunning ? (
                             <>
-                              <div 
-                                className="step-progress-fill" 
-                                style={{ 
-                                  width: `${progress}%`, 
-                                  background: barColor, 
-                                  height: '100%', 
-                                  borderRadius: progress === 100 ? '2px' : '2px 0px 0px 2px', 
-                                  transition: 'width 0.5s ease' 
-                                }} 
+                              <div
+                                className="step-progress-fill"
+                                style={{
+                                  width: `${progress}%`,
+                                  background: barColor,
+                                  height: '100%',
+                                  borderRadius: progress === 100 ? '2px' : '2px 0px 0px 2px',
+                                  transition: 'width 0.5s ease'
+                                }}
                               />
                               {progress < 100 && (
                                 <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px' }} />

@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ldap")
 public class LdapController {
@@ -32,18 +33,18 @@ public class LdapController {
     @PutMapping("/config")
     public ResponseEntity<LdapDTOs.LdapConfigResponse> updateConfig(@RequestBody LdapDTOs.LdapConfigCreateRequest request) {
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(new LdapConfig());
-        
+
         config.setEnabled(request.isEnabled());
         config.setServerUrl(request.getServerUrl());
         config.setUseSsl(request.isUseSsl());
         config.setTlsValidateCert(request.isTlsValidateCert());
         config.setTlsCaCert(request.getTlsCaCert());
         config.setBindDn(request.getBindDn());
-        
+
         if (request.getBindPassword() != null && !request.getBindPassword().isEmpty()) {
             config.setEncryptedBindPassword(ldapService.encryptPassword(request.getBindPassword()));
         }
-        
+
         config.setUserSearchBase(request.getUserSearchBase());
         config.setUserSearchFilter(request.getUserSearchFilter());
         config.setGroupSearchBase(request.getGroupSearchBase());

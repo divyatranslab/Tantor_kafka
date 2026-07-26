@@ -14,12 +14,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/agents")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('AGENT')")
 public class AgentController {
-    
+
     private final AgentService agentService;
 
     @PostMapping("/register")

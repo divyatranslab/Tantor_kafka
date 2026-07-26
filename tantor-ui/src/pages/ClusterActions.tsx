@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/ConfirmDialog';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterInfo {
   id: string;
@@ -44,8 +45,8 @@ export function ClusterActions() {
   const fetchUpgradeContext = async () => {
     try {
       const [clusterRes, parcelsRes] = await Promise.all([
-        fetch(`/api/v1/ui/clusters/${id}`),
-        fetch('/api/v1/ui/parcels'),
+        apiFetch(`/api/v1/ui/clusters/${id}`),
+        apiFetch('/api/v1/ui/parcels'),
       ]);
       if (clusterRes.ok) {
         const loaded = await clusterRes.json();
@@ -65,10 +66,10 @@ export function ClusterActions() {
       ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
       : 'WARNING: This will begin a rolling restart of the cluster. Continue?';
     if (!(await confirmAction(warning))) return;
-    
+
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/actions/rolling-restart`, {
+      const res = await apiFetch(`/api/v1/clusters/${id}/actions/rolling-restart`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmSingleNode: nodeCount === 1 }),
       });
@@ -102,7 +103,7 @@ export function ClusterActions() {
     }
     setMonitoringLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/actions/enable-monitoring`, {
+      const res = await apiFetch(`/api/v1/clusters/${id}/actions/enable-monitoring`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hostId: monitoringHostId, prometheusUrl, grafanaUrl }),
@@ -135,7 +136,7 @@ export function ClusterActions() {
     setUpgradeLoading(true);
     setUpgradeMsg('');
     try {
-      const res = await fetch(`/api/v1/ui/clusters/${id}/upgrade`, {
+      const res = await apiFetch(`/api/v1/ui/clusters/${id}/upgrade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetVersion }),
@@ -158,7 +159,7 @@ export function ClusterActions() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/clusters/${id}/actions/tasks/${taskId}`);
+        const res = await apiFetch(`/api/v1/clusters/${id}/actions/tasks/${taskId}`);
         if (res.ok) {
           const data = await res.json();
           setStatus(data.status);
@@ -275,7 +276,7 @@ export function ClusterActions() {
           )}
         </div>
         )}
-        
+
         {canManage && (
           <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -312,8 +313,8 @@ export function ClusterActions() {
               gap: '12px'
             }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <select 
-                  value={monitoringHostId} 
+                <select
+                  value={monitoringHostId}
                   onChange={event => setMonitoringHostId(event.target.value)}
                   style={{
                     width: '100%',
@@ -328,10 +329,10 @@ export function ClusterActions() {
                 >
                   {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` · ${host.ipAddress}` : ''}</option>)}
                 </select>
-                <input 
-                  value={prometheusUrl} 
-                  onChange={event => setPrometheusUrl(event.target.value)} 
-                  placeholder="Prometheus Artifact URL" 
+                <input
+                  value={prometheusUrl}
+                  onChange={event => setPrometheusUrl(event.target.value)}
+                  placeholder="Prometheus Artifact URL"
                   style={{
                     width: '100%',
                     padding: '10px 12px',
@@ -345,10 +346,10 @@ export function ClusterActions() {
                 />
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
-                <input 
-                  value={grafanaUrl} 
-                  onChange={event => setGrafanaUrl(event.target.value)} 
-                  placeholder="Grafana Artifact URL" 
+                <input
+                  value={grafanaUrl}
+                  onChange={event => setGrafanaUrl(event.target.value)}
+                  placeholder="Grafana Artifact URL"
                   style={{
                     flex: 1,
                     padding: '10px 12px',
@@ -360,8 +361,8 @@ export function ClusterActions() {
                     color: '#332849'
                   }}
                 />
-                <button 
-                  onClick={enableMonitoring} 
+                <button
+                  onClick={enableMonitoring}
                   disabled={monitoringLoading}
                   style={{
                     display: 'inline-flex',
@@ -380,7 +381,7 @@ export function ClusterActions() {
                     transition: 'all 0.2s'
                   }}
                 >
-                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : null} 
+                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : null}
                   Enable Monitoring
                 </button>
               </div>
@@ -423,7 +424,7 @@ export function ClusterActions() {
             display: 'flex',
             justifyContent: 'flex-end'
           }}>
-            <button 
+            <button
               onClick={triggerRollingRestart}
               disabled={loading}
               style={{

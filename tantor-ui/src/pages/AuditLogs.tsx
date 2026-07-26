@@ -5,18 +5,19 @@ import {
   ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import './AuditLogs.css';
-import { AnchoredMenu } from '../components/AnchoredMenu';
+import { AnchoredMenu } from '../components/AnchoredMenu';import { apiFetch } from '../lib/apiClient.ts';
+
 
 const CustomRefreshIcon = ({ size = 24, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
-  <svg 
-    width={size} 
-    height={size} 
-    viewBox="0 0 24 24" 
-    fill="none" 
-    stroke={color} 
-    strokeWidth="1.5" 
-    strokeLinecap="round" 
-    strokeLinejoin="round" 
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke={color}
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className={className}
     style={{ display: 'inline-block', verticalAlign: 'middle' }}
   >
@@ -210,7 +211,7 @@ export function AuditLogs() {
     setError('');
     try {
       const results = await Promise.allSettled([
-        fetch('/api/v1/ui/audit?size=500').then(async response => {
+        apiFetch('/api/v1/ui/audit?size=500').then(async response => {
           if (!response.ok) throw new Error(`Management audit API returned ${response.status}`);
           return response.json() as Promise<AuditResponse>;
         }),

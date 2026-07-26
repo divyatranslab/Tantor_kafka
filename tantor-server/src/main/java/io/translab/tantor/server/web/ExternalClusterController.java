@@ -51,7 +51,7 @@ public class ExternalClusterController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/api/v1/ui/external-clusters/bootstrap/register")
     public ResponseEntity<Map<String, Object>> registerBootstrap(
-            
+
             @RequestBody ExternalClusterService.BootstrapExternalClusterRequest request) {
         ExternalCluster cluster = externalClusterService.registerBootstrapCluster(request);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName()));
@@ -83,7 +83,7 @@ public class ExternalClusterController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/connect")
     public ResponseEntity<Map<String, Object>> connectDiscovery(
-            
+
             @PathVariable String discoveryKey) {
         ExternalCluster cluster = externalClusterService.connectDiscovery(discoveryKey);
         return ResponseEntity.ok(Map.of("id", cluster.getId(), "name", cluster.getName(), "status", "connected"));
@@ -92,7 +92,7 @@ public class ExternalClusterController {
     @PreAuthorize("hasRole('ADMIN')")
     @PostMapping("/api/v1/ui/external-clusters/{clusterId}/restart")
     public ResponseEntity<Map<String, Object>> restartExternalCluster(
-            
+
             @PathVariable UUID clusterId) {
         return ResponseEntity.ok(externalClusterService.queueRestart(clusterId));
     }
@@ -165,7 +165,7 @@ public class ExternalClusterController {
             @PathVariable String clusterName,
             @RequestParam String hostname,
             @RequestParam String bootstrap) {
-        return pollDiscoveryTask(clusterName, hostname, bootstrap);
+        return pollDiscoveryTask(clusterName, hostname, bootstrap, null);
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -175,7 +175,7 @@ public class ExternalClusterController {
             @RequestParam String hostname,
             @RequestParam String bootstrap,
             @RequestBody(required = false) ExternalClusterService.AgentTaskCompletion completion) {
-        return completeDiscoveryTask(clusterName, hostname, bootstrap, completion);
+        return completeDiscoveryTask(clusterName, hostname, bootstrap, null, completion);
     }
 
     @PreAuthorize("hasRole('ADMIN')")
@@ -183,6 +183,6 @@ public class ExternalClusterController {
     public ResponseEntity<Void> receiveLegacyDiscoveryMetrics(
             @PathVariable String clusterName,
             @RequestBody ExternalClusterService.ExternalBrokerMetricsDto metrics) {
-        return receiveDiscoveryMetrics(clusterName, metrics);
+        return receiveDiscoveryMetrics(clusterName, null, metrics);
     }
 }

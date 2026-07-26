@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Database, Download, Server, ShieldCheck } from 'lucide-react';
-import './ClusterOverview.css';
+import './ClusterOverview.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface OverviewSummary {
   brokerCount: number;
@@ -75,7 +76,7 @@ export function ClusterOverview() {
 
   const fetchOverview = async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/overview`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/overview`);
       if (!res.ok) {
         throw new Error('Failed to fetch cluster overview');
       }

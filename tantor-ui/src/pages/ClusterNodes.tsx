@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom';
 import { Loader2, RefreshCw, Server } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { notifyAction } from '../components/ConfirmDialog';
-import './ClusterNodes.css';
+import './ClusterNodes.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterNode {
   hostId: string;
@@ -33,7 +34,7 @@ export function ClusterNodes() {
   const fetchNodes = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/nodes`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/nodes`);
       if (!res.ok) throw new Error('Failed to fetch nodes');
       const data = await res.json();
       setNodes(data || []);
@@ -51,7 +52,7 @@ export function ClusterNodes() {
     setBinding(true);
     try {
       for (const [host, agentId] of Object.entries(selectedAgents)) {
-        await fetch(`/api/v1/ui/clusters/${id}/bind-agent`, {
+        await apiFetch(`/api/v1/ui/clusters/${id}/bind-agent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ host, agentId }),
@@ -70,7 +71,7 @@ export function ClusterNodes() {
 
   if (loading && nodes.length === 0) return <div className="state-center"><Loader2 className="spin" /> Loading nodes...</div>;
 
-  const isExternalCluster = nodes.some(n => 
+  const isExternalCluster = nodes.some(n =>
     n.status?.includes('Managed') || n.status?.includes('Unmanaged') || n.status === 'Bootstrap connected' || n.agentAvailable
   );
   const canBindAgents = canManage && isExternalCluster;
@@ -98,7 +99,7 @@ export function ClusterNodes() {
               <tr key={`${node.hostId}-${node.role}-${node.nodeId ?? index}`}>
                 {canBindAgents && (
                   <td style={{ textAlign: 'center' }}>
-                    <input 
+                    <input
                       type="checkbox"
                       checked={node.status === 'Managed' || !!selectedAgents[hostKey]}
                       disabled={!node.agentAvailable}

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
 import { usePermissions } from '../hooks/usePermissions';
 import { notifyAction } from '../components/ConfirmDialog';
 import './ConfigEditor.css';
-import './ConfigVersioning.css';
+import './ConfigVersioning.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface ClusterInfo {
   id: string;
@@ -66,7 +67,7 @@ export function ConfigEditor() {
   useEffect(() => {
     let cancelled = false;
     setLoadingCluster(true);
-    fetch(`/api/v1/ui/clusters/${id}`)
+    apiFetch(`/api/v1/ui/clusters/${id}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         if (!cancelled) setCluster(data);
@@ -91,29 +92,36 @@ function ExternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { canManage } = usePermissions();
-  
+
   const [loading, setLoading] = useState(false);
   const [topology, setTopology] = useState<ServiceTopologyItem[]>([]);
   const [configFiles, setConfigFiles] = useState<StaticConfigFile[]>([]);
-  
+
   const [fetchedProperties, setFetchedProperties] = useState<Record<number, Record<string, string>>>({});
   const [readingConfig, setReadingConfig] = useState(false);
   const [readStatus, setReadStatus] = useState<string>('');
 
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
-  
+
   // staged changes by nodeId
   const [stagedChanges, setStagedChanges] = useState<Record<number, StagedChange>>({});
-  
+
   // currently editing draft
   const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
   const [rollingRestart, setRollingRestart] = useState(true);
   const [applying, setApplying] = useState(false);
 
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
   const fetchConfigs = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config`);
+      const response = await apiFetch(`/api/v1/clusters/${id}/config`);
       if (response.ok) {
         const payload: ConfigPayload = await response.json();
         setTopology(payload.serviceTopology || []);
@@ -144,7 +152,7 @@ function ExternalConfigEditor() {
       saveDraftToStaged();
     }
     setSelectedNodeId(nodeId);
-    
+
     // If not already fetched, and the node has an agent, fetch it!
     const node = topology.find(t => t.nodeId === nodeId);
     if (node && node.canExecuteTasks && !fetchedProperties[nodeId]) {
@@ -156,7 +164,7 @@ function ExternalConfigEditor() {
     setReadingConfig(true);
     setReadStatus('Initiating read_config task...');
     try {
-      const startRes = await fetch(`/api/v1/clusters/${id}/config/read`, {
+      const startRes = await apiFetch(`/api/v1/clusters/${id}/config/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId })
@@ -175,10 +183,12 @@ function ExternalConfigEditor() {
       const taskId = startData.taskId;
 
       let complete = false;
-      while (!complete) {
+      while (!complete && isMounted.current) {
         await new Promise(r => setTimeout(r, 2000));
-        const statusRes = await fetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
+        if (!isMounted.current) break;
+        const statusRes = await apiFetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
         if (!statusRes.ok) break;
+        if (!isMounted.current) break;
         const statusData = await statusRes.json();
         if (statusData.status === 'SUCCESS') {
            setFetchedProperties(prev => ({ ...prev, [nodeId]: statusData.data || {} }));
@@ -192,9 +202,9 @@ function ExternalConfigEditor() {
         }
       }
     } catch (e) {
-       setReadStatus('Error reading config.');
+       if (isMounted.current) setReadStatus('Error reading config.');
     } finally {
-       setReadingConfig(false);
+       if (isMounted.current) setReadingConfig(false);
     }
   };
 
@@ -204,14 +214,14 @@ function ExternalConfigEditor() {
       Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
     );
     const changed: StagedProperty[] = [];
-    
+
     // Find modified or added
     for (const [k, v] of Object.entries(draftProperties)) {
       if (baseProperties[k] !== v) {
         changed.push({ key: k, oldValue: baseProperties[k] || '', newValue: v });
       }
     }
-    
+
     // Find deleted
     for (const [k, v] of Object.entries(baseProperties)) {
       if (!(k in draftProperties)) {
@@ -273,16 +283,16 @@ function ExternalConfigEditor() {
     if (!canManage) return;
     // save current screen
     saveDraftToStaged();
-    
+
     const changesArray = Object.values(stagedChanges);
     if (changesArray.length === 0) {
       notifyAction('No changes staged.');
       return;
     }
-    
+
     setApplying(true);
     try {
-      const response = await fetch(`/api/v1/clusters/${id}/config/rolling-apply`, {
+      const response = await apiFetch(`/api/v1/clusters/${id}/config/rolling-apply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -323,10 +333,10 @@ function ExternalConfigEditor() {
             <span>1</span>
             <div><h3>Select Node to Edit</h3><p>Select a node to stage configuration changes.</p></div>
           </div>
-          
+
           <div className="node-config-hosts">
-            <select 
-              value={selectedNodeId || ''} 
+            <select
+              value={selectedNodeId || ''}
               onChange={e => selectNode(Number(e.target.value))}
               className="node-select"
               style={{ padding: '8px', width: '100%', maxWidth: '400px', borderRadius: '4px', border: '1px solid #ccc' }}
@@ -351,7 +361,7 @@ function ExternalConfigEditor() {
               <p>File: <code>{selectedFile.path}</code></p>
             </div>
           </div>
-          
+
           {readingConfig ? (
             <div className="empty-state" style={{ padding: '2rem', textAlign: 'center' }}>
               <Loader2 className="spin" size={32} style={{ margin: '0 auto 1rem', display: 'block', color: '#6366f1' }} />
@@ -403,7 +413,7 @@ function ExternalConfigEditor() {
               </table>
             </div>
           )}
-          
+
           {canManage && (
             <div className="node-config-footer">
                <button onClick={saveDraftToStaged} disabled={readingConfig || !selectedNode.canExecuteTasks}>
@@ -420,7 +430,7 @@ function ExternalConfigEditor() {
             <span>2</span>
             <div><h3>Pending Changes Summary</h3><p>Review staged changes before applying them.</p></div>
           </div>
-          
+
           <div className="config-diff-list">
             {Object.values(stagedChanges).map(change => (
               <div key={change.nodeId} className="staged-node-block">
@@ -437,7 +447,7 @@ function ExternalConfigEditor() {
 
           <div className="config-review-footer">
             {canManage && <label>
-              <input type="checkbox" checked={rollingRestart} onChange={e => setRollingRestart(e.target.checked)} /> 
+              <input type="checkbox" checked={rollingRestart} onChange={e => setRollingRestart(e.target.checked)} />
               Perform rolling restart to apply immediately
             </label>}
             {canManage && <button className="primary" onClick={applyChanges} disabled={applying}>

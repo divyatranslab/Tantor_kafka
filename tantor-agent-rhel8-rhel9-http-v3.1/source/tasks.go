@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -86,12 +87,12 @@ func pollForTaskGroup(ctx context.Context, client *APIClient, cfg RuntimeConfig,
 
 	switch task.Task {
 	case "backup_file":
-		if err := executeBackupFile(task, representative); err != nil {
+		if err := executeBackupFile(task, representative, cfg.BackupRoot); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
 	case "restore_backup":
-		if err := executeRestoreBackup(task, representative); err != nil {
+		if err := executeRestoreBackup(task, representative, cfg.BackupRoot); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
@@ -105,12 +106,18 @@ func pollForTaskGroup(ctx context.Context, client *APIClient, cfg RuntimeConfig,
 			}
 		}
 	case "write_config":
-		if err := executeWriteConfig(task, representative); err != nil {
+		if !cfg.AllowConfigWrite {
+			result.Status = "FAILED"
+			result.Message = "config writes are disabled"
+		} else if err := executeWriteConfig(task, representative); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
 	case "restart_service":
-		if err := executeRestartService(task, "", representative, cfg.RestartWithSudo); err != nil {
+		if !cfg.AllowServiceRestart {
+			result.Status = "FAILED"
+			result.Message = "service restarts are disabled"
+		} else if err := executeRestartService(task, "", representative, cfg.RestartWithSudo); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
@@ -150,6 +157,25 @@ func validatePathSafety(path string, cluster DiscoveredCluster) error {
 	return nil
 }
 
+func pathWithinRoot(root, candidate string) (string, error) {
+	absRoot, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return "", fmt.Errorf("invalid root path: %w", err)
+	}
+	absCandidate, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return "", fmt.Errorf("invalid candidate path: %w", err)
+	}
+	relative, err := filepath.Rel(absRoot, absCandidate)
+	if err != nil {
+		return "", fmt.Errorf("cannot compare paths: %w", err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("security violation: path is outside the configured root")
+	}
+	return absCandidate, nil
+}
+
 func validateServiceSafety(serviceName string, cluster DiscoveredCluster) error {
 	if serviceName == "" {
 		return fmt.Errorf("serviceName cannot be empty")
@@ -163,12 +189,18 @@ func validateServiceSafety(serviceName string, cluster DiscoveredCluster) error 
 	return nil
 }
 
-func executeBackupFile(task AgentTask, cluster DiscoveredCluster) error {
+func executeBackupFile(task AgentTask, cluster DiscoveredCluster, backupRoot string) error {
 	if task.ConfigFilePath == "" || task.BackupDirPath == "" || task.BackupFilePath == "" {
 		return fmt.Errorf("missing configFilePath, backupDirPath, or backupFilePath")
 	}
 
 	if err := validatePathSafety(task.ConfigFilePath, cluster); err != nil {
+		return err
+	}
+	if _, err := pathWithinRoot(backupRoot, task.BackupDirPath); err != nil {
+		return err
+	}
+	if _, err := pathWithinRoot(backupRoot, task.BackupFilePath); err != nil {
 		return err
 	}
 
@@ -205,12 +237,15 @@ func executeBackupFile(task AgentTask, cluster DiscoveredCluster) error {
 	return nil
 }
 
-func executeRestoreBackup(task AgentTask, cluster DiscoveredCluster) error {
+func executeRestoreBackup(task AgentTask, cluster DiscoveredCluster, backupRoot string) error {
 	if task.ConfigFilePath == "" || task.BackupFilePath == "" {
 		return fmt.Errorf("missing configFilePath or backupFilePath")
 	}
 
 	if err := validatePathSafety(task.ConfigFilePath, cluster); err != nil {
+		return err
+	}
+	if _, err := pathWithinRoot(backupRoot, task.BackupFilePath); err != nil {
 		return err
 	}
 
@@ -282,45 +317,58 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster) error {
 		return fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	lines := strings.Split(string(content), "\n")
-
-	for key, value := range task.ConfigChanges {
-		found := false
-		for i, line := range lines {
-			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "#") || !strings.Contains(trimmed, "=") {
-				continue
-			}
-			existingKey := strings.TrimSpace(strings.SplitN(trimmed, "=", 2)[0])
-			if existingKey == key {
-				if value == "" {
-					lines[i] = "" // Remove line if value is blank
-				} else {
-					lines[i] = key + "=" + value
-				}
-				found = true
-				break
-			}
-		}
-		if !found && value != "" {
-			lines = append(lines, key+"="+value)
-		}
-	}
-
-	// Filter out blank lines if we removed anything
-	var newLines []string
-	for _, l := range lines {
-		if l != "" || (l == "" && !strings.Contains(l, "=")) { // Keep original blank lines maybe?
-			newLines = append(newLines, l) // Wait, if we set lines[i] = "", it's a blank line.
-		}
-	}
-
 	fileInfo, err := os.Stat(task.ConfigFilePath)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(task.ConfigFilePath, []byte(strings.Join(lines, "\n")), fileInfo.Mode())
+	return os.WriteFile(task.ConfigFilePath, []byte(applyConfigChanges(string(content), task.ConfigChanges)), fileInfo.Mode())
+}
+
+func applyConfigChanges(content string, changes map[string]string) string {
+	lines := strings.Split(content, "\n")
+	remaining := make(map[string]string, len(changes))
+	for key, value := range changes {
+		remaining[strings.TrimSpace(key)] = value
+	}
+
+	for index, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		separator := strings.IndexAny(trimmed, "=:")
+		if separator < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:separator])
+		value, found := remaining[key]
+		if !found {
+			continue
+		}
+		if value == "" {
+			lines[index] = ""
+		} else {
+			lines[index] = key + "=" + value
+		}
+		delete(remaining, key)
+	}
+
+	keys := make([]string, 0, len(remaining))
+	for key, value := range remaining {
+		if key != "" && value != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if len(lines) == 1 && lines[0] == "" {
+			lines[0] = key + "=" + remaining[key]
+		} else {
+			lines = append(lines, key+"="+remaining[key])
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func executeRestartService(task AgentTask, defaultRestartCommand string, cluster DiscoveredCluster, systemdUseSudo bool) error {

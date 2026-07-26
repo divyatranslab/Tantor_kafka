@@ -3,7 +3,8 @@ import {
   AlertTriangle, CheckCircle, RefreshCw,
   Shield, Activity
 } from 'lucide-react';
-import './Alerts.css';
+import './Alerts.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface AlertRow {
   id: string;
@@ -29,7 +30,7 @@ export function Alerts() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/v1/ui/alerts');
+      const res = await apiFetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
     } catch (e: any) {
@@ -54,14 +55,14 @@ export function Alerts() {
     <div className="alerts-container">
       {/* Frame 1000004628 */}
       <div className="alerts-wrapper">
-        
+
         <header className="alerts-header">
           {/* Left side info */}
           <div className="alerts-header-info">
             <h1>Alerts</h1>
             <p className="alerts-subtitle">Runtime health, failed tasks, storage pressure, and cluster availability signals.</p>
           </div>
-          
+
           {/* Right side actions */}
           <div className="alerts-header-actions">
             <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
@@ -77,11 +78,11 @@ export function Alerts() {
 
         {/* Frame 1000005223 */}
         <div className="alerts-content-body">
-          
+
           {/* Frame 1000005211 (KPI Gradient Container) */}
           <section className="alerts-kpi-banner">
             <div className="alerts-kpi-row">
-              
+
               {/* Critical KPI Card */}
               <div className="alerts-kpi-card">
                 <div className="alerts-kpi-header">
@@ -152,7 +153,7 @@ export function Alerts() {
                         <span className={`alerts-detail-severity-icon ${severityTone(alert.severity)}`}>
                           <AlertTriangle size={24} />
                         </span>
-                        
+
                         {/* Frame 1000005218 */}
                         <div className="alerts-detail-info-col">
                           {/* Frame 1000005217 */}
@@ -162,12 +163,12 @@ export function Alerts() {
                               <h3>{alert.title}</h3>
                               <span className="alerts-detail-category-pill">{sourceLabel(alert.source)}</span>
                             </div>
-                            
+
                             {/* Frame 1000005355 */}
                             {alert.description && (
                               <p className="alerts-detail-desc">{alert.description}</p>
                             )}
-                            
+
                             {/* Frame 1000005356 (Metadata Grid) */}
                             <div className="alerts-detail-metadata">
                               {/* Cluster */}
@@ -176,21 +177,21 @@ export function Alerts() {
                                 <span className="meta-block-val">{clusterLabel(alert)}</span>
                               </div>
                               <div className="alerts-meta-separator" />
-                              
+
                               {/* Cluster ID */}
                               <div className="alerts-meta-block">
                                 <span className="meta-block-label">Cluster ID</span>
                                 <span className="meta-block-val mono">{alert.clusterId || '-'}</span>
                               </div>
                               <div className="alerts-meta-separator" />
-                              
+
                               {/* Host / IP */}
                               <div className="alerts-meta-block">
                                 <span className="meta-block-label">Host / IP</span>
                                 <span className="meta-block-val">{hostLabel(alert)}</span>
                               </div>
                               <div className="alerts-meta-separator" />
-                              
+
                               {/* Detected */}
                               <div className="alerts-meta-block">
                                 <span className="meta-block-label">Detected</span>

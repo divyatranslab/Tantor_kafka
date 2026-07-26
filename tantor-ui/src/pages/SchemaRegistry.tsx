@@ -3,8 +3,10 @@ import { useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
+import { withConnId as formatConnId } from '../lib/connections';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './DataServiceTabs.css';
+import './DataServiceTabs.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface SchemaSubject {
   subject: string;
@@ -132,14 +134,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 
   return (
     <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
-      <div 
-        className="ds-custom-select-trigger" 
+      <div
+        className="ds-custom-select-trigger"
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
         <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
-      
+
       {isOpen && containerRef.current && (
         <AnchoredMenu
           anchor={containerRef.current}
@@ -254,16 +256,8 @@ export function SchemaRegistry() {
 
   // ── Cert helpers ──────────────────────────────────────────────
 
-  /**
-   * Safely appends ?connectionId=... to any URL using URLSearchParams.
-   * Works even if the base URL already contains query params (avoids unsafe string concatenation).
-   */
   const withConnId = (url: string, connId: string | null = selectedConnectionId): string => {
-    if (!connId) return url;
-    const [base, existing] = url.split('?');
-    const params = new URLSearchParams(existing || '');
-    params.set('connectionId', connId);
-    return base + '?' + params.toString();
+    return formatConnId(url, connId);
   };
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -305,7 +299,7 @@ export function SchemaRegistry() {
   /** Load all saved SR connections for the instance switcher. */
   const loadConnections = async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
       if (!res.ok) return;
       const data: SavedConnection[] = await res.json().catch(() => []);
       setSavedConnections(data);
@@ -364,7 +358,7 @@ export function SchemaRegistry() {
         ? `/api/v1/clusters/${id}/data-services/schema-registry/connections/${editingConnectionId}`
         : `/api/v1/clusters/${id}/data-services/schema-registry/connection`;
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -392,7 +386,7 @@ export function SchemaRegistry() {
   const confirmDeleteConnection = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections/${selectedConnectionId}`, {
+      const res = await apiFetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections/${selectedConnectionId}`, {
         method: 'DELETE'
       });
       if (!res.ok) {
@@ -410,7 +404,7 @@ export function SchemaRegistry() {
 
   const loadGlobalCompatibility = async () => {
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
       const data = await res.json().catch(() => ({}));
       if (res.ok) setGlobalCompatibility(data.compatibilityLevel || data.compatibility || 'BACKWARD');
     } catch { setGlobalCompatibility('BACKWARD'); }
@@ -422,7 +416,7 @@ export function SchemaRegistry() {
     setError(null);
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       setSummary(data);
@@ -453,7 +447,7 @@ export function SchemaRegistry() {
     setExpandedVersions(new Set());
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
@@ -528,7 +522,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(createSubject.trim())}/versions`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(createSubject.trim())}/versions`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: createSchemaType, schema: createSchema })
       });
@@ -553,7 +547,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/versions`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/versions`), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: editSchemaType, schema: newSchema })
       });
@@ -561,7 +555,7 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to update schema.');
       // Also save compatibility if changed
       if (editCompatibility !== subjectCompatibility) {
-        await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
+        await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ compatibility: editCompatibility })
         });
@@ -587,7 +581,7 @@ export function SchemaRegistry() {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
@@ -606,7 +600,7 @@ export function SchemaRegistry() {
     if (!canManage) return;
     setSaving(true); setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: val })
       });
@@ -622,7 +616,7 @@ export function SchemaRegistry() {
     if (!selected) return;
     setSaving(true); setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
+      const res = await apiFetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: subjectCompatibility })
       });
@@ -687,9 +681,9 @@ export function SchemaRegistry() {
               <div className="ds-buttons-group">
                 {/* ── Buttons ── */}
                 {canManage && (
-                  <button 
+                  <button
                     className="ds-sr-save-button"
-                    onClick={() => saveGlobalCompatibility(globalCompatibility)} 
+                    onClick={() => saveGlobalCompatibility(globalCompatibility)}
                     disabled={saving}
                     style={{
                       boxSizing: 'border-box',
@@ -750,10 +744,10 @@ export function SchemaRegistry() {
           {!hasFetched ? (
             <div className="ds-fetch-prompt ds-sr-fetch-prompt">
               <p>Schema Registry data is not loaded automatically.</p>
-              <button 
+              <button
                 className="ds-sr-fetch-button"
-                type="button" 
-                onClick={load} 
+                type="button"
+                onClick={load}
                 disabled={loading}
                 style={{
                   display: 'inline-flex',
@@ -785,9 +779,9 @@ export function SchemaRegistry() {
               <span>REST Endpoint</span>
               <strong className="ds-sr-endpoint-value">
                 {summary?.connection ? (
-                  <a 
-                    href={summary.connection} 
-                    target="_blank" 
+                  <a
+                    href={summary.connection}
+                    target="_blank"
                     rel="noopener noreferrer"
                   >
                     {summary.connection}
@@ -983,7 +977,7 @@ export function SchemaRegistry() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="ds-compare-selectors">
               <div className="ds-field">
                 <label>Version A</label>

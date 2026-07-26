@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { parseIpList } from '../lib/hosts';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
-import { confirmAction, notifyAction } from './ConfirmDialog';
+import { confirmAction, notifyAction } from './ConfirmDialog';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type AgentConnectivityModalProps = {
   onClose: () => void;
@@ -14,7 +16,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
 
   const fetchHosts = async () => {
     try {
-      const res = await fetch('/api/v1/ui/hosts');
+      const res = await apiFetch('/api/v1/ui/hosts');
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
@@ -30,7 +32,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
   const deleteHost = async (id: string) => {
     if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/v1/ui/hosts/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchHosts();
       } else {
@@ -43,17 +45,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  const parseIpList = (raw: any): string[] => {
-    if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
-    if (typeof raw === 'string' && raw.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
-    }
-    if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
-    return [];
-  };
+
 
   const displayIp = (raw: any) => {
     const ips = parseIpList(raw);
@@ -109,7 +101,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     setConnectingAgents(true);
     try {
       const results = await Promise.allSettled(
-        selectedIds.map(id => fetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
+        selectedIds.map(id => apiFetch(`/api/v1/ui/hosts/${id}/approve`, { method: 'POST' }))
       );
       const failed = results.filter(result => result.status === 'rejected'
         || (result.status === 'fulfilled' && !result.value.ok)).length;
@@ -142,28 +134,28 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <span style={{ fontSize: '14px', color: '#475569', fontWeight: 500 }}>Discovered Nodes</span>
               <label className="pending-select-all" style={{ margin: 0, padding: 0, border: 'none', background: 'transparent', gap: '8px', cursor: 'pointer' }}>
-                <input 
-                  type="checkbox" 
-                  checked={allPendingSelected} 
-                  onChange={toggleAllPendingHosts} 
-                  style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }} 
+                <input
+                  type="checkbox"
+                  checked={allPendingSelected}
+                  onChange={toggleAllPendingHosts}
+                  style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                 />
                 <span style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
               </label>
             </div>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '400px', overflowY: 'auto', paddingRight: '4px' }}>
               {pendingHosts.map(host => (
-                <div 
-                  key={host.id} 
-                  className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`} 
-                  onClick={() => togglePendingHost(host.id)} 
-                  style={{ 
-                    background: '#FFFFFF', 
-                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #F1F5F9', 
-                    borderRadius: '8px', 
-                    padding: '16px', 
-                    margin: 0, 
+                <div
+                  key={host.id}
+                  className={`pending-node selectable ${selectedPendingIds[host.id] ? 'selected' : ''}`}
+                  onClick={() => togglePendingHost(host.id)}
+                  style={{
+                    background: '#FFFFFF',
+                    border: selectedPendingIds[host.id] ? '1px solid #8B5CF6' : '1px solid #F1F5F9',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    margin: 0,
                     boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                     display: 'flex',
                     alignItems: 'center',
@@ -183,10 +175,10 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     <p className="ip" style={{ fontSize: '13px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                   </div>
                   <div className="pending-node-actions">
-                    <button 
-                      className="btn icon-only danger" 
-                      title="Reject & remove" 
-                      onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }} 
+                    <button
+                      className="btn icon-only danger"
+                      title="Reject & remove"
+                      onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}
                       style={{ border: 'none', background: 'transparent', color: '#9CA3AF', padding: '4px' }}
                     >
                       <Trash2 size={18} />
@@ -199,24 +191,24 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
         )}
 
         <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#FFFFFF' }}>
-          <button 
-            className="btn" 
-            onClick={onClose} 
+          <button
+            className="btn"
+            onClick={onClose}
             style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#64748B', padding: '8px 24px', borderRadius: '8px', fontWeight: 500, fontSize: '14px' }}
           >
             Cancel
           </button>
-          <button 
-            className="btn btn-primary-action" 
-            disabled={selectedCount === 0 || connectingAgents} 
-            onClick={connectSelectedAgents} 
-            style={{ 
-              background: '#FFFFFF', 
-              border: '1px solid #8B5CF6', 
-              color: '#8B5CF6', 
-              padding: '8px 24px', 
-              borderRadius: '8px', 
-              fontWeight: 500, 
+          <button
+            className="btn btn-primary-action"
+            disabled={selectedCount === 0 || connectingAgents}
+            onClick={connectSelectedAgents}
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid #8B5CF6',
+              color: '#8B5CF6',
+              padding: '8px 24px',
+              borderRadius: '8px',
+              fontWeight: 500,
               fontSize: '14px',
               opacity: (selectedCount === 0 || connectingAgents) ? 0.5 : 1
             }}

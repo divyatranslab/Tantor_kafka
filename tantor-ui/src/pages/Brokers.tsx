@@ -5,7 +5,8 @@ import {
   AlertCircle, CheckCircle2, XCircle,
   Database, Share2, Search
 } from 'lucide-react';
-import './Brokers.css';
+import './Brokers.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface Broker {
   brokerId: number;
@@ -36,7 +37,7 @@ export function Brokers() {
 
   const fetchBrokers = async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/brokers`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/brokers`);
       if (!res.ok) throw new Error('Failed to fetch brokers');
       setBrokers(await res.json());
       setError(null);

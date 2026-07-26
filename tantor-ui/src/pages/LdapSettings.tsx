@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { KeyRound, Save, TestTube, RefreshCw, X, Check } from 'lucide-react';
-import './LdapSettings.css';
+import './LdapSettings.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface LdapConfig {
   id?: string;
@@ -62,7 +63,7 @@ export function LdapSettings() {
 
   const fetchConfig = async () => {
     try {
-      const res = await fetch('/api/v1/ldap/config');
+      const res = await apiFetch('/api/v1/ldap/config');
       if (res.ok) {
         const data = await res.json();
         if (data && Object.keys(data).length > 0) {
@@ -91,14 +92,14 @@ export function LdapSettings() {
         bindPassword: bindPassword || undefined,
       };
 
-      const res = await fetch('/api/v1/ldap/config', {
+      const res = await apiFetch('/api/v1/ldap/config', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload)
       });
-      
+
       if (!res.ok) throw new Error('Failed to save config');
       const result = await res.json();
       setConfig(result);
@@ -117,7 +118,7 @@ export function LdapSettings() {
     setTesting(true);
     setTestResult(null);
     try {
-      const res = await fetch('/api/v1/ldap/test', {
+      const res = await apiFetch('/api/v1/ldap/test', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,7 +183,7 @@ export function LdapSettings() {
       )}
 
       <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        
+
         {/* Enable / Disable */}
         <div className="settings-card">
           <div className="card-header" style={{ marginBottom: 0, alignItems: 'center' }}>
@@ -195,10 +196,10 @@ export function LdapSettings() {
               </div>
             </div>
             <label className="toggle-switch">
-              <input 
-                type="checkbox" 
-                checked={config.enabled} 
-                onChange={(e) => setConfig({ ...config, enabled: e.target.checked })} 
+              <input
+                type="checkbox"
+                checked={config.enabled}
+                onChange={(e) => setConfig({ ...config, enabled: e.target.checked })}
               />
               <span className="slider"></span>
             </label>
@@ -210,7 +211,7 @@ export function LdapSettings() {
           <div className="card-header">
             <div className="card-title">Server Connection</div>
           </div>
-          
+
           <div className="grid-2">
             <div className="form-group">
               <label>Server URL</label>
@@ -390,7 +391,7 @@ export function LdapSettings() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="form-group">
               <label>Username</label>
               <input
@@ -400,7 +401,7 @@ export function LdapSettings() {
                 onChange={(e) => setTestUsername(e.target.value)}
               />
             </div>
-            
+
             <div className="form-group">
               <label>Password</label>
               <input

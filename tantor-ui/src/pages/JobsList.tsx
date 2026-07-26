@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
-import './JobsList.css';
+import './JobsList.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 type Job = {
   id: string;
@@ -12,20 +14,17 @@ type Job = {
   createdAt: string;
 };
 
-export function JobsList() {
+export const JobsList = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true); // tracks initial load
   const [refreshing, setRefreshing] = useState(false); // tracks manual/auto refreshes
   const navigate = useNavigate();
 
-  const fetchJobs = async (isManual = false) => {
-    if (isManual) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+  const fetchJobs = async (silent: boolean = false, signal?: AbortSignal) => {
+    if (!silent) setLoading(true);
+    setRefreshing(silent);
     try {
-      const res = await fetch('/api/v1/ui/jobs');
+      const res = await apiFetch('/api/v1/ui/jobs', { signal });
       if (res.ok) {
         const data = await res.json();
         setJobs(data);
@@ -38,10 +37,12 @@ export function JobsList() {
     }
   };
 
+  usePolling((signal) => {
+    return fetchJobs(true, signal);
+  }, 5000);
+
   useEffect(() => {
     fetchJobs(false);
-    const interval = setInterval(() => fetchJobs(true), 5000);
-    return () => clearInterval(interval);
   }, []);
 
   const formatStatus = (status: string) => {

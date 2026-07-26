@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { usePolling } from '../hooks/usePolling';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -12,7 +13,8 @@ import {
   X,
   Wifi,
 } from 'lucide-react';
-import './ExternalClusters.css';
+import './ExternalClusters.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface BootstrapResult {
   name?: string;
@@ -122,13 +124,14 @@ export function ExternalClusters() {
   metrics_url: "http://localhost:7071/metrics"
   disable_metrics: false
   skip_precheck: false
-  tls_insecure_skip_verify: true`
+  # DEV-ONLY: Set to true for dev environments without trusted certs. Set false for production.
+  tls_insecure_skip_verify: false`
   ), [serverHint]);
 
-  const loadAgents = async () => {
+  const loadAgents = async (signal?: AbortSignal) => {
     setAgentsLoading(true);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/agents');
+      const res = await apiFetch('/api/v1/ui/external-clusters/agents', { signal });
       if (res.ok) setAgents(await res.json());
     } catch (e) {
       console.error(e);
@@ -137,10 +140,12 @@ export function ExternalClusters() {
     }
   };
 
+  usePolling((signal) => {
+    return loadAgents(signal);
+  }, 10000);
+
   useEffect(() => {
     loadAgents();
-    const timer = window.setInterval(loadAgents, 10000);
-    return () => window.clearInterval(timer);
   }, []);
 
   const formatHeartbeat = (value?: string) => {
@@ -174,7 +179,7 @@ export function ExternalClusters() {
     setBanner('');
     setBootstrapResult(null);
     try {
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
+      const res = await apiFetch('/api/v1/ui/external-clusters/bootstrap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -262,7 +267,7 @@ export function ExternalClusters() {
         selectedAgents: selectedAgents
       };
 
-      const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
+      const res = await apiFetch('/api/v1/ui/external-clusters/bootstrap/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -678,7 +683,7 @@ export function ExternalClusters() {
                   <h3>Agent connectivity</h3>
                   <p>Shows discovery agents that are polling this Tantor server, even before Kafka is detected.</p>
                 </div>
-                <button className="btn" onClick={loadAgents} disabled={agentsLoading} aria-label="Refresh agents" title="Refresh">
+                <button className="btn" onClick={() => loadAgents()} disabled={agentsLoading} aria-label="Refresh agents" title="Refresh">
                   <RefreshCw size={14} className={agentsLoading ? 'spin' : ''} />
                 </button>
               </div>

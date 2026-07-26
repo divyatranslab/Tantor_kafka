@@ -5,9 +5,11 @@ import {
   MoreVertical, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { apiError } from '../lib/errors';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import './Topics.css';
+import './Topics.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface TopicSummary {
   name: string;
@@ -47,10 +49,6 @@ const actionCopy: Record<ActionKind, { title: string; description: string; butto
   }
 };
 
-async function apiError(response: Response) {
-  const body = await response.json().catch(() => null);
-  return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
-}
 
 export function Topics() {
   const { id } = useParams<{ id: string }>();
@@ -108,7 +106,7 @@ export function Topics() {
     else setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/topics?showInternal=${includeInternal}&page=${page - 1}&size=${size}&search=${encodeURIComponent(search)}`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/topics?showInternal=${includeInternal}&page=${page - 1}&size=${size}&search=${encodeURIComponent(search)}`);
       if (!res.ok) {
         throw new Error(`Failed to load topics: ${res.statusText}`);
       }
@@ -167,7 +165,7 @@ export function Topics() {
       if (newTopic.maxPartitionSize.trim()) configs['retention.bytes'] = newTopic.maxPartitionSize.trim();
       if (newTopic.maxMessageBytes.trim()) configs['max.message.bytes'] = newTopic.maxMessageBytes.trim();
 
-      const response = await fetch('/api/v1/clusters/' + id + '/topics', {
+      const response = await apiFetch('/api/v1/clusters/' + id + '/topics', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -214,7 +212,7 @@ export function Topics() {
           endpoint += '/recreate';
           method = 'POST';
         }
-        const response = await fetch(endpoint, { method });
+        const response = await apiFetch(endpoint, { method });
         if (!response.ok) throw new Error(name + ': ' + await apiError(response));
       }
       setNotice(actionCopy[pendingAction.kind].button + ' completed.');

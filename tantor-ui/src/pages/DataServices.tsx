@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Database, Activity, Box, Server, Settings, Layers, HardDrive, CheckCircle2, X } from 'lucide-react';
 import { notifyAction } from '../components/ConfirmDialog';
-import './DataServices.css';
+import './DataServices.css';import { apiFetch } from '../lib/apiClient.ts';
+
 
 export function DataServices() {
   const [step, setStep] = useState(1);
@@ -11,7 +12,7 @@ export function DataServices() {
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/v1/ui/hosts')
+    apiFetch('/api/v1/ui/hosts')
       .then(res => res.json())
       .then(data => setHosts(data))
       .catch(err => console.error(err));
@@ -40,23 +41,23 @@ export function DataServices() {
         <div className="wizard-steps-sidebar">
           <ul>
             <li className={step === 1 ? 'active' : step > 1 ? 'completed' : ''}>
-              <span className="step-circle">{step > 1 ? <CheckCircle2 size={16}/> : 1}</span> 
+              <span className="step-circle">{step > 1 ? <CheckCircle2 size={16}/> : 1}</span>
               Select Dependencies
             </li>
             <li className={step === 2 ? 'active' : step > 2 ? 'completed' : ''}>
-              <span className="step-circle">{step > 2 ? <CheckCircle2 size={16}/> : 2}</span> 
+              <span className="step-circle">{step > 2 ? <CheckCircle2 size={16}/> : 2}</span>
               Assign Roles
             </li>
             <li className={step === 3 ? 'active' : step > 3 ? 'completed' : ''}>
-              <span className="step-circle">{step > 3 ? <CheckCircle2 size={16}/> : 3}</span> 
+              <span className="step-circle">{step > 3 ? <CheckCircle2 size={16}/> : 3}</span>
               Setup Database
             </li>
             <li className={step === 4 ? 'active' : step > 4 ? 'completed' : ''}>
-              <span className="step-circle">{step > 4 ? <CheckCircle2 size={16}/> : 4}</span> 
+              <span className="step-circle">{step > 4 ? <CheckCircle2 size={16}/> : 4}</span>
               Review Changes
             </li>
             <li className={step === 5 ? 'active' : ''}>
-              <span className="step-circle">5</span> 
+              <span className="step-circle">5</span>
               Command Details
             </li>
           </ul>
@@ -67,7 +68,7 @@ export function DataServices() {
           {step === 1 && (
             <div className="step-pane">
               <h2>Select the type of service you want to add.</h2>
-              
+
               <div className="service-selection-table">
                 <div className="table-header">
                   <div></div>
@@ -77,9 +78,9 @@ export function DataServices() {
                 {availableServices.map((svc) => (
                   <label key={svc.id} className={`table-row ${selectedService === svc.id ? 'selected' : ''}`}>
                     <div className="radio-col">
-                      <input 
-                        type="radio" 
-                        name="service_selection" 
+                      <input
+                        type="radio"
+                        name="service_selection"
                         checked={selectedService === svc.id}
                         onChange={() => setSelectedService(svc.id)}
                       />
@@ -95,8 +96,8 @@ export function DataServices() {
 
               <div className="wizard-footer">
                 <button className="btn-secondary" onClick={() => window.history.back()}>Back</button>
-                <button 
-                  className="btn-primary" 
+                <button
+                  className="btn-primary"
                   disabled={!selectedService}
                   onClick={() => setStep(2)}
                 >
@@ -110,7 +111,7 @@ export function DataServices() {
             <div className="step-pane">
               <h2>Assign Roles</h2>
               <p>Select which hosts will run the {availableServices.find(s => s.id === selectedService)?.name} roles.</p>
-              
+
               <div className="role-assignment-box">
                 <div className="role-header">
                   <strong>Master Node</strong>
@@ -150,9 +151,9 @@ export function DataServices() {
                         <div className="host-list">
                           {hosts.map(host => (
                             <label key={host.id} className={`host-row ${selectedHostId === host.id ? 'selected' : ''}`}>
-                              <input 
-                                type="radio" 
-                                name="host_select" 
+                              <input
+                                type="radio"
+                                name="host_select"
                                 checked={selectedHostId === host.id}
                                 onChange={() => setSelectedHostId(host.id)}
                               />
@@ -177,7 +178,7 @@ export function DataServices() {
             <div className="step-pane">
               <h2>Setup Database (Optional)</h2>
               <p>Configure database connections if this service requires external storage.</p>
-              
+
               {['kafka', 'zookeeper', 'cruise', 'flink', 'hdfs'].includes(selectedService || '') ? (
                 <div className="role-assignment-box" style={{ background: '#F8F9FA', marginTop: '2rem' }}>
                   <div className="role-body" style={{ color: '#0F9D58', fontStyle: 'normal', fontSize: '1.1rem' }}>
@@ -218,7 +219,7 @@ export function DataServices() {
             <div className="step-pane">
               <h2>Review & Deploy</h2>
               <p>You are about to deploy <strong>{availableServices.find(s => s.id === selectedService)?.name}</strong>.</p>
-              
+
               <div className="role-assignment-box" style={{ marginTop: '20px' }}>
                 <div className="role-header" style={{ background: '#E8F0FE', color: '#1967D2' }}>
                   <strong>Deployment Summary</strong>
@@ -232,8 +233,8 @@ export function DataServices() {
 
               <div className="wizard-footer">
                 <button className="btn-secondary" onClick={() => setStep(3)}>Back</button>
-                <button 
-                  className="btn-primary" 
+                <button
+                  className="btn-primary"
                   onClick={async () => {
                     notifyAction('Deployment initialized! In a real scenario, this would trigger /api/v1/ui/clusters/deploy with the selected host ' + selectedHostId);
                     window.location.href = '/';

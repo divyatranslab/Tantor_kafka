@@ -18,6 +18,17 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(Map.of("message", cleanMessage(ex)));
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidationExceptions(org.springframework.web.bind.MethodArgumentNotValidException ex) {
+        String errorMessage = ex.getBindingResult().getAllErrors().stream()
+                .map(org.springframework.validation.ObjectError::getDefaultMessage)
+                .findFirst()
+                .orElse("Validation failed");
+        // We use 'message' or 'error' depending on what the UI expected, but UI generally handles both if we use standard error objects, or we can use "message" and "error".
+        // Let's use both to be safe for all endpoints.
+        return ResponseEntity.badRequest().body(Map.of("message", errorMessage, "error", errorMessage));
+    }
+
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, String>> handleDataIntegrity(DataIntegrityViolationException ex) {
         log.warn("Data integrity violation", ex);
@@ -43,9 +54,12 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, String>> handleRuntime(RuntimeException ex) {
-        log.warn("Request failed", ex);
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of("message", cleanMessage(ex)));
+    public ResponseEntity<org.springframework.http.ProblemDetail> handleRuntime(RuntimeException ex) {
+        log.error("Unexpected server error", ex);
+        org.springframework.http.ProblemDetail problem = org.springframework.http.ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected internal server error occurred.");
+        problem.setTitle("Internal Server Error");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
     }
 
     private String cleanMessage(Exception ex) {

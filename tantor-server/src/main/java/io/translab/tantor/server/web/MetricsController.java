@@ -19,6 +19,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+@org.springframework.validation.annotation.Validated
 @RestController
 @RequestMapping("/api/v1/ui/clusters")
 @RequiredArgsConstructor
@@ -41,7 +42,7 @@ public class MetricsController {
         ClusterMetrics response = new ClusterMetrics();
         List<NodeMetrics> nodes = new ArrayList<>();
 
-        List<CompletableFuture<NodeMetrics>> futures = cluster.getServices().stream().map(svc -> 
+        List<CompletableFuture<NodeMetrics>> futures = cluster.getServices().stream().map(svc ->
             CompletableFuture.supplyAsync(() -> fetchMetricsForNode(svc))
         ).collect(Collectors.toList());
 
@@ -69,7 +70,7 @@ public class MetricsController {
         nm.setHostname(host.getHostname());
         nm.setRole(svc.getRole());
         nm.setNodeId(svc.getNodeId());
-        
+
         SystemMetrics sys = new SystemMetrics();
         sys.setCpuUsagePct(host.getCpuUsagePct());
         sys.setMemTotalMb(host.getMemTotalMb());
@@ -113,14 +114,14 @@ public class MetricsController {
         Random rand = new Random();
         double msgIn = 180 + (rand.nextDouble() * 150);
         kfk.setMessagesInPerSec(msgIn);
-        
-        double bytesIn = msgIn * 1024 * (8 + rand.nextDouble() * 4); 
+
+        double bytesIn = msgIn * 1024 * (8 + rand.nextDouble() * 4);
         kfk.setBytesInPerSec(bytesIn);
         kfk.setBytesOutPerSec(bytesIn * (1.2 + rand.nextDouble() * 0.8));
-        
+
         kfk.setPartitionCount(48);
         kfk.setActiveControllerCount(1);
-        kfk.setNetworkProcessorAvgIdlePercent(0.85 + rand.nextDouble() * 0.1); 
+        kfk.setNetworkProcessorAvgIdlePercent(0.85 + rand.nextDouble() * 0.1);
         kfk.setUnderReplicatedPartitions(0);
         kfk.setOfflineReplicaCount(0);
     }
@@ -131,7 +132,7 @@ public class MetricsController {
             if (line.startsWith("#")) continue;
             String[] parts = line.split(" ");
             if (parts.length < 2) continue;
-            
+
             String metric = parts[0].toLowerCase();
             try {
                 double val = Double.parseDouble(parts[1]);

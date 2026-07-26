@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
+import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';import { apiFetch } from '../lib/apiClient.ts';
+
 
 interface PartitionSummaryDto {
   topicName: string;
@@ -41,7 +42,7 @@ export function Partitions() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
+      const res = await apiFetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Partitions are not available yet (HTTP ${res.status})`);
@@ -84,7 +85,7 @@ export function Partitions() {
     <div className="partitions-tab animate-fade-in" style={{ width: '100%' }}>
       <div className="topics-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
         <h2 className="cluster-section-heading">Partitions Dashboard</h2>
-        
+
         {/* -- Figma Toolbar Search Bar & Refresh Button -- */}
         <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>
           <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
@@ -102,9 +103,9 @@ export function Partitions() {
               borderRadius: '8px'
             }}>
               <Search size={16} style={{ color: '#818181' }} />
-              <input 
-                type="text" 
-                placeholder="Search key or value" 
+              <input
+                type="text"
+                placeholder="Search key or value"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 style={{
@@ -120,10 +121,10 @@ export function Partitions() {
               />
             </label>
           </form>
-          <button 
+          <button
             type="button"
-            onClick={fetchPartitions} 
-            disabled={loading} 
+            onClick={fetchPartitions}
+            disabled={loading}
             style={{
               boxSizing: 'border-box',
               display: 'flex',
@@ -251,8 +252,8 @@ export function Partitions() {
               Showing page {data.page + 1} of {data.totalPages === 0 ? 1 : data.totalPages} (Total {data.totalElements} partitions)
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <select 
-                value={size} 
+              <select
+                value={size}
                 onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
                 style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid #CCCCCC', backgroundColor: '#FFFFFF', color: '#23252D' }}
               >
@@ -262,19 +263,19 @@ export function Partitions() {
                 <option value={100}>100 per page</option>
                 <option value={500}>500 per page</option>
               </select>
-              
+
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button 
-                  className="pagination-btn" 
-                  disabled={data.page === 0} 
+                <button
+                  className="pagination-btn"
+                  disabled={data.page === 0}
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '6px', cursor: data.page === 0 ? 'not-allowed' : 'pointer', opacity: data.page === 0 ? 0.5 : 1 }}
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <button 
-                  className="pagination-btn" 
-                  disabled={!data.hasNext} 
+                <button
+                  className="pagination-btn"
+                  disabled={!data.hasNext}
                   onClick={() => setPage(p => p + 1)}
                   style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '6px', cursor: !data.hasNext ? 'not-allowed' : 'pointer', opacity: !data.hasNext ? 0.5 : 1 }}
                 >
