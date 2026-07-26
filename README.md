@@ -68,13 +68,24 @@ Minimum local development values:
 ```properties
 TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
 TANTOR_DB_USER=postgres
-TANTOR_DB_PASSWORD=postgres
+TANTOR_DB_PASSWORD=CHANGE_ME_MINIMUM_12_CHARACTERS
+TANTOR_ENCRYPTION_KEY=CHANGE_ME_MINIMUM_32_CHARACTERS
+TANTOR_ENCRYPTION_SALT=CHANGE_ME_UNIQUE_MINIMUM_16_CHARACTERS
+TANTOR_JWT_SECRET=CHANGE_ME_MINIMUM_32_CHARACTERS
+TANTOR_PROXY_SECRET=CHANGE_ME_MINIMUM_32_CHARACTERS
+TANTOR_SSL_KEYSTORE_PASSWORD=CHANGE_ME_MINIMUM_12_CHARACTERS
+TANTOR_GRAFANA_PASSWORD=CHANGE_ME_MINIMUM_16_CHARACTERS
 TANTOR_REPO_URL=http://localhost:8081
 TANTOR_REPO_PATH=./.runtime/repository
 TANTOR_MONITORING_MODE=direct
 TANTOR_PROMETHEUS_URL=http://127.0.0.1:9090
 TANTOR_MONITORING_EXPORTER_HOST=127.0.0.1
 ```
+
+Existing installations that encrypted data with the previous key handling may
+temporarily set `TANTOR_ENCRYPTION_LEGACY_KEY` to the old key while credentials
+are rewritten. New ciphertext is prefixed with `v2:` and uses PBKDF2-derived
+AES-256 keys. Remove the legacy key after all unversioned values are migrated.
 
 For a VM/server deployment, set `TANTOR_REPO_URL` and `TANTOR_MONITORING_EXPORTER_HOST` to the Tantor server IP, for example:
 

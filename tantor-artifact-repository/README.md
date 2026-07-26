@@ -128,7 +128,7 @@ value for HTTP cache validation.
 ```bash
 # Requires Java 21, a reachable PostgreSQL 16, Maven Central (or a mirror)
 export TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
-export TANTOR_DB_USER=tantor TANTOR_DB_PASSWORD=tantor
+export TANTOR_DB_USER=CHANGE_ME TANTOR_DB_PASSWORD=CHANGE_ME_MINIMUM_12_CHARACTERS
 export TANTOR_REPO_PATH=/var/lib/tantor/repository
 
 mvn clean package

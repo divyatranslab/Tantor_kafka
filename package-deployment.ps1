@@ -31,11 +31,27 @@ Move-Item *.tar deployment-bundle\
 
 # Copy required files
 Copy-Item podman-compose.yml deployment-bundle\
-Copy-Item .env.example deployment-bundle\.env
+Copy-Item .env.example deployment-bundle\.env.example
+Copy-Item scripts\validate-deployment-secrets.sh deployment-bundle\
 
 # Create a start script for the target machine
 $startScript = @"
 #!/bin/bash
+set -euo pipefail
+
+if [ ! -f .env ]; then
+  echo "Missing required .env file. Copy .env.example to .env and replace every CHANGE_ME value." >&2
+  exit 1
+fi
+
+chmod 600 .env
+set -a
+. ./.env
+set +a
+
+chmod 700 validate-deployment-secrets.sh
+./validate-deployment-secrets.sh
+
 echo "Loading images..."
 podman load -i tantor-ui.tar
 podman load -i tantor-server.tar

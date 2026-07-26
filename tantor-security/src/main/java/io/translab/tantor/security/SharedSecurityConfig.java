@@ -17,7 +17,7 @@ import java.util.List;
 @Configuration
 public class SharedSecurityConfig {
 
-    @Value("${tantor.security.proxy-secret:}")
+    @Value("${tantor.security.proxy-secret}")
     private String proxySecret;
 
 

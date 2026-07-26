@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: tantor
       POSTGRES_USER: ${TANTOR_DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${TANTOR_DB_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
     ports:
       - "5432:5432"
     volumes:
@@ -20,6 +20,9 @@ services:
     container_name: tantor_artifact_repo
     environment:
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
+      TANTOR_DB_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
+      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
+      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET:?TANTOR_PROXY_SECRET is required}
     ports:
       - "8081:8081"
     volumes:
@@ -33,11 +36,17 @@ services:
     environment:
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
       TANTOR_DB_USER: ${TANTOR_DB_USER:-postgres}
-      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:-postgres}
+      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
       TANTOR_REPO_URL: http://tantor-artifact-repository:8081
       TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
       TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
-      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET}
+      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET:?TANTOR_PROXY_SECRET is required}
+      TANTOR_ENCRYPTION_KEY: ${TANTOR_ENCRYPTION_KEY:?TANTOR_ENCRYPTION_KEY is required}
+      TANTOR_ENCRYPTION_SALT: ${TANTOR_ENCRYPTION_SALT:?TANTOR_ENCRYPTION_SALT is required}
+      TANTOR_ENCRYPTION_LEGACY_KEY: ${TANTOR_ENCRYPTION_LEGACY_KEY:-}
+      TANTOR_JWT_SECRET: ${TANTOR_JWT_SECRET:?TANTOR_JWT_SECRET is required}
+      TANTOR_SSL_KEYSTORE_PASSWORD: ${TANTOR_SSL_KEYSTORE_PASSWORD:?TANTOR_SSL_KEYSTORE_PASSWORD is required}
+      TANTOR_GRAFANA_PASSWORD: ${TANTOR_GRAFANA_PASSWORD:?TANTOR_GRAFANA_PASSWORD is required}
     ports:
       - "8443:8443"
     depends_on:
@@ -50,7 +59,7 @@ services:
       context: ./tantor-ui
     container_name: tantor_ui
     environment:
-      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET}
+      TANTOR_PROXY_SECRET: ${TANTOR_PROXY_SECRET:?TANTOR_PROXY_SECRET is required}
     ports:
       - "80:80"
       - "443:443"

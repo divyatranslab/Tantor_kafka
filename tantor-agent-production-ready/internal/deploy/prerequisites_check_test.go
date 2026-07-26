@@ -83,7 +83,6 @@ func TestCheckPrerequisitesJavaFailureStillChecksEverything(t *testing.T) {
 			"21.0.7",
 			"ntpd: Active",
 		},
-		failAt: 5,
 	}
 	engine := newPrerequisiteTestEngine(exec)
 

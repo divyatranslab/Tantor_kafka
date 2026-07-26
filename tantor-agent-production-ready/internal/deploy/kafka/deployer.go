@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	stdpath "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/internal/executor"
+	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/checksum"
 )
@@ -59,6 +61,9 @@ func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Exe
 
 func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step string, log string)) (string, error) {
 	var logs strings.Builder
+	if err := validateCommandTaskInputs(t); err != nil {
+		return logs.String(), err
+	}
 	var stepLogs strings.Builder
 	currentStep := ""
 
@@ -358,7 +363,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		t.Parameters["kafka_exporter_artifact_id"],
 		t.Parameters["kafkaExporterArtifactId"],
 	)
-	
+
 	if kafkaExporterURL != "" || kafkaExporterArtifactID != "" {
 		log("Resolving kafka_exporter artifact through the configured management server")
 		tmpExporter := filepath.Join(artifactWorkDir, "kafka_exporter_tmp.tar.gz")
@@ -369,7 +374,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		} else {
 			tmpExtracted := filepath.Join(artifactWorkDir, "kafka_exporter_extracted")
 			d.exec.RunSudo(ctx, "mkdir", "-p", tmpExtracted)
-			
+
 			if _, errOut, err := d.exec.RunSudo(ctx, "tar", "-xzf", tmpExporter, "-C", tmpExtracted, "--strip-components=1"); err != nil {
 				log("Warning: Failed to extract kafka_exporter tar.gz: %v %s", err, strings.TrimSpace(errOut))
 			} else {
@@ -445,13 +450,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				}
 
 				log("Formatting storage with shared cluster ID %s and node ID %s", clusterUUID, nodeID)
-				envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-				bashCmd := fmt.Sprintf("%s %s %s", envSetup, storageScript, strings.Join(formatArgs, " "))
 				// KRaft metadata directories are created through privileged operations and may
 				// intentionally be inaccessible to the non-root agent account. Formatting
 				// therefore runs through the configured privileged executor rather than
 				// depending on ambient directory ownership.
-				formatOut, formatErr, err := d.exec.RunSudo(ctx, "bash", "-c", bashCmd)
+				formatOut, formatErr, err := d.exec.RunSudo(ctx, storageScript, formatArgs...)
 				if err != nil {
 					technicalOutput := strings.TrimSpace(strings.TrimSpace(formatOut) + "\n" + strings.TrimSpace(formatErr))
 					if technicalOutput == "" {
@@ -510,10 +513,10 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 			if _, _, checkErr := d.exec.RunSudo(ctx, "systemctl", "is-active", "firewalld"); checkErr == nil {
 				d.exec.RunSudo(ctx, "firewall-cmd", "--permanent", "--add-rich-rule", fmt.Sprintf("rule family=\"ipv4\" source address=\"%s\" port protocol=\"tcp\" port=\"%s\" accept", serverIP, exporterPort))
 				d.exec.RunSudo(ctx, "firewall-cmd", "--reload")
-			} else if _, _, checkErr := d.exec.RunSudo(ctx, "command", "-v", "iptables"); checkErr == nil {
+			} else if _, _, checkErr := d.exec.RunSudo(ctx, "iptables", "--version"); checkErr == nil {
 				d.exec.RunSudo(ctx, "iptables", "-I", "INPUT", "-p", "tcp", "--dport", exporterPort, "-s", serverIP, "-j", "ACCEPT")
 				d.exec.RunSudo(ctx, "iptables", "-A", "INPUT", "-p", "tcp", "--dport", exporterPort, "-j", "DROP")
-				d.exec.RunSudo(ctx, "bash", "-c", "iptables-save > /etc/sysconfig/iptables || iptables-save > /etc/iptables/rules.v4")
+				d.persistIPTables(ctx)
 			}
 		}
 	}
@@ -568,10 +571,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		// Try to wait a bit before connecting
 		time.Sleep(5 * time.Second)
 		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
-		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
 		bootstrapServer := kafkaValidationBootstrapForTask(t, listenerPort)
-		bashCmd := fmt.Sprintf("%s timeout 20s %q --list --bootstrap-server %q", envSetup, topicScript, bootstrapServer)
-		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
+		if _, validationErr := taskvalidate.HostPort(bootstrapServer); validationErr != nil {
+			return logs.String(), fmt.Errorf("invalid Kafka validation bootstrap server: %w", validationErr)
+		}
+		out, errOut, err := d.exec.Run(ctx, "timeout", "20s", topicScript, "--list", "--bootstrap-server", bootstrapServer)
 		if err != nil {
 			log("Warning: AdminClient validation failed for %s (non-fatal): %v, out: %s, errOut: %s", bootstrapServer, err, out, errOut)
 		} else {
@@ -622,6 +626,11 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 	if jmxMetricsPort == "" {
 		jmxMetricsPort = "7071"
 	}
+	var err error
+	jmxMetricsPort, err = taskvalidate.Port(jmxMetricsPort)
+	if err != nil {
+		return fmt.Errorf("invalid jmx_port: %w", err)
+	}
 
 	// Report VALIDATING status
 	if err := d.client.ReportTaskResult(&api.TaskResult{
@@ -634,7 +643,7 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 
 	log("Validation [1/6]: Checking Kafka process...")
 	for i := 0; i < 10; i++ {
-		out, _, _ := d.exec.Run(ctx, "bash", "-c", "ps -eo pid,cmd | grep java | grep -E 'kafka\\.Kafka|kafka\\.server\\.KafkaRaftServer' | grep -v grep | awk '{print $1}'")
+		out, _, _ := d.exec.Run(ctx, "pgrep", "-f", `kafka\.Kafka|kafka\.server\.KafkaRaftServer`)
 		if strings.TrimSpace(out) != "" {
 			log("  ✓ Kafka process detected (PID: %s)", strings.TrimSpace(out))
 			goto check2
@@ -708,7 +717,7 @@ check2:
 	}
 
 	log("Validation [5/6]: Checking JMX Exporter javaagent...")
-	out2, _, _ := d.exec.Run(ctx, "bash", "-c", "ps aux | grep javaagent | grep -v grep")
+	out2, _, _ := d.exec.Run(ctx, "pgrep", "-af", "jmx_prometheus_javaagent")
 	if strings.Contains(out2, "jmx_prometheus_javaagent") {
 		log("  JMX Prometheus Exporter attached")
 	} else {
@@ -722,7 +731,7 @@ check2:
 
 	log("Validation [6/6]: Checking metrics endpoint on port %s...", jmxMetricsPort)
 	for i := 0; i < 5; i++ {
-		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("curl -sf http://localhost:%s/metrics | head -1", jmxMetricsPort))
+		_, _, err := d.exec.Run(ctx, "curl", "--silent", "--fail", "--max-time", "5", "http://localhost:"+jmxMetricsPort+"/metrics")
 		if err == nil {
 			log("  Metrics endpoint responding on port %s", jmxMetricsPort)
 			return nil
@@ -734,17 +743,21 @@ check2:
 		return fmt.Errorf("JMX metrics endpoint not responding on port %s. Logs:\n%s", jmxMetricsPort, journalOut)
 	}
 	log("  Metrics endpoint not responding on port %s; continuing because JMX is optional", jmxMetricsPort)
-	
+
 	exporterPort := t.Parameters["kafka_exporter_port"]
 	if exporterPort == "" {
 		exporterPort = "9308"
 	}
-	
+	exporterPort, err = taskvalidate.Port(exporterPort)
+	if err != nil {
+		return fmt.Errorf("invalid kafka_exporter_port: %w", err)
+	}
+
 	// Optional validation for kafka_exporter
 	log("Validation [7/7]: Checking kafka_exporter endpoint on port %s...", exporterPort)
 	if _, _, err := d.exec.RunSudo(ctx, "systemctl", "is-active", serviceNameForTask(t)+"-exporter.service"); err == nil {
 		for i := 0; i < 5; i++ {
-			_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("curl -sf http://localhost:%s/metrics | head -1", exporterPort))
+			_, _, err := d.exec.Run(ctx, "curl", "--silent", "--fail", "--max-time", "5", "http://localhost:"+exporterPort+"/metrics")
 			if err == nil {
 				log("  kafka_exporter endpoint responding on port %s", exporterPort)
 				return nil
@@ -793,7 +806,7 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 
 	log("Validation [1/4]: Checking %s process...", processLabel)
 	for i := 0; i < 10; i++ {
-		out, _, _ := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ps -eo pid,cmd | grep java | grep '%s' | grep -v grep | awk '{print $1}'", processPattern))
+		out, _, _ := d.exec.Run(ctx, "pgrep", "-f", processPattern)
 		if strings.TrimSpace(out) != "" {
 			log("  PASS: %s process detected (PID: %s)", processLabel, strings.TrimSpace(out))
 			goto serviceCheck
@@ -836,10 +849,15 @@ serviceCheck:
 }
 
 func (d *Deployer) waitForListeningPort(ctx context.Context, port string, timeout time.Duration) error {
+	validPort, err := taskvalidate.Port(port)
+	if err != nil {
+		return err
+	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		_, _, err := d.exec.Run(ctx, "bash", "-c", fmt.Sprintf("ss -H -tln | awk '{print $4}' | grep -E '(^|:)%s$'", port))
-		if err == nil {
+		connection, dialErr := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", validPort), 2*time.Second)
+		if dialErr == nil {
+			_ = connection.Close()
 			return nil
 		}
 		time.Sleep(3 * time.Second)
@@ -908,10 +926,7 @@ func normalizeKRaftRole(rawRole string) (string, bool, bool) {
 	case "broker_controller", "":
 		return "broker,controller", true, true
 	default:
-		if strings.Contains(rawRole, "broker") && strings.Contains(rawRole, "controller") {
-			return "broker,controller", true, true
-		}
-		return rawRole, strings.Contains(rawRole, "broker"), strings.Contains(rawRole, "controller")
+		return "broker,controller", true, true
 	}
 }
 
@@ -1072,7 +1087,12 @@ func serviceNameForTask(t *api.Task) string {
 		serviceName = strings.TrimSpace(t.Parameters["service_name"])
 	}
 	if serviceName != "" {
-		return strings.TrimSuffix(serviceName, ".service")
+		serviceName = strings.TrimSuffix(serviceName, ".service")
+		if validated, err := taskvalidate.Identifier(serviceName, "systemd service",
+			"kafka", "broker", "controller", "zookeeper",
+		); err == nil {
+			return validated
+		}
 	}
 
 	rawRole := strings.TrimSpace(t.Parameters["service_role"])
@@ -1458,6 +1478,9 @@ func (d *Deployer) privilegedFileExists(ctx context.Context, path string) (bool,
 	// treating it as a clean "not found" result. This keeps sudo/policy failures
 	// distinguishable from a fresh KRaft deployment.
 	parent := filepath.Dir(path)
+	if filepath.VolumeName(path) == "" && (strings.HasPrefix(path, "/") || strings.HasPrefix(path, `\`)) {
+		parent = stdpath.Dir(strings.ReplaceAll(path, `\`, "/"))
+	}
 	if _, parentErrOut, parentErr := d.exec.RunSudo(ctx, "test", "-d", parent); parentErr != nil {
 		detail := strings.TrimSpace(strings.TrimSpace(stderr) + " " + strings.TrimSpace(parentErrOut))
 		if detail == "" {
@@ -1622,6 +1645,9 @@ func (d *Deployer) restoreConfigBackup(ctx context.Context, backupPath, configPa
 
 func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
 	var logs strings.Builder
+	if err := validateCommandTaskInputs(t); err != nil {
+		return logs.String(), err
+	}
 	log := func(msg string, args ...interface{}) {
 		formatted := fmt.Sprintf(msg, args...)
 		logs.WriteString(formatted + "\n")
@@ -1704,21 +1730,78 @@ func (d *Deployer) Upgrade(ctx context.Context, t *api.Task) (string, error) {
 	return logs.String(), nil
 }
 
-func (d *Deployer) normalizeKafkaTreePermissions(ctx context.Context, installDir string) error {
-	cleanDir := filepath.Clean(strings.TrimSpace(installDir))
-	if cleanDir == "." || cleanDir == "/" || cleanDir == "" {
-		return fmt.Errorf("refusing to normalize unsafe Kafka install directory %q", installDir)
+func validateCommandTaskInputs(t *api.Task) error {
+	if t == nil {
+		return fmt.Errorf("deployment task is required")
 	}
+	for _, key := range []string{"listener_port", "controller_port", "jmx_port", "kafka_exporter_port", "zookeeper_port"} {
+		if value := strings.TrimSpace(t.Parameters[key]); value != "" {
+			if _, err := taskvalidate.Port(value); err != nil {
+				return fmt.Errorf("invalid %s: %w", key, err)
+			}
+		}
+	}
+	for _, key := range []string{"kafka_install_base_dir", "kafka_install_dir", "kafka_data_dir", "parcel_dir"} {
+		if value := strings.TrimSpace(t.Parameters[key]); value != "" {
+			if _, err := taskvalidate.ApprovedPath(value); err != nil {
+				return fmt.Errorf("invalid %s: %w", key, err)
+			}
+		}
+	}
+	for _, key := range []string{"service_role", "role"} {
+		if value := strings.TrimSpace(t.Parameters[key]); value != "" {
+			if _, err := taskvalidate.Identifier(value, key,
+				"broker", "controller", "broker_controller", "broker,controller", "broker_zookeeper", "zookeeper",
+			); err != nil {
+				return err
+			}
+		}
+	}
+	for _, key := range []string{"systemd_service", "service_name"} {
+		if value := strings.TrimSuffix(strings.TrimSpace(t.Parameters[key]), ".service"); value != "" {
+			if _, err := taskvalidate.Identifier(value, key, "kafka", "broker", "controller", "zookeeper"); err != nil {
+				return err
+			}
+		}
+	}
+	if value := strings.TrimSpace(t.Parameters["mode"]); value != "" {
+		if _, err := taskvalidate.Identifier(strings.ToLower(value), "mode", "kraft", "zookeeper"); err != nil {
+			return err
+		}
+	}
+	for _, key := range []string{"validation_bootstrap_server", "admin_bootstrap_server"} {
+		if value := strings.TrimSpace(t.Parameters[key]); value != "" {
+			if _, err := taskvalidate.HostPort(value); err != nil {
+				return fmt.Errorf("invalid %s: %w", key, err)
+			}
+		}
+	}
+	return nil
+}
 
+func (d *Deployer) normalizeKafkaTreePermissions(ctx context.Context, installDir string) error {
+	cleanDir, pathErr := taskvalidate.ApprovedPath(strings.TrimSpace(installDir))
+	if pathErr != nil {
+		return fmt.Errorf("refusing to normalize unsafe Kafka install directory %q: %w", installDir, pathErr)
+	}
+	return d.normalizeKafkaTreePermissionsAt(ctx, cleanDir)
+}
+
+func (d *Deployer) normalizeKafkaTreePermissionsAt(ctx context.Context, cleanDir string) error {
 	// `chmod -R a+rX` keeps data/config files non-executable while ensuring all
 	// directories are traversable and already-executable files stay executable.
 	// The second command explicitly restores executable bits on Kafka shell
 	// launchers in case the uploaded tarball lost them during packaging/upload.
-	script := fmt.Sprintf(
-		"set -e; test -d %s; chmod -R a+rX %s; if [ -d %s/bin ]; then find %s/bin -type f -name '*.sh' -exec chmod a+rx {} +; fi",
-		shellQuote(cleanDir), shellQuote(cleanDir), shellQuote(cleanDir), shellQuote(cleanDir),
-	)
-	out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script)
+	out, errOut, err := d.exec.RunSudo(ctx, "test", "-d", cleanDir)
+	if err == nil {
+		out, errOut, err = d.exec.RunSudo(ctx, "chmod", "-R", "a+rX", "--", cleanDir)
+	}
+	if err == nil {
+		binDir := filepath.Join(cleanDir, "bin")
+		if _, _, testErr := d.exec.RunSudo(ctx, "test", "-d", binDir); testErr == nil {
+			out, errOut, err = d.exec.RunSudo(ctx, "find", binDir, "-type", "f", "-name", "*.sh", "-exec", "chmod", "a+rx", "{}", "+")
+		}
+	}
 	if err != nil {
 		detail := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
 		if detail == "" {
@@ -1767,10 +1850,15 @@ func (d *Deployer) activeSymlinkTarget(ctx context.Context, activeDir string) (s
 }
 
 func (d *Deployer) stageUpgradeBinaries(ctx context.Context, t *api.Task, targetDir string, log func(string, ...interface{})) error {
+	cleanTarget, pathErr := taskvalidate.ApprovedPath(strings.TrimSpace(targetDir))
+	if pathErr != nil {
+		return fmt.Errorf("invalid target Kafka directory: %w", pathErr)
+	}
+	targetDir = cleanTarget
 	startScript := filepath.Join(targetDir, "bin", "kafka-server-start.sh")
 	if _, err := os.Stat(startScript); err == nil {
 		log("Kafka target binaries already staged at %s", targetDir)
-		_, _, _ = d.exec.RunSudo(ctx, "bash", "-c", fmt.Sprintf("find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true", shellQuote(targetDir)))
+		_, _, _ = d.exec.RunSudo(ctx, "find", filepath.Join(targetDir, "bin"), "-type", "f", "-name", "*.sh", "-exec", "chmod", "a+x", "{}", "+")
 		return nil
 	}
 
@@ -1778,31 +1866,39 @@ func (d *Deployer) stageUpgradeBinaries(ctx context.Context, t *api.Task, target
 	if parcelDir == "" {
 		return fmt.Errorf("active parcel directory is required for upgrade; distribute and activate the target Kafka parcel first")
 	}
+	parcelDir, pathErr = taskvalidate.ApprovedPath(parcelDir)
+	if pathErr != nil {
+		return fmt.Errorf("invalid active parcel directory: %w", pathErr)
+	}
 
 	log("Staging Kafka binaries from active parcel: %s", parcelDir)
-	script := fmt.Sprintf(
-		"set -e; test -d %s; rm -rf %s; mkdir -p %s %s; cp -a %s/. %s/; chmod -R a+rX %s; find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true",
-		shellQuote(parcelDir),
-		shellQuote(targetDir),
-		shellQuote(filepath.Dir(targetDir)),
-		shellQuote(targetDir),
-		shellQuote(parcelDir),
-		shellQuote(targetDir),
-		shellQuote(targetDir),
-		shellQuote(targetDir),
-	)
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
-		return fmt.Errorf("failed to stage target Kafka binaries: %w, out: %s, err: %s", err, out, errOut)
+	commands := []struct {
+		name string
+		args []string
+	}{
+		{"test", []string{"-d", parcelDir}},
+		{"rm", []string{"-rf", "--", targetDir}},
+		{"mkdir", []string{"-p", "--", filepath.Dir(targetDir), targetDir}},
+		{"cp", []string{"-a", "--", filepath.Join(parcelDir, "."), targetDir + string(filepath.Separator)}},
+		{"chmod", []string{"-R", "a+rX", "--", targetDir}},
+		{"find", []string{filepath.Join(targetDir, "bin"), "-type", "f", "-name", "*.sh", "-exec", "chmod", "a+x", "{}", "+"}},
+	}
+	for _, command := range commands {
+		if out, errOut, err := d.exec.RunSudo(ctx, command.name, command.args...); err != nil {
+			return fmt.Errorf("failed to stage target Kafka binaries with %s: %w, out: %s, err: %s", command.name, err, out, errOut)
+		}
 	}
 	log("Kafka target binaries staged at %s", targetDir)
 	return nil
 }
 
 func (d *Deployer) ensureKafkaBinaryVersion(ctx context.Context, installDir, expectedVersion string, log func(string, ...interface{})) error {
-	versionScript := filepath.Join(installDir, "bin", "kafka-topics.sh")
-	envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-	bashCmd := fmt.Sprintf("%s %s %s", envSetup, versionScript, "--version")
-	out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
+	cleanDir, pathErr := taskvalidate.ApprovedPath(strings.TrimSpace(installDir))
+	if pathErr != nil {
+		return fmt.Errorf("invalid Kafka install directory: %w", pathErr)
+	}
+	versionScript := filepath.Join(cleanDir, "bin", "kafka-topics.sh")
+	out, errOut, err := d.exec.Run(ctx, versionScript, "--version")
 	if err != nil {
 		return fmt.Errorf("failed to read Kafka binary version from %s: %w, err: %s", versionScript, err, errOut)
 	}
@@ -1835,20 +1931,37 @@ func (d *Deployer) rollbackUpgrade(ctx context.Context, activeDir, previousTarge
 	log("Rollback completed; Kafka active symlink restored to %s", previousTarget)
 }
 
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
 func isUsableJar(path string) bool {
 	data, err := os.ReadFile(path)
 	return err == nil && len(data) >= 2 && data[0] == 'P' && data[1] == 'K'
 }
 
+func (d *Deployer) persistIPTables(ctx context.Context) {
+	content, _, err := d.exec.RunSudo(ctx, "iptables-save")
+	if err != nil {
+		return
+	}
+	tempFile, err := os.CreateTemp("", "tantor-iptables-*")
+	if err != nil {
+		return
+	}
+	tempName := tempFile.Name()
+	defer os.Remove(tempName)
+	if _, err = tempFile.WriteString(content + "\n"); err != nil {
+		_ = tempFile.Close()
+		return
+	}
+	if err = tempFile.Close(); err != nil {
+		return
+	}
+	if _, _, err = d.exec.RunSudo(ctx, "install", "-m", "0600", "--", tempName, "/etc/sysconfig/iptables"); err != nil {
+		_, _, _ = d.exec.RunSudo(ctx, "install", "-m", "0600", "--", tempName, "/etc/iptables/rules.v4")
+	}
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
-	// Find Java Home
-	findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname $(dirname $(readlink -f $(command -v $JAVA_CMD))); fi`
-	out, _, _ := d.exec.Run(ctx, "bash", "-c", findJavaCmd)
-	javaHome := strings.TrimSpace(out)
+	out, _, _ := d.exec.Run(ctx, "readlink", "-f", "/usr/bin/java")
+	javaHome := filepath.Dir(filepath.Dir(strings.TrimSpace(out)))
 	if javaHome == "" || javaHome == "." {
 		javaHome = "/usr" // fallback
 	}
@@ -1916,7 +2029,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	if err := d.writeTemplateToSudoFile(ctx, serviceTemplate, props, filepath.Join("/etc/systemd/system", serviceName+".service")); err != nil {
 		return err
 	}
-	
+
 	// Create exporter service if binary exists
 	_, isBroker, _ := normalizeKRaftRole(t.Parameters["role"])
 	if isBroker || serviceName != "controller" {
@@ -1926,12 +2039,12 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 			if exporterPort == "" {
 				exporterPort = "9308"
 			}
-			
+
 			listenerPort := t.Parameters["listener_port"]
 			if listenerPort == "" {
 				listenerPort = "9092"
 			}
-			
+
 			targetHost := strings.TrimSpace(t.Parameters["advertised_address"])
 			if targetHost == "" {
 				targetHost = strings.TrimSpace(t.Parameters["bind_address"])
@@ -1939,7 +2052,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 			if targetHost == "" {
 				targetHost = "localhost"
 			}
-			
+
 			exporterProps := struct {
 				User         string
 				Group        string

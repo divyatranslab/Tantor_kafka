@@ -79,7 +79,7 @@ fi
 echo 'No supported time-sync daemon is installed. Air-gapped mode never installs packages automatically; pre-stage chrony/ntp from approved offline media or an internal repository, then retry.' >&2
 exit 1`)
 
-	out, errOut, err := e.exec.Run(ctx, "bash", "-c", javaValidationScript(t))
+	out, errOut, err := e.validateJava(ctx, t)
 	if err != nil {
 		failed++
 		logs.WriteString(fmt.Sprintf("[FAIL] Java Version - Java 17.x is required for Kafka; no automatic Java switch was performed (%s %s)\n", out, errOut))

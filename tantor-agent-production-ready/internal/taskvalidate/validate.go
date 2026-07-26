@@ -1,0 +1,119 @@
+package taskvalidate
+
+import (
+	"fmt"
+	"net"
+	"path"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+var approvedPathRoots = []string{"/opt", "/var", "/data", "/srv", "/app", "/usr/lib/jvm", "/usr/java"}
+
+// Port accepts only canonical decimal TCP/UDP ports.
+func Port(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value {
+		return "", fmt.Errorf("invalid port %q", value)
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return "", fmt.Errorf("invalid port %q", value)
+		}
+	}
+	number, err := strconv.Atoi(value)
+	if err != nil || number < 1 || number > 65535 {
+		return "", fmt.Errorf("invalid port %q", value)
+	}
+	return strconv.Itoa(number), nil
+}
+
+// HostPort validates a single host:port endpoint without accepting URL syntax,
+// credentials, whitespace, or trailing command text.
+func HostPort(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\r\n\t /@") {
+		return "", fmt.Errorf("invalid host:port %q", value)
+	}
+	host, port, err := net.SplitHostPort(value)
+	if err != nil || host == "" {
+		return "", fmt.Errorf("invalid host:port %q", value)
+	}
+	if _, err := Port(port); err != nil {
+		return "", fmt.Errorf("invalid host:port %q", value)
+	}
+	if ip := net.ParseIP(host); ip == nil && !validDNSName(host) {
+		return "", fmt.Errorf("invalid host:port %q", value)
+	}
+	return value, nil
+}
+
+func validDNSName(host string) bool {
+	if len(host) > 253 || strings.HasSuffix(host, ".") {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func Endpoints(raw string) ([]string, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	seen := make(map[string]bool)
+	var endpoints []string
+	for _, value := range strings.Split(raw, ",") {
+		endpoint, err := HostPort(value)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[endpoint] {
+			seen[endpoint] = true
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	return endpoints, nil
+}
+
+// ApprovedPath validates absolute Linux deployment paths and confines them to
+// the roots owned by Tantor deployment operations.
+func ApprovedPath(value string) (string, error) {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\r\n") || strings.HasPrefix(value, "-") {
+		return "", fmt.Errorf("invalid deployment path %q", value)
+	}
+	if !filepath.IsAbs(value) && !strings.HasPrefix(value, "/") {
+		return "", fmt.Errorf("deployment path must be absolute: %q", value)
+	}
+	if filepath.IsAbs(value) && filepath.VolumeName(value) != "" {
+		return filepath.Clean(value), nil
+	}
+	clean := value
+	if strings.HasPrefix(value, "/") {
+		clean = path.Clean(value)
+	} else {
+		clean = filepath.Clean(value)
+	}
+	for _, root := range approvedPathRoots {
+		if clean == root || strings.HasPrefix(clean, root+"/") {
+			return clean, nil
+		}
+	}
+	return "", fmt.Errorf("deployment path %q is outside approved roots", value)
+}
+
+func Identifier(value, field string, allowed ...string) (string, error) {
+	for _, candidate := range allowed {
+		if value == candidate {
+			return value, nil
+		}
+	}
+	return "", fmt.Errorf("invalid %s %q", field, value)
+}

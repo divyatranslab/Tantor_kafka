@@ -21,7 +21,7 @@ spring:
   datasource:
     url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
     username: ${TANTOR_DB_USER:postgres}
-    password: ${TANTOR_DB_PASSWORD:postgres}
+    password: ${TANTOR_DB_PASSWORD}
     hikari:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -49,6 +49,7 @@ spring:
 # Tantor artifact repository specific settings
 tantor:
   security:
+    proxy-secret: ${TANTOR_PROXY_SECRET}
     jwt:
       # Optional. When set, bearer tokens must contain this audience.
       audience: ${TANTOR_JWT_AUDIENCE:}

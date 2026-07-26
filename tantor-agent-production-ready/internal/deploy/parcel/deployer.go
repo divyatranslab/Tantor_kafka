@@ -10,6 +10,7 @@ import (
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/internal/executor"
+	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/checksum"
 )
@@ -33,6 +34,9 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) 
 	}
 
 	meta := parcelMeta(t)
+	if err := validateParcelMeta(&meta); err != nil {
+		return logs.String(), err
+	}
 	log("Starting parcel distribution for %s %s", meta.ServiceType, meta.Version)
 
 	if t.ArtifactURL == "" {
@@ -66,22 +70,21 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) 
 	parentDir := filepath.Dir(installDir)
 	cachePath := filepath.Join(meta.BaseDir, ".downloads", filepath.Base(downloadPath))
 
-	script := fmt.Sprintf(
-		"set -e; rm -rf %s %s; mkdir -p %s %s %s; tar -xzf %s -C %s --strip-components=1; cp %s %s; chmod -R a+rX %s; find %s/bin -type f -name '*.sh' -exec chmod a+x {} + || true",
-		shellQuote(tmpDir),
-		shellQuote(installDir),
-		shellQuote(tmpDir),
-		shellQuote(parentDir),
-		shellQuote(filepath.Dir(cachePath)),
-		shellQuote(downloadPath),
-		shellQuote(tmpDir),
-		shellQuote(downloadPath),
-		shellQuote(cachePath),
-		shellQuote(tmpDir),
-		shellQuote(tmpDir),
-	)
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
-		return logs.String(), fmt.Errorf("failed to extract parcel: %w, out: %s, err: %s", err, out, errOut)
+	commands := []struct {
+		name string
+		args []string
+	}{
+		{"rm", []string{"-rf", "--", tmpDir, installDir}},
+		{"mkdir", []string{"-p", "--", tmpDir, parentDir, filepath.Dir(cachePath)}},
+		{"tar", []string{"-xzf", downloadPath, "-C", tmpDir, "--strip-components=1"}},
+		{"cp", []string{"--", downloadPath, cachePath}},
+		{"chmod", []string{"-R", "a+rX", "--", tmpDir}},
+		{"find", []string{filepath.Join(tmpDir, "bin"), "-type", "f", "-name", "*.sh", "-exec", "chmod", "a+x", "{}", "+"}},
+	}
+	for _, command := range commands {
+		if out, errOut, err := d.exec.RunSudo(ctx, command.name, command.args...); err != nil {
+			return logs.String(), fmt.Errorf("failed to extract parcel with %s: %w, out: %s, err: %s", command.name, err, out, errOut)
+		}
 	}
 
 	if out, errOut, err := d.exec.RunSudo(ctx, "mv", tmpDir, installDir); err != nil {
@@ -100,6 +103,9 @@ func (d *Deployer) Activate(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	meta := parcelMeta(t)
+	if err := validateParcelMeta(&meta); err != nil {
+		return logs.String(), err
+	}
 	if err := d.prepareBaseDirs(ctx, meta); err != nil {
 		return logs.String(), err
 	}
@@ -107,19 +113,34 @@ func (d *Deployer) Activate(ctx context.Context, t *api.Task) (string, error) {
 	target := meta.InstallDir()
 	link := meta.ActiveLink()
 	metadataFile := filepath.Join(meta.BaseDir, "active", meta.ServiceType+".active")
-	script := fmt.Sprintf(
-		"set -e; test -d %s; mkdir -p %s; ln -sfn %s %s; printf 'artifact_id=%s\\nservice_type=%s\\nversion=%s\\n' > %s",
-		shellQuote(target),
-		shellQuote(filepath.Dir(link)),
-		shellQuote(target),
-		shellQuote(link),
-		shellEscape(meta.ArtifactID),
-		shellEscape(meta.ServiceType),
-		shellEscape(meta.Version),
-		shellQuote(metadataFile),
-	)
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
-		return logs.String(), fmt.Errorf("failed to activate parcel: %w, out: %s, err: %s", err, out, errOut)
+	for _, command := range []struct {
+		name string
+		args []string
+	}{
+		{"test", []string{"-d", target}},
+		{"mkdir", []string{"-p", "--", filepath.Dir(link)}},
+		{"ln", []string{"-sfn", "--", target, link}},
+	} {
+		if out, errOut, err := d.exec.RunSudo(ctx, command.name, command.args...); err != nil {
+			return logs.String(), fmt.Errorf("failed to activate parcel with %s: %w, out: %s, err: %s", command.name, err, out, errOut)
+		}
+	}
+	tempFile, err := os.CreateTemp("", "tantor-parcel-active-*")
+	if err != nil {
+		return logs.String(), fmt.Errorf("failed to create parcel activation metadata: %w", err)
+	}
+	tempName := tempFile.Name()
+	defer os.Remove(tempName)
+	content := fmt.Sprintf("artifact_id=%s\nservice_type=%s\nversion=%s\n", meta.ArtifactID, meta.ServiceType, meta.Version)
+	if _, err = tempFile.WriteString(content); err != nil {
+		_ = tempFile.Close()
+		return logs.String(), fmt.Errorf("failed to write parcel activation metadata: %w", err)
+	}
+	if err = tempFile.Close(); err != nil {
+		return logs.String(), fmt.Errorf("failed to close parcel activation metadata: %w", err)
+	}
+	if out, errOut, err := d.exec.RunSudo(ctx, "install", "-m", "0644", "--", tempName, metadataFile); err != nil {
+		return logs.String(), fmt.Errorf("failed to install parcel activation metadata: %w, out: %s, err: %s", err, out, errOut)
 	}
 
 	log("Activated %s %s", meta.ServiceType, meta.Version)
@@ -134,10 +155,12 @@ func (d *Deployer) Deactivate(ctx context.Context, t *api.Task) (string, error) 
 	}
 
 	meta := parcelMeta(t)
+	if err := validateParcelMeta(&meta); err != nil {
+		return logs.String(), err
+	}
 	link := meta.ActiveLink()
 	metadataFile := filepath.Join(meta.BaseDir, "active", meta.ServiceType+".active")
-	script := fmt.Sprintf("set -e; rm -f %s %s", shellQuote(link), shellQuote(metadataFile))
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+	if out, errOut, err := d.exec.RunSudo(ctx, "rm", "-f", "--", link, metadataFile); err != nil {
 		return logs.String(), fmt.Errorf("failed to deactivate parcel: %w, out: %s, err: %s", err, out, errOut)
 	}
 
@@ -152,18 +175,18 @@ func (d *Deployer) Remove(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	meta := parcelMeta(t)
+	if err := validateParcelMeta(&meta); err != nil {
+		return logs.String(), err
+	}
 	target := meta.InstallDir()
 	link := meta.ActiveLink()
 	archive := filepath.Join(meta.BaseDir, ".downloads", fmt.Sprintf("parcel_%s_%s.tgz", meta.ServiceType, meta.Version))
-	script := fmt.Sprintf(
-		"set -e; if [ -L %s ] && [ \"$(readlink -f %s)\" = \"$(readlink -f %s)\" ]; then echo 'parcel is active; deactivate before remove' >&2; exit 42; fi; rm -rf %s %s",
-		shellQuote(link),
-		shellQuote(link),
-		shellQuote(target),
-		shellQuote(target),
-		shellQuote(archive),
-	)
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+	linkTarget, _, linkErr := d.exec.RunSudo(ctx, "readlink", "-f", "--", link)
+	targetPath, _, targetErr := d.exec.RunSudo(ctx, "readlink", "-f", "--", target)
+	if linkErr == nil && targetErr == nil && strings.TrimSpace(linkTarget) == strings.TrimSpace(targetPath) {
+		return logs.String(), fmt.Errorf("failed to remove parcel: parcel is active; deactivate before remove")
+	}
+	if out, errOut, err := d.exec.RunSudo(ctx, "rm", "-rf", "--", target, archive); err != nil {
 		return logs.String(), fmt.Errorf("failed to remove parcel: %w, out: %s, err: %s", err, out, errOut)
 	}
 
@@ -172,15 +195,21 @@ func (d *Deployer) Remove(ctx context.Context, t *api.Task) (string, error) {
 }
 
 func (d *Deployer) prepareBaseDirs(ctx context.Context, meta parcelMetadata) error {
-	script := fmt.Sprintf(
-		"set -e; mkdir -p %s %s %s",
-		shellQuote(meta.BaseDir),
-		shellQuote(filepath.Join(meta.BaseDir, ".downloads")),
-		shellQuote(filepath.Join(meta.BaseDir, "active")),
-	)
-	if out, errOut, err := d.exec.RunSudo(ctx, "bash", "-c", script); err != nil {
+	if err := validateParcelMeta(&meta); err != nil {
+		return err
+	}
+	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", "--", meta.BaseDir, filepath.Join(meta.BaseDir, ".downloads"), filepath.Join(meta.BaseDir, "active")); err != nil {
 		return fmt.Errorf("failed to prepare parcel directories: %w, out: %s, err: %s", err, out, errOut)
 	}
+	return nil
+}
+
+func validateParcelMeta(meta *parcelMetadata) error {
+	baseDir, err := taskvalidate.ApprovedPath(strings.TrimSpace(meta.BaseDir))
+	if err != nil {
+		return fmt.Errorf("invalid parcel_dir: %w", err)
+	}
+	meta.BaseDir = baseDir
 	return nil
 }
 
@@ -231,12 +260,4 @@ func safeSegment(value string) string {
 		}
 	}
 	return b.String()
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func shellEscape(value string) string {
-	return strings.ReplaceAll(value, "'", "'\"'\"'")
 }

@@ -60,6 +60,11 @@ spec:
                 secretKeyRef:
                   name: tantor-db-credentials
                   key: password
+            - name: TANTOR_PROXY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tantor-security-credentials
+                  key: proxy-secret
           volumeMounts:
             - name: repo-storage
               mountPath: /var/lib/tantor/repository

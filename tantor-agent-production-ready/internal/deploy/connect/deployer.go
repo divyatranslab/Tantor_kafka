@@ -117,8 +117,8 @@ func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir 
 }
 
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string) error {
-	out, _, _ := d.exec.Run(ctx, "bash", "-c", "dirname $(dirname $(readlink -f $(which java)))")
-	javaHome := strings.TrimSpace(out)
+	out, _, _ := d.exec.Run(ctx, "readlink", "-f", "/usr/bin/java")
+	javaHome := filepath.Dir(filepath.Dir(strings.TrimSpace(out)))
 	if javaHome == "" || javaHome == "." {
 		javaHome = "/usr"
 	}

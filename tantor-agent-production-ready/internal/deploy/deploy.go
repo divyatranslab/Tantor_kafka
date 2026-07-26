@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"io.translab/tantor-agent/internal/deploy/parcel"
 	"io.translab/tantor-agent/internal/deploy/schema"
 	"io.translab/tantor-agent/internal/executor"
+	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 )
 
@@ -234,7 +234,10 @@ func friendlyDeploymentFailure(step string, err error) string {
 }
 
 func (e *Engine) startService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	serviceName := t.Parameters["service_name"]
+	serviceName, err := validatedServiceName(t.Parameters["service_name"])
+	if err != nil {
+		return e.fail(t, err.Error()), nil
+	}
 	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "start", serviceName)
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Failed to start service: %v, out: %s, errOut: %s", err, out, errOut)), nil
@@ -249,7 +252,10 @@ func (e *Engine) startService(ctx context.Context, t *api.Task) (*api.TaskResult
 }
 
 func (e *Engine) stopService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	serviceName := t.Parameters["service_name"]
+	serviceName, err := validatedServiceName(t.Parameters["service_name"])
+	if err != nil {
+		return e.fail(t, err.Error()), nil
+	}
 	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "stop", serviceName)
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Failed to stop service: %v, out: %s, errOut: %s", err, out, errOut)), nil
@@ -264,7 +270,10 @@ func (e *Engine) stopService(ctx context.Context, t *api.Task) (*api.TaskResult,
 }
 
 func (e *Engine) restartService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	serviceName := t.Parameters["service_name"]
+	serviceName, err := validatedServiceName(t.Parameters["service_name"])
+	if err != nil {
+		return e.fail(t, err.Error()), nil
+	}
 	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "restart", serviceName)
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Failed to restart service: %v, out: %s, errOut: %s", err, out, errOut)), nil
@@ -276,6 +285,14 @@ func (e *Engine) restartService(ctx context.Context, t *api.Task) (*api.TaskResu
 		Status:    "SUCCESS",
 		LogOutput: fmt.Sprintf("Service %s restarted successfully.", serviceName),
 	}, nil
+}
+
+func validatedServiceName(raw string) (string, error) {
+	name := strings.TrimSuffix(strings.TrimSpace(raw), ".service")
+	return taskvalidate.Identifier(name, "service_name",
+		"kafka", "broker", "controller", "zookeeper",
+		"kafka-connect", "schema-registry", "ksqldb", "prometheus", "grafana",
+	)
 }
 
 func (e *Engine) updateKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
@@ -348,7 +365,6 @@ printf '%s\n' "${value:-unavailable}"
 		{
 			name:        "Java Version",
 			requirement: "must be 17.x",
-			script:      javaValidationScript(t),
 		},
 		{
 			name:        "NTP Service",
@@ -373,7 +389,13 @@ exit 1`,
 
 	logs.WriteString("\n===== Kafka System Pre-check =====\n")
 	for _, check := range checks {
-		out, errOut, err := e.exec.Run(ctx, "bash", "-c", check.script)
+		var out, errOut string
+		var err error
+		if check.name == "Java Version" {
+			out, errOut, err = e.validateJava(ctx, t)
+		} else {
+			out, errOut, err = e.exec.Run(ctx, "bash", "-c", check.script)
+		}
 		detail := strings.TrimSpace(out)
 		if detail == "" {
 			detail = strings.TrimSpace(errOut)
@@ -417,22 +439,23 @@ exit 1`,
 }
 
 func (e *Engine) checkPorts(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	ports := prerequisitePorts(t.Parameters["required_ports"])
+	ports, portErr := prerequisitePorts(t.Parameters["required_ports"])
+	if portErr != nil {
+		return e.fail(t, portErr.Error()), nil
+	}
 	var logs strings.Builder
 	failed := 0
 
 	logs.WriteString("\n===== Kafka Port Check =====\n")
 	for _, port := range ports {
-		out, errOut, err := e.exec.Run(ctx, "bash", "-c", fmt.Sprintf("if ss -ltn \"sport = :%s\" | awk 'NR>1 {found=1} END {exit found ? 0 : 1}'; then echo 'port %s is already in use'; exit 1; else echo 'port %s is available'; fi", port, port, port))
-		detail := strings.TrimSpace(out)
-		if detail == "" {
-			detail = strings.TrimSpace(errOut)
-		}
+		listener, err := net.Listen("tcp", net.JoinHostPort("", port))
+		detail := ""
 		if err != nil {
 			failed++
 			logs.WriteString(fmt.Sprintf("Port %s: %s [Fail]\n", port, firstNonBlank(detail, "in use")))
 			continue
 		}
+		_ = listener.Close()
 		logs.WriteString(fmt.Sprintf("Port %s: %s [Pass]\n", port, firstNonBlank(detail, "available")))
 	}
 	logs.WriteString("===== Port Check Completed =====\n")
@@ -459,98 +482,75 @@ func (e *Engine) checkPorts(ctx context.Context, t *api.Task) (*api.TaskResult, 
 	}, nil
 }
 
-func prerequisitePorts(raw string) []string {
-	validPort := regexp.MustCompile(`^[0-9]{1,5}$`)
+func prerequisitePorts(raw string) ([]string, error) {
 	seen := map[string]bool{}
 	ports := make([]string, 0)
+	if strings.TrimSpace(raw) == "" {
+		return []string{"9092", "9093", "7071"}, nil
+	}
 	for _, value := range strings.Split(raw, ",") {
-		port := strings.TrimSpace(value)
-		if validPort.MatchString(port) && !seen[port] {
+		port, err := taskvalidate.Port(value)
+		if err != nil {
+			return nil, fmt.Errorf("required_ports contains %q: %w", value, err)
+		}
+		if !seen[port] {
 			seen[port] = true
 			ports = append(ports, port)
 		}
 	}
-	if len(ports) == 0 {
-		return []string{"9092", "9093", "7071"}
-	}
-	return ports
+	return ports, nil
 }
 
-func javaValidationScript(t *api.Task) string {
+func (e *Engine) validateJava(ctx context.Context, t *api.Task) (string, string, error) {
 	javaHome := ""
 	if t != nil && t.Parameters != nil {
 		javaHome = firstNonBlank(t.Parameters["java_home"], t.Parameters["javaHome"])
 	}
-	return fmt.Sprintf(`
-set -o pipefail
-JAVA_CMD=""
-configured_java_home=%s
-
-try_java() {
-  candidate="$1"
-  [ -n "$candidate" ] || return 1
-  if [ -x "$candidate" ]; then
-    JAVA_CMD="$candidate"
-    return 0
-  fi
-  if command -v "$candidate" >/dev/null 2>&1; then
-    JAVA_CMD="$(command -v "$candidate")"
-    return 0
-  fi
-  return 1
+	candidates := []string{"java", "/usr/bin/java"}
+	if javaHome != "" {
+		cleanHome, err := taskvalidate.ApprovedPath(javaHome)
+		if err != nil {
+			return "", "", fmt.Errorf("invalid java_home: %w", err)
+		}
+		candidates = append([]string{filepath.Join(cleanHome, "bin", "java")}, candidates...)
+	}
+	for _, pattern := range []string{"/usr/lib/jvm/*/bin/java", "/usr/java/*/bin/java", "/opt/*/bin/java"} {
+		matches, _ := filepath.Glob(pattern)
+		candidates = append(candidates, matches...)
+	}
+	var lastErr error
+	for _, candidate := range candidates {
+		out, errOut, err := e.exec.Run(ctx, candidate, "-version")
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		versionOutput := strings.TrimSpace(firstNonBlank(errOut, out))
+		version := javaVersion(versionOutput)
+		if strings.HasPrefix(version, "17.") || version == "17" {
+			return version, "", nil
+		}
+		return version, "", fmt.Errorf("Java 17.x is required")
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("Java not found")
+	}
+	return "", "Java not found. Provide java_home in the deployment request or set JAVA_HOME/PATH for the agent service.", lastErr
 }
 
-if [ -n "$configured_java_home" ]; then
-  try_java "$configured_java_home/bin/java" || true
-fi
-[ -z "$JAVA_CMD" ] && [ -n "$JAVA_HOME" ] && try_java "$JAVA_HOME/bin/java" || true
-[ -z "$JAVA_CMD" ] && try_java java || true
-
-if [ -z "$JAVA_CMD" ]; then
-  for p in \
-    /usr/bin/java \
-    /usr/lib/jvm/*/bin/java \
-    /usr/java/*/bin/java \
-    /opt/java*/bin/java \
-    /opt/jdk*/bin/java \
-    /opt/*java*/bin/java \
-    /var/java*/bin/java \
-    /var/jdk*/bin/java \
-    /var/*java*/bin/java \
-    /data/java*/bin/java \
-    /data/jdk*/bin/java \
-    /data/*java*/bin/java \
-    /srv/java*/bin/java \
-    /srv/jdk*/bin/java \
-    /srv/*java*/bin/java \
-    /app/java*/bin/java \
-    /app/jdk*/bin/java; do
-    try_java "$p" && break
-  done
-fi
-
-if [ -z "$JAVA_CMD" ]; then
-  found="$(find /opt /usr/lib/jvm /usr/java /var /data /srv /app -maxdepth 5 -type f -path '*/bin/java' -perm /111 2>/dev/null | head -n 1)"
-  [ -n "$found" ] && try_java "$found" || true
-fi
-
-if [ -z "$JAVA_CMD" ]; then
-  echo "Java not found. Provide java_home in the deployment request or set JAVA_HOME/PATH for the agent service."
-  exit 1
-fi
-
-line="$("$JAVA_CMD" -version 2>&1 | head -n 1)"
-version="$(printf '%%s\n' "$line" | awk -F '"' '{print $2}')"
-[ -n "$version" ] || version="$line"
-printf '%%s via %%s\n' "$version" "$JAVA_CMD"
-case "$version" in
-  17.*) exit 0 ;;
-  *) exit 1 ;;
-esac`, shellQuote(javaHome))
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+func javaVersion(output string) string {
+	if start := strings.IndexByte(output, '"'); start >= 0 {
+		if end := strings.IndexByte(output[start+1:], '"'); end >= 0 {
+			return output[start+1 : start+1+end]
+		}
+	}
+	fields := strings.Fields(output)
+	for _, field := range fields {
+		if strings.HasPrefix(field, "17.") || strings.HasPrefix(field, "1.") || (len(field) > 0 && field[0] >= '0' && field[0] <= '9') {
+			return strings.Trim(field, `"'`)
+		}
+	}
+	return output
 }
 
 func firstNonBlank(values ...string) string {
@@ -563,7 +563,10 @@ func firstNonBlank(values ...string) string {
 }
 
 func (e *Engine) checkKRaftConnectivity(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	endpoints := splitEndpoints(t.Parameters["controller_endpoints"])
+	endpoints, endpointErr := taskvalidate.Endpoints(t.Parameters["controller_endpoints"])
+	if endpointErr != nil {
+		return e.fail(t, fmt.Sprintf("invalid controller_endpoints: %v", endpointErr)), nil
+	}
 	if len(endpoints) == 0 {
 		return e.fail(t, "controller_endpoints is required for KRaft connectivity validation"), nil
 	}
@@ -584,7 +587,10 @@ func (e *Engine) checkKRaftConnectivity(ctx context.Context, t *api.Task) (*api.
 }
 
 func (e *Engine) verifyKRaftQuorum(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	endpoints := splitEndpoints(t.Parameters["controller_endpoints"])
+	endpoints, endpointErr := taskvalidate.Endpoints(t.Parameters["controller_endpoints"])
+	if endpointErr != nil {
+		return e.fail(t, fmt.Sprintf("invalid controller_endpoints: %v", endpointErr)), nil
+	}
 	if len(endpoints) == 0 {
 		return e.fail(t, "controller_endpoints is required for KRaft quorum verification"), nil
 	}
@@ -593,14 +599,17 @@ func (e *Engine) verifyKRaftQuorum(ctx context.Context, t *api.Task) (*api.TaskR
 	if installBase == "" {
 		installBase = "/opt"
 	}
+	var pathErr error
+	installBase, pathErr = taskvalidate.ApprovedPath(installBase)
+	if pathErr != nil {
+		return e.fail(t, fmt.Sprintf("invalid kafka_install_dir: %v", pathErr)), nil
+	}
 	activeDir := installBase
 	if filepath.Base(filepath.Clean(activeDir)) != "kafka" {
 		activeDir = filepath.Join(activeDir, "kafka")
 	}
 	quorumScript := filepath.Join(activeDir, "bin", "kafka-metadata-quorum.sh")
-	envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-	bashCmd := fmt.Sprintf("%s %s %s", envSetup, quorumScript, strings.Join([]string{"--bootstrap-controller", endpoints[0], "describe", "--status"}, " "))
-	out, errOut, err := e.exec.Run(ctx, "bash", "-c", bashCmd)
+	out, errOut, err := e.exec.Run(ctx, quorumScript, "--bootstrap-controller", endpoints[0], "describe", "--status")
 	output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("KRaft quorum status command failed: %v\n%s", err, output)), nil
@@ -640,7 +649,10 @@ func (e *Engine) verifyKRaftQuorum(ctx context.Context, t *api.Task) (*api.TaskR
 }
 
 func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
-	endpoints := splitEndpoints(t.Parameters["zookeeper_connect"])
+	endpoints, endpointErr := taskvalidate.Endpoints(t.Parameters["zookeeper_connect"])
+	if endpointErr != nil {
+		return e.fail(t, fmt.Sprintf("invalid zookeeper_connect: %v", endpointErr)), nil
+	}
 	if len(endpoints) == 0 {
 		return e.fail(t, "zookeeper_connect is required for ZooKeeper quorum verification"), nil
 	}
@@ -648,6 +660,11 @@ func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.T
 	installBase := strings.TrimSpace(t.Parameters["kafka_install_dir"])
 	if installBase == "" {
 		installBase = "/opt"
+	}
+	var pathErr error
+	installBase, pathErr = taskvalidate.ApprovedPath(installBase)
+	if pathErr != nil {
+		return e.fail(t, fmt.Sprintf("invalid kafka_install_dir: %v", pathErr)), nil
 	}
 	activeDir := installBase
 	if filepath.Base(filepath.Clean(activeDir)) != "kafka" {
@@ -657,9 +674,7 @@ func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.T
 
 	var logs strings.Builder
 	for _, endpoint := range endpoints {
-		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-		bashCmd := fmt.Sprintf("%s %s %s", envSetup, zkShellScript, strings.Join([]string{endpoint, "ls", "/"}, " "))
-		out, errOut, err := e.exec.Run(ctx, "bash", "-c", bashCmd)
+		out, errOut, err := e.exec.Run(ctx, zkShellScript, endpoint, "ls", "/")
 		output := strings.TrimSpace(strings.TrimSpace(out) + "\n" + strings.TrimSpace(errOut))
 		if err != nil {
 			return e.fail(t, fmt.Sprintf("ZooKeeper quorum status command failed for endpoint %s: %v\n%s", endpoint, err, output)), nil
@@ -674,23 +689,6 @@ func (e *Engine) verifyZooKeeperQuorum(ctx context.Context, t *api.Task) (*api.T
 		TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS",
 		LogOutput: logs.String(),
 	}, nil
-}
-
-func splitEndpoints(raw string) []string {
-	seen := make(map[string]bool)
-	endpoints := make([]string, 0)
-	for _, value := range strings.Split(raw, ",") {
-		endpoint := strings.TrimSpace(value)
-		if at := strings.LastIndex(endpoint, "@"); at >= 0 {
-			endpoint = strings.TrimSpace(endpoint[at+1:])
-		}
-		if endpoint == "" || seen[endpoint] {
-			continue
-		}
-		seen[endpoint] = true
-		endpoints = append(endpoints, endpoint)
-	}
-	return endpoints
 }
 
 func (e *Engine) fail(t *api.Task, msg string) *api.TaskResult {

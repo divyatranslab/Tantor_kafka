@@ -9,6 +9,12 @@ node_modules/
 dist/
 build/
 .env
+.env.local
+.env.production
+*.secrets.env
+deployment-bundle/.env
+*.private.key
+*.private.pem
 
 # Go
 tantor-agent.exe

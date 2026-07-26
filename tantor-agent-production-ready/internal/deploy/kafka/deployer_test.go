@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -351,6 +352,9 @@ func TestNormalizeKafkaTreePermissionsRejectsUnsafeRoot(t *testing.T) {
 }
 
 func TestNormalizeKafkaTreePermissionsActuallyRepairsModeBits(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable mode bits are not represented on Windows")
+	}
 	installDir := t.TempDir()
 	binDir := filepath.Join(installDir, "bin")
 	if err := os.MkdirAll(binDir, 0o700); err != nil {
@@ -364,7 +368,7 @@ func TestNormalizeKafkaTreePermissionsActuallyRepairsModeBits(t *testing.T) {
 	}
 
 	d := &Deployer{exec: agentexecutor.New(agentexecutor.Options{PrivilegeMode: "direct"})}
-	if err := d.normalizeKafkaTreePermissions(context.Background(), installDir); err != nil {
+	if err := d.normalizeKafkaTreePermissionsAt(context.Background(), installDir); err != nil {
 		t.Fatalf("normalizeKafkaTreePermissions returned error: %v", err)
 	}
 
