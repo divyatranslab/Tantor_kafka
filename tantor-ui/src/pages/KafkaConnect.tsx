@@ -440,52 +440,8 @@ export function KafkaConnect() {
             {/* ── Buttons ── */}
             {canManage && (
               <button 
-                type="button"
-                onClick={() => setShowCreate(true)}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  height: '35px',
-                  padding: '8px 16px',
-                  background: '#FFFFFF',
-                  border: '1px solid #3E1363',
-                  borderRadius: '8px',
-                  color: '#3E1363',
-                  fontFamily: 'Satoshi, sans-serif',
-                  fontWeight: 500,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
-                title="Upload JSON configurations"
-              >
-                <FileDown size={16} style={{ color: '#3E1363' }} /> Save
-              </button>
-            )}
-
-            {canManage && (
-              <button 
-                className="ds-button" 
+                className="ds-button ds-kafka-connect-action-button"
                 onClick={() => openConnectionModal()} 
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  height: '35px',
-                  padding: '8px 16px',
-                  background: '#FFFFFF',
-                  border: '1px solid #3E1363',
-                  borderRadius: '8px',
-                  color: '#3E1363',
-                  fontFamily: 'Satoshi, sans-serif',
-                  fontWeight: 500,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s'
-                }}
               >
                 <Settings size={16} style={{ color: '#3E1363' }} /> Add Connection
               </button>

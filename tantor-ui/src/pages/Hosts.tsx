@@ -8,6 +8,7 @@ export function Hosts() {
   const { canManage } = usePermissions();
   const [hosts, setHosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
@@ -21,6 +22,7 @@ export function Hosts() {
       console.error(e);
     }
     setLoading(false);
+    setHasLoaded(true);
   };
 
   const deleteHost = async (id: string) => {
@@ -149,7 +151,7 @@ export function Hosts() {
         </div>
       </header>
 
-      {activeHosts.length === 0 && !loading ? (
+      {activeHosts.length === 0 && hasLoaded ? (
         <div className="hosts-empty-state">
           <div className="empty-illustration">
             <svg width="102" height="74" viewBox="0 0 102 74" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -189,11 +191,11 @@ export function Hosts() {
             </tr>
           </thead>
           <tbody>
-            {loading && activeHosts.length === 0 ? (
+            {!hasLoaded && activeHosts.length === 0 ? (
               <tr>
                 <td colSpan={8}>
                   <div className="empty-state">
-                    {loading ? 'Loading connected agents...' : 'No agents connected yet.'}
+                    Loading connected agents...
                   </div>
                 </td>
               </tr>

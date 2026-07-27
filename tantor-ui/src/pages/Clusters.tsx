@@ -64,10 +64,10 @@ export function Clusters() {
       const res = await fetch('/api/v1/ui/clusters');
       if (res.ok) {
         const data: ClusterInfo[] = await res.json();
-        const visibleData = data.map(cluster => cluster.mode === 'EXTERNAL'
-          ? { ...cluster, kafkaHealthChecking: true }
-          : cluster
-        );
+        const visibleData = data.map(cluster => ({
+          ...cluster,
+          kafkaHealthChecking: false,
+        }));
         setClusters(visibleData);
         refreshExternalKafkaHealth(visibleData);
       }
@@ -78,17 +78,9 @@ export function Clusters() {
     }
   };
 
-  const refreshExternalKafkaHealth = (items: ClusterInfo[], showChecking = true) => {
+  const refreshExternalKafkaHealth = (items: ClusterInfo[]) => {
     const externalClusters = items.filter(cluster => cluster.mode === 'EXTERNAL');
     if (externalClusters.length === 0) return;
-
-    if (showChecking) {
-      const externalIds = new Set(externalClusters.map(cluster => cluster.id));
-      setClusters(prev => prev.map(cluster => externalIds.has(cluster.id)
-        ? { ...cluster, kafkaHealthChecking: true }
-        : cluster
-      ));
-    }
 
     externalClusters
       .forEach(cluster => {
@@ -263,6 +255,11 @@ export function Clusters() {
     return label.includes('bootstrap') || label.includes('metadata') ? 'metadata' : 'managed';
   };
 
+  const accessTagTone = (cluster: ClusterInfo) =>
+    cluster.mode === 'EXTERNAL'
+      ? clusterStatusTone(cluster.agentHealth, managementLabel(cluster))
+      : 'state-positive';
+
   const agentHealthLabel = (cluster: ClusterInfo) => {
     if (cluster.mode !== 'EXTERNAL') return '';
     switch ((cluster.agentHealth || '').toUpperCase()) {
@@ -303,7 +300,7 @@ export function Clusters() {
     const externalClusters = clusters.filter(cluster => cluster.mode === 'EXTERNAL');
     if (externalClusters.length === 0) return;
     const timer = window.setInterval(() => {
-      refreshExternalKafkaHealth(externalClusters, true);
+      refreshExternalKafkaHealth(externalClusters);
     }, EXTERNAL_HEALTH_REFRESH_MS);
     return () => window.clearInterval(timer);
   }, [clusters]);
@@ -382,7 +379,7 @@ export function Clusters() {
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
                         const progress = diskPct(host);
-                        const tagTone = cluster.kafkaHealthChecking
+                        const statusTagTone = cluster.kafkaHealthChecking
                           ? 'state-negative'
                           : clusterStatusTone(
                             cluster.runtimeStatusLabel,
@@ -453,13 +450,13 @@ export function Clusters() {
                             </td>
                             <td>
                               <div className="tags-column-wrap">
-                                <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'} ${tagTone}`}>
+                                <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'} state-positive`}>
                                   {sourceLabel(cluster)}
                                 </span>
-                                <span className={`access-pill-v2 ${managementClass(cluster)} ${tagTone}`}>
+                                <span className={`access-pill-v2 ${managementClass(cluster)} ${accessTagTone(cluster)}`}>
                                   {managementLabel(cluster)}
                                 </span>
-                                <span className={`status-badge-v2 ${statusClass(cluster)} ${tagTone}`}>
+                                <span className={`status-badge-v2 ${statusClass(cluster)} ${statusTagTone}`}>
                                   {statusLabel(cluster)}
                                 </span>
                               </div>

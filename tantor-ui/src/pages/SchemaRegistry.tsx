@@ -716,8 +716,11 @@ export function SchemaRegistry() {
                 )}
 
                 {canManage && (
-                  <button className="ds-button add-connection" onClick={() => openConnectionModal()}>
-                    <Plus size={16} /> Add Connection
+                  <button
+                    className="ds-button ds-kafka-connect-action-button"
+                    onClick={() => openConnectionModal()}
+                  >
+                    <Settings size={16} /> Add Connection
                   </button>
                 )}
 
@@ -750,7 +753,9 @@ export function SchemaRegistry() {
 
           {!hasFetched ? (
             <div className="ds-fetch-prompt ds-sr-fetch-prompt">
-              <p>Schema Registry data is not loaded automatically.</p>
+              <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 400, color: '#818181' }}>
+                Schema Registry data is not loaded automatically.
+              </p>
               <button 
                 className="ds-sr-fetch-button"
                 type="button" 
@@ -761,7 +766,7 @@ export function SchemaRegistry() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
-                  height: '32px',
+                  height: '36px',
                   padding: '0 16px',
                   borderRadius: '8px',
                   background: '#3E1363',
@@ -773,7 +778,7 @@ export function SchemaRegistry() {
                   transition: 'all 0.2s'
                 }}
               >
-                {loading ? <RefreshCw size={16} className="spin" /> : <RefreshCw size={16} />}
+                <RefreshCw size={14} className={loading ? 'spin' : ''} />
                 {loading ? 'Fetching Schema Registry...' : 'Fetch Schema Registry for this cluster'}
               </button>
             </div>

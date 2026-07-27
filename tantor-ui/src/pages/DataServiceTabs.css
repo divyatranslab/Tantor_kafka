@@ -903,6 +903,25 @@
   cursor: pointer;
 }
 
+.ds-button.ds-kafka-connect-action-button {
+  height: 35px;
+  min-height: 35px;
+  padding: 8px 16px;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #3E1363;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ds-button.ds-kafka-connect-action-button:hover:not(:disabled) {
+  background: #F8F5FA;
+  border-color: #3E1363;
+}
+
 .ds-button.add-connection:hover {
   background: #F8F5FA;
   border-color: #3E1363;
@@ -1905,9 +1924,10 @@
 }
 
 .ds-sr-fetch-button {
-  gap: 6px !important;
-  padding: 0 10px !important;
-  font-size: 12px !important;
+  gap: 8px !important;
+  height: 36px;
+  padding: 0 16px !important;
+  font-size: 14px !important;
 }
 
 .ds-sr-metrics {
