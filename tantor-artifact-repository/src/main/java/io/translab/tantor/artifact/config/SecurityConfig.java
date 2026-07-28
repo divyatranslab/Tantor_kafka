@@ -25,10 +25,11 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtDecoder jwtDecoder,
-            @Value("${tantor.security.jwt.audience:}") String requiredAudience) throws Exception {
+            @Value("${tantor.security.jwt.audience:}") String requiredAudience,
+            @Value("${tantor.security.jwt.client-id:apb-kafka}") String jwtClientId) throws Exception {
 
         JwtAuthenticationConverter authenticationConverter = new JwtAuthenticationConverter();
-        authenticationConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+        authenticationConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter(jwtClientId));
 
         JwtDecoder validatingDecoder = token -> validateAudience(jwtDecoder.decode(token), requiredAudience);
 

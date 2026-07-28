@@ -20,11 +20,13 @@ public class SharedSecurityConfig {
     @Value("${tantor.security.proxy-secret}")
     private String proxySecret;
 
+    @Value("${tantor.security.jwt.client-id:apb-kafka}")
+    private String jwtClientId;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter(jwtClientId));
 
         http
             .csrf(csrf -> csrf.disable())

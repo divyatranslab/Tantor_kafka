@@ -15,6 +15,7 @@ import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -233,6 +234,9 @@ public class AgentService {
         try {
             UUID taskId = UUID.fromString(dto.getTaskId());
             taskRepository.findById(taskId).ifPresent(task -> {
+                if (dto.getHostId() == null || !dto.getHostId().equals(task.getHostId())) {
+                    throw new AccessDeniedException("Task does not belong to authenticated agent");
+                }
                 if (!isTerminalTaskStatus(dto.getStatus())) {
                     task.setCurrentStep(dto.getCurrentStep());
                     try {

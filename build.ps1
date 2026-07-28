@@ -1,5 +1,7 @@
 # build.ps1 - Automated Build Script for Tantor Java Backends
 
+$ErrorActionPreference = "Stop"
+
 $MavenVersion = "3.9.6"
 $MavenUrl = "https://archive.apache.org/dist/maven/maven-3/$MavenVersion/binaries/apache-maven-$MavenVersion-bin.zip"
 $MavenZip = "$PSScriptRoot\apache-maven.zip"
@@ -33,50 +35,125 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 
 # 1.5. Build Shared Security Library
 Write-Host "`n=== Building Shared Security Library ===" -ForegroundColor Magenta
-cd "$PSScriptRoot\tantor-security"
-& $MvnCmd clean install
+Push-Location "$PSScriptRoot\tantor-security"
+try {
+    & $MvnCmd clean install
+    if ($LASTEXITCODE -ne 0) {
+        throw "Shared security library build failed with exit code $LASTEXITCODE."
+    }
+} finally {
+    Pop-Location
+}
 
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
-cd "$PSScriptRoot\tantor-artifact-repository"
-& $MvnCmd clean package "-DskipTests"
+Push-Location "$PSScriptRoot\tantor-artifact-repository"
+try {
+    & $MvnCmd clean package
+    if ($LASTEXITCODE -ne 0) {
+        throw "Artifact repository build failed with exit code $LASTEXITCODE."
+    }
+} finally {
+    Pop-Location
+}
 
 # 3. Build Management Server
 Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
-cd "$PSScriptRoot\tantor-server"
-& $MvnCmd clean package "-Dmaven.test.skip=true"
-
-# Restore original directory
-cd $PSScriptRoot
-
-Write-Host "`nBuild Complete!" -ForegroundColor Green
-Write-Host "To start the Artifact Repository:"
-Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
-Write-Host "To start the Management Server:"
-Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"
+Push-Location "$PSScriptRoot\tantor-server"
+try {
+    & $MvnCmd clean package
+    if ($LASTEXITCODE -ne 0) {
+        throw "Management server build failed with exit code $LASTEXITCODE."
+    }
+} finally {
+    Pop-Location
+}
 
 # 4. Build Agent (Linux amd64)
 Write-Host "`n=== Building Tantor Agent (Linux) ===" -ForegroundColor Magenta
-if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
-    cd "$PSScriptRoot\tantor-agent"
-    $env:GOOS="linux"
-    $env:GOARCH="amd64"
-    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-agent-linux cmd/agent/main.go
-    Write-Host "Agent successfully compiled to: tantor-agent\tantor-agent-linux" -ForegroundColor Green
-    cd $PSScriptRoot
+$GoCmd = "$PSScriptRoot\go\bin\go.exe"
+if (Test-Path $GoCmd) {
+    $AgentDir = "$PSScriptRoot\tantor-agent-production-ready"
+    $AgentBuildDir = "$AgentDir\build"
+    $AgentOutput = "$AgentBuildDir\tantor-agent-linux-amd64"
+    New-Item -ItemType Directory -Force -Path $AgentBuildDir | Out-Null
+
+    $PreviousGoOs = $env:GOOS
+    $PreviousGoArch = $env:GOARCH
+    try {
+        $env:GOOS = "linux"
+        $env:GOARCH = "amd64"
+        Push-Location $AgentDir
+        try {
+            & $GoCmd build -trimpath -buildvcs=false -o $AgentOutput ./cmd/agent
+            if ($LASTEXITCODE -ne 0) {
+                throw "Tantor agent build failed with exit code $LASTEXITCODE."
+            }
+        } finally {
+            Pop-Location
+        }
+    } finally {
+        if ($null -eq $PreviousGoOs) {
+            Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+        } else {
+            $env:GOOS = $PreviousGoOs
+        }
+        if ($null -eq $PreviousGoArch) {
+            Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+        } else {
+            $env:GOARCH = $PreviousGoArch
+        }
+    }
+    Write-Host "Agent successfully compiled to: $AgentOutput" -ForegroundColor Green
 } else {
     Write-Host "Go compiler not found in the 'go' directory. Skipping agent compilation." -ForegroundColor Yellow
 }
 
 # 5. Build Discovery Agent (Linux amd64)
 Write-Host "`n=== Building Tantor Discovery Agent (Linux) ===" -ForegroundColor Magenta
-if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
-    cd "$PSScriptRoot\tantor-discovery-agent"
-    $env:GOOS="linux"
-    $env:GOARCH="amd64"
-    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-discovery-agent-linux .
-    Write-Host "Discovery agent successfully compiled to: tantor-discovery-agent\tantor-discovery-agent-linux" -ForegroundColor Green
-    cd $PSScriptRoot
+if (Test-Path $GoCmd) {
+    $DiscoveryAgentDir = "$PSScriptRoot\tantor-agent-rhel8-rhel9-http-v3.1\source"
+    $DiscoveryBuildDir = "$PSScriptRoot\tantor-agent-rhel8-rhel9-http-v3.1\build"
+    $DiscoveryOutput = "$DiscoveryBuildDir\tantor-discovery-agent-linux-amd64"
+    New-Item -ItemType Directory -Force -Path $DiscoveryBuildDir | Out-Null
+
+    $PreviousGoOs = $env:GOOS
+    $PreviousGoArch = $env:GOARCH
+    try {
+        $env:GOOS = "linux"
+        $env:GOARCH = "amd64"
+        Push-Location $DiscoveryAgentDir
+        try {
+            & $GoCmd build -trimpath -buildvcs=false -o $DiscoveryOutput .
+            if ($LASTEXITCODE -ne 0) {
+                throw "Tantor discovery agent build failed with exit code $LASTEXITCODE."
+            }
+        } finally {
+            Pop-Location
+        }
+    } finally {
+        if ($null -eq $PreviousGoOs) {
+            Remove-Item Env:GOOS -ErrorAction SilentlyContinue
+        } else {
+            $env:GOOS = $PreviousGoOs
+        }
+        if ($null -eq $PreviousGoArch) {
+            Remove-Item Env:GOARCH -ErrorAction SilentlyContinue
+        } else {
+            $env:GOARCH = $PreviousGoArch
+        }
+    }
+    Write-Host "Discovery agent successfully compiled to: $DiscoveryOutput" -ForegroundColor Green
 } else {
     Write-Host "Go compiler not found in the 'go' directory. Skipping discovery agent compilation." -ForegroundColor Yellow
 }
+
+Write-Host "`n=== Build Complete ===" -ForegroundColor Green
+Write-Host "Artifact Repository:"
+Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+Write-Host "Management Server:"
+Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"
+Write-Host "Tantor Agent:"
+Write-Host "  tantor-agent-production-ready\build\tantor-agent-linux-amd64"
+Write-Host "Discovery Agent:"
+Write-Host "  tantor-agent-rhel8-rhel9-http-v3.1\build\tantor-discovery-agent-linux-amd64"

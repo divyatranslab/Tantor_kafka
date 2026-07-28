@@ -5,6 +5,7 @@ import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-rout
 import { useCluster } from '../contexts/ClusterContext';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { apiFetch } from '../lib/apiClient';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -46,7 +47,7 @@ export function ClusterDetails() {
   useEffect(() => {
     // Clear stale data when switching clusters to prevent flash of old data
     setCluster(null);
-    fetch(`/api/v1/ui/clusters/${id}`)
+    apiFetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(setCluster)
       .catch(console.error);
@@ -273,7 +274,7 @@ export function ClusterDetails() {
               className="cd-details-refresh-btn"
               aria-label="Refresh cluster"
               onClick={() => {
-                fetch(`/api/v1/ui/clusters/${id}`)
+                apiFetch(`/api/v1/ui/clusters/${id}`)
                   .then(res => res.json())
                   .then(setCluster)
                   .catch(console.error);

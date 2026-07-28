@@ -6,6 +6,7 @@ import { GlobalConfirmDialog } from './components/ConfirmDialog';
 import { ClusterProvider } from './contexts/ClusterContext';
 import { usePermissions } from './hooks/usePermissions';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { apiFetch } from './lib/apiClient';
 import './App.css';
 
 // Lazy loaded page components
@@ -46,7 +47,7 @@ function DeploymentLogsGuard() {
 
   useEffect(() => {
     if (!id) { setChecked(true); setAllowed(false); return; }
-    fetch(`/api/v1/ui/clusters/${id}`)
+    apiFetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(data => {
         if (data.mode === 'EXTERNAL') {

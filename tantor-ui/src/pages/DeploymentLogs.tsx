@@ -71,8 +71,8 @@ export function DeploymentLogs() {
   const fetchTasks = async (signal?: AbortSignal) => {
     try {
       const [clusterRes, tasksRes] = await Promise.all([
-        fetch(`/api/v1/ui/clusters/${id}`, { signal }),
-        fetch(`/api/v1/ui/clusters/${id}/tasks`, { signal }),
+        apiFetch(`/api/v1/ui/clusters/${id}`, { signal }),
+        apiFetch(`/api/v1/ui/clusters/${id}/tasks`, { signal }),
       ]);
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {

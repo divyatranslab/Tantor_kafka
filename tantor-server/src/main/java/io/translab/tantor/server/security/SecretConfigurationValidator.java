@@ -17,14 +17,12 @@ public class SecretConfigurationValidator {
             @Value("${spring.datasource.password}") String databasePassword,
             @Value("${tantor.security.encryption.key}") String encryptionKey,
             @Value("${tantor.security.encryption.salt}") String encryptionSalt,
-            @Value("${tantor.security.jwt.secret}") String jwtSecret,
             @Value("${tantor.security.proxy-secret}") String proxySecret,
             @Value("${tantor.monitoring.grafana-password}") String monitoringPassword,
             @Value("${server.ssl.key-store-password}") String keyStorePassword) {
         requireStrong("TANTOR_DB_PASSWORD", databasePassword, 12);
         requireStrong("TANTOR_ENCRYPTION_KEY", encryptionKey, 32);
         requireStrong("TANTOR_ENCRYPTION_SALT", encryptionSalt, 16);
-        requireStrong("TANTOR_JWT_SECRET", jwtSecret, 32);
         requireStrong("TANTOR_PROXY_SECRET", proxySecret, 32);
         requireStrong("TANTOR_GRAFANA_PASSWORD", monitoringPassword, 16);
         requireStrong("TANTOR_SSL_KEYSTORE_PASSWORD", keyStorePassword, 12);

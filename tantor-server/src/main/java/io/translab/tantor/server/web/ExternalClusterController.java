@@ -68,11 +68,12 @@ public class ExternalClusterController {
         return ResponseEntity.ok(externalClusterService.recordDiscoveryReport(request));
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     @PostMapping("/api/v1/ui/external-clusters/discovery/heartbeat")
     public ResponseEntity<Map<String, Object>> heartbeatDiscoveryAgent(
             @RequestBody ExternalClusterService.ExternalDiscoveryReport request,
             jakarta.servlet.http.HttpServletRequest httpRequest) {
+        requireAgentAccess(request.getHostId());
         String remoteIp = httpRequest.getRemoteAddr();
         if (request.getIpAddresses() == null || request.getIpAddresses().isBlank()) {
             request.setIpAddresses("[\"" + remoteIp + "\"]");
@@ -119,7 +120,7 @@ public class ExternalClusterController {
         return ResponseEntity.ok(externalClusterService.pollAgentTask(clusterName, hostname, bootstrap));
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR', 'AGENT')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     @PostMapping("/api/v1/ui/external-clusters/discovery/{clusterName}/tasks/complete")
     public ResponseEntity<Void> completeDiscoveryTask(
             @PathVariable String clusterName,
@@ -137,7 +138,7 @@ public class ExternalClusterController {
         return ResponseEntity.ok().build();
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'AGENT')")
     @PostMapping("/api/v1/ui/external-clusters/discovery/{clusterName}/metrics")
     public ResponseEntity<Void> receiveDiscoveryMetrics(
             @PathVariable String clusterName,

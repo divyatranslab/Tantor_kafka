@@ -10,6 +10,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,6 +28,7 @@ public class AgentController {
 
     @PostMapping("/register")
     public ResponseEntity<Void> registerHost(@RequestBody HostRegistrationDto registrationDto, HttpServletRequest request) {
+        requireAgentIdentity(registrationDto.getHostId());
         if (!agentService.registerHost(registrationDto, sourceIp(request))) {
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
@@ -33,6 +37,7 @@ public class AgentController {
 
     @PostMapping("/heartbeat")
     public ResponseEntity<Void> heartbeat(@RequestBody HostHeartbeatDto heartbeatDto, HttpServletRequest request) {
+        requireAgentIdentity(heartbeatDto.getHostId());
         AgentService.HeartbeatResult result = agentService.processHeartbeat(heartbeatDto, sourceIp(request));
         if (result == AgentService.HeartbeatResult.ACCEPTED) {
             return ResponseEntity.ok().build();
@@ -45,6 +50,7 @@ public class AgentController {
 
     @GetMapping("/{hostId}/tasks")
     public ResponseEntity<List<TaskDto>> pollTasks(@PathVariable String hostId) {
+        requireAgentIdentity(hostId);
         List<TaskDto> tasks = agentService.getPendingTasks(hostId);
         if (tasks.isEmpty()) {
             return ResponseEntity.noContent().build();
@@ -54,8 +60,17 @@ public class AgentController {
 
     @PostMapping("/tasks/result")
     public ResponseEntity<Void> reportTaskResult(@RequestBody TaskResultDto resultDto) {
+        requireAgentIdentity(resultDto.getHostId());
         agentService.processTaskResult(resultDto);
         return ResponseEntity.ok().build();
+    }
+
+    private void requireAgentIdentity(String requestHostId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || requestHostId == null
+                || !requestHostId.equals(authentication.getName())) {
+            throw new AccessDeniedException("Agent certificate identity does not match hostId");
+        }
     }
 
     private String sourceIp(HttpServletRequest request) {

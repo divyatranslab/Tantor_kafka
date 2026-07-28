@@ -51,6 +51,7 @@ tantor:
   security:
     proxy-secret: ${TANTOR_PROXY_SECRET}
     jwt:
+      client-id: ${TANTOR_KEYCLOAK_CLIENT_ID:apb-kafka}
       # Optional. When set, bearer tokens must contain this audience.
       audience: ${TANTOR_JWT_AUDIENCE:}
   repository:

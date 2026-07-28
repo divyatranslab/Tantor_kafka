@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { apiFetch } from '../lib/apiClient';
 import type {
   Host, ExistingCluster, KafkaVersionInfo, DeploymentMode, RoleChoice, FlowStage,
   ConfigMode, ConfigKind, PrereqResult, KraftValidationReport, NodeConfigState, PropertyRow, ServiceAssignment
@@ -276,7 +277,7 @@ export function useClusterDeployment(onClose?: () => void) {
     if (!addClusterId) return;
     setStage('details');
     setLoadingCluster(true);
-    fetch(`/api/v1/ui/clusters/${addClusterId}`)
+    apiFetch(`/api/v1/ui/clusters/${addClusterId}`)
       .then(res => {
         if (!res.ok) throw new Error('Cluster not found');
         return res.json();
@@ -318,7 +319,7 @@ export function useClusterDeployment(onClose?: () => void) {
   const loadHosts = async () => {
     setLoadingHosts(true);
     try {
-      const res = await fetch('/api/v1/ui/hosts');
+      const res = await apiFetch('/api/v1/ui/hosts');
       if (res.ok) {
         const inventory: Host[] = await res.json();
         setHosts(inventory.filter(host => host.deployable !== false && host.agentType !== 'KAFKA_DISCOVERY'));
@@ -334,7 +335,7 @@ export function useClusterDeployment(onClose?: () => void) {
   const loadVersions = async () => {
     setLoadingVersions(true);
     try {
-      const res = await fetch('/api/v1/artifacts?serviceType=KAFKA');
+      const res = await apiFetch('/api/v1/artifacts?serviceType=KAFKA');
       const data = await res.json();
       const mapped = (data.content || []).map((a: Record<string, any>) => ({
         version: a.version,
@@ -774,7 +775,7 @@ export function useClusterDeployment(onClose?: () => void) {
 
     setValidatingKraft(true);
     try {
-      const res = await fetch('/api/v1/ui/clusters/validate-kraft', {
+      const res = await apiFetch('/api/v1/ui/clusters/validate-kraft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildDeploymentPayload(false)),
@@ -899,7 +900,7 @@ export function useClusterDeployment(onClose?: () => void) {
   const pollPortCheck = async (hostId: string, taskId: string) => {
     for (let i = 0; i < 90; i++) {
       await new Promise(resolve => setTimeout(resolve, 1500));
-      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      const res = await apiFetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
       if (!res.ok) continue;
 
       const body = await res.json();
@@ -943,7 +944,7 @@ export function useClusterDeployment(onClose?: () => void) {
     }));
 
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
+      const res = await apiFetch(`/api/v1/ui/hosts/${hostId}/check-ports`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ required_ports: requiredPorts.join(',') }),
@@ -1028,7 +1029,7 @@ export function useClusterDeployment(onClose?: () => void) {
 
     await Promise.all(selectedHosts.map(async host => {
       try {
-        const res = await fetch(`/api/v1/ui/hosts/${host.id}/check-prerequisites`, {
+        const res = await apiFetch(`/api/v1/ui/hosts/${host.id}/check-prerequisites`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1079,7 +1080,7 @@ export function useClusterDeployment(onClose?: () => void) {
   const pollPrerequisite = async (hostId: string, taskId: string) => {
     for (let i = 0; i < 90; i++) {
       await new Promise(resolve => setTimeout(resolve, 1500));
-      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      const res = await apiFetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
       if (!res.ok) continue;
       const body = await res.json();
       const status = String(body.status || 'RUNNING').toUpperCase();
@@ -1122,7 +1123,7 @@ export function useClusterDeployment(onClose?: () => void) {
     setCheckingPrereqs(true);
     await Promise.all(failedHosts.map(async host => {
       try {
-        const res = await fetch(`/api/v1/ui/hosts/${host.id}/fix-prerequisites`, { method: 'POST' });
+        const res = await apiFetch(`/api/v1/ui/hosts/${host.id}/fix-prerequisites`, { method: 'POST' });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.message || 'Failed to queue prerequisite remediation.');
         setPrereqResults(prev => ({
@@ -1144,7 +1145,7 @@ export function useClusterDeployment(onClose?: () => void) {
     if (!(await confirmAction(`Reboot ${host.hostname}? The host and agent will be temporarily offline.`))) return;
     setCheckingPrereqs(true);
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
+      const res = await apiFetch(`/api/v1/ui/hosts/${host.id}/reboot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmed: true }),
@@ -1174,7 +1175,7 @@ export function useClusterDeployment(onClose?: () => void) {
       const url = isAddNodeMode && addClusterId
         ? `/api/v1/ui/clusters/${addClusterId}/nodes`
         : '/api/v1/ui/clusters/deploy';
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

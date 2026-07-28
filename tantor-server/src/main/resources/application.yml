@@ -52,8 +52,7 @@ tantor:
       legacy-key: ${TANTOR_ENCRYPTION_LEGACY_KEY:}
     truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
     jwt:
-      secret: ${TANTOR_JWT_SECRET}
-      expiration-ms: 86400000 # 24 hours
+      client-id: ${TANTOR_KEYCLOAK_CLIENT_ID:apb-kafka}
   artifact-repo:
     url: ${TANTOR_REPO_URL:http://localhost:8081}
     jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
