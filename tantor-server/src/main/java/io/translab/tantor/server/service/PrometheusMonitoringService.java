@@ -89,9 +89,6 @@ public class PrometheusMonitoringService {
     @Value("${tantor.monitoring.grafana-skip-tls-validation:false}")
     private boolean grafanaSkipTlsValidation;
 
-    @Value("${tantor.monitoring.exporter-host:}")
-    private String defaultExporterHost;
-
     @Value("${tantor.monitoring.kafka-exporter-port-base:9308}")
     private int kafkaExporterPortBase;
 
@@ -381,9 +378,6 @@ public class PrometheusMonitoringService {
     private Optional<String> exporterHost(Cluster cluster) {
         if (cluster.getKafkaExporterHost() != null && !cluster.getKafkaExporterHost().isBlank()) {
             return Optional.of(cluster.getKafkaExporterHost().trim());
-        }
-        if (defaultExporterHost != null && !defaultExporterHost.isBlank()) {
-            return Optional.of(defaultExporterHost.trim());
         }
         return Optional.empty();
     }

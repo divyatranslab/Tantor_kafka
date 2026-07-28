@@ -78,7 +78,6 @@ TANTOR_REPO_URL=http://localhost:8081
 TANTOR_REPO_PATH=./.runtime/repository
 TANTOR_MONITORING_MODE=direct
 TANTOR_PROMETHEUS_URL=http://127.0.0.1:9090
-TANTOR_MONITORING_EXPORTER_HOST=127.0.0.1
 ```
 
 Existing installations that encrypted data with the previous key handling may
@@ -86,11 +85,11 @@ temporarily set `TANTOR_ENCRYPTION_LEGACY_KEY` to the old key while credentials
 are rewritten. New ciphertext is prefixed with `v2:` and uses PBKDF2-derived
 AES-256 keys. Remove the legacy key after all unversioned values are migrated.
 
-For a VM/server deployment, set `TANTOR_REPO_URL` and `TANTOR_MONITORING_EXPORTER_HOST` to the Tantor server IP, for example:
+For a VM/server deployment, set `TANTOR_REPO_URL` to the Tantor server address
+that agent VMs can reach, for example:
 
 ```properties
 TANTOR_REPO_URL=http://192.168.3.191:8081
-TANTOR_MONITORING_EXPORTER_HOST=192.168.3.191
 ```
 
 Do not commit real passwords or production secrets in `.env`.
@@ -189,8 +188,8 @@ You do not need to manually put the JMX artifact ID in `.env` unless you want to
 Current monitoring flow:
 
 1. Kafka is deployed by Tantor agent.
-2. The agent attaches JMX exporter to Kafka on port `7071`.
-3. Tantor server starts one `kafka_exporter` systemd service per internal cluster on the Tantor server host.
+2. The agent installs JMX exporter on port `7071` and `kafka_exporter` on port `9308` on the Kafka VM.
+3. Tantor server derives exporter targets from the registered agent/Kafka VM addresses. It does not run per-cluster exporter services on the Tantor server host.
 4. Tantor server exposes scrape targets at:
 
 ```text
@@ -203,9 +202,9 @@ Current monitoring flow:
 
 Required monitoring components:
 
-- `kafka_exporter` installed on the Tantor server host at `/usr/local/bin/kafka_exporter`
+- JMX exporter and `kafka_exporter` installed by the agent on each Kafka VM
 - Prometheus running and configured to scrape Tantor service discovery endpoint
-- Target Kafka hosts must allow access to JMX exporter port `7071`
+- Prometheus must be able to reach agent/Kafka VM ports `7071` and `9308`
 
 Example Prometheus scrape config:
 
@@ -305,8 +304,8 @@ curl -i http://127.0.0.1:8081/api/v1/artifacts
 Check kafka_exporter and Prometheus:
 
 ```bash
-systemctl status tantor-kafka-exporter-<cluster-id> --no-pager
-curl http://127.0.0.1:<exporter-port>/metrics | head
+systemctl status tantor-kafka-exporter.service --no-pager
+curl http://127.0.0.1:9308/metrics | head
 curl http://127.0.0.1:9090/api/v1/targets
 ```
 
