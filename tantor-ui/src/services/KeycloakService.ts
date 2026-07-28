@@ -1,7 +1,10 @@
 import Keycloak from 'keycloak-js';
 
 const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL,
+  // Vite replaces these values at build time. Keep the production SSO URL as
+  // a safe default so a server-side build without a copied .env file cannot
+  // generate redirects through "/undefined/protocol/openid-connect".
+  url: import.meta.env.VITE_KEYCLOAK_URL || 'https://keycloak.tantor.io',
   realm: import.meta.env.VITE_KEYCLOAK_REALM || 'Gatekeeper',
   clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
 });
@@ -10,7 +13,9 @@ export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_
 
 let initializationPromise: Promise<boolean> | undefined;
 
-const currentRedirectUri = () => window.location.href;
+// Always return from SSO through the SPA root. Reusing the full current URL
+// can perpetuate a malformed authentication path after configuration errors.
+const currentRedirectUri = () => `${window.location.origin}/`;
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
