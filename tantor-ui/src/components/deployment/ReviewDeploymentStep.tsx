@@ -74,6 +74,13 @@ export function ReviewDeploymentStep({ hook }: ReviewDeploymentStepProps) {
     setKraftRiskAcknowledged,
   } = hook;
 
+  const prerequisiteCheckDisabled = checkingPrereqs || selectedHosts.length === 0;
+  const prerequisiteCheckTitle = checkingPrereqs
+    ? 'A prerequisite check is already running.'
+    : selectedHosts.length === 0
+      ? 'Select at least one node before checking prerequisites.'
+      : 'Run operating-system and port prerequisite checks on every selected node.';
+
   return (
     <>
       {deploymentMode === 'kraft' && !isAddNodeMode && kraftValidation && (
@@ -175,7 +182,13 @@ export function ReviewDeploymentStep({ hook }: ReviewDeploymentStepProps) {
       <section className="cd-panel">
         <div className="cd-panel-title">
           <h2>Prerequisites</h2>
-          <button className="cd-prereqs-check-btn" disabled={checkingPrereqs || selectedHosts.length === 0 || pathErrors.length > 0 || configBlockingIssues.length > 0 || (kraftValidation?.errors.length || 0) > 0} onClick={checkPrerequisites}>
+          <button
+            type="button"
+            className="cd-prereqs-check-btn"
+            disabled={prerequisiteCheckDisabled}
+            title={prerequisiteCheckTitle}
+            onClick={checkPrerequisites}
+          >
             {checkingPrereqs ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
             Check prerequisites on all nodes
           </button>

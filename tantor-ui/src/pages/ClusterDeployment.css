@@ -261,6 +261,11 @@
   color: #3E1363;
 }
 
+.cd-prereqs-check-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .cd-panel-title svg {
   color: #3E1363;
 }
