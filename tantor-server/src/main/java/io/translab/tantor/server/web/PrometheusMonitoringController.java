@@ -21,7 +21,6 @@ public class PrometheusMonitoringController {
 
     private final PrometheusMonitoringService monitoringService;
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'MONITOR')")
     @GetMapping(value = "/internal/prometheus/targets", produces = MediaType.APPLICATION_JSON_VALUE)
     public Object targets() {
         return monitoringService.prometheusTargets();

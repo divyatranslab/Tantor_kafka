@@ -34,6 +34,7 @@ public class SharedSecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(authz -> authz
                 .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/internal/prometheus/targets").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(new AgentMTLSFilter(proxySecret), BearerTokenAuthenticationFilter.class)
