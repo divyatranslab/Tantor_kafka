@@ -83,6 +83,8 @@ class PrometheusMonitoringServiceTest {
         assertThat(service.computeHostMemoryPercent(mirror, "2")).isEqualTo(30.0);
         assertThat(service.computeHostMemoryAvailableMb(mirror, null)).isEqualTo(1500L);
         assertThat(service.computeHostMemoryAvailableMb(mirror, "2")).isEqualTo(700L);
+        assertThat(service.computeHostMemoryTotalMb(mirror, null)).isEqualTo(2000L);
+        assertThat(service.computeHostMemoryTotalMb(mirror, "2")).isEqualTo(1000L);
     }
 
     @Test
@@ -114,6 +116,8 @@ class PrometheusMonitoringServiceTest {
         assertThat(service.computeHostMemoryPercent(cluster, null)).isEqualTo(37.5);
         assertThat(service.computeHostMemoryAvailableMb(cluster, null)).isEqualTo(10240L);
         assertThat(service.computeHostMemoryAvailableMb(cluster, "2")).isEqualTo(4096L);
+        assertThat(service.computeHostMemoryTotalMb(cluster, null)).isEqualTo(16384L);
+        assertThat(service.computeHostMemoryTotalMb(cluster, "2")).isEqualTo(8192L);
     }
 
     private ClusterServiceAssignment assignment(Cluster cluster, String hostId, int nodeId) {

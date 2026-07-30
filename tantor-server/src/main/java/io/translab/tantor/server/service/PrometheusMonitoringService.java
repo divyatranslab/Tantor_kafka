@@ -255,6 +255,16 @@ public class PrometheusMonitoringService {
                 heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
                 heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
         ));
+        overview.setJvmHeapTotalBytes(firstPresentNumber(
+                heapBytes(metricSelector, "jvm_memory_bytes_max", "heap"),
+                heapBytes(metricSelector, "jvm_memory_bytes_committed", "heap"),
+                heapBytes(metricSelector, "jvm_memory_max_bytes", "heap"),
+                heapBytes(metricSelector, "jvm_memory_committed_bytes", "heap"),
+                heapBytes(metricSelector, "jvm_memory_bytes_max", "Heap"),
+                heapBytes(metricSelector, "jvm_memory_bytes_committed", "Heap"),
+                heapBytes(metricSelector, "jvm_memory_max_bytes", "Heap"),
+                heapBytes(metricSelector, "jvm_memory_committed_bytes", "Heap")
+        ));
         overview.setBrokerCpuPercent(firstPresentNumber(
                 cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", metricSelector),
                 cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
@@ -269,6 +279,7 @@ public class PrometheusMonitoringService {
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
         overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
+        overview.setHostMemoryTotalMb(computeHostMemoryTotalMb(cluster, selectedNodeId));
 
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
@@ -618,6 +629,11 @@ public class PrometheusMonitoringService {
         return memory == null ? null : Math.max(0L, memory.totalMb() - memory.usedMb());
     }
 
+    Long computeHostMemoryTotalMb(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        return memory == null ? null : memory.totalMb();
+    }
+
     private MemoryUsage hostMemory(Cluster cluster, String nodeId) {
         if (isExternal(cluster)) {
             return externalHostMemory(cluster, nodeId);
@@ -784,6 +800,10 @@ public class PrometheusMonitoringService {
     private String heapAvailableBytes(String selector, String usedMetric, String limitMetric, String area) {
         return "clamp_min(sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"}) - sum("
                 + usedMetric + "{" + selector + ",area=\"" + area + "\"}), 0)";
+    }
+
+    private String heapBytes(String selector, String metric, String area) {
+        return "sum(" + metric + "{" + selector + ",area=\"" + area + "\"})";
     }
 
     private String cpuPercent(String metric, String selector) {
@@ -1018,10 +1038,12 @@ public class PrometheusMonitoringService {
         private Double bytesOutPerSecond;
         private Double jvmHeapUsedPercent;
         private Double jvmHeapAvailableBytes;
+        private Double jvmHeapTotalBytes;
         private Double brokerCpuPercent;
         private Double systemCpuPercent;
         private Double hostMemoryUsedPercent;
         private Long hostMemoryAvailableMb;
+        private Long hostMemoryTotalMb;
         private String selectedNodeId;
         private List<MonitoringNodeSummary> nodes;
         private List<String> warnings;

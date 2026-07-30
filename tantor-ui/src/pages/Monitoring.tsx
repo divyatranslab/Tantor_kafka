@@ -43,11 +43,13 @@ interface MonitoringOverview {
   bytesOutPerSecond?: number | null;
   jvmHeapUsedPercent?: number | null;
   jvmHeapAvailableBytes?: number | null;
+  jvmHeapTotalBytes?: number | null;
   brokerCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
   hostMemoryAvailableMb?: number | null;
+  hostMemoryTotalMb?: number | null;
   selectedNodeId?: string | null;
   nodes?: MonitoringNode[];
 }
@@ -682,18 +684,23 @@ export function Monitoring() {
                     label="Broker CPU"
                     value={overview?.brokerCpuPercent}
                     tone="purple"
+                    subtext={availablePercentText(overview?.brokerCpuPercent)}
                   />
                   <ResourceCard
                     label="System CPU"
                     value={overview?.systemCpuPercent}
                     tone="green"
+                    subtext={availablePercentText(overview?.systemCpuPercent)}
                   />
                   <ResourceCard
                     label="JVM Heap"
                     value={overview?.jvmHeapUsedPercent}
                     tone="purple"
                     subtext={hasValue(overview?.jvmHeapAvailableBytes)
-                      ? `${formatBytes(Number(overview?.jvmHeapAvailableBytes))} available`
+                      ? availableCapacityText(
+                          Number(overview?.jvmHeapAvailableBytes),
+                          overview?.jvmHeapTotalBytes
+                        )
                       : undefined}
                   />
                   <ResourceCard
@@ -701,7 +708,12 @@ export function Monitoring() {
                     value={overview?.hostMemoryUsedPercent}
                     tone="blue"
                     subtext={hasValue(overview?.hostMemoryAvailableMb)
-                      ? `${formatBytes(Number(overview?.hostMemoryAvailableMb) * 1024 * 1024)} available`
+                      ? availableCapacityText(
+                          Number(overview?.hostMemoryAvailableMb) * 1024 * 1024,
+                          hasValue(overview?.hostMemoryTotalMb)
+                            ? Number(overview?.hostMemoryTotalMb) * 1024 * 1024
+                            : undefined
+                        )
                       : undefined}
                   />
                 </div>
@@ -718,6 +730,18 @@ export function Monitoring() {
 const boundedPercent = (value?: number | null) => {
   if (!hasValue(value)) return 0;
   return Math.max(0, Math.min(100, Number(value)));
+};
+
+const availablePercentText = (usedPercent?: number | null) => {
+  if (!hasValue(usedPercent)) return undefined;
+  return `${formatNumber(100 - boundedPercent(usedPercent), 1)}% available`;
+};
+
+const availableCapacityText = (availableBytes: number, totalBytes?: number | null) => {
+  const available = `${formatBytes(availableBytes)} available`;
+  return hasValue(totalBytes) && Number(totalBytes) > 0
+    ? `${available} / ${formatBytes(Number(totalBytes))} total`
+    : available;
 };
 
 function ResourceCard({ label, value, subtext, tone = 'blue' }: {
