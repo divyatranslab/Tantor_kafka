@@ -680,25 +680,21 @@ export function Monitoring() {
                     label="Broker CPU"
                     value={overview?.brokerCpuPercent}
                     tone="purple"
-                    subtext="Load: 0.09 / 0.07 / 0.02"
                   />
                   <ResourceCard
                     label="System CPU"
                     value={overview?.systemCpuPercent}
                     tone="green"
-                    subtext="13245 MB available"
                   />
                   <ResourceCard
                     label="JVM Heap"
                     value={overview?.jvmHeapUsedPercent}
                     tone="purple"
-                    subtext="8.6 GB free"
                   />
                   <ResourceCard
                     label="Host Memory (Agent Heartbeat)"
                     value={overview?.hostMemoryUsedPercent}
                     tone="blue"
-                    subtext="8.6 GB free"
                   />
                 </div>
               </div>

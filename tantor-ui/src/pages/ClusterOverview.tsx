@@ -163,7 +163,7 @@ export function ClusterOverview() {
           <div className="overview-grid identity-grid">
             <div className="overview-item">
               <div className="overview-label">Kafka cluster ID</div>
-              <div className="overview-value">{overview.kafkaClusterId || '-'}</div>
+              <div className="overview-value cluster-id-value">{overview.kafkaClusterId || '-'}</div>
             </div>
             <div className="overview-item">
               <div className="overview-label">Cluster type</div>

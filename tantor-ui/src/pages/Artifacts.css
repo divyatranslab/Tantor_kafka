@@ -703,6 +703,10 @@
   transition: all 0.2s;
 }
 
+.parcel-action.deactivate {
+  min-width: 112px;
+}
+
 .parcel-action svg {
   display: none;
 }

@@ -222,7 +222,7 @@ export function Dashboard() {
     {
       label: 'External Clusters',
       value: `${summary.externalClusters.toString().padStart(2, '0')}`,
-      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
+      detail: `${summary.externalClusters} External`,
       icon: ExternalLink,
       tone: 'indigo',
     },
