@@ -31,6 +31,31 @@ type JobStep = {
   endTime?: string;
 };
 
+type Host = {
+  id: string;
+  agentName?: string;
+  hostname?: string;
+  ipAddresses?: string;
+};
+
+type HostDisplay = {
+  name: string;
+  ip: string;
+};
+
+const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+function getFirstIp(ipAddresses?: string): string {
+  if (!ipAddresses) return '';
+  try {
+    const parsed = JSON.parse(ipAddresses);
+    if (Array.isArray(parsed)) return String(parsed[0] || '');
+  } catch {
+    // Fall back to a plain IP value if this server does not return JSON.
+  }
+  return ipAddresses.replace(/[\[\]"]/g, '').split(',')[0]?.trim() || '';
+}
+
 function getBusinessStepName(rawName: string): string {
   if (!rawName) return '';
 
@@ -78,6 +103,7 @@ export function JobStatusPage() {
   const { canManage } = usePermissions();
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const [hostsById, setHostsById] = useState<Record<string, HostDisplay>>({});
   const [loading, setLoading] = useState(true);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
@@ -92,6 +118,17 @@ export function JobStatusPage() {
       }
       const stepsRes = await fetch(`/api/v1/ui/jobs/${id}/steps`);
       if (stepsRes.ok) setSteps(await stepsRes.json());
+      const hostsRes = await fetch('/api/v1/ui/hosts');
+      if (hostsRes.ok) {
+        const hosts: Host[] = await hostsRes.json();
+        setHostsById(Object.fromEntries(hosts.map(host => [
+          host.id,
+          {
+            name: host.hostname || host.agentName || host.id,
+            ip: getFirstIp(host.ipAddresses)
+          }
+        ])));
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -164,11 +201,12 @@ export function JobStatusPage() {
     for (const line of lines) {
       const compMatch = line.match(/\]\s*(.+?)\s+completed/);
       if (compMatch) {
+        const targetMatch = line.match(new RegExp(`\\b(?:on|from)\\s+(${UUID_PATTERN})\\b`, 'i'));
         reconstructed.push({
           id: `recon-${order}`,
           stepOrder: order++,
           name: compMatch[1],
-          targetId: '',
+          targetId: targetMatch?.[1] || '',
           status: 'SUCCESS',
           retryCount: 0
         });
@@ -254,8 +292,27 @@ export function JobStatusPage() {
       } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
         className += ' log-error';
       }
-      return <div key={idx} className={className}>{line || ' '}</div>;
+      const displayLine = line.replace(
+        new RegExp(UUID_PATTERN, 'gi'),
+        targetId => {
+          const host = hostsById[targetId];
+          if (!host) return targetId;
+          return host.ip ? `${host.name} (${host.ip})` : host.name;
+        }
+      );
+      return <div key={idx} className={className}>{displayLine || ' '}</div>;
     });
+  };
+
+  const getStepDisplayName = (step: JobStep): string => {
+    const businessName = getBusinessStepName(step.name);
+    const targetId = step.targetId || step.name.match(new RegExp(UUID_PATTERN, 'i'))?.[0];
+    if (!targetId) return businessName;
+
+    const host = hostsById[targetId];
+    if (!host) return businessName;
+    const hostLabel = host.ip ? `${host.name} (${host.ip})` : host.name;
+    return `${businessName} — ${hostLabel}`;
   };
 
   const totalSteps = displaySteps.length;
@@ -402,6 +459,7 @@ export function JobStatusPage() {
                   const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);
                   
                   const progress = isCompleted ? 100 : isRunning ? 50 : 0;
+                  const stepDisplayName = getStepDisplayName(step);
                   
                   let nameColor = '#818181'; // Unstarted default
                   let statusColor = '#818181'; // Unstarted default
@@ -426,28 +484,29 @@ export function JobStatusPage() {
                       {getStepIcon(step.status, 20)}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ 
-                            fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                          <span style={{
+                            fontFamily: 'Satoshi',
+                            fontSize: '12px',
+                            fontWeight: 500,
                             lineHeight: '16px',
                             color: nameColor,
-                            width: '175px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: 'inline-block'
-                          }} title={getBusinessStepName(step.name)}>
-                            {getBusinessStepName(step.name)}
+                            flex: '1 1 auto',
+                            minWidth: 0,
+                            whiteSpace: 'normal',
+                            overflowWrap: 'anywhere',
+                            paddingRight: '12px'
+                          }} title={stepDisplayName}>
+                            {stepDisplayName}
                           </span>
-                          <span style={{ 
+                          <span style={{
                             fontFamily: 'Satoshi', 
                             fontSize: '12px', 
                             fontWeight: 500, 
                             lineHeight: '16px',
                             color: statusColor,
                             width: '96px',
-                            textAlign: 'right'
+                            textAlign: 'right',
+                            flexShrink: 0
                           }}>
                             {progress}% Completed
                           </span>

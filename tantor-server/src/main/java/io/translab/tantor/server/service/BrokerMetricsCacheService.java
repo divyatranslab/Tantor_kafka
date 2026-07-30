@@ -53,7 +53,7 @@ public class BrokerMetricsCacheService {
 
         // Cache miss or expired, fetch asynchronously
         List<CompletableFuture<BrokerSummaryDto>> futures = cluster.getServices() == null ? new ArrayList<>() : cluster.getServices().stream()
-            .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole()) || "controller".equals(svc.getRole()))
+            .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole()))
             .map(svc -> CompletableFuture.supplyAsync(() -> fetchMetricsForBroker(svc)))
             .collect(Collectors.toList());
 
