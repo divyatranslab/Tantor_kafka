@@ -38,8 +38,7 @@ public class DeploymentJobHandler implements JobHandler {
         UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
-        cluster.setStatus("RUNNING");
-        clusterRepository.save(cluster);
+        saveClusterStatus(cluster, "RUNNING", job);
 
         List<JobStep> steps = jobService.getSteps(job.getId());
         if (steps.isEmpty()) throw new RuntimeException("Deployment job has no persisted steps.");
@@ -84,15 +83,13 @@ public class DeploymentJobHandler implements JobHandler {
                 jobService.appendLog(job.getId(), step.getName() + " completed on " + step.getTargetId() + ".");
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
-                cluster.setStatus("FAILED");
-                clusterRepository.save(cluster);
+                saveClusterStatus(cluster, "FAILED", job);
                 throw e;
             }
             i++;
         }
 
-        cluster.setStatus("SUCCESS");
-        clusterRepository.save(cluster);
+        saveClusterStatus(cluster, "SUCCESS", job);
     }
 
     private void executeDeployBatch(
@@ -129,8 +126,7 @@ public class DeploymentJobHandler implements JobHandler {
             if (activeStep != null) {
                 jobService.failStep(activeStep.getId(), e.getMessage());
             }
-            cluster.setStatus("FAILED");
-            clusterRepository.save(cluster);
+            saveClusterStatus(cluster, "FAILED", job);
             throw e;
         }
     }
@@ -213,7 +209,20 @@ public class DeploymentJobHandler implements JobHandler {
             }
             cluster.setStatus("ROLLED_BACK");
         }
+        applyJobActor(cluster, job);
         clusterRepository.save(cluster);
+    }
+
+    private void saveClusterStatus(Cluster cluster, String status, Job job) {
+        applyJobActor(cluster, job);
+        cluster.setStatus(status);
+        clusterRepository.save(cluster);
+    }
+
+    private void applyJobActor(Cluster cluster, Job job) {
+        if (job.getRequestedBy() != null && !job.getRequestedBy().isBlank()) {
+            cluster.setUpdatedBy(job.getRequestedBy());
+        }
     }
 
     private UUID startOperation(UUID clusterId, Map<String, Object> jobPayload, Map<String, Object> payload) {
