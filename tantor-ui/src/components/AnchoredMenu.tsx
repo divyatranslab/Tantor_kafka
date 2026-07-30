@@ -10,6 +10,7 @@ type AnchoredMenuProps = {
   matchAnchorWidth?: boolean;
   minWidth?: number;
   gap?: number;
+  placement?: 'auto' | 'above' | 'below';
 };
 
 export function AnchoredMenu({
@@ -21,6 +22,7 @@ export function AnchoredMenu({
   matchAnchorWidth = false,
   minWidth,
   gap = 6,
+  placement = 'auto',
 }: AnchoredMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({
@@ -40,7 +42,7 @@ export function AnchoredMenu({
       const viewportGap = 8;
       const spaceBelow = window.innerHeight - anchorRect.bottom;
       const spaceAbove = anchorRect.top;
-      const openAbove = spaceBelow < Math.min(menuHeight + gap, 180) && spaceAbove > spaceBelow;
+      const openAbove = placement === 'above' || (placement === 'auto' && spaceBelow < Math.min(menuHeight + gap, 180) && spaceAbove > spaceBelow);
       const availableHeight = Math.max(
         96,
         (openAbove ? spaceAbove : spaceBelow) - gap - viewportGap,
@@ -93,7 +95,7 @@ export function AnchoredMenu({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [align, anchor, gap, matchAnchorWidth, minWidth, onClose]);
+  }, [align, anchor, gap, matchAnchorWidth, minWidth, onClose, placement]);
 
   return createPortal(
     <div ref={menuRef} className={className} style={style}>

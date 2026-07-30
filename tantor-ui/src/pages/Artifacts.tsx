@@ -432,6 +432,15 @@ export function Artifacts() {
     );
   };
 
+  const formatParcelStatus = (status?: string) => {
+    if (!status || status === 'AVAILABLE') return 'Available';
+    return status
+      .toLowerCase()
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  };
+
   const renderActions = (ver: ArtifactVersion, host: Host, state?: HostParcel) => {
     if (!canManage) {
       return <span className="parcel-blocked">View only</span>;
@@ -459,7 +468,7 @@ export function Artifacts() {
         status === 'ACTIVATING' ? 'Activating' :
           status === 'DEACTIVATING' ? 'Deactivating' : 'Removing';
       return (
-        <button className="parcel-action distribute" disabled style={{ opacity: 0.8, cursor: 'not-allowed' }}>
+        <button className={`parcel-action progress ${status.toLowerCase()}`} disabled>
           <Loader2 size={13} className="spin" />
           {displayLabel}
         </button>
@@ -707,7 +716,7 @@ export function Artifacts() {
                                 </div>
                                 <div>
                                   <span className={`parcel-status ${status.toLowerCase()}`}>
-                                    {status === 'AVAILABLE' ? 'Available' : status}
+                                    {formatParcelStatus(status)}
                                   </span>
                                   {state?.errorMsg && <p className="parcel-error">{state.errorMsg}</p>}
                                 </div>

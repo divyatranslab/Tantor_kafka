@@ -115,7 +115,7 @@ export function Consumers() {
     <div className="consumers-tab animate-fade-in" style={{ width: '100%' }}>
       <div className="consumers-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
         <h2 className="cluster-section-heading">Consumer Groups</h2>
-        <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>
+        <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', justifyContent: 'space-between', width: '100%', height: '40px' }}>
           <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
             <label style={{
               boxSizing: 'border-box',
@@ -166,7 +166,8 @@ export function Consumers() {
               border: '1px solid #CCCCCC',
               borderRadius: '8px',
               cursor: 'pointer',
-              color: '#818181'
+              color: '#818181',
+              marginLeft: 'auto'
             }}
             aria-label="Refresh consumer groups"
           >

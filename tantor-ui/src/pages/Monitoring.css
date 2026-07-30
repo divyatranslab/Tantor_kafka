@@ -1747,3 +1747,7 @@
     gap: 1rem;
   }
 }
+
+.monitoring-type-field .custom-select-container {
+  width: 154px;
+}

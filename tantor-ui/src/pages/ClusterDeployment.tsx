@@ -521,6 +521,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     return needle.includes(nodeSearch.toLowerCase());
   });
 
+  const selectableFilteredHosts = filteredHosts.filter(host => host.status === 'AVAILABLE' && host.available !== false);
+  const allFilteredSelected = selectableFilteredHosts.length > 0
+    && selectableFilteredHosts.every(host => selectedNodeIds.includes(host.id));
+
   const roleOptions = isAddNodeMode
     ? (deploymentMode === 'zookeeper' ? ZOOKEEPER_ROLE_OPTIONS : KRAFT_ROLE_OPTIONS).filter(role => role.id === 'broker')
     : deploymentMode === 'zookeeper' ? ZOOKEEPER_ROLE_OPTIONS : KRAFT_ROLE_OPTIONS;
@@ -979,6 +983,35 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     setPrereqResults({});
   };
 
+  const toggleSelectAllNodes = () => {
+    const selectableHostIds = selectableFilteredHosts.map(host => host.id);
+    if (!selectableHostIds.length) return;
+
+    setSelectedNodeIds(prev => {
+      const shouldSelectAll = !selectableHostIds.every(id => prev.includes(id));
+      const nextSelected = shouldSelectAll
+        ? Array.from(new Set([...prev, ...selectableHostIds]))
+        : prev.filter(id => !selectableHostIds.includes(id));
+
+      setRolesByHost(rolesPrev => {
+        const nextRoles = { ...rolesPrev };
+        if (shouldSelectAll) {
+          selectableHostIds.forEach(id => {
+            nextRoles[id] = nextRoles[id] || defaultRoleForMode;
+          });
+        } else {
+          selectableHostIds.forEach(id => {
+            delete nextRoles[id];
+          });
+        }
+        return nextRoles;
+      });
+
+      return nextSelected;
+    });
+    setPrereqResults({});
+  };
+
   const removeNode = (hostId: string) => {
     setSelectedNodeIds(prev => prev.filter(id => id !== hostId));
     setDraftNodeIds(prev => prev.filter(id => id !== hostId));
@@ -1152,7 +1185,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
     if (result.status === 'SUCCESS') {
       if (available.length > 0) {
-        return `Available ports:\n${available.map(p => `• Port ${p}`).join('\n')}`;
+        return 'Available ports:\n' + available.map(p => '- Port ' + p).join('\n');
       }
       return 'All required ports are available';
     }
@@ -1160,10 +1193,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     if (unavailable.length > 0 || available.length > 0) {
       const parts: string[] = [];
       if (unavailable.length > 0) {
-        parts.push(`Unavailable (in use):\n${unavailable.map(p => `• Port ${p}`).join('\n')}`);
+        parts.push('Unavailable (in use):\n' + unavailable.map(p => '- Port ' + p).join('\n'));
       }
       if (available.length > 0) {
-        parts.push(`Available (free):\n${available.map(p => `• Port ${p}`).join('\n')}`);
+        parts.push('Available (free):\n' + available.map(p => '- Port ' + p).join('\n'));
       }
       return parts.join('\n\n');
     }
@@ -1576,6 +1609,22 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <Search size={15} />
                       <input value={nodeSearch} onChange={e => setNodeSearch(e.target.value)} placeholder="Search hostname or IP" autoFocus />
                     </div>
+                    <button
+                      type="button"
+                      className={`cd-node-option cd-node-option-select-all ${allFilteredSelected ? 'checked' : ''}`}
+                      onClick={toggleSelectAllNodes}
+                      disabled={selectableFilteredHosts.length === 0}
+                    >
+                      <span className="cd-checkbox">{allFilteredSelected && <Check size={12} strokeWidth={3} />}</span>
+                      <span className="cd-node-info">
+                        <strong>Select all</strong>
+                        <small>
+                          {selectableFilteredHosts.length
+                            ? `Select all ${selectableFilteredHosts.length} available host${selectableFilteredHosts.length > 1 ? 's' : ''}`
+                            : 'No available hosts match this search'}
+                        </small>
+                      </span>
+                    </button>
                     <div className="cd-node-options">
                       {filteredHosts.map(host => {
                         const disabled = host.status !== 'AVAILABLE' || host.available === false;
@@ -1691,7 +1740,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                                   <div style={{ fontWeight: 600, color: '#069B68' }}>All ports available</div>
                                   {available.map(p => (
                                     <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ color: '#069B68' }}>•</span>
+                                      <span style={{ color: '#069B68' }}>-</span>
                                       <span>Port {p}</span>
                                     </div>
                                   ))}
@@ -1706,7 +1755,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                                     <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Unavailable (in use):</div>
                                     {unavailable.map(p => (
                                       <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
-                                        <span style={{ color: '#E15252' }}>•</span>
+                                        <span style={{ color: '#E15252' }}>-</span>
                                         <span>Port {p}</span>
                                       </div>
                                     ))}
@@ -1717,7 +1766,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                                     <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Available (free):</div>
                                     {available.map(p => (
                                       <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
-                                        <span style={{ color: '#069B68' }}>•</span>
+                                        <span style={{ color: '#069B68' }}>-</span>
                                         <span>Port {p}</span>
                                       </div>
                                     ))}
@@ -2125,14 +2174,6 @@ function PropertyTable({
                     placeholder={row.required ? 'Required before preview' : ''}
                     style={{ flex: 1 }}
                   />
-                  {!hostIp && (
-                    <button type="button" className="cd-icon-btn" style={{ padding: '0', background: 'transparent', border: 'none', display: 'flex', alignItems: 'center' }} onClick={() => {
-                      const next = window.prompt(`Edit ${row.key}`, row.value);
-                      if (next !== null) onChange(row.key, next);
-                    }}>
-                      <MoreVertical size={24} color="#818181" />
-                    </button>
-                  )}
                 </div>
               </td>
               {hostIp && (
@@ -2164,7 +2205,7 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
         
   let text = '';
   if (normalized === 'IDLE') {
-    text = 'Idel';
+    text = 'Idle';
   } else if (normalized === 'SUCCESS') {
     text = 'Success';
   } else if (normalized === 'FAILED') {

@@ -59,8 +59,12 @@ export function Topics() {
   const [data, setData] = useState<PaginatedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [refreshInterval, setRefreshInterval] = useState(15);
+  const liveSettingsKey = 'tantor:topics-live:' + (id || 'default');
+  const [autoRefresh, setAutoRefresh] = useState(() => window.localStorage.getItem(liveSettingsKey) === 'true');
+  const [refreshInterval, setRefreshInterval] = useState(() => {
+    const savedInterval = Number(window.localStorage.getItem(liveSettingsKey + ':interval'));
+    return [5, 10, 15, 30, 60].includes(savedInterval) ? savedInterval : 15;
+  });
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
   const liveDropdownRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,7 +135,12 @@ export function Topics() {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => fetchTopics(true), refreshInterval * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, fetchTopics]);
+  }, [autoRefresh, fetchTopics, refreshInterval]);
+
+  useEffect(() => {
+    window.localStorage.setItem(liveSettingsKey, String(autoRefresh));
+    window.localStorage.setItem(liveSettingsKey + ':interval', String(refreshInterval));
+  }, [autoRefresh, liveSettingsKey, refreshInterval]);
 
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -666,15 +675,28 @@ export function Topics() {
 
       {canManage && pendingAction && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
-          <div className="topic-modal danger-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
-            <header><div className="danger-icon"><AlertTriangle size={22} /></div><button onClick={() => setPendingAction(null)} disabled={acting}><X size={18} /></button></header>
-            <div className="confirm-copy">
-              <h3>{actionCopy[pendingAction.kind].title}</h3>
-              <p>{actionCopy[pendingAction.kind].description}</p>
-              <div>{pendingAction.names.join(', ')}</div>
+          {pendingAction.kind === 'remove' ? (
+            <div className="topic-modal remove-topic-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+              <div className="remove-topic-banner" aria-hidden="true" />
+              <button className="remove-topic-close" onClick={() => setPendingAction(null)} disabled={acting} aria-label="Close modal"><X size={22} /></button>
+              <div className="remove-topic-content">
+                <div className="remove-topic-title"><span className="remove-topic-icon" aria-hidden="true" /><h3>{pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}</h3></div>
+                <p>The topic{pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.</p>
+                <div className="remove-topic-names">{pendingAction.names.join(', ')}</div>
+                <footer><button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="remove-topic-confirm" onClick={runAction} disabled={acting}>{acting ? 'Working...' : 'Remove topic'}</button></footer>
+              </div>
             </div>
-            <footer><button className="topic-button secondary" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="topic-button destructive" onClick={runAction} disabled={acting}>{acting ? 'Working…' : actionCopy[pendingAction.kind].button}</button></footer>
-          </div>
+          ) : (
+            <div className="topic-modal danger-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+              <header><div className="danger-icon"><AlertTriangle size={22} /></div><button onClick={() => setPendingAction(null)} disabled={acting}><X size={18} /></button></header>
+              <div className="confirm-copy">
+                <h3>{actionCopy[pendingAction.kind].title}</h3>
+                <p>{actionCopy[pendingAction.kind].description}</p>
+                <div>{pendingAction.names.join(', ')}</div>
+              </div>
+              <footer><button className="topic-button secondary" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="topic-button destructive" onClick={runAction} disabled={acting}>{acting ? 'Working...' : actionCopy[pendingAction.kind].button}</button></footer>
+            </div>
+          )}
         </div>
       )}
     </section>

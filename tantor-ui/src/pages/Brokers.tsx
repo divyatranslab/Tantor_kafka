@@ -78,8 +78,22 @@ export function Brokers() {
     }
   };
 
+  const hasRole = (role: string, filter: string) => {
+    if (filter === 'All') return true;
+    return role
+      .toLowerCase()
+      .split(/[_\s,+/]+/)
+      .includes(filter.toLowerCase());
+  };
+
+  const formatRole = (role: string) => role
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' + ');
+
   const filteredBrokers = brokers
-    .filter(b => roleFilter === 'All' || b.role.includes(roleFilter.toLowerCase()))
+    .filter(b => hasRole(b.role, roleFilter))
     .filter(b =>
       b.hostname.toLowerCase().includes(search.toLowerCase()) ||
       b.brokerId.toString().includes(search)
@@ -233,7 +247,7 @@ export function Brokers() {
 
                 {/* Role */}
                 <td>
-                  <span className="role-badge">{broker.role}</span>
+                  <span className="role-badge">{formatRole(broker.role)}</span>
                 </td>
 
                 {/* CPU */}

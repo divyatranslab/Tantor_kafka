@@ -286,20 +286,22 @@ export function Monitoring() {
 
           {/* Controls */}
           <div className="controls-area">
-            <label className="monitoring-control-field">
+            <div className="monitoring-control-field monitoring-type-field">
               <span>Cluster type</span>
-              <select
-                className="tantor-select"
+              <CustomSelect
                 value={selectedType}
-                onChange={event => {
-                  setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
+                onChange={val => {
+                  setSelectedType(val as 'INTERNAL' | 'EXTERNAL');
                   setSelectedClusterId('');
                 }}
-              >
-                <option value="INTERNAL">Internal</option>
-                <option value="EXTERNAL">External</option>
-              </select>
-            </label>
+                options={[
+                  { value: 'INTERNAL', label: 'Internal' },
+                  { value: 'EXTERNAL', label: 'External' },
+                ]}
+                width="154px"
+                placeholder="Select Type"
+              />
+            </div>
 
 
             {/* CLUSTER NAME Selector */}

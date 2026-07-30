@@ -6,7 +6,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 24px;
-  min-height: calc(100vh - 120px);
+  min-height: 0;
   margin: 20px;
   box-sizing: border-box;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
@@ -39,7 +39,7 @@
   flex-shrink: 0;
 }
 
-/* ── Buttons ── */
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -121,7 +121,7 @@
   text-transform: none !important;
 }
 
-/* ── Upload status message ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Upload status message Ã¢â€â‚¬Ã¢â€â‚¬ */
 .upload-msg {
   font-size: 0.8rem;
   padding: 6px 12px;
@@ -139,7 +139,7 @@
   color: var(--color-danger);
 }
 
-/* ── Loading / empty states ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Loading / empty states Ã¢â€â‚¬Ã¢â€â‚¬ */
 .state-center {
   display: flex;
   flex-direction: column;
@@ -190,7 +190,7 @@
   animation: spin 0.7s linear infinite;
 }
 
-/* ── Version list ── */
+/* Version list */
 .versions-list {
   display: flex;
   flex-direction: column;
@@ -202,7 +202,7 @@
   padding: 24px;
 }
 
-/* ── Version card ── */
+/* Version card */
 .version-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -391,7 +391,7 @@
   cursor: not-allowed;
 }
 
-/* ── Status badges ── */
+/* Status badges */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -419,7 +419,7 @@
   color: #4338CA;
 }
 
-/* ── Expanded panel ── */
+/* Expanded panel */
 .version-card-body {
   border-top: 1px solid #CCCCCC;
   background: #FAFAFA;
@@ -635,12 +635,16 @@
   color: #991B1B;
 }
 
-.parcel-status.distributing,
+.parcel-status.distributing {
+  background: #E0F2FE;
+  color: #0369A1;
+}
+
 .parcel-status.activating,
 .parcel-status.deactivating,
 .parcel-status.removing {
-  background: #ECFEFF;
-  color: #0E7490;
+  background: #F3E8FF;
+  color: #7C3AED;
 }
 
 .parcel-error {
@@ -712,6 +716,22 @@
   cursor: not-allowed;
 }
 
+.parcel-action.progress {
+  border: none;
+  color: #FFFFFF;
+  opacity: 1;
+}
+
+.parcel-action.progress.distributing {
+  background: #0369A1;
+}
+
+.parcel-action.progress.activating,
+.parcel-action.progress.deactivating,
+.parcel-action.progress.removing {
+  background: #7C3AED;
+}
+
 .parcel-action.remove {
   border-color: #EF4D5F;
   color: #EF4D5F;
@@ -742,7 +762,7 @@
   }
 }
 
-/* ── Universal distribution directory Container ── */
+/* Universal distribution directory container */
 .universal-distribution-directory {
   display: flex;
   flex-direction: column;
@@ -768,7 +788,7 @@
   height: 40px;
 }
 
-/* ── Modal ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Modal Ã¢â€â‚¬Ã¢â€â‚¬ */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -919,7 +939,7 @@
   color: var(--text-primary);
 }
 
-/* ── Form ── */
+/* Form */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -970,7 +990,7 @@
   background: var(--bg-raised);
 }
 
-/* ── Dropzone ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Dropzone Ã¢â€â‚¬Ã¢â€â‚¬ */
 .upload-dropzone {
   border: 1.5px dashed var(--border-default);
   border-radius: var(--radius-lg);
@@ -1047,7 +1067,7 @@
   border-radius: 8px;
 }
 
-/* ── Delete Confirmation Modal ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Delete Confirmation Modal Ã¢â€â‚¬Ã¢â€â‚¬ */
 .delete-confirm-modal {
   padding: 0 !important;
   overflow: hidden;

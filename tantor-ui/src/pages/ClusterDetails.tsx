@@ -340,6 +340,7 @@ export function ClusterDetails() {
                     className="cluster-tabs-dropdown-menu"
                     onClose={() => setIsDropdownOpen(false)}
                     minWidth={180}
+                    placement="above"
                   >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {
