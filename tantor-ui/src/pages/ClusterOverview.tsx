@@ -6,6 +6,8 @@ import './ClusterOverview.css';
 interface OverviewSummary {
   brokerCount: number;
   activeController: number | null;
+  activeControllerId: number | null;
+  configuredControllerCount: number;
   version: string;
   controllerType: string;
 }
@@ -25,6 +27,7 @@ interface BrokerRow {
   port: number;
   controller: boolean;
   diskUsageBytes: number;
+  diskTotalBytes: number;
   logReplicaCount: number;
   inSyncReplicas: number;
   replicas: number;
@@ -201,8 +204,12 @@ export function ClusterOverview() {
               <div className="overview-value">{(uptime.brokerCount || 0).toString().padStart(2, '0')}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">Active Controller</div>
-              <div className="overview-value">{uptime.activeController ?? '-'}</div>
+              <div className="overview-label">Active Controller ID</div>
+              <div className="overview-value">{uptime.activeControllerId ?? uptime.activeController ?? '-'}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">Configured Controllers</div>
+              <div className="overview-value">{uptime.configuredControllerCount ?? '-'}</div>
             </div>
             <div className="overview-item">
               <div className="overview-label">Version</div>
@@ -264,7 +271,7 @@ export function ClusterOverview() {
                         <span>{broker.brokerId}</span>
                       </div>
                     </td>
-                    <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
+                    <td>{formatDiskUsage(broker.diskUsageBytes, broker.diskTotalBytes)}</td>
                     <td>{broker.inSyncReplicas}</td>
                     <td>{broker.replicas}</td>
                     <td>{formatSkew(broker.replicaSkewPct)}</td>
@@ -398,4 +405,10 @@ function formatBytes(bytes: number) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
+}
+
+function formatDiskUsage(usedBytes: number | null | undefined, totalBytes: number | null | undefined) {
+  if (usedBytes == null || !Number.isFinite(usedBytes) || usedBytes < 0) return '-';
+  const used = formatBytes(usedBytes);
+  return totalBytes != null && totalBytes > 0 ? `${used} / ${formatBytes(totalBytes)}` : used;
 }

@@ -63,7 +63,13 @@ public class ClusterOverviewDto {
     @AllArgsConstructor
     public static class UptimeSummary {
         private int brokerCount;
+        /**
+         * Legacy field retained for API compatibility. This is the active
+         * controller node ID, not the number of configured controllers.
+         */
         private Integer activeController;
+        private Integer activeControllerId;
+        private int configuredControllerCount;
         private String version;
         private String controllerType;
     }
@@ -92,6 +98,7 @@ public class ClusterOverviewDto {
         private String rack;
         private boolean controller;
         private long diskUsageBytes;
+        private long diskTotalBytes;
         private int logReplicaCount;
         private int inSyncReplicas;
         private int replicas;

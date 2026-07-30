@@ -5,6 +5,7 @@ import io.translab.tantor.server.dto.ClusterOverviewDto;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
+import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -37,6 +38,7 @@ public class ClusterOverviewService {
 
     private final ClusterRepository clusterRepository;
     private final ExternalClusterRepository externalClusterRepository;
+    private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
 
     public ClusterOverviewDto getOverview(UUID clusterId) {
@@ -48,10 +50,12 @@ public class ClusterOverviewService {
         String configDirectory;
         String dataDirectory;
         String logDirectory;
+        Cluster internalCluster = null;
         
         var internalOpt = clusterRepository.findById(clusterId);
         if (internalOpt.isPresent()) {
             Cluster cluster = internalOpt.get();
+            internalCluster = cluster;
             clusterName = cluster.getName();
             kafkaVersion = cluster.getKafkaVersion();
             originType = cluster.getOriginType();
@@ -89,8 +93,10 @@ public class ClusterOverviewService {
 
             PartitionAccumulator partitionStats = collectPartitionStats(client, brokerStats, warnings);
             collectLogDirStats(client, brokerStats, warnings);
+            applyInternalHostDiskStats(internalCluster, brokerStats);
 
             int brokerCount = brokerStats.size();
+            int configuredControllerCount = configuredControllerCount(internalCluster);
             double avgReplicas = brokerCount == 0 ? 0 : (double) partitionStats.totalReplicas / brokerCount;
             double avgLeaders = brokerCount == 0 ? 0 : (double) partitionStats.totalPartitions / brokerCount;
 
@@ -115,6 +121,8 @@ public class ClusterOverviewService {
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
                             .activeController(controller == null ? null : controller.id())
+                            .activeControllerId(controller == null ? null : controller.id())
+                            .configuredControllerCount(configuredControllerCount)
                             .version(kafkaVersion)
                             .controllerType(controllerType)
                             .build())
@@ -136,6 +144,51 @@ public class ClusterOverviewService {
             kafkaAdminService.refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to load cluster overview: " + e.getMessage(), e);
         }
+    }
+
+    private int configuredControllerCount(Cluster cluster) {
+        if (cluster == null || cluster.getServices() == null) {
+            return 0;
+        }
+        return (int) cluster.getServices().stream()
+                .filter(service -> service.getRole() != null)
+                .filter(service -> "controller".equalsIgnoreCase(service.getRole())
+                        || "broker_controller".equalsIgnoreCase(service.getRole()))
+                .count();
+    }
+
+    private void applyInternalHostDiskStats(
+            Cluster cluster,
+            Map<Integer, BrokerAccumulator> brokerStats
+    ) {
+        if (cluster == null || cluster.getServices() == null) {
+            return;
+        }
+        cluster.getServices().forEach(service -> {
+            if (service.getNodeId() == null || service.getHostId() == null) {
+                return;
+            }
+            BrokerAccumulator broker = brokerStats.get(service.getNodeId());
+            if (broker == null) {
+                return;
+            }
+            hostRepository.findById(service.getHostId()).ifPresent(host -> {
+                if (host.getDiskUsedGb() != null) {
+                    broker.diskUsageBytes = gibibytesToBytes(host.getDiskUsedGb());
+                }
+                if (host.getDiskTotalGb() != null) {
+                    broker.diskTotalBytes = gibibytesToBytes(host.getDiskTotalGb());
+                }
+            });
+        });
+    }
+
+    private long gibibytesToBytes(long value) {
+        if (value <= 0) {
+            return 0;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return value > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : value * gibibyte;
     }
 
     private PartitionAccumulator collectPartitionStats(
@@ -245,6 +298,7 @@ public class ClusterOverviewService {
         int replicas;
         int leaders;
         long diskUsageBytes;
+        long diskTotalBytes;
         int logReplicaCount;
 
         BrokerAccumulator(Node node) {
@@ -263,6 +317,7 @@ public class ClusterOverviewService {
                     .rack(node.rack() == null ? "" : node.rack())
                     .controller(controller)
                     .diskUsageBytes(diskUsageBytes)
+                    .diskTotalBytes(diskTotalBytes)
                     .logReplicaCount(logReplicaCount)
                     .inSyncReplicas(inSyncReplicas)
                     .replicas(replicas)
