@@ -2,8 +2,10 @@ package io.translab.tantor.server.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.ExternalClusterNode;
+import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
@@ -12,6 +14,7 @@ import io.translab.tantor.server.security.EncryptionService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,5 +81,46 @@ class PrometheusMonitoringServiceTest {
 
         assertThat(service.computeHostMemoryPercent(mirror, null)).isEqualTo(25.0);
         assertThat(service.computeHostMemoryPercent(mirror, "2")).isEqualTo(30.0);
+        assertThat(service.computeHostMemoryAvailableMb(mirror, null)).isEqualTo(1500L);
+        assertThat(service.computeHostMemoryAvailableMb(mirror, "2")).isEqualTo(700L);
+    }
+
+    @Test
+    void computesInternalAvailableMemoryFromAgentHeartbeatValues() {
+        Cluster cluster = new Cluster();
+        cluster.setOriginType("INTERNAL");
+        cluster.setServices(List.of(
+                assignment(cluster, "host-1", 1),
+                assignment(cluster, "host-2", 2)
+        ));
+
+        Host first = new Host();
+        first.setId("host-1");
+        first.setMemUsedMb(2048L);
+        first.setMemTotalMb(8192L);
+        Host second = new Host();
+        second.setId("host-2");
+        second.setMemUsedMb(4096L);
+        second.setMemTotalMb(8192L);
+
+        HostRepository hosts = mock(HostRepository.class);
+        when(hosts.findById("host-1")).thenReturn(Optional.of(first));
+        when(hosts.findById("host-2")).thenReturn(Optional.of(second));
+        PrometheusMonitoringService service = new PrometheusMonitoringService(
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class),
+                mock(ExternalClusterNodeRepository.class), hosts,
+                mock(EncryptionService.class), new ObjectMapper());
+
+        assertThat(service.computeHostMemoryPercent(cluster, null)).isEqualTo(37.5);
+        assertThat(service.computeHostMemoryAvailableMb(cluster, null)).isEqualTo(10240L);
+        assertThat(service.computeHostMemoryAvailableMb(cluster, "2")).isEqualTo(4096L);
+    }
+
+    private ClusterServiceAssignment assignment(Cluster cluster, String hostId, int nodeId) {
+        ClusterServiceAssignment assignment = new ClusterServiceAssignment();
+        assignment.setCluster(cluster);
+        assignment.setHostId(hostId);
+        assignment.setNodeId(nodeId);
+        return assignment;
     }
 }

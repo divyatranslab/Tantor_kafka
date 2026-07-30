@@ -245,6 +245,16 @@ public class PrometheusMonitoringService {
                 heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
                 heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
         ));
+        overview.setJvmHeapAvailableBytes(firstPresentNumber(
+                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+        ));
         overview.setBrokerCpuPercent(firstPresentNumber(
                 cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", metricSelector),
                 cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
@@ -258,6 +268,7 @@ public class PrometheusMonitoringService {
         ));
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
+        overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
 
         if (overview.getKafkaExporterUp() == null) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
@@ -595,8 +606,21 @@ public class PrometheusMonitoringService {
     }
 
     Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        if (memory == null || memory.totalMb() <= 0) {
+            return null;
+        }
+        return Math.min(100.0, Math.round((memory.usedMb() * 1000.0) / memory.totalMb()) / 10.0);
+    }
+
+    Long computeHostMemoryAvailableMb(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        return memory == null ? null : Math.max(0L, memory.totalMb() - memory.usedMb());
+    }
+
+    private MemoryUsage hostMemory(Cluster cluster, String nodeId) {
         if (isExternal(cluster)) {
-            return computeExternalHostMemoryPercent(cluster, nodeId);
+            return externalHostMemory(cluster, nodeId);
         }
         if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
             return null;
@@ -624,10 +648,10 @@ public class PrometheusMonitoringService {
         if (counted == 0 || totalMb <= 0) {
             return null;
         }
-        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+        return new MemoryUsage(usedMb, totalMb);
     }
 
-    private Double computeExternalHostMemoryPercent(Cluster cluster, String nodeId) {
+    private MemoryUsage externalHostMemory(Cluster cluster, String nodeId) {
         long totalMb = 0;
         long usedMb = 0;
         int counted = 0;
@@ -645,8 +669,10 @@ public class PrometheusMonitoringService {
         if (counted == 0 || totalMb <= 0) {
             return null;
         }
-        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+        return new MemoryUsage(usedMb, totalMb);
     }
+
+    private record MemoryUsage(long usedMb, long totalMb) {}
 
     private String hostIp(Host host) {
         if (host == null) {
@@ -753,6 +779,11 @@ public class PrometheusMonitoringService {
 
     private String heapPercent(String selector, String usedMetric, String limitMetric, String area) {
         return "(sum(" + usedMetric + "{" + selector + ",area=\"" + area + "\"}) / sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"})) * 100";
+    }
+
+    private String heapAvailableBytes(String selector, String usedMetric, String limitMetric, String area) {
+        return "clamp_min(sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"}) - sum("
+                + usedMetric + "{" + selector + ",area=\"" + area + "\"}), 0)";
     }
 
     private String cpuPercent(String metric, String selector) {
@@ -986,9 +1017,11 @@ public class PrometheusMonitoringService {
         private Double bytesInPerSecond;
         private Double bytesOutPerSecond;
         private Double jvmHeapUsedPercent;
+        private Double jvmHeapAvailableBytes;
         private Double brokerCpuPercent;
         private Double systemCpuPercent;
         private Double hostMemoryUsedPercent;
+        private Long hostMemoryAvailableMb;
         private String selectedNodeId;
         private List<MonitoringNodeSummary> nodes;
         private List<String> warnings;

@@ -42,10 +42,12 @@ interface MonitoringOverview {
   bytesInPerSecond?: number | null;
   bytesOutPerSecond?: number | null;
   jvmHeapUsedPercent?: number | null;
+  jvmHeapAvailableBytes?: number | null;
   brokerCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
+  hostMemoryAvailableMb?: number | null;
   selectedNodeId?: string | null;
   nodes?: MonitoringNode[];
 }
@@ -690,11 +692,17 @@ export function Monitoring() {
                     label="JVM Heap"
                     value={overview?.jvmHeapUsedPercent}
                     tone="purple"
+                    subtext={hasValue(overview?.jvmHeapAvailableBytes)
+                      ? `${formatBytes(Number(overview?.jvmHeapAvailableBytes))} available`
+                      : undefined}
                   />
                   <ResourceCard
                     label="Host Memory (Agent Heartbeat)"
                     value={overview?.hostMemoryUsedPercent}
                     tone="blue"
+                    subtext={hasValue(overview?.hostMemoryAvailableMb)
+                      ? `${formatBytes(Number(overview?.hostMemoryAvailableMb) * 1024 * 1024)} available`
+                      : undefined}
                   />
                 </div>
               </div>
