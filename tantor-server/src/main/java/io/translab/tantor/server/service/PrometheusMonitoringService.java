@@ -251,10 +251,10 @@ public class PrometheusMonitoringService {
                 "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + metricSelector + "}[5m])) * 100"
         ));
         overview.setSystemCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
                 cpuPercent("jvm_OperatingSystem_CpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector),
-                cpuPercent("jvm_operatingsystem_cpuload", metricSelector)
+                cpuPercent("jvm_operatingsystem_cpuload", metricSelector),
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector)
         ));
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
@@ -594,7 +594,10 @@ public class PrometheusMonitoringService {
         return null;
     }
 
-    private Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
+    Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
+        if (isExternal(cluster)) {
+            return computeExternalHostMemoryPercent(cluster, nodeId);
+        }
         if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
             return null;
         }
@@ -616,6 +619,27 @@ public class PrometheusMonitoringService {
             countedHosts.put(service.getHostId(), host);
             totalMb += host.getMemTotalMb();
             usedMb += host.getMemUsedMb() == null ? 0 : host.getMemUsedMb();
+            counted++;
+        }
+        if (counted == 0 || totalMb <= 0) {
+            return null;
+        }
+        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+    }
+
+    private Double computeExternalHostMemoryPercent(Cluster cluster, String nodeId) {
+        long totalMb = 0;
+        long usedMb = 0;
+        int counted = 0;
+        for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            if (nodeId != null && (node.getNodeId() == null || !nodeId.equals(String.valueOf(node.getNodeId())))) {
+                continue;
+            }
+            if (node.getMemoryTotalMb() == null || node.getMemoryTotalMb() <= 0) {
+                continue;
+            }
+            totalMb += node.getMemoryTotalMb();
+            usedMb += node.getMemoryUsedMb() == null ? 0 : node.getMemoryUsedMb();
             counted++;
         }
         if (counted == 0 || totalMb <= 0) {

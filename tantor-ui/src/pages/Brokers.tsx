@@ -19,8 +19,8 @@ interface Broker {
   cpuUsagePct: number;
   memoryUsedMb: number;
   memoryTotalMb: number;
-  diskUsedGb: number;
-  diskTotalGb: number;
+  diskUsedGb: number | null;
+  diskTotalGb: number | null;
   messagesInPerSec: number;
   bytesInPerSec: number;
   lastHeartbeat: string;
@@ -119,11 +119,12 @@ export function Brokers() {
         : (bVal as number) - (aVal as number);
     });
 
+  const brokerNodes = brokers.filter(b => hasRole(b.role, 'Broker'));
   const agg = {
     totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
     totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
     avgCpu: brokers.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (brokers.length || 1),
-    offline: brokers.filter(b => b.brokerHealth === 'OFFLINE').length,
+    offline: brokerNodes.filter(b => b.brokerHealth === 'OFFLINE').length,
   };
 
   const formatBytes = (bytes: number) => {
@@ -135,7 +136,7 @@ export function Brokers() {
   };
 
   const ProgressBar = ({ value, max }: { value: number; max: number }) => {
-    const pct = Math.min(100, Math.max(0, (value / max) * 100));
+    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
     return (
       <div
         className="progress-bar-container"
@@ -170,7 +171,7 @@ export function Brokers() {
             <span className="label">Active Broker</span>
           </div>
           <div className="card-body">
-            <span className="value">{brokers.length - agg.offline}/{brokers.length}</span>
+            <span className="value">{brokerNodes.length - agg.offline}/{brokerNodes.length}</span>
             <span className="subtext">{agg.offline} Offline Nodes</span>
           </div>
         </div>
@@ -181,7 +182,7 @@ export function Brokers() {
           </div>
           <div className="card-body">
             <span className="value">{agg.avgCpu.toFixed(1)}%</span>
-            <span className="subtext">0 Across Node</span>
+            <span className="subtext">{brokers.length} Across {brokers.length === 1 ? 'Node' : 'Nodes'}</span>
           </div>
         </div>
       </div>
@@ -291,8 +292,12 @@ export function Brokers() {
                 {/* Disk */}
                 <td>
                   <div className="metric-cell figma-metric">
-                    <span className="metric-val">{broker.diskUsedGb} GB</span>
-                    <ProgressBar value={broker.diskUsedGb} max={broker.diskTotalGb} />
+                    <span className="metric-val">
+                      {broker.diskUsedGb == null ? '-' : `${broker.diskUsedGb} GB`}
+                    </span>
+                    {broker.diskUsedGb != null && broker.diskTotalGb != null && broker.diskTotalGb > 0 && (
+                      <ProgressBar value={broker.diskUsedGb} max={broker.diskTotalGb} />
+                    )}
                   </div>
                 </td>
 

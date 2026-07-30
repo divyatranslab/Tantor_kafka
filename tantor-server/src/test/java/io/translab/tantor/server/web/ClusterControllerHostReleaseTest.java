@@ -4,7 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.DiscoveryAgent;
+import io.translab.tantor.server.domain.ExternalCluster;
+import io.translab.tantor.server.domain.ExternalClusterNode;
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.dto.BrokerSummaryDto;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.DiscoveryAgentRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
@@ -28,8 +32,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -99,5 +105,110 @@ class ClusterControllerHostReleaseTest {
         assertThat(host.getStatus()).isEqualTo("ONLINE");
         verify(hostRepository).save(host);
         verify(clusterRepository).purgeById(clusterId);
+    }
+
+    @Test
+    void externalOverviewOnlyShowsPathsForNodesWithFreshMatchingAgents() {
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external-test");
+        cluster.setBootstrapServers("node-1:9092,node-2:9092");
+        cluster.setInstallPath("/opt/kafka");
+
+        ExternalClusterNode managed = new ExternalClusterNode();
+        managed.setClusterId(clusterId);
+        managed.setNodeId(1);
+        managed.setHost("node-1");
+        managed.setIsBroker(true);
+        managed.setIsController(true);
+        managed.setInstallDir("/srv/kafka");
+        managed.setConfigFile("/srv/kafka/config/server.properties");
+
+        ExternalClusterNode bootstrapOnly = new ExternalClusterNode();
+        bootstrapOnly.setClusterId(clusterId);
+        bootstrapOnly.setNodeId(2);
+        bootstrapOnly.setHost("node-2");
+        bootstrapOnly.setIsBroker(true);
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("agent-1");
+        agent.setHostname("node-1");
+        agent.setClusterId(clusterId);
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
+
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(externalClusterNodeRepository.findByClusterId(clusterId))
+                .thenReturn(List.of(managed, bootstrapOnly));
+        when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of(agent));
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
+
+        var body = controller.getClusterOverview(clusterId).getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.getUptime().getConfiguredControllerCount()).isEqualTo(1);
+        assertThat(body.getNodePaths()).hasSize(2);
+        assertThat(body.getNodePaths().get(0).isHasTelemetry()).isTrue();
+        assertThat(body.getNodePaths().get(0).getInstallDir()).isEqualTo("/srv/kafka");
+        assertThat(body.getNodePaths().get(1).isHasTelemetry()).isFalse();
+        assertThat(body.getNodePaths().get(1).getInstallDir()).isNull();
+        assertThat(body.getNodePaths().get(1).getConfig()).isNull();
+    }
+
+    @Test
+    void controllerOnlyJmxStatusDoesNotFailBrokerRuntimeHealth() {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setName("separate-roles");
+        cluster.setMode("kraft");
+        cluster.setStatus("SUCCESS");
+        cluster.setKafkaClusterId("kafka-cluster-id");
+        cluster.setConfigJson("{}");
+
+        ClusterServiceAssignment broker = new ClusterServiceAssignment();
+        broker.setCluster(cluster);
+        broker.setHostId("broker-host");
+        broker.setRole("broker");
+        broker.setNodeId(1);
+        ClusterServiceAssignment controllerOnly = new ClusterServiceAssignment();
+        controllerOnly.setCluster(cluster);
+        controllerOnly.setHostId("controller-host");
+        controllerOnly.setRole("controller");
+        controllerOnly.setNodeId(101);
+        cluster.setServices(List.of(broker, controllerOnly));
+
+        Host brokerHost = host("broker-host", "broker");
+        Host controllerHost = host("controller-host", "controller");
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of());
+        when(hostRepository.findById("broker-host")).thenReturn(Optional.of(brokerHost));
+        when(hostRepository.findById("controller-host")).thenReturn(Optional.of(controllerHost));
+        when(hostStatusService.effectiveStatus(any(Host.class))).thenReturn("OCCUPIED");
+        when(brokerMetricsCacheService.getBrokerSummaries(cluster)).thenReturn(List.of(
+                BrokerSummaryDto.builder()
+                        .brokerId(1).role("broker").brokerHealth("HEALTHY").build(),
+                BrokerSummaryDto.builder()
+                        .brokerId(101).role("controller").brokerHealth("DEGRADED").build()
+        ));
+
+        Map<String, Object> result = controller.listClusters().get(0);
+
+        assertThat(result.get("runtimeHealth")).isEqualTo("HEALTHY");
+        assertThat(result.get("runtimeStatusLabel")).isEqualTo("Active");
+        assertThat(result.get("runtimeBrokerCount")).isEqualTo(1L);
+        assertThat(result.get("runtimeDegradedBrokers")).isEqualTo(0L);
+    }
+
+    private static Host host(String id, String hostname) {
+        Host host = new Host();
+        host.setId(id);
+        host.setHostname(hostname);
+        host.setStatus("OCCUPIED");
+        host.setHostIp("192.0.2.1");
+        return host;
     }
 }

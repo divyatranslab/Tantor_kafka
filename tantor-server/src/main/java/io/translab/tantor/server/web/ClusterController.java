@@ -354,6 +354,10 @@ public class ClusterController {
             String overviewLogDir = null;
             String displayVersion = externalKafkaVersion(extCluster, nodes);
             String displayControllerType = externalControllerType(extCluster, nodes);
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents =
+                    discoveryAgentRepository.findByClusterId(id);
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents =
+                    discoveryAgentRepository.findAll();
 
             for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
                 boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
@@ -368,6 +372,7 @@ public class ClusterController {
                             .port(node.getPort())
                             .controller(isController)
                             .diskUsageBytes(node.getDiskUsedGb() != null ? node.getDiskUsedGb() * 1024L * 1024L * 1024L : 0L)
+                            .diskTotalBytes(node.getDiskTotalGb() != null ? node.getDiskTotalGb() * 1024L * 1024L * 1024L : 0L)
                             .build());
                 }
                 
@@ -380,11 +385,19 @@ public class ClusterController {
                 }
                 
                 String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
-                String installDir = firstNonBlank(node.getInstallDir(), extCluster.getInstallPath(), firstExternalNodeValue(nodes, node.getHost(), "installDir"));
-                String configFile = firstNonBlank(node.getConfigFile(), firstExternalNodeValue(nodes, node.getHost(), "configFile"),
-                        inferredExternalConfigFile(role, displayControllerType, displayVersion, installDir));
-                String dataDir = firstNonBlank(node.getDataDirs(), firstExternalNodeValue(nodes, node.getHost(), "dataDirs"));
-                String logDir = firstNonBlank(node.getLogDirs(), extCluster.getLogDirs(), firstExternalNodeValue(nodes, node.getHost(), "logDirs"));
+                boolean hasFreshAgent = matchingFreshAgent(
+                        node.getHost(), id, linkedAgents, allAgents).isPresent();
+                String installDir = hasFreshAgent
+                        ? firstNonBlank(node.getInstallDir(), extCluster.getInstallPath())
+                        : null;
+                String configFile = hasFreshAgent
+                        ? firstNonBlank(node.getConfigFile(),
+                                inferredExternalConfigFile(role, displayControllerType, displayVersion, installDir))
+                        : null;
+                String dataDir = hasFreshAgent ? firstNonBlank(node.getDataDirs()) : null;
+                String logDir = hasFreshAgent
+                        ? firstNonBlank(node.getLogDirs(), extCluster.getLogDirs())
+                        : null;
                 overviewInstallDir = firstNonBlank(overviewInstallDir, installDir);
                 overviewConfigDir = firstNonBlank(overviewConfigDir, parentPath(configFile));
                 overviewDataDir = firstNonBlank(overviewDataDir, dataDir);
@@ -397,7 +410,7 @@ public class ClusterController {
                         .config(configFile)
                         .dataDir(dataDir)
                         .logDir(logDir)
-                        .hasTelemetry(node.getLastSeen() != null || firstNonBlank(installDir, configFile, dataDir, logDir) != null)
+                        .hasTelemetry(hasFreshAgent)
                         .build());
             }
 
@@ -414,9 +427,8 @@ public class ClusterController {
                 if (liveOverview.getUptime() != null) {
                     liveOverview.getUptime().setVersion(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getVersion()), displayVersion));
                     liveOverview.getUptime().setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getControllerType()), displayControllerType));
-                    if (liveOverview.getUptime().getActiveController() == null && activeControllerCount > 0) {
-                        liveOverview.getUptime().setActiveController(1);
-                    }
+                    liveOverview.getUptime().setConfiguredControllerCount(activeControllerCount);
+                    liveOverview.getUptime().setActiveControllerId(liveOverview.getUptime().getActiveController());
                 }
                 if (!warnings.isEmpty()) {
                     List<String> mergedWarnings = new ArrayList<>();
@@ -448,7 +460,9 @@ public class ClusterController {
                     .warnings(warnings)
                     .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(extCluster.getBrokerCount() != null ? extCluster.getBrokerCount() : brokerCount)
-                            .activeController(activeControllerCount > 0 ? 1 : 0)
+                            .activeController(null)
+                            .activeControllerId(null)
+                            .configuredControllerCount(activeControllerCount)
                             .version(displayVersion)
                             .controllerType(displayControllerType)
                             .build())
@@ -1798,7 +1812,11 @@ public class ClusterController {
         }
 
         try {
-            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService
+                    .getBrokerSummaries(cluster)
+                    .stream()
+                    .filter(broker -> isBrokerRole(broker.getRole()))
+                    .toList();
             long total = brokers.size();
             long offline = brokers.stream().filter(b -> "OFFLINE".equalsIgnoreCase(b.getBrokerHealth())).count();
             long degraded = brokers.stream().filter(b -> "DEGRADED".equalsIgnoreCase(b.getBrokerHealth())).count();

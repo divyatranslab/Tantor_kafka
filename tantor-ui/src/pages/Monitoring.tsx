@@ -583,7 +583,7 @@ export function Monitoring() {
                           <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
                           <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[0, 100]} />
                           <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
-                          <Line type="monotone" dataKey="systemCpu" stroke="#3b82f6" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
+                          <Line type="monotone" dataKey="brokerCpu" stroke="#3b82f6" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>

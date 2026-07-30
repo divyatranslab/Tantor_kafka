@@ -53,7 +53,7 @@ public class BrokerMetricsCacheService {
 
         // Cache miss or expired, fetch asynchronously
         List<CompletableFuture<BrokerSummaryDto>> futures = cluster.getServices() == null ? new ArrayList<>() : cluster.getServices().stream()
-            .filter(svc -> "broker".equals(svc.getRole()) || "broker_controller".equals(svc.getRole()) || "broker_zookeeper".equals(svc.getRole()))
+            .filter(svc -> isKafkaNodeRole(svc.getRole()))
             .map(svc -> CompletableFuture.supplyAsync(() -> fetchMetricsForBroker(svc)))
             .collect(Collectors.toList());
 
@@ -96,6 +96,7 @@ public class BrokerMetricsCacheService {
             .brokerId(svc.getNodeId())
             .hostname(host.getHostname())
             .role(svc.getRole())
+            .isController(isControllerRole(svc.getRole()))
             .lastHeartbeat(host.getLastHeartbeat())
             .metricsTimestamp(System.currentTimeMillis());
 
@@ -103,16 +104,19 @@ public class BrokerMetricsCacheService {
         builder.memoryTotalMb(host.getMemTotalMb() != null ? host.getMemTotalMb() : 0L);
         builder.memoryUsedMb(host.getMemUsedMb() != null ? host.getMemUsedMb() : 0L);
         
-        builder.diskTotalGb(host.getDiskTotalGb() != null ? host.getDiskTotalGb() : 100L);
-        builder.diskUsedGb(host.getDiskUsedGb() != null ? host.getDiskUsedGb() : 10L);
+        builder.diskTotalGb(host.getDiskTotalGb());
+        builder.diskUsedGb(host.getDiskUsedGb());
 
         // Fetch JMX
         boolean jmxReachable = false;
-        String targetIp = null;
+        String targetIp = host.getHostIp();
         try {
-            List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
-            if (!ips.isEmpty()) {
-                targetIp = ips.get(0);
+            if ((targetIp == null || targetIp.isBlank())
+                    && host.getIpAddresses() != null && !host.getIpAddresses().isBlank()) {
+                List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
+                if (!ips.isEmpty()) {
+                    targetIp = ips.get(0);
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to parse IPs for host {}", host.getId());
@@ -147,11 +151,12 @@ public class BrokerMetricsCacheService {
 
     private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(ExternalCluster cluster) {
         return externalClusterService.brokerRecords(cluster).stream()
-                .filter(record -> "broker".equals(record.getRole()) || "broker_controller".equals(record.getRole()))
+                .filter(record -> isKafkaNodeRole(record.getRole()))
                 .map(record -> BrokerSummaryDto.builder()
                         .brokerId(record.getNodeId() != null ? record.getNodeId() : -1)
                         .hostname(record.getHostname() != null ? record.getHostname() : record.getBootstrap())
                         .role(record.getRole() != null ? record.getRole() : "broker")
+                        .isController(isControllerRole(record.getRole()))
                         .brokerHealth(record.getLastSeen() != null ? "HEALTHY" : "DEGRADED")
                         .lastHeartbeat(record.getLastSeen() != null ? OffsetDateTime.parse(record.getLastSeen()) : null)
                         .isJmxReachable(false)
@@ -159,10 +164,22 @@ public class BrokerMetricsCacheService {
                         .cpuUsagePct(record.getCpuUsagePct() != null ? record.getCpuUsagePct() : 0.0)
                         .memoryTotalMb(record.getMemoryTotalMb() != null ? record.getMemoryTotalMb() : 0L)
                         .memoryUsedMb(record.getMemoryUsedMb() != null ? record.getMemoryUsedMb() : 0L)
-                        .diskTotalGb(record.getDiskTotalGb() != null ? record.getDiskTotalGb() : 0L)
-                        .diskUsedGb(record.getDiskUsedGb() != null ? record.getDiskUsedGb() : 0L)
+                        .diskTotalGb(record.getDiskTotalGb())
+                        .diskUsedGb(record.getDiskUsedGb())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    private boolean isKafkaNodeRole(String role) {
+        return role != null && ("broker".equalsIgnoreCase(role)
+                || "controller".equalsIgnoreCase(role)
+                || "broker_controller".equalsIgnoreCase(role)
+                || "broker_zookeeper".equalsIgnoreCase(role));
+    }
+
+    private boolean isControllerRole(String role) {
+        return role != null && ("controller".equalsIgnoreCase(role)
+                || "broker_controller".equalsIgnoreCase(role));
     }
 
     private void parsePrometheusText(String text, BrokerSummaryDto.BrokerSummaryDtoBuilder builder) {
