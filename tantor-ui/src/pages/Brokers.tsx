@@ -119,7 +119,10 @@ export function Brokers() {
         : (bVal as number) - (aVal as number);
     });
 
-  const brokerNodes = brokers.filter(b => hasRole(b.role, 'Broker'));
+  const brokerNodes = brokers.filter(broker => {
+    const normalizedRole = normalizeRole(broker);
+    return normalizedRole === 'broker' || normalizedRole === 'broker_controller';
+  });
   const agg = {
     totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
     totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
