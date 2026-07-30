@@ -6,6 +6,7 @@ import {
   getAcls, createAcl, deleteAcl,
 } from '../lib/api';
 import { usePermissions } from '../hooks/usePermissions';
+import { CustomSelect } from './CustomSelect';
 
 interface Props {
   clusterId: string;
@@ -315,33 +316,20 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Principle (Username) */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Principle (Username)</label>
-                  <select 
-                    value={aclPrincipal} 
-                    onChange={e => setAclPrincipal(e.target.value)} 
-                    required 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
-                    }}
-                  >
-                    <option value="http://">http://</option>
-                    <option value="User:*">User:*</option>
-                    <option value="User:alice">User:alice</option>
-                    <option value="User:bob">User:bob</option>
-                    <option value="User:anuj">User:anuj</option>
-                    <option value="User:admin">User:admin</option>
-                  </select>
+                  <CustomSelect
+                    value={aclPrincipal}
+                    onChange={setAclPrincipal}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'http://', label: 'http://' },
+                      { value: 'User:*', label: 'User:*' },
+                      { value: 'User:alice', label: 'User:alice' },
+                      { value: 'User:bob', label: 'User:bob' },
+                      { value: 'User:anuj', label: 'User:anuj' },
+                      { value: 'User:admin', label: 'User:admin' },
+                    ]}
+                  />
                 </div>
 
                 {/* Host */}
@@ -369,25 +357,18 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Resource Type */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Type</label>
-                  <select 
-                    value={aclResourceType} 
-                    onChange={e => setAclResourceType(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="Topic">Topic</option>
-                    <option value="Group">Group</option>
-                    <option value="Cluster">Cluster</option>
-                    <option value="TransactionalId">TransactionalId</option>
-                  </select>
+                  <CustomSelect
+                    value={aclResourceType}
+                    onChange={setAclResourceType}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Topic', label: 'Topic' },
+                      { value: 'Group', label: 'Group' },
+                      { value: 'Cluster', label: 'Cluster' },
+                      { value: 'TransactionalId', label: 'TransactionalId' },
+                    ]}
+                  />
                 </div>
 
                 {/* Resource Name */}
@@ -415,55 +396,31 @@ export default function SecurityManager({ clusterId }: Props) {
                 {/* Pattern Type */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Pattern Type</label>
-                  <select 
-                    value={aclPatternType} 
-                    onChange={e => setAclPatternType(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
-                    }}
-                  >
-                    <option value="Literal">Literal</option>
-                    <option value="Prefixed">Prefixed</option>
-                  </select>
+                  <CustomSelect
+                    value={aclPatternType}
+                    onChange={setAclPatternType}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Literal', label: 'Literal' },
+                      { value: 'Prefixed', label: 'Prefixed' },
+                    ]}
+                  />
                 </div>
 
                 {/* Permission */}
                 <div>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Permission</label>
-                  <select 
-                    value={aclPermission} 
-                    onChange={e => setAclPermission(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
-                    }}
-                  >
-                    <option value="Allow">Allow</option>
-                    <option value="Deny">Deny</option>
-                  </select>
+                  <CustomSelect
+                    value={aclPermission}
+                    onChange={setAclPermission}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Allow', label: 'Allow' },
+                      { value: 'Deny', label: 'Deny' },
+                    ]}
+                  />
                 </div>
               </div>
 

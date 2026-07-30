@@ -62,15 +62,19 @@ export function DeploymentLogs() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [copyNotice, setCopyNotice] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [isConsoleMaximized, setIsConsoleMaximized] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
+  const copyNoticeTimerRef = useRef<number | null>(null);
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (manual = false) => {
+    if (manual) setRefreshing(true);
     try {
       const [clusterRes, tasksRes] = await Promise.all([
-        fetch(`/api/v1/ui/clusters/${id}`),
-        fetch(`/api/v1/ui/clusters/${id}/tasks`),
+        fetch(`/api/v1/ui/clusters/${id}`, { cache: 'no-store' }),
+        fetch(`/api/v1/ui/clusters/${id}/tasks`, { cache: 'no-store' }),
       ]);
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
@@ -87,6 +91,7 @@ export function DeploymentLogs() {
       setSelectedTaskId('');
     } finally {
       setLoading(false);
+      if (manual) setRefreshing(false);
     }
   };
 
@@ -108,6 +113,23 @@ export function DeploymentLogs() {
   useEffect(() => {
     if (logBodyRef.current) logBodyRef.current.scrollTop = logBodyRef.current.scrollHeight;
   }, [selectedTask?.logOutput, selectedTask?.stepLogs]);
+
+  useEffect(() => () => {
+    if (copyNoticeTimerRef.current !== null) window.clearTimeout(copyNoticeTimerRef.current);
+  }, []);
+
+  const handleCopyLogs = async () => {
+    if (!selectedTask) return;
+    try {
+      await navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '');
+      setCopyNotice('Copied to clipboard');
+      if (copyNoticeTimerRef.current !== null) window.clearTimeout(copyNoticeTimerRef.current);
+      copyNoticeTimerRef.current = window.setTimeout(() => setCopyNotice(''), 2500);
+    } catch (error) {
+      console.error('Failed to copy deployment logs', error);
+      notifyAction('Unable to copy logs to the clipboard.');
+    }
+  };
 
   const statusIcon = (status: string) => {
     if (status === 'SUCCESS') return <CheckCircle2 size={15} />;
@@ -242,7 +264,7 @@ export function DeploymentLogs() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button 
-            onClick={() => navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '')}
+            onClick={handleCopyLogs}
             style={{
               boxSizing: 'border-box',
               display: 'flex',
@@ -261,8 +283,8 @@ export function DeploymentLogs() {
             <Copy size={16} style={{ color: '#818181' }} />
           </button>
           <button 
-            onClick={fetchTasks} 
-            disabled={loading} 
+            onClick={() => fetchTasks(true)}
+            disabled={loading || refreshing}
             style={{
               boxSizing: 'border-box',
               display: 'flex',
@@ -278,10 +300,17 @@ export function DeploymentLogs() {
             }}
             title="Refresh"
           >
-            <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#818181' }} />
+            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} style={{ color: '#818181' }} />
           </button>
         </div>
       </div>
+
+      {copyNotice && (
+        <div className="deployment-copy-toast" role="status" aria-live="polite">
+          <CheckCircle2 size={16} />
+          {copyNotice}
+        </div>
+      )}
 
       {/* Task dropdown selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>

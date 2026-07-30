@@ -124,3 +124,46 @@
   color: #3E1363;
   font-weight: 500;
 }
+.audit-style-select .custom-select-trigger {
+  padding: 10px 16px;
+  border-color: #CCCCCC;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.audit-style-select .custom-select-trigger:hover {
+  border-color: #CBD5E1;
+}
+
+.audit-style-select .custom-select-trigger.open {
+  border-color: #3E1363;
+  box-shadow: 0 0 0 3px rgba(62, 19, 99, 0.1);
+}
+
+.audit-style-select-options {
+  padding: 4px 0 !important;
+  border-color: #E2E8F0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+.audit-style-select-options .app-custom-select-options {
+  gap: 0;
+}
+
+.audit-style-select-options .app-custom-select-option {
+  min-height: 0;
+  padding: 10px 16px !important;
+  border-radius: 0 !important;
+  color: #332849;
+  font-weight: 400;
+}
+
+.audit-style-select-options .app-custom-select-option:hover {
+  background: #F8FAFC;
+}
+
+.audit-style-select-options .app-custom-select-option.selected {
+  background: #F1F5F9;
+  color: #3E1363;
+  font-weight: 500;
+}

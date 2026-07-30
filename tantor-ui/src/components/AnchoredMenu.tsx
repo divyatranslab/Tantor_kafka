@@ -47,7 +47,6 @@ export function AnchoredMenu({
         96,
         (openAbove ? spaceAbove : spaceBelow) - gap - viewportGap,
       );
-      const top = openAbove ? anchorRect.top - gap : anchorRect.bottom + gap;
       const naturalLeft = align === 'start'
         ? anchorRect.left
         : anchorRect.right - menuWidth;
@@ -57,17 +56,17 @@ export function AnchoredMenu({
       );
       setStyle({
         position: 'fixed',
-        top,
+        top: openAbove ? 'auto' : anchorRect.bottom + gap,
         left,
         right: 'auto',
-        bottom: 'auto',
+        bottom: openAbove ? window.innerHeight - anchorRect.top + gap : 'auto',
         width: matchAnchorWidth ? anchorRect.width : undefined,
         minWidth,
         maxWidth: 'calc(100vw - 16px)',
         maxHeight: Math.min(360, availableHeight),
         overflowY: 'auto',
         margin: 0,
-        transform: openAbove ? 'translateY(-100%)' : 'none',
+        transform: 'none',
         visibility: 'visible',
         zIndex: 25000,
       });

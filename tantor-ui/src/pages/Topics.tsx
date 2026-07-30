@@ -138,9 +138,17 @@ export function Topics() {
   }, [autoRefresh, fetchTopics, refreshInterval]);
 
   useEffect(() => {
-    window.localStorage.setItem(liveSettingsKey, String(autoRefresh));
-    window.localStorage.setItem(liveSettingsKey + ':interval', String(refreshInterval));
-  }, [autoRefresh, liveSettingsKey, refreshInterval]);
+    const savedInterval = Number(window.localStorage.getItem(liveSettingsKey + ':interval'));
+    setAutoRefresh(window.localStorage.getItem(liveSettingsKey) === 'true');
+    setRefreshInterval([5, 10, 15, 30, 60].includes(savedInterval) ? savedInterval : 15);
+  }, [liveSettingsKey]);
+
+  const updateLiveSettings = (enabled: boolean, interval = refreshInterval) => {
+    window.localStorage.setItem(liveSettingsKey, String(enabled));
+    window.localStorage.setItem(liveSettingsKey + ':interval', String(interval));
+    setAutoRefresh(enabled);
+    setRefreshInterval(interval);
+  };
 
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -335,8 +343,7 @@ export function Topics() {
                     key={sec}
                     className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
                     onClick={() => {
-                      setRefreshInterval(sec);
-                      setAutoRefresh(true);
+                      updateLiveSettings(true, sec);
                       setShowIntervalDropdown(false);
                     }}
                   >
@@ -348,7 +355,7 @@ export function Topics() {
                 <div
                   className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
                   onClick={() => {
-                    setAutoRefresh(!autoRefresh);
+                    updateLiveSettings(!autoRefresh);
                     setShowIntervalDropdown(false);
                   }}
                 >
@@ -401,13 +408,21 @@ export function Topics() {
 
       {canManage && selected.size > 0 && (
         <div className="bulk-actions">
-          <strong>{selected.size} selected</strong>
-          <button onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}>
+          <strong className="bulk-actions-count">{selected.size} selected</strong>
+          <button
+            className="bulk-action-button destructive"
+            onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}
+          >
             <Trash2 size={15} /> Delete selected
           </button>
-          <button onClick={copySelected}><Copy size={15} /> Copy names</button>
-          <button onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected) })}>
-            Clear messages
+          <button className="bulk-action-button neutral" onClick={copySelected}>
+            <Copy size={15} /> Copy names
+          </button>
+          <button
+            className="bulk-action-button primary"
+            onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected) })}
+          >
+            <Database size={15} /> Clear messages
           </button>
         </div>
       )}
@@ -675,15 +690,37 @@ export function Topics() {
 
       {canManage && pendingAction && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
-          {pendingAction.kind === 'remove' ? (
-            <div className="topic-modal remove-topic-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+          {pendingAction.kind !== 'recreate' ? (
+            <div
+              className={`topic-modal remove-topic-modal ${pendingAction.kind === 'clear' ? 'clear-messages-modal' : 'delete-topic-modal'}`}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="topic-confirmation-title"
+              onMouseDown={event => event.stopPropagation()}
+            >
               <div className="remove-topic-banner" aria-hidden="true" />
               <button className="remove-topic-close" onClick={() => setPendingAction(null)} disabled={acting} aria-label="Close modal"><X size={22} /></button>
               <div className="remove-topic-content">
-                <div className="remove-topic-title"><span className="remove-topic-icon" aria-hidden="true" /><h3>{pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}</h3></div>
-                <p>The topic{pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.</p>
+                <div className="remove-topic-title">
+                  <span className="remove-topic-icon" aria-hidden="true" />
+                  <h3 id="topic-confirmation-title">
+                    {pendingAction.kind === 'clear'
+                      ? 'Clear all messages?'
+                      : pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}
+                  </h3>
+                </div>
+                <p>
+                  {pendingAction.kind === 'clear'
+                    ? actionCopy.clear.description
+                    : `The topic${pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.`}
+                </p>
                 <div className="remove-topic-names">{pendingAction.names.join(', ')}</div>
-                <footer><button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="remove-topic-confirm" onClick={runAction} disabled={acting}>{acting ? 'Working...' : 'Remove topic'}</button></footer>
+                <footer>
+                  <button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button>
+                  <button className="remove-topic-confirm" onClick={runAction} disabled={acting}>
+                    {acting ? 'Working...' : pendingAction.kind === 'clear' ? 'Clear messages' : 'Remove topic'}
+                  </button>
+                </footer>
               </div>
             </div>
           ) : (

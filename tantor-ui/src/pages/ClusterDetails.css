@@ -401,7 +401,11 @@
 
 .cluster-logs-page {
   width: 100%;
-  background-color: #FFFFFF;
+  background-color: var(--page-grey);
+}
+
+.cluster-logs-card {
+  min-height: calc(100vh - 104px);
 }
 
 .cluster-logs-header {

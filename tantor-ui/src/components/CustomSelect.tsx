@@ -14,16 +14,17 @@ interface CustomSelectProps {
   options: Option[];
   width?: string;
   placeholder?: string;
+  variant?: 'default' | 'audit';
 }
 
-export function CustomSelect({ value, onChange, options, width = '209px', placeholder }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, width = '209px', placeholder, variant = 'default' }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find(opt => opt.value === value);
 
   return (
-    <div className="custom-select-container" ref={containerRef} style={{ width }}>
+    <div className={`custom-select-container ${variant === 'audit' ? 'audit-style-select' : ''}`} ref={containerRef} style={{ width }}>
       <button
         type="button"
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
@@ -40,7 +41,7 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
       {isOpen && containerRef.current && (
         <AnchoredMenu
           anchor={containerRef.current}
-          className="custom-select-options-wrapper"
+          className={`custom-select-options-wrapper ${variant === 'audit' ? 'audit-style-select-options' : ''}`}
           onClose={() => setIsOpen(false)}
           align="start"
           matchAnchorWidth

@@ -102,7 +102,8 @@ export function ClusterDetails() {
   if (isLogsView) {
     return (
       <div className="cluster-details-page cluster-logs-page animate-fade-in">
-        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
+        <div className="cluster-details-card cluster-logs-card">
+          <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
           {/* Breadcrumbs (Frame 1000005411) */}
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: 'auto', height: '20px' }}>
             <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '20px' }}>
@@ -213,6 +214,7 @@ export function ClusterDetails() {
         <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
           <Outlet />
         </div>
+      </div>
       </div>
     );
   }

@@ -916,8 +916,29 @@
   line-height: 1.45;
 }
 
+.upload-parcel-modal {
+  max-height: calc(100vh - 32px);
+}
+
+.upload-parcel-modal form {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .upload-parcel-modal .modal-body {
-  padding: 16px 24px 0;
+  min-height: 0;
+  padding: 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.upload-parcel-modal .modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.upload-parcel-modal .modal-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: #CBC0E0;
 }
 
 .modal-close {

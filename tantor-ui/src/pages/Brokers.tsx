@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import './Brokers.css';
 
+type RoleFilter = 'all' | 'broker' | 'controller' | 'broker_controller';
+
 interface Broker {
   brokerId: number;
   hostname: string;
@@ -31,7 +33,7 @@ export function Brokers() {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof Broker>('brokerId');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [roleFilter, setRoleFilter] = useState<string>('All');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
 
   const fetchBrokers = async () => {
@@ -78,13 +80,22 @@ export function Brokers() {
     }
   };
 
-  const hasRole = (role: string, filter: string) => {
-    if (filter === 'All') return true;
-    return role
+  const normalizeRole = (broker: Broker): Exclude<RoleFilter, 'all'> | 'unknown' => {
+    const roleParts = String(broker.role || '')
       .toLowerCase()
-      .split(/[_\s,+/]+/)
-      .includes(filter.toLowerCase());
+      .split(/[_\s,+/-]+/)
+      .filter(Boolean);
+    const isBroker = roleParts.includes('broker');
+    const isController = roleParts.includes('controller') || broker.controller;
+
+    if (isBroker && isController) return 'broker_controller';
+    if (isController) return 'controller';
+    if (isBroker) return 'broker';
+    return 'unknown';
   };
+
+  const matchesRoleFilter = (broker: Broker, filter: RoleFilter) =>
+    filter === 'all' || normalizeRole(broker) === filter;
 
   const formatRole = (role: string) => role
     .split(/[_-]+/)
@@ -93,7 +104,7 @@ export function Brokers() {
     .join(' + ');
 
   const filteredBrokers = brokers
-    .filter(b => hasRole(b.role, roleFilter))
+    .filter(b => matchesRoleFilter(b, roleFilter))
     .filter(b =>
       b.hostname.toLowerCase().includes(search.toLowerCase()) ||
       b.brokerId.toString().includes(search)
@@ -189,10 +200,15 @@ export function Brokers() {
               className="search-input"
             />
           </div>
-          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="role-select">
-            <option value="All">All Roles</option>
-            <option value="Broker">Broker Only</option>
-            <option value="Controller">Controller Only</option>
+          <select
+            value={roleFilter}
+            onChange={event => setRoleFilter(event.target.value as RoleFilter)}
+            className="role-select"
+          >
+            <option value="all">All Roles</option>
+            <option value="broker">Broker Only</option>
+            <option value="controller">Controller Only</option>
+            <option value="broker_controller">Broker + Controller</option>
           </select>
         </div>
       </div>
@@ -247,7 +263,11 @@ export function Brokers() {
 
                 {/* Role */}
                 <td>
-                  <span className="role-badge">{formatRole(broker.role)}</span>
+                  <span className="role-badge">
+                    {normalizeRole(broker) === 'broker_controller'
+                      ? 'Broker + Controller'
+                      : formatRole(broker.role)}
+                  </span>
                 </td>
 
                 {/* CPU */}
