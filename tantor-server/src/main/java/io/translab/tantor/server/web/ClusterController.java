@@ -2505,6 +2505,9 @@ public class ClusterController {
             hostRepository.findById(service.getHostId()).ifPresent(host -> {
                 if (cluster.getId().equals(host.getClusterId())) {
                     host.setClusterId(null);
+                    if ("OCCUPIED".equalsIgnoreCase(host.getStatus())) {
+                        host.setStatus("ONLINE");
+                    }
                     hostRepository.save(host);
                 }
             });
