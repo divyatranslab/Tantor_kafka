@@ -1812,7 +1812,11 @@ public class ClusterController {
         }
 
         try {
-            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService
+                    .getBrokerSummaries(cluster)
+                    .stream()
+                    .filter(broker -> isBrokerRole(broker.getRole()))
+                    .toList();
             long total = brokers.size();
             long offline = brokers.stream().filter(b -> "OFFLINE".equalsIgnoreCase(b.getBrokerHealth())).count();
             long degraded = brokers.stream().filter(b -> "DEGRADED".equalsIgnoreCase(b.getBrokerHealth())).count();
