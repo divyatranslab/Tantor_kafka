@@ -158,6 +158,45 @@ class ClusterControllerHostReleaseTest {
     }
 
     @Test
+    void externalOverviewUsesDiscoveryAgentFilesystemDiskTelemetry() {
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external-test");
+
+        ExternalClusterNode node = new ExternalClusterNode();
+        node.setClusterId(clusterId);
+        node.setNodeId(2);
+        node.setHost("node-1");
+        node.setIsBroker(true);
+        node.setDiskUsedGb(7L);
+        node.setDiskTotalGb(47L);
+
+        var liveBroker = io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow.builder()
+                .brokerId(2)
+                .diskUsageBytes(0L)
+                .diskTotalBytes(0L)
+                .build();
+        var liveOverview = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
+                .brokers(List.of(liveBroker))
+                .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder().build())
+                .build();
+
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(externalClusterNodeRepository.findByClusterId(clusterId)).thenReturn(List.of(node));
+        when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of());
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of());
+        when(clusterOverviewService.getOverview(clusterId)).thenReturn(liveOverview);
+
+        var body = controller.getClusterOverview(clusterId).getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.getBrokers().get(0).getDiskUsageBytes()).isEqualTo(7L * 1024 * 1024 * 1024);
+        assertThat(body.getBrokers().get(0).getDiskTotalBytes()).isEqualTo(47L * 1024 * 1024 * 1024);
+    }
+
+    @Test
     void controllerOnlyJmxStatusDoesNotFailBrokerRuntimeHealth() {
         UUID clusterId = UUID.randomUUID();
         Cluster cluster = new Cluster();

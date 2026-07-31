@@ -415,6 +415,11 @@ public class ClusterController {
             }
 
             if (liveOverview != null) {
+                // Kafka's Admin API reports the size of Kafka replica files only.  For
+                // external clusters, the discovery agent also reports the host file
+                // system capacity.  Prefer that fresh, node-specific telemetry so the
+                // overview's disk column means the same thing for both cluster types.
+                applyExternalNodeDiskTelemetry(liveOverview, nodes);
                 liveOverview.setOriginType("EXTERNAL");
                 liveOverview.setKafkaVersion(firstNonBlank(cleanExternalValue(liveOverview.getKafkaVersion()), displayVersion));
                 liveOverview.setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getControllerType()), displayControllerType));
@@ -474,6 +479,43 @@ public class ClusterController {
 
             return ResponseEntity.ok(dto);
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    private void applyExternalNodeDiskTelemetry(
+            io.translab.tantor.server.dto.ClusterOverviewDto overview,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+    ) {
+        if (overview.getBrokers() == null || overview.getBrokers().isEmpty()) {
+            return;
+        }
+
+        Map<Integer, io.translab.tantor.server.domain.ExternalClusterNode> nodesById = new HashMap<>();
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            if (Boolean.TRUE.equals(node.getIsBroker()) && node.getNodeId() != null) {
+                nodesById.put(node.getNodeId(), node);
+            }
+        }
+
+        for (io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow broker : overview.getBrokers()) {
+            io.translab.tantor.server.domain.ExternalClusterNode node = nodesById.get(broker.getBrokerId());
+            if (node == null) {
+                continue;
+            }
+            if (node.getDiskUsedGb() != null) {
+                broker.setDiskUsageBytes(gibibytesToBytes(node.getDiskUsedGb()));
+            }
+            if (node.getDiskTotalGb() != null) {
+                broker.setDiskTotalBytes(gibibytesToBytes(node.getDiskTotalGb()));
+            }
+        }
+    }
+
+    private long gibibytesToBytes(long value) {
+        if (value <= 0) {
+            return 0L;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return value > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : value * gibibyte;
     }
 
     @org.springframework.transaction.annotation.Transactional
