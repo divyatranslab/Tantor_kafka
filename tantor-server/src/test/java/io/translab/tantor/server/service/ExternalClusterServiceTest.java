@@ -2,7 +2,9 @@ package io.translab.tantor.server.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.domain.DiscoveryAgent;
 import io.translab.tantor.server.domain.ExternalCluster;
+import io.translab.tantor.server.domain.ExternalClusterNode;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
 import io.translab.tantor.server.repository.DiscoveryAgentRepository;
@@ -12,8 +14,12 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
 import io.translab.tantor.server.security.TruststoreStorageService;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -163,6 +169,53 @@ class ExternalClusterServiceTest {
         verify(externalClusterRepository).flush();
         verify(externalClusterRepository, never()).save(existing);
     }
+
+    @Test
+    void nodeIdPreventsSameHostControllerReportFromOverwritingBrokerPaths() {
+        ExternalClusterService service = service(mock(ExternalClusterRepository.class));
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setHostname("192.168.3.228");
+        agent.setIpAddresses("[\"192.168.3.228\"]");
+
+        ExternalClusterService.ExternalDiscoveryReport controllerReport =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        controllerReport.setNodeId(102);
+        controllerReport.setHostname("192.168.3.228");
+
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setNodeId(2);
+        broker.setHost("192.168.3.228");
+        ExternalClusterNode controller = new ExternalClusterNode();
+        controller.setNodeId(102);
+        controller.setHost("192.168.3.228");
+
+        assertThat(service.matchesDiscoveryNode(broker, controllerReport, agent)).isFalse();
+        assertThat(service.matchesDiscoveryNode(controller, controllerReport, agent)).isTrue();
+    }
+
+    @Test
+    void staleDiscoveryAgentUsesConfiguredTimeoutAndReturnsOrangeDisconnectedState() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                externalClusterRepository, discoveryAgentRepository, mock(KafkaAdminService.class));
+        ReflectionTestUtils.setField(service, "discoveryAgentHeartbeatTimeoutSeconds", 45L);
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("agent-1");
+        agent.setAgentName("external-agent");
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now().minusSeconds(60));
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
+
+        Map<String, Object> summary = service.listDiscoveryAgents().getFirst();
+
+        assertThat(service.agentStaleSeconds()).isEqualTo(45L);
+        assertThat(summary.get("fresh")).isEqualTo(false);
+        assertThat(summary.get("health")).isEqualTo("orange");
+        assertThat(summary.get("stateLabel")).isEqualTo("Agent disconnected - no recent heartbeat");
+    }
+
     private ExternalClusterService service(ExternalClusterRepository externalClusterRepository) {
         return service(
                 mock(ClusterRepository.class),

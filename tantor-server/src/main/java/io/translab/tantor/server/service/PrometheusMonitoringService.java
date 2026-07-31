@@ -270,12 +270,16 @@ public class PrometheusMonitoringService {
                 cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
                 "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + metricSelector + "}[5m])) * 100"
         ));
-        overview.setSystemCpuPercent(firstPresentNumber(
+        Double systemCpuPercent = firstPresentNumber(
                 cpuPercent("jvm_OperatingSystem_CpuLoad", metricSelector),
                 cpuPercent("jvm_operatingsystem_cpuload", metricSelector),
                 cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
                 cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector)
-        ));
+        );
+        if (systemCpuPercent == null && isExternal(cluster)) {
+            systemCpuPercent = computeExternalSystemCpuPercent(cluster, selectedNodeId);
+        }
+        overview.setSystemCpuPercent(systemCpuPercent);
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
         overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
@@ -632,6 +636,29 @@ public class PrometheusMonitoringService {
     Long computeHostMemoryTotalMb(Cluster cluster, String nodeId) {
         MemoryUsage memory = hostMemory(cluster, nodeId);
         return memory == null ? null : memory.totalMb();
+    }
+
+    Double computeExternalSystemCpuPercent(Cluster cluster, String nodeId) {
+        if (!isExternal(cluster)) {
+            return null;
+        }
+        Map<String, Double> hostCpu = new LinkedHashMap<>();
+        for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            if (nodeId != null && (node.getNodeId() == null || !nodeId.equals(String.valueOf(node.getNodeId())))) {
+                continue;
+            }
+            if (node.getCpuUsagePct() == null) {
+                continue;
+            }
+            String hostKey = node.getHost() == null || node.getHost().isBlank()
+                    ? "node:" + node.getNodeId()
+                    : node.getHost().trim().toLowerCase(Locale.ROOT);
+            hostCpu.put(hostKey, Math.max(0.0, Math.min(100.0, node.getCpuUsagePct())));
+        }
+        if (hostCpu.isEmpty()) {
+            return null;
+        }
+        return hostCpu.values().stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
     }
 
     private MemoryUsage hostMemory(Cluster cluster, String nodeId) {

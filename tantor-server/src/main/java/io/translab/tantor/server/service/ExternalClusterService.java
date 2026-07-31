@@ -18,6 +18,7 @@ import io.translab.tantor.server.security.TruststoreStorageService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -45,7 +46,9 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 public class ExternalClusterService {
 
     private static final String EXTERNAL_MODE = "EXTERNAL";
-    private static final long AGENT_STALE_SECONDS = 180;
+
+    @Value("${tantor.discovery-agent.heartbeat-timeout-seconds:45}")
+    private long discoveryAgentHeartbeatTimeoutSeconds;
 
     private final ClusterRepository clusterRepository;
     private final ExternalClusterRepository externalClusterRepository;
@@ -462,7 +465,7 @@ public class ExternalClusterService {
                 ))
                 .map(agent -> {
                     boolean fresh = agent.getLastHeartbeat() != null
-                            && agent.getLastHeartbeat().isAfter(now.minusSeconds(AGENT_STALE_SECONDS));
+                            && agent.getLastHeartbeat().isAfter(now.minusSeconds(agentStaleSeconds()));
                     Map<String, Object> summary = new LinkedHashMap<>();
                     summary.put("id", agent.getId());
                     summary.put("agentName", blankToDefault(agent.getAgentName(), agent.getId()));
@@ -476,8 +479,8 @@ public class ExternalClusterService {
                     summary.put("status", fresh ? "ONLINE" : "STALE");
                     summary.put("health", fresh ? "green" : "orange");
                     summary.put("stateLabel", agent.getClusterId() == null
-                            ? (fresh ? "Online - no cluster connected" : "Stale - no recent polling")
-                            : (fresh ? "Online - cluster connected" : "Stale - cluster connection needs attention"));
+                            ? (fresh ? "Online - no cluster connected" : "Agent disconnected - no recent heartbeat")
+                            : (fresh ? "Online - cluster connected" : "Agent disconnected - cluster connection needs attention"));
                     return summary;
                 })
                 .toList();
@@ -1165,7 +1168,7 @@ public class ExternalClusterService {
             r.setDiskTotalGb(n.getDiskTotalGb());
             r.setInstallPath(blankToDefault(n.getInstallDir(), cluster.getInstallPath()));
             r.setLogDirs(blankToDefault(n.getLogDirs(), cluster.getLogDirs()));
-            r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS)));
+            r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
             records.add(r);
         }
         return records;
@@ -1215,7 +1218,7 @@ public class ExternalClusterService {
         }
     }
 
-    private boolean matchesDiscoveryNode(
+    boolean matchesDiscoveryNode(
             io.translab.tantor.server.domain.ExternalClusterNode node,
             ExternalDiscoveryReport report,
             DiscoveryAgent agent
@@ -1223,8 +1226,8 @@ public class ExternalClusterService {
         if (node == null) {
             return false;
         }
-        if (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) {
-            return true;
+        if (report.getNodeId() != null) {
+            return report.getNodeId().equals(node.getNodeId());
         }
         String nodeHost = node.getHost();
         if (nodeHost == null || nodeHost.isBlank()) {
@@ -1308,10 +1311,14 @@ public class ExternalClusterService {
         return record.getInstallPath() != null && !record.getInstallPath().isBlank();
     }
 
+    long agentStaleSeconds() {
+        return Math.max(15, discoveryAgentHeartbeatTimeoutSeconds);
+    }
+
     private boolean isFreshAgent(ExternalBrokerRecord record) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(record.getLastSeen());
-            return seen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+            return seen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
         } catch (Exception e) {
             return false;
         }
@@ -1319,13 +1326,13 @@ public class ExternalClusterService {
 
     private boolean isFreshAgent(DiscoveryAgent agent) {
         return agent.getLastHeartbeat() != null
-                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
     }
 
     private boolean isFreshDiscovery(ExternalDiscoveryReport report) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(report.getLastSeen());
-            return seen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+            return seen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
         } catch (Exception e) {
             return false;
         }
@@ -1723,7 +1730,7 @@ public class ExternalClusterService {
                         .stream()
                         .anyMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) 
                                 && agent.getLastHeartbeat() != null 
-                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS)));
+                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
                     
                     newStatus = agentHealthy ? "SUCCESS" : "DEGRADED";
                 }

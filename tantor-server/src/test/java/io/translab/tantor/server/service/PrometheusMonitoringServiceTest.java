@@ -65,11 +65,15 @@ class PrometheusMonitoringServiceTest {
         ExternalClusterNode first = new ExternalClusterNode();
         first.setClusterId(id);
         first.setNodeId(1);
+        first.setHost("host-a");
+        first.setCpuUsagePct(10.0);
         first.setMemoryUsedMb(200L);
         first.setMemoryTotalMb(1000L);
         ExternalClusterNode second = new ExternalClusterNode();
         second.setClusterId(id);
         second.setNodeId(2);
+        second.setHost("host-b");
+        second.setCpuUsagePct(30.0);
         second.setMemoryUsedMb(300L);
         second.setMemoryTotalMb(1000L);
 
@@ -85,6 +89,8 @@ class PrometheusMonitoringServiceTest {
         assertThat(service.computeHostMemoryAvailableMb(mirror, "2")).isEqualTo(700L);
         assertThat(service.computeHostMemoryTotalMb(mirror, null)).isEqualTo(2000L);
         assertThat(service.computeHostMemoryTotalMb(mirror, "2")).isEqualTo(1000L);
+        assertThat(service.computeExternalSystemCpuPercent(mirror, null)).isEqualTo(20.0);
+        assertThat(service.computeExternalSystemCpuPercent(mirror, "2")).isEqualTo(30.0);
     }
 
     @Test
