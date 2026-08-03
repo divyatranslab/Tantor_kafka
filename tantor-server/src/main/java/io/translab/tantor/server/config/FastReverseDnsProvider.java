@@ -12,7 +12,6 @@ import java.util.stream.Stream;
  * blocking on unavailable PTR records in air-gapped environments.
  */
 public final class FastReverseDnsProvider extends InetAddressResolverProvider {
-
     @Override
     public InetAddressResolver get(Configuration configuration) {
         return new FastReverseDnsResolver(configuration.builtinResolver());
