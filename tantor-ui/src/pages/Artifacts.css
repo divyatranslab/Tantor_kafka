@@ -202,6 +202,14 @@
   padding: 24px;
 }
 
+/* The application canvas owns page scrolling; artifact cards should expand normally. */
+.artifacts-page .artifacts-list-container,
+.artifacts-page .versions-list {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+
 /* Version card */
 .version-card {
   background: var(--bg-surface);
@@ -602,8 +610,10 @@
   align-items: center;
   padding: 4px 8px;
   gap: 10px;
-  width: 60px;
+  min-width: 60px;
+  width: max-content;
   height: 24px;
+  white-space: nowrap;
   background: rgba(42, 199, 146, 0.25);
   border-radius: 100px;
   font-family: 'Satoshi', sans-serif;

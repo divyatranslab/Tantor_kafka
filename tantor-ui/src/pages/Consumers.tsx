@@ -112,62 +112,26 @@ export function Consumers() {
 
 
   return (
-    <div className="consumers-tab animate-fade-in" style={{ width: '100%' }}>
-      <div className="consumers-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
+    <div className="consumers-tab animate-fade-in">
+      <div className="consumers-header">
         <h2 className="cluster-section-heading">Consumer Groups</h2>
-        <div className="consumer-groups-toolbar" style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'flex-start', width: '100%', height: '40px' }}>
-          <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
-            <label style={{
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              padding: '6px 8px',
-              gap: '8px',
-              width: '612px',
-              height: '36px',
-              background: '#FFFFFF',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px'
-            }}>
-              <Search size={16} style={{ color: '#818181' }} />
+        <div className="consumer-groups-toolbar">
+          <form className="consumer-search-form" onSubmit={handleSearchSubmit}>
+            <label className="consumer-search-field">
+              <Search size={16} />
               <input
                 type="text"
                 placeholder="Search key or value"
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                style={{
-                  border: 'none',
-                  outline: 'none',
-                  fontFamily: 'Satoshi, sans-serif',
-                  fontWeight: 400,
-                  fontSize: '14px',
-                  color: '#23252D',
-                  width: '100%',
-                  background: 'transparent'
-                }}
+                onChange={(event) => setSearchInput(event.target.value)}
               />
             </label>
           </form>
-          <button 
+          <button
             type="button"
-            onClick={fetchGroups} 
-            disabled={loading} 
-            style={{
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px',
-              width: '40px',
-              height: '40px',
-              background: '#FFFFFF',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              color: '#818181'
-            }}
+            className="consumer-refresh-button"
+            onClick={fetchGroups}
+            disabled={loading}
             aria-label="Refresh consumer groups"
           >
             <RefreshCw className={loading ? 'spin' : ''} size={15} />

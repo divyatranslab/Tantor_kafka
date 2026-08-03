@@ -690,50 +690,40 @@ export function Topics() {
 
       {canManage && pendingAction && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
-          {pendingAction.kind !== 'recreate' ? (
-            <div
-              className={`topic-modal remove-topic-modal ${pendingAction.kind === 'clear' ? 'clear-messages-modal' : 'delete-topic-modal'}`}
-              role="alertdialog"
-              aria-modal="true"
-              aria-labelledby="topic-confirmation-title"
-              onMouseDown={event => event.stopPropagation()}
-            >
-              <div className="remove-topic-banner" aria-hidden="true" />
-              <button className="remove-topic-close" onClick={() => setPendingAction(null)} disabled={acting} aria-label="Close modal"><X size={22} /></button>
-              <div className="remove-topic-content">
-                <div className="remove-topic-title">
-                  <span className="remove-topic-icon" aria-hidden="true" />
-                  <h3 id="topic-confirmation-title">
-                    {pendingAction.kind === 'clear'
-                      ? 'Clear all messages?'
-                      : pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}
-                  </h3>
-                </div>
-                <p>
+          <div
+            className="topic-modal remove-topic-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="topic-confirmation-title"
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <div className="remove-topic-banner" aria-hidden="true" />
+            <button className="remove-topic-close" onClick={() => setPendingAction(null)} disabled={acting} aria-label="Close modal"><X size={22} /></button>
+            <div className="remove-topic-content">
+              <div className="remove-topic-title">
+                <span className="remove-topic-icon" aria-hidden="true" />
+                <h3 id="topic-confirmation-title">
                   {pendingAction.kind === 'clear'
-                    ? actionCopy.clear.description
-                    : `The topic${pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.`}
-                </p>
-                <div className="remove-topic-names">{pendingAction.names.join(', ')}</div>
-                <footer>
-                  <button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button>
-                  <button className="remove-topic-confirm" onClick={runAction} disabled={acting}>
-                    {acting ? 'Working...' : pendingAction.kind === 'clear' ? 'Clear messages' : 'Remove topic'}
-                  </button>
-                </footer>
+                    ? 'Clear all messages?'
+                    : pendingAction.kind === 'recreate'
+                      ? 'Recreate this topic?'
+                      : pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}
+                </h3>
               </div>
+              <p>
+                {pendingAction.kind === 'remove'
+                  ? `The topic${pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.`
+                  : actionCopy[pendingAction.kind].description}
+              </p>
+              <div className="remove-topic-names">{pendingAction.names.join(', ')}</div>
+              <footer>
+                <button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button>
+                <button className="remove-topic-confirm" onClick={runAction} disabled={acting}>
+                  {acting ? 'Working...' : actionCopy[pendingAction.kind].button}
+                </button>
+              </footer>
             </div>
-          ) : (
-            <div className="topic-modal danger-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
-              <header><div className="danger-icon"><AlertTriangle size={22} /></div><button onClick={() => setPendingAction(null)} disabled={acting}><X size={18} /></button></header>
-              <div className="confirm-copy">
-                <h3>{actionCopy[pendingAction.kind].title}</h3>
-                <p>{actionCopy[pendingAction.kind].description}</p>
-                <div>{pendingAction.names.join(', ')}</div>
-              </div>
-              <footer><button className="topic-button secondary" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="topic-button destructive" onClick={runAction} disabled={acting}>{acting ? 'Working...' : actionCopy[pendingAction.kind].button}</button></footer>
-            </div>
-          )}
+          </div>
         </div>
       )}
     </section>
