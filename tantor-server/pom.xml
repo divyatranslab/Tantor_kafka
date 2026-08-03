@@ -140,6 +140,26 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>fast-reverse-dns-provider</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>dns-resolver</classifier>
+                            <includes>
+                                <include>io/translab/tantor/server/config/FastReverseDnsProvider*.class</include>
+                                <include>META-INF/services/java.net.spi.InetAddressResolverProvider</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>
