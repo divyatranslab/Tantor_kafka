@@ -604,14 +604,15 @@
 /* State Badge */
 .parcel-status {
   box-sizing: border-box;
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: 4px 8px;
-  gap: 10px;
-  min-width: 60px;
-  width: max-content;
+  padding: 4px 12px;
+  gap: 0;
+  min-width: max-content;
+  width: fit-content;
   height: 24px;
   white-space: nowrap;
   background: rgba(42, 199, 146, 0.25);

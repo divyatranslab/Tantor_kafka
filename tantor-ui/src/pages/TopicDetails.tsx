@@ -9,6 +9,7 @@ import {
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { TopicActionConfirmationModal } from '../components/TopicActionConfirmationModal';
 import './TopicDetails.css';
 
 type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
@@ -549,10 +550,6 @@ export function TopicDetails() {
             </div>
             <div className="statistics-figma-heading">
               <h3 style={{ margin: 0, color: '#5B327F', fontSize: '16px', fontWeight: 500, fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
-              <button className="restart-analysis-btn" onClick={loadStatistics} disabled={statisticsLoading}>
-                <RefreshCw className={statisticsLoading ? 'spin' : ''} size={12} />
-                <span>Restart analysis</span>
-              </button>
             </div>
             {statisticsLoading && !statistics ? (
               <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messages…</div>
@@ -627,39 +624,14 @@ export function TopicDetails() {
       )}
 
       {canManage && confirmAction && (
-        <div className="topic-modal-backdrop" onMouseDown={() => !acting && setConfirmAction(null)}>
-          <div className="topic-modal figma-topic-modal figma-confirm-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '543px', borderRadius: '16px', padding: 0 }}>
-            <div className="confirm-modal-banner">
-              <button onClick={() => setConfirmAction(null)} className="confirm-modal-close-btn" aria-label="Close modal">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="confirm-modal-body">
-              <div className="confirm-modal-title-row">
-                <AlertOctagon size={24} color="#FFFFFF" fill="#EF4D5F" style={{ marginRight: '8px' }} />
-                <h2>
-                  {confirmAction === 'clear' ? 'Clear all messages' : confirmAction === 'recreate' ? 'Recreate this topic?' : 'Remove this topic?'}
-                </h2>
-              </div>
-              <p className="confirm-modal-desc">
-                {confirmAction === 'clear' ? 'Every currently readable record will become inaccessible.' : confirmAction === 'recreate' ? 'All messages will be deleted. Partition assignments and explicit settings will be restored.' : 'The topic and all of its data will be permanently deleted.'}
-              </p>
-              <div style={{ marginTop: '4px' }}>
-                <span className="confirm-modal-topic-name">{detail.name}</span>
-              </div>
-              <div className="confirm-modal-footer">
-                <button type="button" className="confirm-btn-outline" onClick={() => setConfirmAction(null)} disabled={acting}>
-                  Cancel
-                </button>
-                <button className="confirm-btn-filled" onClick={runAction} disabled={acting}>
-                  {acting ? 'Working…' : confirmAction === 'clear' ? 'Clear messages' : confirmAction === 'recreate' ? 'Recreate topic' : 'Remove topic'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TopicActionConfirmationModal
+          action={confirmAction}
+          topicNames={[detail.name]}
+          acting={acting}
+          onClose={() => setConfirmAction(null)}
+          onConfirm={runAction}
+        />
       )}
-
       {canManage && editingConfig && (
         <div className="topic-modal-backdrop" onMouseDown={handleCancelConfigEdit}>
           <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>

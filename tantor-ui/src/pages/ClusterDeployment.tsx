@@ -604,7 +604,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     validatePath(installDir, 'Install directory'),
     validatePath(dataDir, 'Data directory'),
     validatePath(logDir, 'Log directory'),
-    validatePath(artifactLoadDir, 'Artifact/load directory'),
+    validatePath(artifactLoadDir, 'Artifacts/Load Directory'),
   ].filter(Boolean);
 
   const configModalHost = configModalHostId
@@ -1571,7 +1571,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 <input value={logDir} onChange={e => setLogDir(e.target.value)} placeholder="/var/log/kafka" />
               </label>
               <label className="cd-field">
-                <span>Artefacts/ Load directory</span>
+                <span>Artifacts/Load Directory</span>
                 <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
               </label>
             </div>

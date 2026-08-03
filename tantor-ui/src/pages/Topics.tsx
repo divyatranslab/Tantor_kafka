@@ -7,6 +7,7 @@ import {
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { TopicActionConfirmationModal, topicActionCopy, type TopicActionKind } from '../components/TopicActionConfirmationModal';
 import './Topics.css';
 
 interface TopicSummary {
@@ -27,30 +28,13 @@ interface PaginatedResponse {
   hasNext: boolean;
 }
 
-type ActionKind = 'clear' | 'recreate' | 'remove';
-
-const actionCopy: Record<ActionKind, { title: string; description: string; button: string }> = {
-  clear: {
-    title: 'Clear all messages?',
-    description: 'Kafka will advance the low watermark for every partition. This cannot be undone and requires a DELETE cleanup policy.',
-    button: 'Clear messages'
-  },
-  recreate: {
-    title: 'Recreate topic?',
-    description: 'This deletes the topic and all messages, then recreates it with the current partition assignments and explicit settings.',
-    button: 'Recreate topic'
-  },
-  remove: {
-    title: 'Remove topic?',
-    description: 'The topic, its messages, and all partition data will be permanently deleted.',
-    button: 'Remove topic'
-  }
-};
+type PendingTopicAction = { kind: TopicActionKind; names: string[] };
 
 async function apiError(response: Response) {
   const body = await response.json().catch(() => null);
   return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
 }
+
 
 export function Topics() {
   const { id } = useParams<{ id: string }>();
@@ -76,7 +60,7 @@ export function Topics() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [pendingAction, setPendingAction] = useState<{ kind: ActionKind; names: string[] } | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingTopicAction | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newTopic, setNewTopic] = useState({
@@ -237,7 +221,7 @@ export function Topics() {
         const response = await fetch(endpoint, { method });
         if (!response.ok) throw new Error(name + ': ' + await apiError(response));
       }
-      setNotice(actionCopy[pendingAction.kind].button + ' completed.');
+      setNotice(topicActionCopy[pendingAction.kind].button + ' completed.');
       setPendingAction(null);
       setSelected(new Set());
       await fetchTopics();
@@ -689,42 +673,13 @@ export function Topics() {
       )}
 
       {canManage && pendingAction && (
-        <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
-          <div
-            className="topic-modal remove-topic-modal"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="topic-confirmation-title"
-            onMouseDown={event => event.stopPropagation()}
-          >
-            <div className="remove-topic-banner" aria-hidden="true" />
-            <button className="remove-topic-close" onClick={() => setPendingAction(null)} disabled={acting} aria-label="Close modal"><X size={22} /></button>
-            <div className="remove-topic-content">
-              <div className="remove-topic-title">
-                <span className="remove-topic-icon" aria-hidden="true" />
-                <h3 id="topic-confirmation-title">
-                  {pendingAction.kind === 'clear'
-                    ? 'Clear all messages?'
-                    : pendingAction.kind === 'recreate'
-                      ? 'Recreate this topic?'
-                      : pendingAction.names.length === 1 ? 'Remove this topic?' : 'Remove these topics?'}
-                </h3>
-              </div>
-              <p>
-                {pendingAction.kind === 'remove'
-                  ? `The topic${pendingAction.names.length === 1 ? '' : 's'} and all associated data will be permanently deleted.`
-                  : actionCopy[pendingAction.kind].description}
-              </p>
-              <div className="remove-topic-names">{pendingAction.names.join(', ')}</div>
-              <footer>
-                <button className="remove-topic-cancel" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button>
-                <button className="remove-topic-confirm" onClick={runAction} disabled={acting}>
-                  {acting ? 'Working...' : actionCopy[pendingAction.kind].button}
-                </button>
-              </footer>
-            </div>
-          </div>
-        </div>
+        <TopicActionConfirmationModal
+          action={pendingAction.kind}
+          topicNames={pendingAction.names}
+          acting={acting}
+          onClose={() => setPendingAction(null)}
+          onConfirm={runAction}
+        />
       )}
     </section>
   );
