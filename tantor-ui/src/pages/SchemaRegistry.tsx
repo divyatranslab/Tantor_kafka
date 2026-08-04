@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreV
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -171,10 +172,11 @@ type View = 'list' | 'detail' | 'edit';
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
+  const initialSession = useRef(readDataServiceSession<SchemaSummary>('schema-registry', id)).current;
   const [view, setView] = useState<View>('list');
-  const [summary, setSummary] = useState<SchemaSummary | null>(null);
+  const [summary, setSummary] = useState<SchemaSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
@@ -212,7 +214,7 @@ export function SchemaRegistry() {
 
   // ── Multi-instance state ──────────────────────────────────────────────────
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
 
   // Connection form state
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -228,7 +230,7 @@ export function SchemaRegistry() {
   const [formIsDefault, setFormIsDefault] = useState(false);
   /** ID of the connection being edited — set when editing an existing connection. */
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
-  const [globalCompatibility, setGlobalCompatibility] = useState('BACKWARD');
+  const [globalCompatibility, setGlobalCompatibility] = useState(initialSession?.metadata?.globalCompatibility ?? 'BACKWARD');
   const [subjectCompatibility, setSubjectCompatibility] = useState('BACKWARD');
   const [connectSaving, setConnectSaving] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -437,12 +439,25 @@ export function SchemaRegistry() {
   // Initial load
   useEffect(() => { if (id) { loadConnections(); } }, [id]);
 
+  useEffect(() => {
+    writeDataServiceSession('schema-registry', id, {
+      selectedConnectionId,
+      summary,
+      hasFetched,
+      metadata: { globalCompatibility }
+    });
+  }, [globalCompatibility, hasFetched, id, selectedConnectionId, summary]);
+
+  const previousConnectionId = useRef(selectedConnectionId);
+
   // Live registry data is fetched only after the user explicitly requests it.
   useEffect(() => {
+    if (previousConnectionId.current === selectedConnectionId) return;
+    previousConnectionId.current = selectedConnectionId;
     setHasFetched(false);
     setSummary(null);
     setError(null);
-  }, [id, selectedConnectionId]);
+  }, [selectedConnectionId]);
 
   const openSubject = async (item: SchemaSubject) => {
     setSelected(item);

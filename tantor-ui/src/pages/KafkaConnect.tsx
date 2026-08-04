@@ -4,6 +4,7 @@ import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/ConfirmDialog';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -110,9 +111,10 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
-  const [summary, setSummary] = useState<ConnectSummary | null>(null);
+  const initialSession = useRef(readDataServiceSession<ConnectSummary>('kafka-connect', id)).current;
+  const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
@@ -124,7 +126,7 @@ export function KafkaConnect() {
 
   // ── Multi-instance state ──────────────────────────────────────
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
 
   // ── Connection form state ─────────────────────────────────────
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -310,12 +312,24 @@ export function KafkaConnect() {
     if (id) { loadConnections(); }
   }, [id]);
 
+  useEffect(() => {
+    writeDataServiceSession('kafka-connect', id, {
+      selectedConnectionId,
+      summary,
+      hasFetched
+    });
+  }, [hasFetched, id, selectedConnectionId, summary]);
+
+  const previousConnectionId = useRef(selectedConnectionId);
+
   // Live Connect data is fetched only after the user explicitly requests it.
   useEffect(() => {
+    if (previousConnectionId.current === selectedConnectionId) return;
+    previousConnectionId.current = selectedConnectionId;
     setHasFetched(false);
     setSummary(null);
     setError(null);
-  }, [id, selectedConnectionId]);
+  }, [selectedConnectionId]);
 
   const clusters = useMemo(() => [{
     name: selectedConn?.connectionName || 'default-connect',

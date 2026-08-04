@@ -58,6 +58,12 @@ interface MessageResponse {
   elapsedMs: number;
 }
 
+interface MessageFilters {
+  order?: string;
+  partition?: string;
+  search?: string;
+}
+
 interface ConsumerGroup {
   groupId: string;
   activeConsumers: number;
@@ -228,25 +234,40 @@ export function TopicDetails() {
     }
   }, [baseUrl, id, topicName]);
 
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (filters: MessageFilters = {}) => {
     if (!id || !topicName) return;
+    const order = filters.order ?? messageOrder;
+    const partition = filters.partition ?? messagePartition;
+    const search = filters.search ?? messageSearch;
+
     setMessagesLoading(true);
     setError(null);
     try {
       const url = new URL(`${window.location.origin}${baseUrl}/messages`);
-      if (messagePartition !== null && String(messagePartition) !== '-1') url.searchParams.append('partition', messagePartition.toString());
-      if (messageSearch) url.searchParams.append('search', messageSearch);
-      if (messageOrder) url.searchParams.append('order', messageOrder);
+      if (partition !== '') url.searchParams.set('partitions', partition);
+      if (search.trim()) url.searchParams.set('search', search.trim());
+      url.searchParams.set('order', order);
 
       const res = await fetch(url.toString());
       if (!res.ok) throw new Error(`Failed to browse messages: ${res.statusText}`);
       setMessages(await res.json());
+      setExpandedMessage(null);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to browse messages');
     } finally {
       setMessagesLoading(false);
     }
   }, [baseUrl, id, messageOrder, messagePartition, messageSearch, topicName]);
+
+  const changeMessageOrder = (order: string) => {
+    setMessageOrder(order);
+    void loadMessages({ order });
+  };
+
+  const changeMessagePartition = (partition: string) => {
+    setMessagePartition(partition);
+    void loadMessages({ partition });
+  };
 
   const loadSimpleTab = useCallback(async (tab: 'consumers' | 'configs' | 'acls') => {
     setTabLoading(true);
@@ -454,13 +475,13 @@ export function TopicDetails() {
             <div className="message-toolbar">
               <CustomSelect
                 value={messageOrder}
-                onChange={setMessageOrder}
+                onChange={changeMessageOrder}
                 options={orderOptions}
                 width="135px"
               />
               <CustomSelect
                 value={messagePartition}
-                onChange={setMessagePartition}
+                onChange={changeMessagePartition}
                 options={partitionOptions}
                 width="145px"
               />
@@ -476,8 +497,8 @@ export function TopicDetails() {
                 options={valueDeserializerOptions}
                 width="140px"
               />
-              <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => event.key === 'Enter' && loadMessages()} placeholder="Search key or value" /></label>
-              <button className="message-refresh-btn" onClick={loadMessages} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
+              <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void loadMessages(); }} placeholder="Search key or value" /></label>
+              <button className="message-refresh-btn" onClick={() => void loadMessages()} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
             </div>
 
             <div className="detail-table-wrap">
