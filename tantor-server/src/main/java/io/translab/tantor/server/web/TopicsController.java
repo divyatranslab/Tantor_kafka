@@ -2,6 +2,7 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.TopicOperationsService;
+import io.translab.tantor.server.service.ActivityAlertService;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
@@ -26,6 +27,7 @@ public class TopicsController {
     private final ClusterRepository clusterRepository;
     private final AuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final ActivityAlertService activityAlertService;
 
     @GetMapping("/topics")
     public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.TopicSummaryDto>> listTopics(
@@ -168,12 +170,33 @@ public class TopicsController {
     }
 
     private void clusterChanged(UUID clusterId, String action, Map<String, Object> details) {
-        clusterRepository.findById(clusterId).ifPresent(cluster -> {
+        String clusterName = clusterRepository.findById(clusterId).map(cluster -> {
             cluster.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
             clusterRepository.save(cluster);
-        });
+            return cluster.getName();
+        }).orElse(clusterId.toString());
         auditService.record("CLUSTER_CHANGE", action, "CLUSTER", clusterId.toString(), clusterId,
                 "SUCCESS", null, null, null, details);
+
+        String topicName = String.valueOf(details.getOrDefault("topic", "unknown"));
+        String feedAction = switch (action) {
+            case "TOPIC_CREATED" -> "CREATE";
+            case "TOPIC_DELETED" -> "DELETE";
+            case "TOPIC_RECREATED" -> "RECREATE";
+            case "TOPIC_CONFIG_CHANGED" -> "UPDATE";
+            case "TOPIC_CONFIG_RESET" -> "RESET";
+            default -> "EXECUTE";
+        };
+        String message = switch (action) {
+            case "TOPIC_CREATED" -> "Created topic " + topicName + " in cluster " + clusterName;
+            case "TOPIC_DELETED" -> "Deleted topic " + topicName + " from cluster " + clusterName;
+            case "TOPIC_RECREATED" -> "Recreated topic " + topicName + " in cluster " + clusterName;
+            case "TOPIC_CONFIG_CHANGED" -> "Updated configuration for topic " + topicName + " in cluster " + clusterName;
+            case "TOPIC_CONFIG_RESET" -> "Reset configuration for topic " + topicName + " in cluster " + clusterName;
+            default -> "Updated topic " + topicName + " in cluster " + clusterName;
+        };
+        activityAlertService.logAudit("INFO", "TOPIC", feedAction, message,
+                "TOPIC", topicName, clusterId, null, null, "SUCCESS", null, null);
     }
 
     @GetMapping("/topics/{topicName}/statistics")
