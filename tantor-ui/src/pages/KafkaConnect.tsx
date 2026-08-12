@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -292,14 +292,24 @@ export function KafkaConnect() {
   };
 
   const load = async () => {
+    const connectionId = selectedConnectionId;
     setHasFetched(true);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`));
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`, connectionId));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       setSummary(data);
+
+      // Persist the successful response directly as well as through the layout
+      // effect below. This makes the fetched snapshot durable even if the user
+      // changes routes as soon as the response is painted.
+      writeDataServiceSession('kafka-connect', id, {
+        selectedConnectionId: connectionId,
+        summary: data,
+        hasFetched: true
+      });
     } catch (e: any) {
       setError(e.message || 'Failed to load Kafka Connect.');
     } finally {
@@ -312,7 +322,10 @@ export function KafkaConnect() {
     if (id) { loadConnections(); }
   }, [id]);
 
-  useEffect(() => {
+  // Commit the latest fetched snapshot before the browser can navigate away and
+  // unmount this route. A normal effect can run too late when another tab is
+  // selected immediately after a fetch completes.
+  useLayoutEffect(() => {
     writeDataServiceSession('kafka-connect', id, {
       selectedConnectionId,
       summary,

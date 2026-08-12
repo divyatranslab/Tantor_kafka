@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -410,25 +410,43 @@ export function SchemaRegistry() {
     }
   };
 
-  const loadGlobalCompatibility = async () => {
+  const loadGlobalCompatibility = async (connectionId: string | null = selectedConnectionId): Promise<string> => {
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId));
       const data = await res.json().catch(() => ({}));
-      if (res.ok) setGlobalCompatibility(data.compatibilityLevel || data.compatibility || 'BACKWARD');
-    } catch { setGlobalCompatibility('BACKWARD'); }
+      const compatibility = res.ok
+        ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
+        : 'BACKWARD';
+      setGlobalCompatibility(compatibility);
+      return compatibility;
+    } catch {
+      setGlobalCompatibility('BACKWARD');
+      return 'BACKWARD';
+    }
   };
 
   const load = async () => {
+    const connectionId = selectedConnectionId;
     setHasFetched(true);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`, connectionId));
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       setSummary(data);
-      await loadGlobalCompatibility();
+      const compatibility = await loadGlobalCompatibility(connectionId);
+
+      // Persist the successful response directly as well as through the layout
+      // effect below. This makes the fetched snapshot durable even if the user
+      // changes routes as soon as the response is painted.
+      writeDataServiceSession('schema-registry', id, {
+        selectedConnectionId: connectionId,
+        summary: data,
+        hasFetched: true,
+        metadata: { globalCompatibility: compatibility }
+      });
     } catch (e: any) {
       setError(e.message || 'Failed to load Schema Registry.');
     } finally {
@@ -439,7 +457,10 @@ export function SchemaRegistry() {
   // Initial load
   useEffect(() => { if (id) { loadConnections(); } }, [id]);
 
-  useEffect(() => {
+  // Commit the latest fetched snapshot before the browser can navigate away and
+  // unmount this route. A normal effect can run too late when another tab is
+  // selected immediately after a fetch completes.
+  useLayoutEffect(() => {
     writeDataServiceSession('schema-registry', id, {
       selectedConnectionId,
       summary,
