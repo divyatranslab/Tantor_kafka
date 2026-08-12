@@ -181,7 +181,15 @@ export function Clusters() {
   const isClickable = (c: ClusterInfo) =>
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
 
+  const isDeploymentInProgress = (c: ClusterInfo) =>
+    c.mode !== 'EXTERNAL'
+    && ['PENDING', 'RUNNING', 'IN_PROGRESS', 'VALIDATING']
+      .includes(String(c.status || '').toUpperCase());
+
   const statusLabel = (c: ClusterInfo) => {
+    // For managed clusters, RUNNING describes the deployment job rather than
+    // an already-operational Kafka runtime.
+    if (isDeploymentInProgress(c)) return 'Deploying';
     if (c.kafkaHealthChecking) return 'Checking Kafka...';
     if (c.runtimeStatusLabel) return c.runtimeStatusLabel;
     if (c.mode === 'EXTERNAL') {
@@ -194,15 +202,13 @@ export function Clusters() {
   };
 
   const statusClass = (c: ClusterInfo) => {
+    if (isDeploymentInProgress(c)) return 'deploying';
     if (c.kafkaHealthChecking) return 'checking';
     const runtime = (c.runtimeHealth || '').toLowerCase();
     if (runtime) return runtime;
     if (c.mode === 'EXTERNAL') return c.status === 'SUCCESS' ? 'external' : (c.status || 'external').toLowerCase();
     return (c.status || 'pending').toLowerCase();
   };
-
-  const inProgress = (status: string) =>
-    ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(status);
 
   const displayKafkaClusterId = (value?: string) => value && value.trim() ? value : '-';
 
@@ -379,7 +385,9 @@ export function Clusters() {
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
                         const progress = diskPct(host);
-                        const statusTagTone = cluster.kafkaHealthChecking
+                        const statusTagTone = isDeploymentInProgress(cluster)
+                          ? 'state-deploying'
+                          : cluster.kafkaHealthChecking
                           ? 'state-negative'
                           : clusterStatusTone(
                             cluster.runtimeStatusLabel,

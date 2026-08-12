@@ -1377,6 +1377,13 @@
   color: #E02424;
 }
 
+/* Managed-cluster deployment is an in-progress state, not runtime health. */
+.status-badge-v2.deploying.state-deploying {
+  background: #E6F1FB;
+  color: #185FA5;
+  border-color: #B5D4F4;
+}
+
 .source-pill-v2.healthy-state,
 .access-pill-v2.healthy-state,
 .status-badge-v2.healthy-state {
