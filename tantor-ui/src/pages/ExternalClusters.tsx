@@ -252,7 +252,9 @@ export function ExternalClusters() {
       const payload = {
         ...form,
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
-        brokerCount: bootstrapResult?.brokerCount ?? bootstrapResult?.brokers?.length ?? 0,
+        brokerCount: bootstrapResult?.brokerCount
+          ?? bootstrapResult?.brokers?.filter((node: any) => node.isBroker !== false).length
+          ?? 0,
         agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
         security: form.securityProtocol,
         brokers: bootstrapResult?.brokers || [],
@@ -548,7 +550,9 @@ export function ExternalClusters() {
 
                   <div className="bootstrap-summary">
                     <div className="summary-item">
-                      <span>{bootstrapResult.brokers?.length ?? bootstrapResult.brokerCount ?? 0} broker(s) detected</span>
+                      <span>{bootstrapResult.brokerCount
+                        ?? bootstrapResult.brokers?.filter((node: any) => node.isBroker !== false).length
+                        ?? 0} broker(s) detected</span>
                     </div>
                     <div className="summary-item">
                       <span>
