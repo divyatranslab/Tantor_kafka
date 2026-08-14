@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
-  MoreVertical, Plus, RefreshCw, Search, Trash2, X
+  Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
@@ -58,8 +58,6 @@ export function Topics() {
   const [search, setSearch] = useState('');
   const [includeInternal, setIncludeInternal] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingTopicAction | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -432,14 +430,13 @@ export function Topics() {
               <th>Out of Sync Replica</th>
               <th>Replication Factor</th>
               <th>Message</th>
-              {canManage && <th aria-label="Actions" />}
             </tr>
           </thead>
           <tbody>
             {loading && !data ? (
-              <tr><td colSpan={canManage ? 7 : 6}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
+              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
             ) : !data?.content.length ? (
-              <tr><td colSpan={canManage ? 6 : 5} className="empty-state-cell">
+              <tr><td colSpan={5} className="empty-state-cell">
                 <div className="topic-empty">
                   <div className="figma-empty-illustration">
                     <div className="illustration-card">
@@ -475,25 +472,6 @@ export function Topics() {
                 </td>
                 <td>{topic.replicationFactor ?? '-'}</td>
                 <td>{topic.messageCount?.toLocaleString() ?? '-'}</td>
-                {canManage && <td className="action-column" onClick={event => event.stopPropagation()}>
-                  <button
-                    className="icon-button"
-                    aria-label={'Actions for ' + topic.name}
-                    onClick={event => {
-                      event.stopPropagation();
-                      const opening = openMenu !== topic.name;
-                      setOpenMenu(opening ? topic.name : null);
-                      setMenuAnchor(opening ? event.currentTarget : null);
-                    }}
-                  ><MoreVertical size={18} /></button>
-                  {openMenu === topic.name && menuAnchor && (
-                    <AnchoredMenu anchor={menuAnchor} className="topic-menu" onClose={() => { setOpenMenu(null); setMenuAnchor(null); }}>
-                      <button onClick={() => setPendingAction({ kind: 'clear', names: [topic.name] })}>Clear messages</button>
-                      <button onClick={() => setPendingAction({ kind: 'recreate', names: [topic.name] })}>Recreate topic</button>
-                      <button onClick={() => setPendingAction({ kind: 'remove', names: [topic.name] })}>Remove topic</button>
-                    </AnchoredMenu>
-                  )}
-                </td>}
               </tr>
             ))}
           </tbody>
