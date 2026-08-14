@@ -1815,7 +1815,7 @@ public class ExternalClusterService {
         for (ExternalCluster cluster : externalClusters) {
             try {
                 String previousStatus = cluster.getStatus();
-                Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster.getBootstrapServers());
+                Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster, true);
                 boolean connected = Boolean.TRUE.equals(adminData.get("connected"));
                 String detectedKafkaClusterId = firstString(adminData, "clusterId", "kafka_cluster_id");
                 boolean kafkaClusterIdBackfilled = (cluster.getKafkaClusterId() == null || cluster.getKafkaClusterId().isBlank())

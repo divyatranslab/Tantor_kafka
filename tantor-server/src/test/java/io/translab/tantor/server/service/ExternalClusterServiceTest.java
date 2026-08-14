@@ -75,7 +75,7 @@ class ExternalClusterServiceTest {
         existing.setStatus("DEGRADED");
 
         when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(java.util.List.of(existing));
-        when(kafkaAdminService.inspectBootstrapServers("192.168.3.208:9092"))
+        when(kafkaAdminService.inspectBootstrapServers(existing, true))
                 .thenReturn(java.util.Map.of("connected", true, "clusterId", "recovered-kafka-id"));
         when(discoveryAgentRepository.findByClusterId(existing.getId())).thenReturn(java.util.List.of());
 
@@ -83,6 +83,49 @@ class ExternalClusterServiceTest {
 
         assertThat(existing.getKafkaClusterId()).isEqualTo("recovered-kafka-id");
         verify(externalClusterRepository).save(existing);
+    }
+
+    @Test
+    void scheduledHealthCheckUsesSavedSecurityForEveryBootstrapAndProtocol() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);
+        KafkaAdminService kafkaAdminService = mock(KafkaAdminService.class);
+        ExternalClusterService service = service(
+                externalClusterRepository, discoveryAgentRepository, kafkaAdminService);
+
+        List<ExternalCluster> clusters = new java.util.ArrayList<>();
+        for (String host : List.of("192.168.3.213", "192.168.3.229", "192.168.3.228")) {
+            for (String protocol : List.of("PLAINTEXT", "SSL", "SASL_PLAINTEXT", "SASL_SSL")) {
+                ExternalCluster cluster = new ExternalCluster();
+                cluster.setId(UUID.randomUUID());
+                cluster.setName(host + "-" + protocol);
+                cluster.setBootstrapServers(host + ":9092");
+                cluster.setKafkaClusterId("cluster-id");
+                cluster.setSecurityProtocol(protocol);
+                cluster.setSaslMechanism(protocol.startsWith("SASL_") ? "SCRAM-SHA-512" : null);
+                cluster.setSaslUsername(protocol.startsWith("SASL_") ? "admin" : null);
+                cluster.setSaslPasswordEncrypted(protocol.startsWith("SASL_") ? "encrypted-password" : null);
+                cluster.setTruststorePath(protocol.endsWith("SSL") ? "/security/" + host + ".p12" : null);
+                cluster.setTruststoreType(protocol.endsWith("SSL") ? "PKCS12" : null);
+                cluster.setStatus("DEGRADED");
+                clusters.add(cluster);
+            }
+        }
+
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(clusters);
+        when(kafkaAdminService.inspectBootstrapServers(any(ExternalCluster.class),
+                org.mockito.ArgumentMatchers.eq(true)))
+                .thenReturn(Map.of("connected", true, "clusterId", "cluster-id"));
+        for (ExternalCluster cluster : clusters) {
+            when(discoveryAgentRepository.findByClusterId(cluster.getId())).thenReturn(List.of());
+        }
+
+        service.checkExternalClustersHealth();
+
+        for (ExternalCluster cluster : clusters) {
+            verify(kafkaAdminService).inspectBootstrapServers(cluster, true);
+        }
+        verify(kafkaAdminService, never()).inspectBootstrapServers(any(String.class));
     }
 
     @Test
