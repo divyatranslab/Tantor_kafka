@@ -44,6 +44,12 @@ public class ExternalClusterNode {
     @Column(name = "disk_total_gb")
     private Long diskTotalGb;
 
+    @Column(name = "disk_used_bytes")
+    private Long diskUsedBytes;
+
+    @Column(name = "disk_total_bytes")
+    private Long diskTotalBytes;
+
     @Column(name = "last_seen")
     private OffsetDateTime lastSeen;
 

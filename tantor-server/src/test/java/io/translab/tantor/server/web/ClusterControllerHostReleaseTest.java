@@ -158,7 +158,7 @@ class ClusterControllerHostReleaseTest {
     }
 
     @Test
-    void externalOverviewUsesDiscoveryAgentFilesystemDiskTelemetry() {
+    void externalOverviewKeepsKafkaDataSeparateAndRequiresFreshAgentForHostDiskTelemetry() {
         UUID clusterId = UUID.randomUUID();
         ExternalCluster cluster = new ExternalCluster();
         cluster.setId(clusterId);
@@ -171,12 +171,59 @@ class ClusterControllerHostReleaseTest {
         node.setIsBroker(true);
         node.setDiskUsedGb(7L);
         node.setDiskTotalGb(47L);
+        node.setLastSeen(OffsetDateTime.now());
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("agent-1");
+        agent.setHostname("node-1");
+        agent.setClusterId(clusterId);
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
 
         var liveBroker = io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow.builder()
                 .brokerId(2)
-                .diskUsageBytes(0L)
+                .diskUsageBytes(1234L)
                 .diskTotalBytes(0L)
                 .build();
+        var liveOverview = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
+                .brokers(List.of(liveBroker))
+                .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder().build())
+                .build();
+
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(externalClusterNodeRepository.findByClusterId(clusterId)).thenReturn(List.of(node));
+        when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of(agent));
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
+        when(clusterOverviewService.getOverview(clusterId)).thenReturn(liveOverview);
+
+        var body = controller.getClusterOverview(clusterId).getBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.getBrokers().get(0).getDiskUsageBytes()).isEqualTo(1234L);
+        assertThat(body.getBrokers().get(0).getHostDiskUsedBytes()).isEqualTo(7L * 1024 * 1024 * 1024);
+        assertThat(body.getBrokers().get(0).getHostDiskTotalBytes()).isEqualTo(47L * 1024 * 1024 * 1024);
+        assertThat(body.getBrokers().get(0).getHostDiskMetricStatus()).isEqualTo("LIVE");
+    }
+
+    @Test
+    void externalOverviewHidesStaleHostDiskTelemetry() {
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external-test");
+
+        ExternalClusterNode node = new ExternalClusterNode();
+        node.setClusterId(clusterId);
+        node.setNodeId(3);
+        node.setHost("node-3");
+        node.setIsBroker(true);
+        node.setDiskUsedBytes(9_126_805_504L);
+        node.setDiskTotalBytes(51_539_607_552L);
+        node.setLastSeen(OffsetDateTime.now().minusMinutes(5));
+
+        var liveBroker = io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow.builder()
+                .brokerId(3).diskUsageBytes(999L).build();
         var liveOverview = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
                 .brokers(List.of(liveBroker))
                 .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder().build())
@@ -189,11 +236,11 @@ class ClusterControllerHostReleaseTest {
         when(discoveryAgentRepository.findAll()).thenReturn(List.of());
         when(clusterOverviewService.getOverview(clusterId)).thenReturn(liveOverview);
 
-        var body = controller.getClusterOverview(clusterId).getBody();
-
-        assertThat(body).isNotNull();
-        assertThat(body.getBrokers().get(0).getDiskUsageBytes()).isEqualTo(7L * 1024 * 1024 * 1024);
-        assertThat(body.getBrokers().get(0).getDiskTotalBytes()).isEqualTo(47L * 1024 * 1024 * 1024);
+        var broker = controller.getClusterOverview(clusterId).getBody().getBrokers().get(0);
+        assertThat(broker.getDiskUsageBytes()).isEqualTo(999L);
+        assertThat(broker.getHostDiskUsedBytes()).isNull();
+        assertThat(broker.getHostDiskTotalBytes()).isNull();
+        assertThat(broker.getHostDiskMetricStatus()).isEqualTo("STALE");
     }
 
     @Test

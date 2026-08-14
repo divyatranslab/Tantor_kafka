@@ -98,14 +98,18 @@ public class BrokerMetricsCacheService {
             .role(svc.getRole())
             .isController(isControllerRole(svc.getRole()))
             .lastHeartbeat(host.getLastHeartbeat())
+            .hostMetricStatus(heartbeatOk ? "LIVE" : (host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE"))
             .metricsTimestamp(System.currentTimeMillis());
 
-        builder.cpuUsagePct(host.getCpuUsagePct() != null ? host.getCpuUsagePct() : 0.0);
-        builder.memoryTotalMb(host.getMemTotalMb() != null ? host.getMemTotalMb() : 0L);
-        builder.memoryUsedMb(host.getMemUsedMb() != null ? host.getMemUsedMb() : 0L);
-        
-        builder.diskTotalGb(host.getDiskTotalGb());
-        builder.diskUsedGb(host.getDiskUsedGb());
+        if (heartbeatOk) {
+            builder.cpuUsagePct(host.getCpuUsagePct());
+            builder.memoryTotalMb(host.getMemTotalMb());
+            builder.memoryUsedMb(host.getMemUsedMb());
+            builder.diskTotalGb(host.getDiskTotalGb());
+            builder.diskUsedGb(host.getDiskUsedGb());
+            builder.diskUsedBytes(gibibytesToBytes(host.getDiskUsedGb()));
+            builder.diskTotalBytes(gibibytesToBytes(host.getDiskTotalGb()));
+        }
 
         // Fetch JMX
         boolean jmxReachable = false;
@@ -152,22 +156,38 @@ public class BrokerMetricsCacheService {
     private List<BrokerSummaryDto> fetchBootstrapOnlyExternalBrokers(ExternalCluster cluster) {
         return externalClusterService.brokerRecords(cluster).stream()
                 .filter(record -> isKafkaNodeRole(record.getRole()))
-                .map(record -> BrokerSummaryDto.builder()
+                .map(record -> {
+                    boolean live = record.isRunning();
+                    return BrokerSummaryDto.builder()
                         .brokerId(record.getNodeId() != null ? record.getNodeId() : -1)
                         .hostname(record.getHostname() != null ? record.getHostname() : record.getBootstrap())
                         .role(record.getRole() != null ? record.getRole() : "broker")
                         .isController(isControllerRole(record.getRole()))
-                        .brokerHealth(record.getLastSeen() != null ? "HEALTHY" : "DEGRADED")
+                        .brokerHealth(live ? "HEALTHY" : "DEGRADED")
                         .lastHeartbeat(record.getLastSeen() != null ? OffsetDateTime.parse(record.getLastSeen()) : null)
+                        .hostMetricStatus(live ? "LIVE" : (record.getLastSeen() == null ? "UNAVAILABLE" : "STALE"))
                         .isJmxReachable(false)
                         .metricsTimestamp(System.currentTimeMillis())
-                        .cpuUsagePct(record.getCpuUsagePct() != null ? record.getCpuUsagePct() : 0.0)
-                        .memoryTotalMb(record.getMemoryTotalMb() != null ? record.getMemoryTotalMb() : 0L)
-                        .memoryUsedMb(record.getMemoryUsedMb() != null ? record.getMemoryUsedMb() : 0L)
-                        .diskTotalGb(record.getDiskTotalGb())
-                        .diskUsedGb(record.getDiskUsedGb())
-                        .build())
+                        .cpuUsagePct(live ? record.getCpuUsagePct() : null)
+                        .memoryTotalMb(live ? record.getMemoryTotalMb() : null)
+                        .memoryUsedMb(live ? record.getMemoryUsedMb() : null)
+                        .diskTotalGb(live ? record.getDiskTotalGb() : null)
+                        .diskUsedGb(live ? record.getDiskUsedGb() : null)
+                        .diskUsedBytes(live ? resolveDiskBytes(record.getDiskUsedBytes(), record.getDiskUsedGb()) : null)
+                        .diskTotalBytes(live ? resolveDiskBytes(record.getDiskTotalBytes(), record.getDiskTotalGb()) : null)
+                        .build();
+                })
                 .collect(Collectors.toList());
+    }
+
+    private Long resolveDiskBytes(Long exactBytes, Long legacyGiB) {
+        return exactBytes != null ? exactBytes : gibibytesToBytes(legacyGiB);
+    }
+
+    private Long gibibytesToBytes(Long value) {
+        if (value == null || value < 0) return null;
+        long gibibyte = 1024L * 1024L * 1024L;
+        return value > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : value * gibibyte;
     }
 
     private boolean isKafkaNodeRole(String role) {

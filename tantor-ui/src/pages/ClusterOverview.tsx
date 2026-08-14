@@ -28,6 +28,10 @@ interface BrokerRow {
   controller: boolean;
   diskUsageBytes: number;
   diskTotalBytes: number;
+  hostDiskUsedBytes: number | null;
+  hostDiskTotalBytes: number | null;
+  hostDiskMetricStatus: 'LIVE' | 'STALE' | 'UNAVAILABLE';
+  hostDiskLastSeen: string | null;
   logReplicaCount: number;
   inSyncReplicas: number;
   replicas: number;
@@ -40,6 +44,7 @@ interface ControllerRow {
   nodeId: number;
   host: string;
   port: number | null;
+  activeLeader: boolean;
 }
 
 interface NodePathRow {
@@ -101,10 +106,14 @@ export function ClusterOverview() {
   const csv = useMemo(() => {
     if (!overview) return '';
     const rows = [
-      ['Broker ID', 'Disk Usage Bytes', 'Log Replicas', 'In Sync Replicas', 'Replicas', 'Replica Skew', 'Leaders', 'Leader Skew', 'Port', 'Host'],
+      ['Broker ID', 'Kafka Data Usage Bytes', 'Host Disk Used Bytes', 'Host Disk Total Bytes', 'Host Disk Status', 'Host Disk Last Seen', 'Log Replicas', 'In Sync Replicas', 'Replicas', 'Replica Skew', 'Leaders', 'Leader Skew', 'Port', 'Host'],
       ...overview.brokers.map(broker => [
         broker.brokerId,
         broker.diskUsageBytes,
+        broker.hostDiskUsedBytes ?? '',
+        broker.hostDiskTotalBytes ?? '',
+        broker.hostDiskMetricStatus ?? 'UNAVAILABLE',
+        broker.hostDiskLastSeen ?? '',
         broker.logReplicaCount,
         broker.inSyncReplicas,
         broker.replicas,
@@ -252,7 +261,14 @@ export function ClusterOverview() {
               <thead>
                 <tr>
                   <th>Broker ID</th>
-                  <th>Disk usage</th>
+                  <th title="Kafka replica-log bytes reported by the Kafka Admin API">
+                    Kafka Data Usage
+                    <span className="overview-metric-level">Broker level</span>
+                  </th>
+                  <th title="OS filesystem containing the Kafka data directory; reported by the node agent">
+                    Host Disk Usage
+                    <span className="overview-metric-level">OS level</span>
+                  </th>
                   <th>In sync replicas</th>
                   <th>Replicas</th>
                   <th>Replicas skew</th>
@@ -271,7 +287,8 @@ export function ClusterOverview() {
                         <span>{broker.brokerId}</span>
                       </div>
                     </td>
-                    <td>{formatDiskUsage(broker.diskUsageBytes, broker.diskTotalBytes)}</td>
+                    <td>{formatBytes(broker.diskUsageBytes)}</td>
+                    <td>{formatHostDiskUsage(broker)}</td>
                     <td>{broker.inSyncReplicas}</td>
                     <td>{broker.replicas}</td>
                     <td>{formatSkew(broker.replicaSkewPct)}</td>
@@ -300,6 +317,7 @@ export function ClusterOverview() {
                     <th>Node ID</th>
                     <th>Host</th>
                     <th>Port</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -312,6 +330,7 @@ export function ClusterOverview() {
                       </td>
                       <td className="font-mono">{c.host}</td>
                       <td>{c.port ? c.port : '-'}</td>
+                      <td>{c.activeLeader ? <span className="metric-status live">Active leader</span> : 'Voter'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -402,7 +421,7 @@ function formatSkew(value: number | null) {
 
 function formatBytes(bytes: number) {
   if (!bytes) return '0 B';
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
 }
@@ -411,4 +430,18 @@ function formatDiskUsage(usedBytes: number | null | undefined, totalBytes: numbe
   if (usedBytes == null || !Number.isFinite(usedBytes) || usedBytes < 0) return '-';
   const used = formatBytes(usedBytes);
   return totalBytes != null && totalBytes > 0 ? `${used} / ${formatBytes(totalBytes)}` : used;
+}
+
+function formatHostDiskUsage(broker: BrokerRow) {
+  if (broker.hostDiskMetricStatus !== 'LIVE' || broker.hostDiskUsedBytes == null || broker.hostDiskTotalBytes == null) {
+    const label = broker.hostDiskMetricStatus === 'STALE' ? 'Stale' : 'Agent unavailable';
+    const title = broker.hostDiskLastSeen ? `Last reported ${new Date(broker.hostDiskLastSeen).toLocaleString()}` : undefined;
+    return <span className="metric-status stale" title={title}>{label}</span>;
+  }
+  return (
+    <span>
+      {formatDiskUsage(broker.hostDiskUsedBytes, broker.hostDiskTotalBytes)}{' '}
+      <span className="metric-status live">Live</span>
+    </span>
+  );
 }

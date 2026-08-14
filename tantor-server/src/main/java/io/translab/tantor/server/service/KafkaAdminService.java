@@ -392,13 +392,20 @@ public class KafkaAdminService {
 
     public Integer getControllerId(UUID clusterId) {
         try {
-            org.apache.kafka.common.Node controller = getAdminClient(clusterId).describeCluster().controller().get();
-            return controller == null ? null : controller.id();
+            // In KRaft, describeCluster().controller() can identify a broker when the
+            // client was created with bootstrap.servers. The metadata quorum is the
+            // authoritative source for the elected controller leader.
+            return getAdminClient(clusterId)
+                    .describeMetadataQuorum()
+                    .quorumInfo()
+                    .get()
+                    .leaderId();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
         } catch (ExecutionException e) {
             refreshAdminClient(clusterId);
+            log.warn("Failed to resolve active KRaft controller for cluster {}: {}", clusterId, e.getMessage());
             return null;
         }
     }

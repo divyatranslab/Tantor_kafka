@@ -40,6 +40,7 @@ public class ClusterOverviewService {
     private final ExternalClusterRepository externalClusterRepository;
     private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
+    private final HostStatusService hostStatusService;
 
     public ClusterOverviewDto getOverview(UUID clusterId) {
         String clusterName;
@@ -85,6 +86,13 @@ public class ClusterOverviewService {
             Collection<Node> nodes = clusterResult.nodes().get();
             Node controller = clusterResult.controller().get();
             String kafkaClusterId = clusterResult.clusterId().get();
+            boolean kraft = !"zookeeper".equalsIgnoreCase(mode);
+            Integer activeControllerId = kraft
+                    ? kafkaAdminService.getControllerId(clusterId)
+                    : (controller == null ? null : controller.id());
+            if (kraft && activeControllerId == null) {
+                warnings.add("The active KRaft controller is unavailable because metadata quorum details could not be loaded.");
+            }
 
             Map<Integer, BrokerAccumulator> brokerStats = new LinkedHashMap<>();
             nodes.stream()
@@ -101,7 +109,7 @@ public class ClusterOverviewService {
             double avgLeaders = brokerCount == 0 ? 0 : (double) partitionStats.totalPartitions / brokerCount;
 
             List<ClusterOverviewDto.BrokerRow> brokers = brokerStats.values().stream()
-                    .map(stats -> stats.toDto(controller != null && stats.node.id() == controller.id(), avgReplicas, avgLeaders, brokerCount))
+                    .map(stats -> stats.toDto(activeControllerId != null && stats.node.id() == activeControllerId, avgReplicas, avgLeaders, brokerCount))
                     .toList();
 
             String controllerType = "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
@@ -120,8 +128,8 @@ public class ClusterOverviewService {
                     .warnings(warnings)
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
-                            .activeController(controller == null ? null : controller.id())
-                            .activeControllerId(controller == null ? null : controller.id())
+                            .activeController(activeControllerId)
+                            .activeControllerId(activeControllerId)
                             .configuredControllerCount(configuredControllerCount)
                             .version(kafkaVersion)
                             .controllerType(controllerType)
@@ -173,12 +181,14 @@ public class ClusterOverviewService {
                 return;
             }
             hostRepository.findById(service.getHostId()).ifPresent(host -> {
-                if (host.getDiskUsedGb() != null) {
-                    broker.diskUsageBytes = gibibytesToBytes(host.getDiskUsedGb());
+                broker.hostDiskLastSeen = host.getLastHeartbeat();
+                if (!hostStatusService.isOnline(host)) {
+                    broker.hostDiskMetricStatus = host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE";
+                    return;
                 }
-                if (host.getDiskTotalGb() != null) {
-                    broker.diskTotalBytes = gibibytesToBytes(host.getDiskTotalGb());
-                }
+                broker.hostDiskMetricStatus = "LIVE";
+                broker.hostDiskUsedBytes = host.getDiskUsedGb() == null ? null : gibibytesToBytes(host.getDiskUsedGb());
+                broker.hostDiskTotalBytes = host.getDiskTotalGb() == null ? null : gibibytesToBytes(host.getDiskTotalGb());
             });
         });
     }
@@ -299,6 +309,10 @@ public class ClusterOverviewService {
         int leaders;
         long diskUsageBytes;
         long diskTotalBytes;
+        Long hostDiskUsedBytes;
+        Long hostDiskTotalBytes;
+        String hostDiskMetricStatus = "UNAVAILABLE";
+        OffsetDateTime hostDiskLastSeen;
         int logReplicaCount;
 
         BrokerAccumulator(Node node) {
@@ -318,6 +332,10 @@ public class ClusterOverviewService {
                     .controller(controller)
                     .diskUsageBytes(diskUsageBytes)
                     .diskTotalBytes(diskTotalBytes)
+                    .hostDiskUsedBytes(hostDiskUsedBytes)
+                    .hostDiskTotalBytes(hostDiskTotalBytes)
+                    .hostDiskMetricStatus(hostDiskMetricStatus)
+                    .hostDiskLastSeen(hostDiskLastSeen)
                     .logReplicaCount(logReplicaCount)
                     .inSyncReplicas(inSyncReplicas)
                     .replicas(replicas)

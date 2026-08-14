@@ -588,7 +588,7 @@ public class ExternalClusterService {
     private ExternalCluster saveDiscoveryCluster(ExternalDiscoveryReport report, String bootstrap, ExternalCluster cluster) {
         boolean isNew = cluster.getId() == null;
         cluster.setName(isNew ? report.getName().trim() : cluster.getName());
-        cluster.setBootstrapServers(bootstrap);
+        String mergedBootstrapServers = mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap);
         // Discovery agents may send partial follow-up reports. Never erase the
         // Kafka-assigned cluster ID that was captured during registration.
         if (report.getKafkaClusterId() != null && !report.getKafkaClusterId().isBlank()) {
@@ -598,7 +598,7 @@ public class ExternalClusterService {
         cluster.setLogDirs(blankToDefault(report.getLogDirs(), null));
         cluster.setKafkaVersion(blankToDefault(report.getKafkaVersion(), "Unknown"));
         cluster.setEnvironment(blankToDefault(report.getEnvironment(), "unknown"));
-        cluster.setBootstrapServers(mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap));
+        cluster.setBootstrapServers(mergedBootstrapServers);
         cluster.setStatus(report.isRunning() ? "SUCCESS" : "DEGRADED");
         cluster.setKafkaMode(blankToDefault(report.getKafkaMode(), "KRaft"));
         cluster.setSecurity(blankToDefault(report.getSecurity(), "PLAINTEXT"));
@@ -650,9 +650,10 @@ public class ExternalClusterService {
         List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
         String bootstrap = blankToDefault(metrics.getBootstrap(), cluster.getBootstrapServers());
         ExternalBrokerRecord broker = brokers.stream()
-                .filter(item -> safeEquals(item.getHostname(), metrics.getHostname()) 
-                        || (item.getBootstrap() != null && bootstrap != null && (item.getBootstrap().contains(bootstrap) || bootstrap.contains(item.getBootstrap())))
-                        || (item.getHostname() != null && bootstrap != null && bootstrap.contains(item.getHostname())))
+                .filter(item -> metrics.getNodeId() != null
+                        ? metrics.getNodeId().equals(item.getNodeId())
+                        : safeEquals(item.getHostname(), metrics.getHostname())
+                                || (item.getHostname() != null && bootstrap != null && bootstrap.contains(item.getHostname())))
                 .findFirst()
                 .orElseGet(() -> {
                     ExternalBrokerRecord item = new ExternalBrokerRecord();
@@ -668,21 +669,34 @@ public class ExternalClusterService {
         broker.setMemoryTotalMb(metrics.getMemoryTotalMb());
         broker.setDiskUsedGb(metrics.getDiskUsedGb());
         broker.setDiskTotalGb(metrics.getDiskTotalGb());
+        broker.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
+        broker.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
         broker.setMessagesInPerSec(metrics.getMessagesInPerSec());
         broker.setBytesInPerSec(metrics.getBytesInPerSec());
         broker.setLastSeen(OffsetDateTime.now().toString());
         broker.setLastSeen(OffsetDateTime.now().toString());
 
-        externalClusterNodeRepository.upsertTelemetry(
-                cluster.getId(),
-                broker.getHostname(),
-                broker.getCpuUsagePct(),
-                broker.getMemoryUsedMb(),
-                broker.getMemoryTotalMb(),
-                broker.getDiskUsedGb(),
-                broker.getDiskTotalGb(),
-                OffsetDateTime.now()
-        );
+        OffsetDateTime seen = OffsetDateTime.now();
+        Optional<io.translab.tantor.server.domain.ExternalClusterNode> targetNode = metrics.getNodeId() == null
+                ? Optional.empty()
+                : externalClusterNodeRepository.findByClusterIdAndNodeId(cluster.getId(), metrics.getNodeId());
+        if (targetNode.isPresent()) {
+            updateNodeTelemetry(targetNode.get(), metrics, seen);
+            externalClusterNodeRepository.save(targetNode.get());
+        } else {
+            externalClusterNodeRepository.upsertTelemetry(
+                    cluster.getId(),
+                    broker.getHostname(),
+                    broker.getCpuUsagePct(),
+                    broker.getMemoryUsedMb(),
+                    broker.getMemoryTotalMb(),
+                    broker.getDiskUsedGb(),
+                    broker.getDiskTotalGb(),
+                    broker.getDiskUsedBytes(),
+                    broker.getDiskTotalBytes(),
+                    seen
+            );
+        }
 
         discoveryAgentRepository.findByHostname(broker.getHostname()).ifPresent(agent -> {
             agent.setStatus("ONLINE");
@@ -1014,6 +1028,8 @@ public class ExternalClusterService {
                 record.getMemoryTotalMb(),
                 record.getDiskUsedGb(),
                 record.getDiskTotalGb(),
+                record.getDiskUsedBytes(),
+                record.getDiskTotalBytes(),
                 lastSeen != null ? lastSeen : OffsetDateTime.now()
         );
     }
@@ -1166,6 +1182,8 @@ public class ExternalClusterService {
             r.setMemoryTotalMb(n.getMemoryTotalMb());
             r.setDiskUsedGb(n.getDiskUsedGb());
             r.setDiskTotalGb(n.getDiskTotalGb());
+            r.setDiskUsedBytes(n.getDiskUsedBytes());
+            r.setDiskTotalBytes(n.getDiskTotalBytes());
             r.setInstallPath(blankToDefault(n.getInstallDir(), cluster.getInstallPath()));
             r.setLogDirs(blankToDefault(n.getLogDirs(), cluster.getLogDirs()));
             r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
@@ -1183,11 +1201,14 @@ public class ExternalClusterService {
                 continue;
             }
             matched = true;
+            enrichDiscoveryNodeIdentity(node, report);
             node.setCpuUsagePct(report.getCpuUsagePct());
             node.setMemoryUsedMb(report.getMemoryUsedMb());
             node.setMemoryTotalMb(report.getMemoryTotalMb());
             node.setDiskUsedGb(report.getDiskUsedGb());
             node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
+            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
             node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
@@ -1209,6 +1230,8 @@ public class ExternalClusterService {
             node.setMemoryTotalMb(report.getMemoryTotalMb());
             node.setDiskUsedGb(report.getDiskUsedGb());
             node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
+            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), null));
             node.setLogDirs(blankToDefault(report.getLogDirs(), null));
@@ -1250,6 +1273,79 @@ public class ExternalClusterService {
             candidates.addAll(parseAgentAddresses(agent.getIpAddresses()));
         }
         return candidates;
+    }
+
+    private void enrichDiscoveryNodeIdentity(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalDiscoveryReport report
+    ) {
+        String reportedHost = blankToDefault(report.getHostname(), null);
+        if (reportedHost != null && (node.getHost() == null || node.getHost().isBlank()
+                || "unknown".equalsIgnoreCase(node.getHost()))) {
+            node.setHost(reportedHost);
+        }
+        Integer listenerPort = listenerPort(report.getListeners(), Boolean.TRUE.equals(node.getIsController()));
+        if (listenerPort != null && (node.getPort() == null || node.getPort() <= 0)) {
+            node.setPort(listenerPort);
+        }
+    }
+
+    private Integer listenerPort(String listeners, boolean controller) {
+        if (listeners == null || listeners.isBlank()) {
+            return null;
+        }
+        String fallback = null;
+        for (String rawListener : listeners.split(",")) {
+            String listener = rawListener.trim();
+            if (listener.isBlank()) continue;
+            int scheme = listener.indexOf("://");
+            String name = scheme > 0 ? listener.substring(0, scheme) : "";
+            String address = scheme >= 0 ? listener.substring(scheme + 3) : listener;
+            int separator = address.lastIndexOf(':');
+            if (separator < 0 || separator == address.length() - 1) continue;
+            String port = address.substring(separator + 1).trim();
+            if (fallback == null) fallback = port;
+            if (controller && !"CONTROLLER".equalsIgnoreCase(name)) continue;
+            try {
+                int parsed = Integer.parseInt(port);
+                if (parsed > 0 && parsed <= 65535) return parsed;
+            } catch (NumberFormatException ignored) {
+                // Ignore malformed listener entries and continue looking.
+            }
+        }
+        if (controller || fallback == null) return null;
+        try {
+            int parsed = Integer.parseInt(fallback);
+            return parsed > 0 && parsed <= 65535 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void updateNodeTelemetry(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalBrokerMetricsDto metrics,
+            OffsetDateTime seen
+    ) {
+        node.setCpuUsagePct(metrics.getCpuUsagePct());
+        node.setMemoryUsedMb(metrics.getMemoryUsedMb());
+        node.setMemoryTotalMb(metrics.getMemoryTotalMb());
+        node.setDiskUsedGb(metrics.getDiskUsedGb());
+        node.setDiskTotalGb(metrics.getDiskTotalGb());
+        node.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
+        node.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
+        node.setLastSeen(seen);
+    }
+
+    private Long resolveDiskBytes(Long exactBytes, Long legacyGiB) {
+        if (exactBytes != null && exactBytes >= 0) {
+            return exactBytes;
+        }
+        if (legacyGiB == null || legacyGiB < 0) {
+            return null;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return legacyGiB > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : legacyGiB * gibibyte;
     }
 
     private void addCandidate(Set<String> candidates, String value) {
@@ -1646,17 +1742,22 @@ public class ExternalClusterService {
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
     }
 
     @Data
     public static class ExternalBrokerMetricsDto {
         private String hostname;
         private String bootstrap;
+        private Integer nodeId;
         private Double cpuUsagePct;
         private Long memoryUsedMb;
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
         private Double messagesInPerSec;
         private Double bytesInPerSec;
     }
@@ -1678,6 +1779,8 @@ public class ExternalClusterService {
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
         private Double messagesInPerSec;
         private Double bytesInPerSec;
         private String listeners;

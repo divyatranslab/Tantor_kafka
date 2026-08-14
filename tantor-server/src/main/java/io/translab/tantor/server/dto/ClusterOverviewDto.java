@@ -40,6 +40,7 @@ public class ClusterOverviewDto {
         private int nodeId;
         private String host;
         private Integer port;
+        private boolean activeLeader;
     }
 
     @Data
@@ -97,8 +98,15 @@ public class ClusterOverviewDto {
         private Integer port;
         private String rack;
         private boolean controller;
+        /** Kafka replica-log bytes reported by AdminClient.describeLogDirs(). */
         private long diskUsageBytes;
+        /** Legacy field retained for API compatibility; Kafka does not expose filesystem capacity. */
         private long diskTotalBytes;
+        /** OS filesystem telemetry for the mount containing the Kafka data directory. */
+        private Long hostDiskUsedBytes;
+        private Long hostDiskTotalBytes;
+        private String hostDiskMetricStatus;
+        private OffsetDateTime hostDiskLastSeen;
         private int logReplicaCount;
         private int inSyncReplicas;
         private int replicas;

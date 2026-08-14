@@ -22,6 +22,9 @@ public class BrokerSummaryDto {
     private Long memoryTotalMb;
     private Long diskUsedGb;
     private Long diskTotalGb;
+    private Long diskUsedBytes;
+    private Long diskTotalBytes;
+    private String hostMetricStatus; // LIVE, STALE, UNAVAILABLE
 
     // Kafka Throughput
     private Double messagesInPerSec;

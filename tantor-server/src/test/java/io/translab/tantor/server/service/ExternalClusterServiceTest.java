@@ -194,6 +194,81 @@ class ExternalClusterServiceTest {
     }
 
     @Test
+    void discoveryReportEnrichesUnknownControllerHostAndPort() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+        ExternalClusterNode controller = new ExternalClusterNode();
+        controller.setClusterId(cluster.getId());
+        controller.setNodeId(102);
+        controller.setHost("unknown");
+        controller.setPort(0);
+        controller.setIsController(true);
+        when(nodeRepository.findByClusterId(cluster.getId())).thenReturn(List.of(controller));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(102);
+        report.setHostname("192.168.3.228");
+        report.setListeners("CONTROLLER://192.168.3.228:9093");
+
+        ReflectionTestUtils.invokeMethod(service, "applyDiscoveryReportToNodes",
+                cluster, report, new DiscoveryAgent());
+
+        assertThat(controller.getHost()).isEqualTo("192.168.3.228");
+        assertThat(controller.getPort()).isEqualTo(9093);
+        verify(nodeRepository).save(controller);
+    }
+
+    @Test
+    void metricsUseNodeIdBeforeHostnameOrBootstrapFallback() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setBootstrapServers("192.168.3.228:9092");
+        ExternalClusterNode nodeOne = new ExternalClusterNode();
+        nodeOne.setClusterId(clusterId);
+        nodeOne.setNodeId(1);
+        nodeOne.setHost("192.168.3.229");
+        ExternalClusterNode nodeTwo = new ExternalClusterNode();
+        nodeTwo.setClusterId(clusterId);
+        nodeTwo.setNodeId(2);
+        nodeTwo.setHost("192.168.3.228");
+
+        when(clusterRepository.findByBootstrapServersAndStatusNot("192.168.3.228:9092", "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(nodeOne, nodeTwo));
+        when(nodeRepository.findByClusterIdAndNodeId(clusterId, 1)).thenReturn(Optional.of(nodeOne));
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setNodeId(1);
+        metrics.setHostname("192.168.3.229");
+        metrics.setBootstrap("192.168.3.228:9092");
+        metrics.setDiskUsedBytes(7_784_919_040L);
+        metrics.setDiskTotalBytes(44_286_992_384L);
+
+        service.receiveMetrics("external", metrics);
+
+        assertThat(nodeOne.getDiskUsedBytes()).isEqualTo(7_784_919_040L);
+        assertThat(nodeOne.getDiskTotalBytes()).isEqualTo(44_286_992_384L);
+        assertThat(nodeTwo.getDiskUsedBytes()).isNull();
+        verify(nodeRepository).save(nodeOne);
+    }
+
+    @Test
     void staleDiscoveryAgentUsesConfiguredTimeoutAndReturnsOrangeDisconnectedState() {
         ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
         DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);

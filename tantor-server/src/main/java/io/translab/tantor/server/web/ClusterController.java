@@ -362,6 +362,12 @@ public class ClusterController {
             for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
                 boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
                 boolean isController = Boolean.TRUE.equals(node.getIsController());
+                boolean hasFreshAgent = matchingFreshAgent(
+                        node.getHost(), id, linkedAgents, allAgents).isPresent();
+                boolean hasFreshTelemetry = hasFreshAgent
+                        && node.getLastSeen() != null
+                        && node.getLastSeen().isAfter(java.time.OffsetDateTime.now()
+                                .minusSeconds(discoveryAgentFreshnessSeconds()));
                 if (isBroker) brokerCount++;
                 if (isController) activeControllerCount++;
 
@@ -371,8 +377,12 @@ public class ClusterController {
                             .host(node.getHost())
                             .port(node.getPort())
                             .controller(isController)
-                            .diskUsageBytes(node.getDiskUsedGb() != null ? node.getDiskUsedGb() * 1024L * 1024L * 1024L : 0L)
-                            .diskTotalBytes(node.getDiskTotalGb() != null ? node.getDiskTotalGb() * 1024L * 1024L * 1024L : 0L)
+                            .diskUsageBytes(0L)
+                            .diskTotalBytes(0L)
+                            .hostDiskUsedBytes(hasFreshTelemetry ? externalDiskBytes(node.getDiskUsedBytes(), node.getDiskUsedGb()) : null)
+                            .hostDiskTotalBytes(hasFreshTelemetry ? externalDiskBytes(node.getDiskTotalBytes(), node.getDiskTotalGb()) : null)
+                            .hostDiskMetricStatus(hasFreshTelemetry ? "LIVE" : (node.getLastSeen() == null ? "UNAVAILABLE" : "STALE"))
+                            .hostDiskLastSeen(node.getLastSeen())
                             .build());
                 }
                 
@@ -385,8 +395,6 @@ public class ClusterController {
                 }
                 
                 String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
-                boolean hasFreshAgent = matchingFreshAgent(
-                        node.getHost(), id, linkedAgents, allAgents).isPresent();
                 String installDir = hasFreshAgent
                         ? firstNonBlank(node.getInstallDir(), extCluster.getInstallPath())
                         : null;
@@ -419,7 +427,7 @@ public class ClusterController {
                 // external clusters, the discovery agent also reports the host file
                 // system capacity.  Prefer that fresh, node-specific telemetry so the
                 // overview's disk column means the same thing for both cluster types.
-                applyExternalNodeDiskTelemetry(liveOverview, nodes);
+                applyExternalNodeDiskTelemetry(liveOverview, nodes, id, linkedAgents, allAgents);
                 liveOverview.setOriginType("EXTERNAL");
                 liveOverview.setKafkaVersion(firstNonBlank(cleanExternalValue(liveOverview.getKafkaVersion()), displayVersion));
                 liveOverview.setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getControllerType()), displayControllerType));
@@ -433,7 +441,11 @@ public class ClusterController {
                     liveOverview.getUptime().setVersion(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getVersion()), displayVersion));
                     liveOverview.getUptime().setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getControllerType()), displayControllerType));
                     liveOverview.getUptime().setConfiguredControllerCount(activeControllerCount);
-                    liveOverview.getUptime().setActiveControllerId(liveOverview.getUptime().getActiveController());
+                    Integer activeControllerId = liveOverview.getUptime().getActiveControllerId();
+                    for (io.translab.tantor.server.dto.ClusterOverviewDto.ControllerRow controllerRow : controllerRows) {
+                        controllerRow.setActiveLeader(activeControllerId != null
+                                && activeControllerId == controllerRow.getNodeId());
+                    }
                 }
                 if (!warnings.isEmpty()) {
                     List<String> mergedWarnings = new ArrayList<>();
@@ -483,7 +495,10 @@ public class ClusterController {
 
     private void applyExternalNodeDiskTelemetry(
             io.translab.tantor.server.dto.ClusterOverviewDto overview,
-            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            UUID clusterId,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents
     ) {
         if (overview.getBrokers() == null || overview.getBrokers().isEmpty()) {
             return;
@@ -501,13 +516,28 @@ public class ClusterController {
             if (node == null) {
                 continue;
             }
-            if (node.getDiskUsedGb() != null) {
-                broker.setDiskUsageBytes(gibibytesToBytes(node.getDiskUsedGb()));
+            broker.setHostDiskLastSeen(node.getLastSeen());
+            boolean fresh = matchingFreshAgent(node.getHost(), clusterId, linkedAgents, allAgents).isPresent()
+                    && node.getLastSeen() != null
+                    && node.getLastSeen().isAfter(java.time.OffsetDateTime.now()
+                            .minusSeconds(discoveryAgentFreshnessSeconds()));
+            if (!fresh) {
+                broker.setHostDiskUsedBytes(null);
+                broker.setHostDiskTotalBytes(null);
+                broker.setHostDiskMetricStatus(node.getLastSeen() == null ? "UNAVAILABLE" : "STALE");
+                continue;
             }
-            if (node.getDiskTotalGb() != null) {
-                broker.setDiskTotalBytes(gibibytesToBytes(node.getDiskTotalGb()));
-            }
+            broker.setHostDiskUsedBytes(externalDiskBytes(node.getDiskUsedBytes(), node.getDiskUsedGb()));
+            broker.setHostDiskTotalBytes(externalDiskBytes(node.getDiskTotalBytes(), node.getDiskTotalGb()));
+            broker.setHostDiskMetricStatus("LIVE");
         }
+    }
+
+    private Long externalDiskBytes(Long exactBytes, Long legacyGiB) {
+        if (exactBytes != null && exactBytes >= 0) {
+            return exactBytes;
+        }
+        return legacyGiB == null ? null : gibibytesToBytes(legacyGiB);
     }
 
     private long gibibytesToBytes(long value) {

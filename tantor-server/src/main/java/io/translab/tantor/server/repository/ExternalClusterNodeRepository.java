@@ -8,11 +8,14 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClusterNode, UUID> {
 
     List<ExternalClusterNode> findByClusterId(UUID clusterId);
+
+    Optional<ExternalClusterNode> findByClusterIdAndNodeId(UUID clusterId, Integer nodeId);
 
     @Modifying
     void deleteByClusterId(UUID clusterId);
@@ -49,6 +52,8 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
             memory_total_mb = :memTotal,
             disk_used_gb = :diskUsed,
             disk_total_gb = :diskTotal,
+            disk_used_bytes = :diskUsedBytes,
+            disk_total_bytes = :diskTotalBytes,
             last_seen = :lastSeen
         WHERE cluster_id = :clusterId AND host = :host
         """, nativeQuery = true)
@@ -60,6 +65,8 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
         @Param("memTotal") Long memTotal,
         @Param("diskUsed") Long diskUsed,
         @Param("diskTotal") Long diskTotal,
+        @Param("diskUsedBytes") Long diskUsedBytes,
+        @Param("diskTotalBytes") Long diskTotalBytes,
         @Param("lastSeen") OffsetDateTime lastSeen
     );
 }

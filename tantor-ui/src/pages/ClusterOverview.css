@@ -176,6 +176,33 @@
   white-space: nowrap;
 }
 
+.overview-metric-level {
+  display: block;
+  color: #818181;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.metric-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.metric-status.live {
+  background: #ECFDF5;
+  color: #047857;
+}
+
+.metric-status.stale {
+  background: #FFF7ED;
+  color: #C2410C;
+}
+
 .overview-table td {
   height: 52px;
   padding: 14px 16px;

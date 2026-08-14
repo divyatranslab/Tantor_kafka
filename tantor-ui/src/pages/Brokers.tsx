@@ -16,11 +16,14 @@ interface Broker {
   brokerHealth: string; // HEALTHY | DEGRADED | OFFLINE
   controller: boolean;
   jmxReachable: boolean;
-  cpuUsagePct: number;
-  memoryUsedMb: number;
-  memoryTotalMb: number;
+  cpuUsagePct: number | null;
+  memoryUsedMb: number | null;
+  memoryTotalMb: number | null;
   diskUsedGb: number | null;
   diskTotalGb: number | null;
+  diskUsedBytes: number | null;
+  diskTotalBytes: number | null;
+  hostMetricStatus: 'LIVE' | 'STALE' | 'UNAVAILABLE';
   messagesInPerSec: number;
   bytesInPerSec: number;
   lastHeartbeat: string;
@@ -126,7 +129,10 @@ export function Brokers() {
   const agg = {
     totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
     totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
-    avgCpu: brokers.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (brokers.length || 1),
+    avgCpu: (() => {
+      const liveCpu = brokers.filter(b => b.hostMetricStatus === 'LIVE' && b.cpuUsagePct != null);
+      return liveCpu.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (liveCpu.length || 1);
+    })(),
     offline: brokerNodes.filter(b => b.brokerHealth === 'OFFLINE').length,
   };
 
@@ -238,8 +244,8 @@ export function Brokers() {
               <th onClick={() => handleSort('memoryUsedMb')} className="sortable">
                 RAM
               </th>
-              <th onClick={() => handleSort('diskUsedGb')} className="sortable">
-                Disk
+              <th onClick={() => handleSort('diskUsedBytes')} className="sortable" title="OS filesystem containing the Kafka data directory; reported by the node agent">
+                Host Disk <span className="broker-metric-level">OS level</span>
               </th>
               <th onClick={() => handleSort('messagesInPerSec')} className="sortable">
                 Msg/S
@@ -276,32 +282,32 @@ export function Brokers() {
 
                 {/* CPU */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">{broker.cpuUsagePct.toFixed(1)}%</span>
-                    <ProgressBar value={broker.cpuUsagePct} max={100} />
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.cpuUsagePct != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{broker.cpuUsagePct.toFixed(1)}%</span>
+                      <ProgressBar value={broker.cpuUsagePct} max={100} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
                 {/* RAM */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">
-                      {formatBytes(broker.memoryUsedMb * 1024 * 1024)}
-                    </span>
-                    <ProgressBar value={broker.memoryUsedMb} max={broker.memoryTotalMb} />
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.memoryUsedMb != null && broker.memoryTotalMb != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{formatBytes(broker.memoryUsedMb * 1024 * 1024)}</span>
+                      <ProgressBar value={broker.memoryUsedMb} max={broker.memoryTotalMb} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
                 {/* Disk */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">
-                      {broker.diskUsedGb == null ? '-' : `${broker.diskUsedGb} GB`}
-                    </span>
-                    {broker.diskUsedGb != null && broker.diskTotalGb != null && broker.diskTotalGb > 0 && (
-                      <ProgressBar value={broker.diskUsedGb} max={broker.diskTotalGb} />
-                    )}
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.diskUsedBytes != null && broker.diskTotalBytes != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{formatBytes(broker.diskUsedBytes)} / {formatBytes(broker.diskTotalBytes)}</span>
+                      <ProgressBar value={broker.diskUsedBytes} max={broker.diskTotalBytes} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
                 {/* Msg/s */}
@@ -330,4 +336,10 @@ export function Brokers() {
 
     </div>
   );
+}
+
+function MetricUnavailable({ status, lastHeartbeat }: { status: Broker['hostMetricStatus']; lastHeartbeat: string | null }) {
+  const label = status === 'STALE' ? 'Stale' : 'Agent unavailable';
+  const title = lastHeartbeat ? `Last reported ${new Date(lastHeartbeat).toLocaleString()}` : undefined;
+  return <span className="broker-metric-status stale" title={title}>{label}</span>;
 }
