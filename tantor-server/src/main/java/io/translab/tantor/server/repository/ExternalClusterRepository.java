@@ -17,4 +17,13 @@ public interface ExternalClusterRepository extends JpaRepository<ExternalCluster
     List<ExternalCluster> findByStatusNot(String status);
     Optional<ExternalCluster> findByNameAndStatusNot(String name, String status);
     Optional<ExternalCluster> findByBootstrapServersAndStatusNot(String bootstrapServers, String status);
+    @org.springframework.data.jpa.repository.Query(value = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM kf_external_clusters
+                WHERE LOWER(BTRIM(cluster_name)) = LOWER(BTRIM(:name))
+                  AND status IS DISTINCT FROM 'DELETED'
+            )
+            """, nativeQuery = true)
+    boolean existsActiveByNormalizedName(@org.springframework.data.repository.query.Param("name") String name);
 }

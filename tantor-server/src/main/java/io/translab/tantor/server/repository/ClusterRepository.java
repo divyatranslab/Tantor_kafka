@@ -12,6 +12,15 @@ public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     java.util.List<Cluster> findByModeAndStatusNot(String mode, String status);
     java.util.Optional<Cluster> findByModeAndNameAndStatusNot(String mode, String name, String status);
     java.util.Optional<Cluster> findByModeAndBootstrapServersAndStatusNot(String mode, String bootstrapServers, String status);
+    @org.springframework.data.jpa.repository.Query(value = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM kf_clusters
+                WHERE LOWER(BTRIM(cluster_name)) = LOWER(BTRIM(:name))
+                  AND status IS DISTINCT FROM 'DELETED'
+            )
+            """, nativeQuery = true)
+    boolean existsActiveByNormalizedName(@org.springframework.data.repository.query.Param("name") String name);
     @EntityGraph(attributePaths = "services")
     java.util.Optional<Cluster> findWithServicesById(UUID id);
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -70,6 +70,9 @@ export function ExternalClusters() {
   const [openPanel, setOpenPanel] = useState<'bootstrap' | 'agent'>('bootstrap');
   const [agents, setAgents] = useState<DiscoveryAgentStatus[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(false);
+  const [clusterNameError, setClusterNameError] = useState('');
+  const [checkingClusterName, setCheckingClusterName] = useState(false);
+  const clusterNameValidationSequence = useRef(0);
 
   const [form, setForm] = useState({
     name: '',
@@ -167,6 +170,37 @@ export function ExternalClusters() {
     return value;
   };
 
+  const validateClusterName = async (value = form.name) => {
+    const name = value.trim();
+    const validationSequence = ++clusterNameValidationSequence.current;
+    if (!name) {
+      setClusterNameError('');
+      setCheckingClusterName(false);
+      return true;
+    }
+
+    setCheckingClusterName(true);
+    try {
+      const res = await fetch(`/api/v1/ui/external-clusters/name-availability?name=${encodeURIComponent(name)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Unable to validate the cluster name.');
+      if (validationSequence !== clusterNameValidationSequence.current) return false;
+      const available = data.available === true;
+      setClusterNameError(available ? '' : (data.message || 'A cluster with this name already exists. Choose a different name.'));
+      return available;
+    } catch (validationError) {
+      if (validationSequence !== clusterNameValidationSequence.current) return false;
+      setClusterNameError(validationError instanceof Error
+        ? validationError.message
+        : 'Unable to validate the cluster name.');
+      return false;
+    } finally {
+      if (validationSequence === clusterNameValidationSequence.current) {
+        setCheckingClusterName(false);
+      }
+    }
+  };
+
   const testBootstrap = async () => {
     if (!form.bootstrapServers.trim()) return;
     setTesting(true);
@@ -245,6 +279,7 @@ export function ExternalClusters() {
 
   const registerBootstrap = async () => {
     if (!form.bootstrapServers.trim() || bootstrapResult?.connected !== true) return;
+    if (!(await validateClusterName())) return;
     setRegistering(true);
     setError('');
     setBanner('');
@@ -268,8 +303,16 @@ export function ExternalClusters() {
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || data.error || 'Failed to register external cluster');
+      if (!res.ok) {
+        const message = data.message || data.error || 'Failed to register external cluster';
+        if (res.status === 409) {
+          setClusterNameError(message);
+          return;
+        }
+        throw new Error(message);
+      }
       setBanner(`External cluster ${data.name || form.name || 'connected'} connected.`);
+      setClusterNameError('');
       setForm(prev => ({ ...prev, name: '', bootstrapServers: '', kafkaVersion: '' }));
       setBootstrapResult(null);
       navigate(`/clusters`);
@@ -334,8 +377,25 @@ export function ExternalClusters() {
                       type="text"
                       placeholder="prod-external-01"
                       value={form.name}
-                      onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                      className={clusterNameError ? 'field-invalid' : ''}
+                      aria-invalid={clusterNameError ? 'true' : 'false'}
+                      aria-describedby="external-cluster-name-message"
+                      onBlur={() => void validateClusterName()}
+                      onChange={e => {
+                        clusterNameValidationSequence.current += 1;
+                        setCheckingClusterName(false);
+                        setClusterNameError('');
+                        setForm(prev => ({ ...prev, name: e.target.value }));
+                      }}
                     />
+                    {(checkingClusterName || clusterNameError) && (
+                      <span
+                        id="external-cluster-name-message"
+                        className={clusterNameError ? 'field-error-message' : 'field-validation-message'}
+                      >
+                        {clusterNameError || 'Checking name availability...'}
+                      </span>
+                    )}
                   </div>
                   <div className="form-field-group">
                     <label>Environment</label>
@@ -656,7 +716,7 @@ export function ExternalClusters() {
                 <button
                   className={`action-btn connect-btn ${bootstrapResult?.connected === true ? 'active' : ''}`}
                   onClick={registerBootstrap}
-                  disabled={registering || bootstrapResult?.connected !== true}
+                  disabled={registering || checkingClusterName || !!clusterNameError || bootstrapResult?.connected !== true}
                 >
                   {registering ? <RefreshCw size={14} className="spin" /> : <Network size={14} />}
                   Connect Cluster

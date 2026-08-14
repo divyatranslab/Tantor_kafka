@@ -68,6 +68,22 @@ public class ExternalClusterService {
     private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalDiscoveryReport> pendingDiscoveries = new ConcurrentHashMap<>();
 
+    public boolean isClusterNameAvailable(String name) {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isBlank()) {
+            return true;
+        }
+        return !clusterRepository.existsActiveByNormalizedName(normalizedName)
+                && !externalClusterRepository.existsActiveByNormalizedName(normalizedName);
+    }
+
+    private void requireAvailableClusterName(String name) {
+        if (!isClusterNameAvailable(name)) {
+            throw new ClusterNameConflictException(
+                    "A cluster with this name already exists. Choose a different name.");
+        }
+    }
+
     public Map<String, String> getExternalTaskData(String taskId) {
         for (ExternalAgentTask task : pendingTasks.values()) {
             if (taskId.equals(task.getTaskId())) {
@@ -234,6 +250,8 @@ public class ExternalClusterService {
         if (request.getBootstrapServers() == null || request.getBootstrapServers().isBlank()) {
             throw new IllegalArgumentException("Bootstrap servers are required.");
         }
+
+        requireAvailableClusterName(request.getName());
 
         String bootstrap = request.getBootstrapServers().trim();
         Map<String, Object> inspection;

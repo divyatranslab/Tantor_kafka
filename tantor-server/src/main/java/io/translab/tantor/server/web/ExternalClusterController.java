@@ -35,6 +35,15 @@ public class ExternalClusterController {
         return ResponseEntity.ok(externalClusterService.listDiscoveryAgents());
     }
 
+    @GetMapping("/api/v1/ui/external-clusters/name-availability")
+    public ResponseEntity<Map<String, Object>> clusterNameAvailability(@RequestParam String name) {
+        boolean available = externalClusterService.isClusterNameAvailable(name);
+        return ResponseEntity.ok(Map.of(
+                "available", available,
+                "message", available ? "" : "A cluster with this name already exists. Choose a different name."
+        ));
+    }
+
     @GetMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/inspect")
     public ResponseEntity<Map<String, Object>> inspectDiscovery(@PathVariable String discoveryKey) {
         return ResponseEntity.ok(externalClusterService.inspectDiscovery(discoveryKey));

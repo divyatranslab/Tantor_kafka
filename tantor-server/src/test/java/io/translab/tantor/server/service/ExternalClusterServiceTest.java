@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -126,6 +127,49 @@ class ExternalClusterServiceTest {
             verify(kafkaAdminService).inspectBootstrapServers(cluster, true);
         }
         verify(kafkaAdminService, never()).inspectBootstrapServers(any(String.class));
+    }
+
+    @Test
+    void rejectsDuplicateActiveClusterNameBeforeRegisteringExternalCluster() {
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterService service = service(
+                clusterRepository,
+                externalClusterRepository,
+                mock(ExternalClusterNodeRepository.class),
+                mock(DiscoveryAgentRepository.class),
+                mock(KafkaAdminService.class));
+
+        when(clusterRepository.existsActiveByNormalizedName("Test")).thenReturn(true);
+
+        ExternalClusterService.BootstrapExternalClusterRequest request =
+                new ExternalClusterService.BootstrapExternalClusterRequest();
+        request.setName(" Test ");
+        request.setBootstrapServers("192.168.3.208:9092");
+        request.setClusterId("different-kafka-id");
+
+        assertThatThrownBy(() -> service.registerBootstrapCluster(request))
+                .isInstanceOf(ClusterNameConflictException.class)
+                .hasMessage("A cluster with this name already exists. Choose a different name.");
+
+        verify(clusterRepository).existsActiveByNormalizedName("Test");
+        verify(externalClusterRepository, never()).save(any(ExternalCluster.class));
+    }
+
+    @Test
+    void reportsUnusedExternalClusterNameAsAvailable() {
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterService service = service(
+                clusterRepository,
+                externalClusterRepository,
+                mock(ExternalClusterNodeRepository.class),
+                mock(DiscoveryAgentRepository.class),
+                mock(KafkaAdminService.class));
+
+        assertThat(service.isClusterNameAvailable(" new-cluster ")).isTrue();
+        verify(clusterRepository).existsActiveByNormalizedName("new-cluster");
+        verify(externalClusterRepository).existsActiveByNormalizedName("new-cluster");
     }
 
     @Test
