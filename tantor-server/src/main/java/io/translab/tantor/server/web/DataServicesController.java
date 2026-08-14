@@ -33,9 +33,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -226,10 +228,20 @@ public class DataServicesController {
     @GetMapping("/connections")
     public ResponseEntity<?> connections(@PathVariable UUID clusterId) {
         Cluster cluster = getCluster(clusterId);
-        return ResponseEntity.ok(Map.of(
-                "schemaRegistryUrl", serviceBaseUrl(cluster, ServiceKind.SCHEMA_REGISTRY),
-                "kafkaConnectUrl", serviceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT)
-        ));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("schemaRegistryUrl", configuredServiceBaseUrl(cluster, ServiceKind.SCHEMA_REGISTRY));
+        result.put("kafkaConnectUrl", configuredServiceBaseUrl(cluster, ServiceKind.KAFKA_CONNECT));
+        return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/schema-registry/discover")
+    public ResponseEntity<?> discoverSchemaRegistry(@PathVariable UUID clusterId) {
+        return ResponseEntity.ok(discoverServiceEndpoint(getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY));
+    }
+
+    @GetMapping("/kafka-connect/discover")
+    public ResponseEntity<?> discoverKafkaConnect(@PathVariable UUID clusterId) {
+        return ResponseEntity.ok(discoverServiceEndpoint(getCluster(clusterId), ServiceKind.KAFKA_CONNECT));
     }
 
     // ── Schema Registry live-fetch endpoints ─────────────────────────────────
@@ -696,7 +708,7 @@ public class DataServicesController {
         } catch (DataServiceException e) {
             throw e;
         } catch (IOException e) {
-            throw new RuntimeException("Failed to call " + baseUrl + path + ": " + e.getMessage(), e);
+            throw new RuntimeException(userFacingConnectionError(baseUrl, e), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Interrupted while calling " + baseUrl + path, e);
@@ -709,6 +721,12 @@ public class DataServicesController {
                 .body(Map.of("message", ex.message(), "backendStatus", ex.statusCode()));
     }
 
+    @ExceptionHandler(DataServiceConfigurationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataServiceConfigurationException(
+            DataServiceConfigurationException ex) {
+        return ResponseEntity.unprocessableEntity().body(Map.of("message", ex.getMessage()));
+    }
+
     // ── Base URL resolution ──────────────────────────────────────────────────
 
     /**
@@ -717,7 +735,10 @@ public class DataServicesController {
      *  2. connectionId param → validated DB lookup for this cluster+serviceType
      *  3. Saved default / first-active DB connection
      *  4. cluster.configJson key lookup
-     *  5. host:port default fallback
+     *
+     * An unverified Kafka host + conventional port is deliberately not used here.
+     * Schema Registry and Kafka Connect are separate services and are not exposed
+     * by Kafka metadata. The UI must run the discovery endpoint or save a connection.
      */
     private String customBaseUrl(String protocol, String ip, Integer port,
                                   Cluster cluster, ServiceKind kind, UUID connectionId) {
@@ -732,18 +753,168 @@ public class DataServicesController {
                 .orElse(null);
         if (dbUrl != null) return dbUrl;
 
-        // PRIORITY 4+5: configJson → host:port default
-        return serviceBaseUrl(cluster, kind);
+        // PRIORITY 4: explicit configJson URL
+        String configuredUrl = configuredServiceBaseUrl(cluster, kind);
+        if (configuredUrl != null) return configuredUrl;
+
+        throw new DataServiceConfigurationException(
+                "No verified " + kind.displayName() + " connection is configured. "
+                        + "Fetch again to detect an endpoint, or add a connection manually.");
     }
 
-    private String serviceBaseUrl(Cluster cluster, ServiceKind kind) {
+    private String configuredServiceBaseUrl(Cluster cluster, ServiceKind kind) {
         Map<String, Object> config = readConfig(cluster);
         for (String key : kind.configKeys()) {
             Object value = config.get(key);
             if (value != null && !String.valueOf(value).isBlank())
                 return normalizeBaseUrl(String.valueOf(value));
         }
-        return "http://" + firstClusterHost(cluster) + ":" + kind.defaultPort();
+        return null;
+    }
+
+    /**
+     * Detects a data-service endpoint without persisting it. Candidates are
+     * accepted only after the service-specific health resource returns JSON.
+     */
+    ServiceDiscoveryResult discoverServiceEndpoint(Cluster cluster, ServiceKind kind) {
+        Set<String> candidates = new LinkedHashSet<>();
+
+        dataServiceConnectionService.resolveBaseUrlFromDb(cluster.getId(), kind.name(), null)
+                .ifPresent(candidates::add);
+        String configuredUrl = configuredServiceBaseUrl(cluster, kind);
+        if (configuredUrl != null) candidates.add(configuredUrl);
+
+        for (String host : clusterHosts(cluster)) {
+            candidates.add("https://" + host + ":" + kind.defaultPort());
+            candidates.add("http://" + host + ":" + kind.defaultPort());
+        }
+
+        ServiceDiscoveryResult certificateCandidate = null;
+        for (String candidate : candidates) {
+            ServiceDiscoveryResult result = probeServiceEndpoint(cluster.getId(), candidate, kind);
+            if (result.detected()) return result;
+            if (result.certificateRequired() && certificateCandidate == null) certificateCandidate = result;
+        }
+        if (certificateCandidate != null) return certificateCandidate;
+
+        String fallbackHost = clusterHosts(cluster).stream().findFirst().orElse(null);
+        return new ServiceDiscoveryResult(false, false, false, null, fallbackHost,
+                kind.defaultPort(), null,
+                "No " + kind.displayName() + " endpoint could be detected. "
+                        + "Add a connection to configure its protocol, host, and port.");
+    }
+
+    private ServiceDiscoveryResult probeServiceEndpoint(UUID clusterId, String candidate, ServiceKind kind) {
+        String baseUrl = normalizeBaseUrl(candidate);
+        URI uri;
+        try {
+            uri = URI.create(baseUrl);
+            if (uri.getScheme() == null || uri.getHost() == null) return ServiceDiscoveryResult.notDetected();
+        } catch (IllegalArgumentException ex) {
+            return ServiceDiscoveryResult.notDetected();
+        }
+
+        try {
+            HttpClient client = dataServiceConnectionService
+                    .getActiveConnection(clusterId, kind.name(), null)
+                    .filter(conn -> conn.getRestEndpoint() != null
+                            && baseUrl.equals(normalizeBaseUrl(conn.getRestEndpoint())))
+                    .map(dataServiceConnectionService::buildHttpClientForConnection)
+                    .orElse(defaultHttpClient);
+            if (client == null) client = defaultHttpClient;
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(baseUrl + kind.discoveryPath()))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Accept", MediaType.APPLICATION_JSON_VALUE)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return ServiceDiscoveryResult.notDetected();
+            }
+            JsonNode body = objectMapper.readTree(response.body());
+            if (!body.isArray()) return ServiceDiscoveryResult.notDetected();
+            return new ServiceDiscoveryResult(true, false, false, uri.getScheme(), uri.getHost(),
+                    effectivePort(uri, kind.defaultPort()), baseUrl, null);
+        } catch (javax.net.ssl.SSLHandshakeException ex) {
+            if (!isCertificateTrustFailure(ex)) return ServiceDiscoveryResult.notDetected();
+            return new ServiceDiscoveryResult(false, true, false, uri.getScheme(), uri.getHost(),
+                    effectivePort(uri, kind.defaultPort()), baseUrl,
+                    kind.displayName() + " appears to use HTTPS, but its certificate is not trusted. "
+                            + "Add the service certificate to continue.");
+        } catch (IOException | InterruptedException | RuntimeException ex) {
+            if (ex instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (looksLikeTlsOnHttp(ex)) {
+                return new ServiceDiscoveryResult(false, false, true, "https", uri.getHost(),
+                        effectivePort(uri, kind.defaultPort()),
+                        "https://" + uri.getHost() + ":" + effectivePort(uri, kind.defaultPort()),
+                        kind.displayName() + " appears to require HTTPS. Verifying the secure endpoint failed; "
+                                + "add its certificate if it is self-signed.");
+            }
+            return ServiceDiscoveryResult.notDetected();
+        }
+    }
+
+    private List<String> clusterHosts(Cluster cluster) {
+        Set<String> hosts = new LinkedHashSet<>();
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                String host = resolveHostAddress(service.getHostId());
+                if (host != null && !host.isBlank()) hosts.add(host);
+            }
+        }
+        String bootstrap = cluster.getBootstrapServers();
+        if (bootstrap != null) {
+            for (String entry : bootstrap.split(",")) {
+                String value = entry.trim();
+                if (value.contains("://")) value = value.substring(value.indexOf("://") + 3);
+                try {
+                    URI parsed = URI.create("dummy://" + value);
+                    if (parsed.getHost() != null && !parsed.getHost().isBlank()) hosts.add(parsed.getHost());
+                } catch (IllegalArgumentException ignored) { }
+            }
+        }
+        return new ArrayList<>(hosts);
+    }
+
+    private int effectivePort(URI uri, int defaultPort) {
+        return uri.getPort() > 0 ? uri.getPort() : defaultPort;
+    }
+
+    private boolean looksLikeTlsOnHttp(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("STATUS_LINE")
+                    || message.toLowerCase().contains("status line"))) return true;
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isCertificateTrustFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase();
+                if (normalized.contains("pkix") || normalized.contains("certificate")
+                        || normalized.contains("certpath") || normalized.contains("subject alternative")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private String userFacingConnectionError(String baseUrl, IOException error) {
+        if (baseUrl.toLowerCase().startsWith("http://") && looksLikeTlsOnHttp(error)) {
+            return "The endpoint " + baseUrl + " appears to require HTTPS. "
+                    + "Update the connection protocol to HTTPS and provide its certificate if required.";
+        }
+        return "Unable to connect to " + baseUrl + ". Check the service host, protocol, port, and certificate.";
     }
 
     // ── Cluster / host helpers ───────────────────────────────────────────────
@@ -759,23 +930,6 @@ public class DataServicesController {
             }
             throw new IllegalArgumentException("Cluster not found.");
         });
-    }
-
-    private String firstClusterHost(Cluster cluster) {
-        if (cluster.getServices() != null) {
-            for (ClusterServiceAssignment s : cluster.getServices()) {
-                String h = resolveHostAddress(s.getHostId());
-                if (h != null && !h.isBlank()) return h;
-            }
-        }
-        String bootstrap = cluster.getBootstrapServers();
-        if (bootstrap != null && !bootstrap.isBlank()) {
-            String first = bootstrap.split(",")[0].trim();
-            if (first.contains("://")) first = first.substring(first.indexOf("://") + 3);
-            int colon = first.lastIndexOf(':');
-            return colon > 0 ? first.substring(0, colon) : first;
-        }
-        throw new IllegalArgumentException("No host is available for this cluster.");
     }
 
     private String resolveHostAddress(String hostId) {
@@ -822,22 +976,42 @@ public class DataServicesController {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
     }
 
-    private enum ServiceKind {
+    enum ServiceKind {
         SCHEMA_REGISTRY(8081, List.of(
-                "schemaRegistryUrl", "schema_registry_url", "schema.registry.url", "schemaRegistryRestUrl")),
+                "schemaRegistryUrl", "schema_registry_url", "schema.registry.url", "schemaRegistryRestUrl"),
+                "/subjects", "Schema Registry"),
         KAFKA_CONNECT(8083, List.of(
-                "kafkaConnectUrl", "kafka_connect_url", "connectRestUrl", "connect_rest_url", "connect.rest.url"));
+                "kafkaConnectUrl", "kafka_connect_url", "connectRestUrl", "connect_rest_url", "connect.rest.url"),
+                "/connectors", "Kafka Connect");
 
         private final int defaultPort;
         private final List<String> configKeys;
+        private final String discoveryPath;
+        private final String displayName;
 
-        ServiceKind(int defaultPort, List<String> configKeys) {
+        ServiceKind(int defaultPort, List<String> configKeys, String discoveryPath, String displayName) {
             this.defaultPort = defaultPort;
             this.configKeys = configKeys;
+            this.discoveryPath = discoveryPath;
+            this.displayName = displayName;
         }
 
         int defaultPort() { return defaultPort; }
         List<String> configKeys() { return configKeys; }
+        String discoveryPath() { return discoveryPath; }
+        String displayName() { return displayName; }
+    }
+
+    record ServiceDiscoveryResult(boolean detected, boolean certificateRequired,
+                                  boolean httpsRequired, String protocol, String host,
+                                  Integer port, String endpoint, String message) {
+        static ServiceDiscoveryResult notDetected() {
+            return new ServiceDiscoveryResult(false, false, false, null, null, null, null, null);
+        }
+    }
+
+    private static class DataServiceConfigurationException extends RuntimeException {
+        DataServiceConfigurationException(String message) { super(message); }
     }
 
     private static class DataServiceException extends RuntimeException {

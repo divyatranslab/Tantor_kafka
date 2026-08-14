@@ -53,6 +53,17 @@ interface SavedConnection {
   certificateType?: CertificateType;
 }
 
+interface DiscoveredConnection {
+  detected: boolean;
+  certificateRequired: boolean;
+  httpsRequired: boolean;
+  protocol: string | null;
+  host: string | null;
+  port: number | null;
+  endpoint: string | null;
+  message: string | null;
+}
+
 const emptySchema = `{
   "type": "record",
   "name": "Example",
@@ -378,7 +389,7 @@ export function SchemaRegistry() {
       setShowConnection(false);
       await loadConnections();
       if (data.id) setSelectedConnectionId(data.id);
-      await load();
+      await load(data.id || null);
     } catch (e: any) {
       setConnectError(e.message || 'Failed to save connection.');
     } finally {
@@ -425,14 +436,25 @@ export function SchemaRegistry() {
     }
   };
 
-  const load = async () => {
-    const connectionId = selectedConnectionId;
+  const load = async (
+    connectionId: string | null = selectedConnectionId,
+    discovered?: DiscoveredConnection
+  ): Promise<boolean> => {
     setHasFetched(true);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`, connectionId));
+      let url = withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`, connectionId);
+      if (!connectionId && discovered?.protocol && discovered.host && discovered.port) {
+        const params = new URLSearchParams({
+          protocol: discovered.protocol,
+          ip: discovered.host,
+          port: String(discovered.port)
+        });
+        url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
+      }
+      const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       setSummary(data);
@@ -447,8 +469,86 @@ export function SchemaRegistry() {
         hasFetched: true,
         metadata: { globalCompatibility: compatibility }
       });
+      return true;
     } catch (e: any) {
       setError(e.message || 'Failed to load Schema Registry.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const prefillDiscoveredConnection = (discovered: DiscoveredConnection, existing?: SavedConnection | null) => {
+    setEditingConnectionId(existing?.id || null);
+    setFormConnectionName(existing?.connectionName || 'Default connection');
+    setProtocol(discovered.protocol || (discovered.httpsRequired ? 'https' : 'http'));
+    setCustomIp(discovered.host || '');
+    setCustomPort(discovered.port ? String(discovered.port) : '8081');
+    setFormIsDefault(true);
+    setCertType('PEM');
+    setCertFile(null);
+    setCertFileName('');
+    setCertPasteText('');
+    setCertPasteMode(false);
+    setCertPassword('');
+    setConnectError(discovered.message || null);
+    setShowConnection(true);
+  };
+
+  const fetchWithDiscovery = async () => {
+    const existingId = selectedConnectionId
+      || savedConnections.find(connection => connection.isDefault)?.id
+      || savedConnections[0]?.id
+      || null;
+    if (existingId) {
+      const loaded = await load(existingId);
+      if (loaded) return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/discover`);
+      const discovered: DiscoveredConnection = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(discovered.message || 'Failed to detect Schema Registry.');
+
+      if (!discovered.detected) {
+        setHasFetched(false);
+        if (canManage) prefillDiscoveredConnection(
+          discovered,
+          savedConnections.find(connection => connection.id === existingId)
+        );
+        else setError(discovered.message || 'No Schema Registry endpoint could be detected.');
+        return;
+      }
+
+      if (canManage) {
+        const existing = savedConnections.find(connection => connection.id === existingId);
+        const saveUrl = existingId
+          ? `/api/v1/clusters/${id}/data-services/schema-registry/connections/${existingId}`
+          : `/api/v1/clusters/${id}/data-services/schema-registry/connection`;
+        const saveResponse = await fetch(saveUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connectionName: existing?.connectionName || 'Default connection',
+            protocol: discovered.protocol,
+            host: discovered.host,
+            port: discovered.port,
+            isDefault: true
+          })
+        });
+        const saved = await saveResponse.json().catch(() => ({}));
+        if (!saveResponse.ok) throw new Error(saved.message || 'Detected Schema Registry, but could not save the connection.');
+        setSelectedConnectionId(saved.id);
+        await loadConnections();
+        await load(saved.id);
+      } else {
+        await load(null, discovered);
+      }
+    } catch (e: any) {
+      setHasFetched(false);
+      setError(e.message || 'Failed to detect Schema Registry.');
     } finally {
       setLoading(false);
     }
@@ -772,7 +872,7 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
-                <button className="ds-icon-button icon-gray" onClick={load} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
+                <button className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
                 </button>
 
@@ -795,7 +895,7 @@ export function SchemaRegistry() {
               <button 
                 className="ds-sr-fetch-button"
                 type="button" 
-                onClick={load} 
+                onClick={() => void fetchWithDiscovery()}
                 disabled={loading}
                 style={{
                   display: 'inline-flex',
