@@ -1365,6 +1365,13 @@
   color: #069B68;
 }
 
+/* A partially connected agent needs attention without being treated as offline. */
+.access-pill-v2.state-warning {
+  background: #fff6df;
+  color: #7a5407;
+  border-color: #f0d796;
+}
+
 /* Warnings / Failed / Not Connected states -> Red */
 .status-badge-v2.failed,
 .status-badge-v2.degraded,

@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  Server, Cpu, Activity,
-  AlertCircle, CheckCircle2, XCircle,
-  Database, Share2, Search
-} from 'lucide-react';
+import { Search } from 'lucide-react';
 import './Brokers.css';
 
 type RoleFilter = 'all' | 'broker' | 'controller' | 'broker_controller';
@@ -69,19 +65,6 @@ export function Brokers() {
 
   const sortIndicator = (field: keyof Broker) =>
     sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
-
-  const getHealthIcon = (health: string) => {
-    switch (health) {
-      case 'HEALTHY':
-        return <AlertCircle style={{ color: '#E08E40' }} size={16} />;
-      case 'DEGRADED':
-        return <AlertCircle className="text-yellow" size={15} />;
-      case 'OFFLINE':
-        return <XCircle className="text-red" size={15} />;
-      default:
-        return <Server className="text-gray" size={15} />;
-    }
-  };
 
   const normalizeRole = (broker: Broker): Exclude<RoleFilter, 'all'> | 'unknown' => {
     const roleParts = String(broker.role || '')
@@ -260,7 +243,6 @@ export function Brokers() {
                 {/* ID */}
                 <td>
                   <div className="broker-id-cell">
-                    {getHealthIcon(broker.brokerHealth)}
                     <span>{broker.brokerId}</span>
                     {broker.controller && (
                       <span className="controller-badge" title="Controller">C</span>

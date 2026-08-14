@@ -261,10 +261,11 @@ export function Clusters() {
     return label.includes('bootstrap') || label.includes('metadata') ? 'metadata' : 'managed';
   };
 
-  const accessTagTone = (cluster: ClusterInfo) =>
-    cluster.mode === 'EXTERNAL'
-      ? clusterStatusTone(cluster.agentHealth, managementLabel(cluster))
-      : 'state-positive';
+  const accessTagTone = (cluster: ClusterInfo) => {
+    if (cluster.mode !== 'EXTERNAL') return 'state-positive';
+    if ((cluster.agentHealth || '').toUpperCase() === 'PARTIAL') return 'state-warning';
+    return clusterStatusTone(cluster.agentHealth, managementLabel(cluster));
+  };
 
   const agentHealthLabel = (cluster: ClusterInfo) => {
     if (cluster.mode !== 'EXTERNAL') return '';
