@@ -313,6 +313,109 @@ class ExternalClusterServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void testConnectionUsesMatchingDiscoveryReportsForDedicatedControllerEndpoints() {
+        ExternalClusterService service = service(mock(ExternalClusterRepository.class));
+        Map<String, ExternalClusterService.ExternalDiscoveryReport> pending =
+                (Map<String, ExternalClusterService.ExternalDiscoveryReport>) ReflectionTestUtils.getField(
+                        service, "pendingDiscoveries");
+
+        List<Map<String, Object>> nodes = new java.util.ArrayList<>();
+        for (int brokerId = 1; brokerId <= 3; brokerId++) {
+            Map<String, Object> broker = new java.util.HashMap<>();
+            broker.put("id", brokerId);
+            broker.put("host", "192.168.3." + (brokerId == 1 ? "229" : brokerId == 2 ? "228" : "213"));
+            broker.put("port", 9092);
+            broker.put("isBroker", true);
+            broker.put("isController", false);
+            nodes.add(broker);
+        }
+
+        int[] controllerIds = {101, 102, 103};
+        String[] controllerHosts = {"192.168.3.229", "192.168.3.228", "192.168.3.213"};
+        for (int i = 0; i < controllerIds.length; i++) {
+            Map<String, Object> controller = new java.util.HashMap<>();
+            controller.put("id", controllerIds[i]);
+            controller.put("host", "unknown");
+            controller.put("port", 0);
+            controller.put("isBroker", false);
+            controller.put("isController", true);
+            nodes.add(controller);
+
+            ExternalClusterService.ExternalDiscoveryReport report =
+                    new ExternalClusterService.ExternalDiscoveryReport();
+            report.setKafkaClusterId("Mize1pYlS9u38RYMUDK4Ww");
+            report.setNodeId(controllerIds[i]);
+            report.setHostname("controller-" + controllerIds[i]);
+            report.setProcessRoles("controller");
+            report.setListeners("CONTROLLER://" + controllerHosts[i] + ":9093");
+            report.setRunning(true);
+            report.setLastSeen(OffsetDateTime.now().toString());
+            pending.put("controller-" + controllerIds[i], report);
+        }
+
+        Map<String, Object> inspection = new java.util.HashMap<>();
+        inspection.put("clusterId", "Mize1pYlS9u38RYMUDK4Ww");
+        inspection.put("brokerCount", 3L);
+        inspection.put("brokers", nodes);
+
+        service.enrichTestConnectionNodesFromDiscovery(inspection);
+
+        assertThat(inspection.get("brokerCount")).isEqualTo(3L);
+        assertThat(nodes).filteredOn(node -> Integer.valueOf(102).equals(node.get("id")))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.get("host")).isEqualTo("192.168.3.228");
+                    assertThat(node.get("port")).isEqualTo(9093);
+                    assertThat(node.get("isBroker")).isEqualTo(false);
+                    assertThat(node.get("isController")).isEqualTo(true);
+                    assertThat(node.get("hasActiveAgent")).isEqualTo(true);
+                });
+    }
+
+    @Test
+    void testConnectionUsesPersistedInventoryWhenAgentsAreAlreadyLinked() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setKafkaClusterId("Mize1pYlS9u38RYMUDK4Ww");
+        ExternalClusterNode savedController = new ExternalClusterNode();
+        savedController.setClusterId(cluster.getId());
+        savedController.setNodeId(102);
+        savedController.setHost("192.168.3.228");
+        savedController.setPort(9093);
+        savedController.setIsBroker(false);
+        savedController.setIsController(true);
+        when(clusterRepository.findByKafkaClusterId("Mize1pYlS9u38RYMUDK4Ww"))
+                .thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(cluster.getId())).thenReturn(List.of(savedController));
+
+        Map<String, Object> controller = new java.util.HashMap<>();
+        controller.put("id", 102);
+        controller.put("host", "unknown");
+        controller.put("port", 0);
+        controller.put("isBroker", false);
+        controller.put("isController", true);
+        Map<String, Object> inspection = new java.util.HashMap<>();
+        inspection.put("clusterId", "Mize1pYlS9u38RYMUDK4Ww");
+        inspection.put("brokerCount", 3L);
+        inspection.put("brokers", List.of(controller));
+
+        service.enrichTestConnectionNodesFromDiscovery(inspection);
+
+        assertThat(controller).containsEntry("host", "192.168.3.228")
+                .containsEntry("port", 9093)
+                .containsEntry("endpoint", "192.168.3.228:9093")
+                .containsEntry("isBroker", false)
+                .containsEntry("isController", true);
+    }
+
+    @Test
     void metricsUseNodeIdBeforeHostnameOrBootstrapFallback() {
         ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
         ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);

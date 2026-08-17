@@ -1,0 +1,116 @@
+package io.translab.tantor.server.service;
+
+import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ClusterServiceAssignment;
+import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.dto.ClusterOverviewDto;
+import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
+import io.translab.tantor.server.repository.HostRepository;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.DescribeClusterResult;
+import org.apache.kafka.clients.admin.DescribeLogDirsResult;
+import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.Node;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class ClusterOverviewServiceTest {
+
+    @Mock private ClusterRepository clusterRepository;
+    @Mock private ExternalClusterRepository externalClusterRepository;
+    @Mock private HostRepository hostRepository;
+    @Mock private KafkaAdminService kafkaAdminService;
+    @Mock private HostStatusService hostStatusService;
+    @Mock private AdminClient adminClient;
+    @Mock private DescribeClusterResult describeClusterResult;
+    @Mock private ListTopicsResult listTopicsResult;
+    @Mock private DescribeLogDirsResult describeLogDirsResult;
+
+    private ClusterOverviewService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new ClusterOverviewService(
+                clusterRepository,
+                externalClusterRepository,
+                hostRepository,
+                kafkaAdminService,
+                hostStatusService
+        );
+    }
+
+    @Test
+    void reportsLiveDiskMetricsForOccupiedHostWithFreshAgentHeartbeat() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        String hostId = "agent-vm-191";
+
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setName("internal-test");
+        cluster.setKafkaVersion("3.9.2");
+        cluster.setOriginType("INTERNAL");
+        cluster.setMode("kraft");
+
+        ClusterServiceAssignment brokerAssignment = new ClusterServiceAssignment();
+        brokerAssignment.setCluster(cluster);
+        brokerAssignment.setHostId(hostId);
+        brokerAssignment.setNodeId(1);
+        brokerAssignment.setRole("broker");
+        cluster.setServices(List.of(brokerAssignment));
+
+        Host host = new Host();
+        host.setId(hostId);
+        host.setHostname("broker3.translab.io");
+        host.setStatus("OCCUPIED");
+        host.setLastHeartbeat(OffsetDateTime.now());
+        host.setDiskUsedGb(12L);
+        host.setDiskTotalGb(16L);
+
+        Node brokerNode = new Node(1, "192.168.3.191", 9092);
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(List.of(brokerNode)));
+        when(describeClusterResult.controller()).thenReturn(KafkaFuture.completedFuture(brokerNode));
+        when(describeClusterResult.clusterId()).thenReturn(KafkaFuture.completedFuture("cluster-191"));
+        when(kafkaAdminService.getControllerId(clusterId)).thenReturn(101);
+        when(adminClient.listTopics(any())).thenReturn(listTopicsResult);
+        when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
+        when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
+        when(describeLogDirsResult.descriptions()).thenReturn(
+                Map.of(1, KafkaFuture.completedFuture(Map.of()))
+        );
+        when(hostRepository.findById(hostId)).thenReturn(Optional.of(host));
+        when(hostStatusService.agentConnectivityStatus(host)).thenReturn("ONLINE");
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        assertThat(overview.getBrokers()).hasSize(1);
+        ClusterOverviewDto.BrokerRow broker = overview.getBrokers().getFirst();
+        assertThat(broker.getHostDiskMetricStatus()).isEqualTo("LIVE");
+        assertThat(broker.getHostDiskUsedBytes()).isEqualTo(12L * 1024 * 1024 * 1024);
+        assertThat(broker.getHostDiskTotalBytes()).isEqualTo(16L * 1024 * 1024 * 1024);
+        assertThat(broker.getHostDiskLastSeen()).isEqualTo(host.getLastHeartbeat());
+        verify(hostStatusService).agentConnectivityStatus(host);
+        verify(hostStatusService, never()).isOnline(host);
+    }
+}

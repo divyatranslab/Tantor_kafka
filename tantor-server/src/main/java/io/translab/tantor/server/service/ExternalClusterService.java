@@ -133,6 +133,7 @@ public class ExternalClusterService {
             try {
                 Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(tempCluster, false); // false = don't decrypt since we passed plaintext
                 result.putAll(adminData);
+                enrichTestConnectionNodesFromDiscovery(result);
                 adminSuccess = true;
             } finally {
                 // Clean up temporary files
@@ -243,6 +244,139 @@ public class ExternalClusterService {
         }
 
         return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    void enrichTestConnectionNodesFromDiscovery(Map<String, Object> inspection) {
+        Object rawNodes = inspection.get("brokers");
+        if (!(rawNodes instanceof List<?> nodes)) {
+            return;
+        }
+
+        String kafkaClusterId = blankToDefault(
+                String.valueOf(inspection.getOrDefault("clusterId", inspection.getOrDefault("kafka_cluster_id", ""))),
+                "");
+        if (kafkaClusterId.isBlank()) {
+            return;
+        }
+
+        Map<Integer, Map<String, Object>> nodesById = new HashMap<>();
+        for (Object rawNode : nodes) {
+            if (rawNode instanceof Map<?, ?> rawMap) {
+                Map<String, Object> node = (Map<String, Object>) rawMap;
+                int nodeId = intValue(node.get("id"), intValue(node.get("broker_id"), -1));
+                if (nodeId >= 0) {
+                    nodesById.put(nodeId, node);
+                }
+            }
+        }
+
+        externalClusterRepository.findByKafkaClusterId(kafkaClusterId).ifPresent(cluster ->
+                externalClusterNodeRepository.findByClusterId(cluster.getId()).forEach(savedNode -> {
+                    if (savedNode.getNodeId() == null) {
+                        return;
+                    }
+                    Map<String, Object> node = nodesById.get(savedNode.getNodeId());
+                    if (node == null) {
+                        return;
+                    }
+                    if (savedNode.getHost() != null && !savedNode.getHost().isBlank()
+                            && !"unknown".equalsIgnoreCase(savedNode.getHost())) {
+                        node.put("host", savedNode.getHost());
+                    }
+                    if (savedNode.getPort() != null && savedNode.getPort() > 0) {
+                        node.put("port", savedNode.getPort());
+                    }
+                    if (savedNode.getIsBroker() != null) {
+                        node.put("isBroker", savedNode.getIsBroker());
+                    }
+                    if (savedNode.getIsController() != null) {
+                        node.put("isController", savedNode.getIsController());
+                    }
+                    node.put("endpoint", node.get("host") + ":" + node.get("port"));
+                }));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        for (Map.Entry<String, ExternalDiscoveryReport> entry : pendingDiscoveries.entrySet()) {
+            ExternalDiscoveryReport report = entry.getValue();
+            if (report.getNodeId() == null
+                    || !kafkaClusterId.equals(report.getKafkaClusterId())) {
+                continue;
+            }
+
+            Map<String, Object> node = nodesById.get(report.getNodeId());
+            if (node == null) {
+                continue;
+            }
+
+            boolean controller = roleContains(report.getProcessRoles(), "controller");
+            boolean broker = roleContains(report.getProcessRoles(), "broker");
+            if (controller || broker) {
+                node.put("isController", controller);
+                node.put("isBroker", broker);
+            }
+
+            String endpoint = discoveryListenerEndpoint(report, controller && !broker);
+            String discoveredHost = endpointHost(endpoint);
+            int discoveredPort = intValue(endpointPort(endpoint), 0);
+            if (!discoveredHost.isBlank()) {
+                node.put("host", discoveredHost);
+            } else if (report.getHostname() != null && !report.getHostname().isBlank()) {
+                node.put("host", report.getHostname());
+            }
+            if (discoveredPort > 0) {
+                node.put("port", discoveredPort);
+            }
+            node.put("endpoint", node.get("host") + ":" + node.get("port"));
+
+            if (report.isRunning() && isFreshDiscoveryReport(report, now)) {
+                node.put("hasActiveAgent", true);
+                node.put("agentDiscoveryKey", entry.getKey());
+            }
+        }
+    }
+
+    private String discoveryListenerEndpoint(ExternalDiscoveryReport report, boolean controllerOnly) {
+        String listeners = blankToDefault(report.getAdvertisedListeners(), report.getListeners());
+        String fallback = "";
+        for (String listener : listeners.split(",")) {
+            String candidate = listener.trim();
+            if (candidate.isBlank()) {
+                continue;
+            }
+            String listenerName = candidate.contains("://")
+                    ? candidate.substring(0, candidate.indexOf("://"))
+                    : "";
+            String endpoint = candidate.contains("://")
+                    ? candidate.substring(candidate.indexOf("://") + 3)
+                    : candidate;
+            if (fallback.isBlank()) {
+                fallback = endpoint;
+            }
+            boolean controllerListener = "CONTROLLER".equalsIgnoreCase(listenerName);
+            if (controllerOnly == controllerListener) {
+                return endpoint;
+            }
+        }
+        return fallback;
+    }
+
+    private boolean isFreshDiscoveryReport(ExternalDiscoveryReport report, OffsetDateTime now) {
+        try {
+            return report.getLastSeen() != null
+                    && OffsetDateTime.parse(report.getLastSeen()).isAfter(now.minusSeconds(agentStaleSeconds()));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean roleContains(String roles, String expectedRole) {
+        if (roles == null || roles.isBlank()) {
+            return false;
+        }
+        return java.util.Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .anyMatch(expectedRole::equalsIgnoreCase);
     }
 
     @Transactional
