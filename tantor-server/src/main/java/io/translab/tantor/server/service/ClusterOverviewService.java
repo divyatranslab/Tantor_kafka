@@ -182,7 +182,10 @@ public class ClusterOverviewService {
             }
             hostRepository.findById(service.getHostId()).ifPresent(host -> {
                 broker.hostDiskLastSeen = host.getLastHeartbeat();
-                if (!hostStatusService.isOnline(host)) {
+                boolean agentOnline = "ONLINE".equalsIgnoreCase(
+                        hostStatusService.agentConnectivityStatus(host)
+                );
+                if (!agentOnline) {
                     broker.hostDiskMetricStatus = host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE";
                     return;
                 }
