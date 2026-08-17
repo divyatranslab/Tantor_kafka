@@ -31,6 +31,7 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        title={selectedOption?.label || placeholder || 'Select option'}
       >
         <span className="custom-select-value">
           {selectedOption ? selectedOption.label : placeholder || 'Select option'}
@@ -54,6 +55,7 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
                 className={`app-custom-select-option ${option.value === value ? 'selected' : ''}`}
                 role="option"
                 aria-selected={option.value === value}
+                title={option.label}
                 onClick={() => {
                   onChange(option.value);
                   setIsOpen(false);

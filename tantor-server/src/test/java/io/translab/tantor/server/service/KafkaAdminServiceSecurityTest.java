@@ -14,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -61,6 +62,25 @@ class KafkaAdminServiceSecurityTest {
         assertThat(saslSsl).containsEntry("ssl.truststore.location", truststore.toString());
         assertThat(String.valueOf(saslSsl.get("sasl.jaas.config")))
                 .contains("ScramLoginModule", "username=\"admin\"", "password=\"broker-password\"");
+    }
+
+    @Test
+    void classifiesKafkaAndPlatformManagedTopicsAsInternal() {
+        KafkaAdminService service = new KafkaAdminService(
+                mock(ClusterRepository.class),
+                mock(ExternalClusterRepository.class),
+                mock(HostRepository.class),
+                new ObjectMapper(),
+                mock(EncryptionService.class),
+                mock(TruststoreStorageService.class));
+
+        Set<String> internalTopics = Set.of(
+                "__consumer_offsets", "_schemas", "connect-configs", "connect-offsets", "connect-status");
+
+        internalTopics.forEach(topic -> assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+                service, "isManagedInternalTopic", topic)).isTrue());
+        assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+                service, "isManagedInternalTopic", "customer-orders")).isFalse();
     }
 
     private Properties securityProperties(KafkaAdminService service, ExternalCluster cluster) {

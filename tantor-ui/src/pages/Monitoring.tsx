@@ -98,7 +98,7 @@ const nodeLabel = (node: MonitoringNode) => {
   const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
   const host = node.hostname || node.hostIp;
   const role = node.role;
-  return [nodeName, host, role].filter(Boolean).join(' - ');
+  return [nodeName, role, host].filter(Boolean).join(' · ');
 };
 
 export function Monitoring() {
@@ -116,36 +116,21 @@ export function Monitoring() {
   const [history, setHistory] = useState<MonitoringSample[]>([]);
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
   const liveDropdownRef = useRef<HTMLDivElement>(null);
+  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
 
   // Load nodes when selectedClusterId changes
   useEffect(() => {
-    if (!selectedClusterId) {
+    if (!selectedCluster) {
       setNodes([]);
       setSelectedNodeId('');
       return;
     }
-    fetch(`/api/v1/ui/clusters/${selectedClusterId}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
-          const formatted = data.hosts.map((host: any, index: number) => ({
-            value: host.hostId || `node-${index}`,
-            label: [host.hostname || `Node ${index + 1}`, host.ipAddress, host.role].filter(Boolean).join(' - ')
-          }));
-          setNodes(formatted);
-          setSelectedNodeId(formatted[0].value);
-        } else {
-          setNodes([]);
-          setSelectedNodeId('');
-        }
-      })
-      .catch(() => {
-        setNodes([]);
-        setSelectedNodeId('');
-      });
-  }, [selectedClusterId]);
-
-  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
+    const formatted = (selectedCluster.nodes || [])
+      .filter(node => Boolean(nodeValue(node)))
+      .map(node => ({ value: nodeValue(node), label: nodeLabel(node) }));
+    setNodes(formatted);
+    setSelectedNodeId(current => formatted.some(node => node.value === current) ? current : (formatted[0]?.value || ''));
+  }, [selectedCluster]);
 
 
   // 1. Load clusters and hosts on mount
@@ -336,7 +321,7 @@ export function Monitoring() {
                 value={selectedNodeId}
                 onChange={val => setSelectedNodeId(val)}
                 options={nodes}
-                width="360px"
+                width="min(360px, 100%)"
                 placeholder="Select Node"
               />
             </div>

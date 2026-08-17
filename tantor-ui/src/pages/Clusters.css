@@ -1333,6 +1333,7 @@
   flex-direction: column;
   gap: 4px;
   align-items: flex-start;
+  min-width: max-content;
 }
 
 .source-pill-v2,
@@ -1346,6 +1347,7 @@
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Default to green active */
@@ -2481,7 +2483,7 @@
 }
 
 .clusters-surface .clusters-table {
-  min-width: 1040px;
+  min-width: 1120px;
   table-layout: fixed;
 }
 
@@ -2516,17 +2518,17 @@
 .clusters-surface .clusters-table th:nth-child(1),
 .clusters-surface .clusters-table td:nth-child(1) { width: 16%; }
 .clusters-surface .clusters-table th:nth-child(2),
-.clusters-surface .clusters-table td:nth-child(2) { width: 20%; }
+.clusters-surface .clusters-table td:nth-child(2) { width: 18%; }
 .clusters-surface .clusters-table th:nth-child(3),
 .clusters-surface .clusters-table td:nth-child(3) { width: 14%; }
 .clusters-surface .clusters-table th:nth-child(4),
 .clusters-surface .clusters-table td:nth-child(4) { width: 10%; }
 .clusters-surface .clusters-table th:nth-child(5),
-.clusters-surface .clusters-table td:nth-child(5) { width: 12%; }
+.clusters-surface .clusters-table td:nth-child(5) { width: 11%; }
 .clusters-surface .clusters-table th:nth-child(6),
 .clusters-surface .clusters-table td:nth-child(6) { width: 11%; }
 .clusters-surface .clusters-table th:nth-child(7),
-.clusters-surface .clusters-table td:nth-child(7) { width: 13%; }
+.clusters-surface .clusters-table td:nth-child(7) { width: 16%; }
 .clusters-surface .clusters-table th:nth-child(8),
 .clusters-surface .clusters-table td:nth-child(8) { width: 4%; }
 

@@ -249,14 +249,30 @@ export function Clusters() {
     return Math.min(100, Math.round(((host.diskUsedGb ?? 0) / host.diskTotalGb) * 100));
   };
 
+  const agentHealthLabel = (cluster: ClusterInfo) => {
+    if (cluster.mode !== 'EXTERNAL') return '';
+    switch ((cluster.agentHealth || '').toUpperCase()) {
+      case 'CONNECTED':
+        return 'Agent Connected';
+      case 'PARTIAL':
+        return 'Partially Connected';
+      case 'NOT_INSTALLED':
+      case 'NOT_CONNECTED':
+        return 'Agent Not Connected';
+      default:
+        return 'Agent Not Connected';
+    }
+  };
+
   const managementLabel = (cluster: ClusterInfo) => {
+    if (cluster.mode === 'EXTERNAL') return agentHealthLabel(cluster);
     if (cluster.accessLabel) return cluster.accessLabel;
-    if (cluster.mode !== 'EXTERNAL') return 'Full access';
     if (cluster.managementLevel === 'AGENT_MANAGED') return 'Fully managed';
-    return 'Metadata available';
+    return 'Full access';
   };
 
   const managementClass = (cluster: ClusterInfo) => {
+    if (cluster.mode === 'EXTERNAL') return 'managed';
     const label = `${cluster.managementLevel || ''} ${cluster.accessLabel || ''}`.toLowerCase();
     return label.includes('bootstrap') || label.includes('metadata') ? 'metadata' : 'managed';
   };
@@ -264,38 +280,7 @@ export function Clusters() {
   const accessTagTone = (cluster: ClusterInfo) => {
     if (cluster.mode !== 'EXTERNAL') return 'state-positive';
     if ((cluster.agentHealth || '').toUpperCase() === 'PARTIAL') return 'state-warning';
-    return clusterStatusTone(cluster.agentHealth, managementLabel(cluster));
-  };
-
-  const agentHealthLabel = (cluster: ClusterInfo) => {
-    if (cluster.mode !== 'EXTERNAL') return '';
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'Agent connected';
-      case 'PARTIAL':
-        return 'Agent partial';
-      case 'NOT_INSTALLED':
-        return 'Agent not installed';
-      case 'NOT_CONNECTED':
-        return 'Agent not connected';
-      default:
-        return 'Agent not connected';
-    }
-  };
-
-  const agentHealthClass = (cluster: ClusterInfo) => {
-    switch ((cluster.agentHealth || '').toUpperCase()) {
-      case 'CONNECTED':
-        return 'connected';
-      case 'PARTIAL':
-        return 'partial';
-      case 'NOT_INSTALLED':
-        return 'not-installed';
-      case 'NOT_CONNECTED':
-        return 'not-connected';
-      default:
-        return 'not-connected';
-    }
+    return clusterStatusTone(cluster.agentHealth, agentHealthLabel(cluster));
   };
 
   const sourceLabel = (cluster: ClusterInfo) =>

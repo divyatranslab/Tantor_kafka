@@ -97,7 +97,7 @@ export function Topics() {
     else setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/topics?showInternal=${includeInternal}&page=${page - 1}&size=${size}&search=${encodeURIComponent(search)}`);
+      const res = await fetch(`/api/v1/clusters/${id}/topics?includeInternal=${includeInternal}&page=${page}&size=${size}&search=${encodeURIComponent(search)}`);
       if (!res.ok) {
         throw new Error(`Failed to load topics: ${res.statusText}`);
       }

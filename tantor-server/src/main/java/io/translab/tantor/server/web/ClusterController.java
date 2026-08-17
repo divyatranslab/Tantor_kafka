@@ -1959,7 +1959,6 @@ public class ClusterController {
                 .filter(agent -> cluster.getId().equals(agent.getClusterId()))
                 .toList();
         OffsetDateTime maxHeartbeat = null;
-        long reportingHostsCount = 0;
         long freshHostsCount = 0;
         for (String host : hosts) {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> freshAgent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
@@ -1969,7 +1968,6 @@ public class ClusterController {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> lastReportingAgent =
                     freshAgent.isPresent() ? freshAgent : matchingAgent(host, cluster.getId(), linkedAgents, allAgents);
             if (lastReportingAgent.isPresent()) {
-                reportingHostsCount++;
                 OffsetDateTime heartbeat = lastReportingAgent.get().getLastHeartbeat();
                 if (heartbeat != null && (maxHeartbeat == null || heartbeat.isAfter(maxHeartbeat))) {
                     maxHeartbeat = heartbeat;
@@ -1977,25 +1975,10 @@ public class ClusterController {
             }
         }
 
-        String telemetry = "None";
-        String managementLevel = "Agent Not Connected";
-        String agentHealth = reportingHostsCount > 0 ? "NOT_CONNECTED" : "NOT_INSTALLED";
-        if (reportingHostsCount > 0) {
-            if (reportingHostsCount == totalHostsCount || totalHostsCount == 0) {
-                telemetry = "Full";
-                managementLevel = "Agent Connected";
-            } else {
-                telemetry = "Partial";
-                managementLevel = "Partially Connected";
-            }
-        }
-        if (freshHostsCount > 0) {
-            if (freshHostsCount == totalHostsCount || totalHostsCount == 0) {
-                agentHealth = "CONNECTED";
-            } else {
-                agentHealth = "PARTIAL";
-            }
-        }
+        AgentConnectivityState connectivity = agentConnectivityState(freshHostsCount, totalHostsCount);
+        String telemetry = connectivity.telemetry();
+        String managementLevel = connectivity.label();
+        String agentHealth = connectivity.health();
 
         String kafkaHealth = kafkaHealthOverride != null
                 ? kafkaHealthOverride
@@ -2025,6 +2008,17 @@ public class ClusterController {
                 totalHostsCount,
                 maxHeartbeat
         );
+    }
+
+    /** Keeps label, color-driving health and telemetry on the same live-agent count. */
+    static AgentConnectivityState agentConnectivityState(long freshHostsCount, long totalHostsCount) {
+        if (freshHostsCount <= 0 || totalHostsCount <= 0) {
+            return new AgentConnectivityState("NOT_CONNECTED", "Agent Not Connected", "None");
+        }
+        if (freshHostsCount >= totalHostsCount) {
+            return new AgentConnectivityState("CONNECTED", "Agent Connected", "Full");
+        }
+        return new AgentConnectivityState("PARTIAL", "Partially Connected", "Partial");
     }
 
     private Optional<io.translab.tantor.server.domain.DiscoveryAgent> matchingAgent(
@@ -2136,6 +2130,8 @@ public class ClusterController {
             long totalHostsCount,
             OffsetDateTime lastAgentHeartbeat
     ) {}
+
+    record AgentConnectivityState(String health, String label, String telemetry) {}
 
     private String externalRuntimeHealth(String status) {
         if ("SUCCESS".equalsIgnoreCase(status)) return "HEALTHY";

@@ -573,10 +573,13 @@
   font-size: 12px;
 }
 
-.ds-success-modal {
+.ds-modal.ds-success-modal {
   width: min(420px, calc(100vw - 32px));
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 48px);
   align-items: center;
-  padding: 32px;
+  padding: 28px 32px;
   text-align: center;
 }
 

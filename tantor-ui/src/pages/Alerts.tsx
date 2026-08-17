@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, CheckCircle, RefreshCw,
   Shield, Activity
@@ -25,23 +25,32 @@ export function Alerts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const fetchAlerts = async () => {
-    setLoading(true);
-    setError('');
+  const fetchAlerts = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    if (!quiet) setError('');
     try {
       const res = await fetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
     } catch (e: any) {
-      setError(e.message || 'Failed to load alerts');
+      if (!quiet) setError(e.message || 'Failed to load alerts');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAlerts();
-  }, []);
+    const timer = window.setInterval(() => fetchAlerts(true), 15_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') fetchAlerts(true);
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [fetchAlerts]);
 
   const summary = useMemo(() => {
     const critical = alerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
@@ -65,9 +74,9 @@ export function Alerts() {
           {/* Right side actions */}
           <div className="alerts-header-actions">
             <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
-              {alerts.length ? 'Live system needs attention' : 'Live system healthy'}
+              {alerts.length ? 'Live system needs attention' : 'Live system is healthy'}
             </span>
-            <button className="alerts-refresh-btn" onClick={fetchAlerts} aria-label="Refresh alerts">
+            <button className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
               <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
             </button>
           </div>

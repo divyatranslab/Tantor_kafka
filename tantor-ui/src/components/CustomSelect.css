@@ -1,6 +1,7 @@
 .custom-select-container {
   position: relative;
   display: inline-block;
+  max-width: 100%;
   font-family: 'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
   box-sizing: border-box;
 }
@@ -30,6 +31,8 @@
 }
 
 .custom-select-value {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   color: #282F49;

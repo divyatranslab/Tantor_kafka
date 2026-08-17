@@ -60,8 +60,6 @@ public class AlertController {
                 .collect(Collectors.toMap(Host::getId, host -> host, (a, b) -> a));
 
         List<Map<String, Object>> alerts = new ArrayList<>();
-        alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")
-                .forEach(alert -> alerts.add(storedAlert(alert, clusterById)));
 
         hosts.forEach(host -> {
             String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -282,10 +280,15 @@ public class AlertController {
                 });
 
         syncRuntimeAlerts(alerts.stream()
-                .filter(alert -> !"stored".equals(String.valueOf(alert.get("source"))))
                 .toList());
 
-        List<Map<String, Object>> deduped = alerts.stream()
+        // Query after synchronization so alerts resolved during this request are not
+        // returned as stale ACTIVE alerts in the same response.
+        List<Map<String, Object>> activeAlerts = new ArrayList<>();
+        alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")
+                .forEach(alert -> activeAlerts.add(storedAlert(alert, clusterById)));
+
+        List<Map<String, Object>> deduped = activeAlerts.stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(
                         alert -> String.valueOf(alert.get("id")),

@@ -520,6 +520,7 @@ public class KafkaAdminService {
 
             // Filter and Sort in memory
             List<String> filteredNames = allTopicNames.stream()
+                    .filter(name -> includeInternal || !isManagedInternalTopic(name))
                     .filter(name -> search == null || search.isEmpty() || name.toLowerCase().contains(search.toLowerCase()))
                     .sorted((a, b) -> {
                         if ("name".equalsIgnoreCase(sortBy)) return a.compareToIgnoreCase(b);
@@ -597,6 +598,14 @@ public class KafkaAdminService {
             refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to list topics: " + e.getMessage());
         }
+    }
+
+    private boolean isManagedInternalTopic(String name) {
+        return "__consumer_offsets".equals(name)
+                || "_schemas".equals(name)
+                || "connect-configs".equals(name)
+                || "connect-offsets".equals(name)
+                || "connect-status".equals(name);
     }
 
     public void createTopic(UUID clusterId, String name, int partitions, short replicationFactor, Map<String, String> configs) {

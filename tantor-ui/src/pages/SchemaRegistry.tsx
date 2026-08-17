@@ -81,19 +81,136 @@ const compatibilityOptions = [
   'FULL_TRANSITIVE'
 ];
 
-/**
- * Schema Registry returns JSON-based schemas as an escaped string. Format those
- * schemas for display while leaving formats such as Protobuf untouched.
- */
-const formatSchema = (schema: unknown, fallback = '{}'): string => {
+/** Unwraps Schema Registry responses that contain an encoded schema string. */
+const schemaSource = (schema: unknown, fallback = '{}'): string => {
   if (schema === null || schema === undefined || schema === '') return fallback;
 
-  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+  let source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const parsed = JSON.parse(source);
+      if (typeof parsed !== 'string') return JSON.stringify(parsed);
+      source = parsed;
+    } catch {
+      break;
+    }
+  }
+  return source;
+};
+
+/**
+ * Protobuf is not JSON, so it needs a small syntax-aware formatter. Quoted
+ * strings and comments are copied verbatim while braces and semicolons control
+ * indentation. If the input is already formatted, the result remains stable.
+ */
+const formatProtobuf = (source: string): string => {
+  const lines: string[] = [];
+  let current = '';
+  let indent = 0;
+  let quote = '';
+  let escaped = false;
+
+  const append = (text: string) => { current += text; };
+  const flush = () => {
+    const value = current.trim();
+    if (value) lines.push(`${'  '.repeat(Math.max(0, indent))}${value}`);
+    current = '';
+  };
+  const nextNonWhitespace = (from: number) => {
+    let cursor = from;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    return source[cursor] || '';
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1] || '';
+
+    if (quote) {
+      append(char);
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      append(char);
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      flush();
+      let comment = '//';
+      index += 2;
+      while (index < source.length && source[index] !== '\n' && source[index] !== '\r') {
+        comment += source[index];
+        index += 1;
+      }
+      lines.push(`${'  '.repeat(Math.max(0, indent))}${comment.trimEnd()}`);
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      flush();
+      let comment = '/*';
+      index += 2;
+      while (index < source.length) {
+        comment += source[index];
+        if (source[index] === '*' && source[index + 1] === '/') {
+          comment += '/';
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      comment.split(/\r?\n/).forEach(line => {
+        if (line.trim()) lines.push(`${'  '.repeat(Math.max(0, indent))}${line.trim()}`);
+      });
+      continue;
+    }
+
+    if (char === '{') {
+      if (current && !/\s$/.test(current)) append(' ');
+      append('{');
+      flush();
+      indent += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      flush();
+      indent = Math.max(0, indent - 1);
+      append('}');
+      if (nextNonWhitespace(index + 1) !== ';') flush();
+      continue;
+    }
+
+    if (char === ';') {
+      append(';');
+      flush();
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current && !/\s$/.test(current)) append(' ');
+      continue;
+    }
+
+    append(char);
+  }
+  flush();
+  return lines.join('\n') || source;
+};
+
+/** Formats Avro/JSON Schema as JSON and Protobuf as native proto syntax. */
+const formatSchema = (schema: unknown, schemaType?: string, fallback = '{}'): string => {
+  const source = schemaSource(schema, fallback);
+  if ((schemaType || '').toUpperCase() === 'PROTOBUF') return formatProtobuf(source);
 
   try {
     const parsed = JSON.parse(source);
-
-    // Some responses contain a JSON document encoded inside another JSON string.
     if (typeof parsed === 'string') {
       try {
         return JSON.stringify(JSON.parse(parsed), null, 2);
@@ -101,28 +218,7 @@ const formatSchema = (schema: unknown, fallback = '{}'): string => {
         return parsed;
       }
     }
-
     return JSON.stringify(parsed, null, 2);
-  } catch {
-    return source;
-  }
-};
-
-const formatSchemaCompact = (schema: unknown, fallback = '{}'): string => {
-  if (schema === null || schema === undefined || schema === '') return fallback;
-
-  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
-
-  try {
-    const parsed = JSON.parse(source);
-    if (typeof parsed === 'string') {
-      try {
-        return JSON.stringify(JSON.parse(parsed));
-      } catch {
-        return parsed;
-      }
-    }
-    return JSON.stringify(parsed);
   } catch {
     return source;
   }
@@ -614,7 +710,7 @@ export function SchemaRegistry() {
     if (!selected || !latest) return;
     setEditSchemaType(latest.schemaType || 'AVRO');
     setEditCompatibility(subjectCompatibility);
-    setNewSchema(formatSchemaCompact(latest.schema || emptySchema));
+    setNewSchema(formatSchema(latest.schema || emptySchema, latest.schemaType));
     setView('edit');
   };
 
@@ -1016,10 +1112,16 @@ export function SchemaRegistry() {
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
-                  onClick={() => handleCopy(details?.latest?.schema || selected.schema)}
+                  onClick={() => handleCopy(formatSchema(
+                    details?.latest?.schema || selected.schema,
+                    details?.latest?.schemaType || selected.schemaType
+                  ))}
                   title="Copy schema to clipboard"
                 >
-                  {copiedText === (details?.latest?.schema || selected.schema) ? (
+                  {copiedText === formatSchema(
+                    details?.latest?.schema || selected.schema,
+                    details?.latest?.schemaType || selected.schemaType
+                  ) ? (
                     <span className="ds-copied-text">Copied!</span>
                   ) : (
                     <Copy size={16} />
@@ -1027,7 +1129,10 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-schema-code">
-                {loadingDetails ? 'Loading schema...' : formatSchemaCompact(details?.latest?.schema || selected.schema)}
+                {loadingDetails ? 'Loading schema...' : formatSchema(
+                  details?.latest?.schema || selected.schema,
+                  details?.latest?.schemaType || selected.schemaType
+                )}
               </pre>
             </div>
             <div className="ds-schema-meta-card">
@@ -1089,17 +1194,17 @@ export function SchemaRegistry() {
                               <button
                                 type="button"
                                 className="ds-schema-copy-btn"
-                                onClick={() => handleCopy(version.schema)}
+                                onClick={() => handleCopy(formatSchema(version.schema, version.schemaType))}
                                 title="Copy schema to clipboard"
                               >
-                                {copiedText === version.schema ? (
+                                {copiedText === formatSchema(version.schema, version.schemaType) ? (
                                   <span className="ds-copied-text">Copied!</span>
                                 ) : (
                                   <Copy size={16} />
                                 )}
                               </button>
                             </div>
-                            <pre className="ds-version-schema-code">{formatSchema(version.schema)}</pre>
+                            <pre className="ds-version-schema-code">{formatSchema(version.schema, version.schemaType)}</pre>
                           </div>
                         </td>
                       </tr>
@@ -1166,7 +1271,7 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaA?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaA?.schema, 'Schema unavailable')}
+                      {formatSchema(comparedSchemaA?.schema, comparedSchemaA?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                   <div className="ds-compare-card">
@@ -1175,7 +1280,7 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaB?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaB?.schema, 'Schema unavailable')}
+                      {formatSchema(comparedSchemaB?.schema, comparedSchemaB?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                 </div>
@@ -1240,10 +1345,16 @@ export function SchemaRegistry() {
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
-                  onClick={() => handleCopy(details?.latest?.schema || selected.schema || '{}')}
+                  onClick={() => handleCopy(formatSchema(
+                    details?.latest?.schema || selected.schema || '{}',
+                    details?.latest?.schemaType || selected.schemaType
+                  ))}
                   title="Copy schema to clipboard"
                 >
-                  {copiedText === (details?.latest?.schema || selected.schema || '{}') ? (
+                  {copiedText === formatSchema(
+                    details?.latest?.schema || selected.schema || '{}',
+                    details?.latest?.schemaType || selected.schemaType
+                  ) ? (
                     <span className="ds-copied-text">Copied!</span>
                   ) : (
                     <Copy size={16} />
@@ -1251,7 +1362,10 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-edit-code ds-edit-readonly">
-                {formatSchemaCompact(details?.latest?.schema || selected.schema || '{}')}
+                {formatSchema(
+                  details?.latest?.schema || selected.schema || '{}',
+                  details?.latest?.schemaType || selected.schemaType
+                )}
               </pre>
             </div>
             <div className="ds-edit-pane">
