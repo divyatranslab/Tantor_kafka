@@ -138,6 +138,7 @@ export function KafkaConnect() {
   // ── Multi-instance state ──────────────────────────────────────
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
+  const loadRequestId = useRef(0);
 
   // ── Connection form state ─────────────────────────────────────
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -306,6 +307,7 @@ export function KafkaConnect() {
     connectionId: string | null = selectedConnectionId,
     discovered?: DiscoveredConnection
   ): Promise<boolean> => {
+    const requestId = ++loadRequestId.current;
     setHasFetched(true);
     setLoading(true);
     setError(null);
@@ -322,6 +324,7 @@ export function KafkaConnect() {
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
+      if (requestId !== loadRequestId.current) return false;
       setSummary(data);
 
       // Persist the successful response directly as well as through the layout
@@ -334,11 +337,22 @@ export function KafkaConnect() {
       });
       return true;
     } catch (e: any) {
-      setError(e.message || 'Failed to load Kafka Connect.');
+      if (requestId === loadRequestId.current) setError(e.message || 'Failed to load Kafka Connect.');
       return false;
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
+  };
+
+  const handleInstanceChange = (value: string) => {
+    const connectionId = value || null;
+    if (!connectionId || connectionId === selectedConnectionId) return;
+    loadRequestId.current += 1;
+    setSelectedConnectionId(connectionId);
+    setSummary(null);
+    setError(null);
+    setHasFetched(true);
+    void load(connectionId);
   };
 
   const prefillDiscoveredConnection = (discovered: DiscoveredConnection, existing?: SavedConnection | null) => {
@@ -430,17 +444,6 @@ export function KafkaConnect() {
       hasFetched
     });
   }, [hasFetched, id, selectedConnectionId, summary]);
-
-  const previousConnectionId = useRef(selectedConnectionId);
-
-  // Live Connect data is fetched only after the user explicitly requests it.
-  useEffect(() => {
-    if (previousConnectionId.current === selectedConnectionId) return;
-    previousConnectionId.current = selectedConnectionId;
-    setHasFetched(false);
-    setSummary(null);
-    setError(null);
-  }, [selectedConnectionId]);
 
   const clusters = useMemo(() => [{
     name: selectedConn?.connectionName || 'default-connect',
@@ -534,7 +537,7 @@ export function KafkaConnect() {
               <CustomSelect
                 className="ds-instance-select"
                 value={selectedConnectionId ?? ''}
-                onChange={val => setSelectedConnectionId(val || null)}
+                onChange={handleInstanceChange}
                 disabled={savedConnections.length === 0}
                 options={
                   savedConnections.length > 0

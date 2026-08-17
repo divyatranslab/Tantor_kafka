@@ -322,6 +322,7 @@ export function SchemaRegistry() {
   // ── Multi-instance state ──────────────────────────────────────────────────
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
+  const loadRequestId = useRef(0);
 
   // Connection form state
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -517,17 +518,20 @@ export function SchemaRegistry() {
     }
   };
 
-  const loadGlobalCompatibility = async (connectionId: string | null = selectedConnectionId): Promise<string> => {
+  const loadGlobalCompatibility = async (
+    connectionId: string | null = selectedConnectionId,
+    requestId: number = loadRequestId.current
+  ): Promise<string> => {
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId));
       const data = await res.json().catch(() => ({}));
       const compatibility = res.ok
         ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
         : 'BACKWARD';
-      setGlobalCompatibility(compatibility);
+      if (requestId === loadRequestId.current) setGlobalCompatibility(compatibility);
       return compatibility;
     } catch {
-      setGlobalCompatibility('BACKWARD');
+      if (requestId === loadRequestId.current) setGlobalCompatibility('BACKWARD');
       return 'BACKWARD';
     }
   };
@@ -536,6 +540,7 @@ export function SchemaRegistry() {
     connectionId: string | null = selectedConnectionId,
     discovered?: DiscoveredConnection
   ): Promise<boolean> => {
+    const requestId = ++loadRequestId.current;
     setHasFetched(true);
     setLoading(true);
     setError(null);
@@ -553,8 +558,10 @@ export function SchemaRegistry() {
       const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
+      if (requestId !== loadRequestId.current) return false;
       setSummary(data);
-      const compatibility = await loadGlobalCompatibility(connectionId);
+      const compatibility = await loadGlobalCompatibility(connectionId, requestId);
+      if (requestId !== loadRequestId.current) return false;
 
       // Persist the successful response directly as well as through the layout
       // effect below. This makes the fetched snapshot durable even if the user
@@ -567,11 +574,22 @@ export function SchemaRegistry() {
       });
       return true;
     } catch (e: any) {
-      setError(e.message || 'Failed to load Schema Registry.');
+      if (requestId === loadRequestId.current) setError(e.message || 'Failed to load Schema Registry.');
       return false;
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
+  };
+
+  const handleInstanceChange = (value: string) => {
+    const connectionId = value || null;
+    if (!connectionId || connectionId === selectedConnectionId) return;
+    loadRequestId.current += 1;
+    setSelectedConnectionId(connectionId);
+    setSummary(null);
+    setError(null);
+    setHasFetched(true);
+    void load(connectionId);
   };
 
   const prefillDiscoveredConnection = (discovered: DiscoveredConnection, existing?: SavedConnection | null) => {
@@ -664,17 +682,6 @@ export function SchemaRegistry() {
       metadata: { globalCompatibility }
     });
   }, [globalCompatibility, hasFetched, id, selectedConnectionId, summary]);
-
-  const previousConnectionId = useRef(selectedConnectionId);
-
-  // Live registry data is fetched only after the user explicitly requests it.
-  useEffect(() => {
-    if (previousConnectionId.current === selectedConnectionId) return;
-    previousConnectionId.current = selectedConnectionId;
-    setHasFetched(false);
-    setSummary(null);
-    setError(null);
-  }, [selectedConnectionId]);
 
   const openSubject = async (item: SchemaSubject) => {
     setSelected(item);
@@ -886,7 +893,7 @@ export function SchemaRegistry() {
                     <CustomSelect
                       className="ds-instance-select"
                       value={selectedConnectionId ?? ''}
-                      onChange={val => setSelectedConnectionId(val || null)}
+                      onChange={handleInstanceChange}
                       disabled={savedConnections.length === 0}
                       options={
                         savedConnections.length > 0
