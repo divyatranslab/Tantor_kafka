@@ -126,9 +126,9 @@ public class ParcelService {
         for (String hostId : request.getHostIds()) {
             Host host = hostRepository.findById(hostId)
                     .orElseThrow(() -> new IllegalArgumentException("Host " + hostId + " was not found."));
-            String effectiveStatus = hostStatusService.effectiveStatus(host);
-            if (!"ONLINE".equalsIgnoreCase(effectiveStatus)) {
-                throw new IllegalArgumentException("Host " + hostId + " is not online. Current status: " + effectiveStatus + ".");
+            String connectivityStatus = hostStatusService.agentConnectivityStatus(host);
+            if (!"ONLINE".equalsIgnoreCase(connectivityStatus)) {
+                throw new IllegalArgumentException("Host " + hostId + " agent is not online. Current connectivity: " + connectivityStatus + ".");
             }
 
             HostParcel previous = hostParcelRepository.findFirstByHostIdAndArtifactIdOrderByCreatedAtDescIdDesc(hostId, artifactId)

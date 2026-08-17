@@ -224,12 +224,10 @@ export function Artifacts() {
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
-  const isHostOnline = (_host: Host) => {
-    //const status = (host.status || '').toUpperCase();
-    //const agentStatus = (host.agentStatus || '').toUpperCase();
-    //return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';
-    return true; // Bypass offline check for local UI/Figma design testing
-
+  const isHostOnline = (host: Host) => {
+    const status = (host.status || '').toUpperCase();
+    const agentStatus = (host.agentStatus || '').toUpperCase();
+    return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';
   };
 
   const runParcelAction = async (action: ParcelAction, ver: ArtifactVersion, host: Host) => {
