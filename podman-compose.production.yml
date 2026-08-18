@@ -1,0 +1,188 @@
+name: tantor
+
+services:
+  database:
+    image: ${POSTGRES_IMAGE:?POSTGRES_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    environment:
+      POSTGRES_DB: tantor
+      POSTGRES_USER_FILE: /run/secrets/TANTOR_DB_USER
+      POSTGRES_PASSWORD_FILE: /run/secrets/TANTOR_DB_PASSWORD
+    secrets:
+      - TANTOR_DB_USER
+      - TANTOR_DB_PASSWORD
+    volumes:
+      - tantor_db_data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+      - /var/run/postgresql:rw,nosuid,nodev,mode=0775
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 4
+    mem_limit: 8g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d tantor -U \"$$(cat /run/secrets/TANTOR_DB_USER)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - data
+
+  tantor-artifact-repository:
+    image: ${TANTOR_ARTIFACT_REPOSITORY_IMAGE:?TANTOR_ARTIFACT_REPOSITORY_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    user: "1500:1500"
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configtree:/run/secrets/
+      TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
+      TANTOR_REPO_PATH: /var/lib/tantor/repository
+    secrets:
+      - TANTOR_DB_USER
+      - TANTOR_DB_PASSWORD
+    volumes:
+      - tantor_repo_data:/var/lib/tantor/repository
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    cpus: 2
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081; printf \"GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app
+      - data
+
+  tantor-server:
+    image: ${TANTOR_SERVER_IMAGE:?TANTOR_SERVER_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    user: "1500:1500"
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configtree:/run/secrets/
+      TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
+      TANTOR_REPO_URL: http://tantor-artifact-repository:8081
+      TANTOR_TRUSTSTORE_DIR: /srv/tantor/security/truststores
+      TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
+      TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
+    secrets:
+      - TANTOR_DB_USER
+      - TANTOR_DB_PASSWORD
+      - TANTOR_ENCRYPTION_KEY
+      - TANTOR_JWT_SECRET
+    volumes:
+      - tantor_security_data:/srv/tantor/security/truststores
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    cpus: 4
+    mem_limit: 4g
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8443; printf \"GET /api/v1/monitoring/health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      database:
+        condition: service_healthy
+      tantor-artifact-repository:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app
+      - data
+      - egress
+
+  tantor-ui:
+    image: ${TANTOR_UI_IMAGE:?TANTOR_UI_IMAGE must be an immutable digest reference}
+    pull_policy: never
+    user: "101:101"
+    ports:
+      - "80:8080"
+      - "443:8443"
+    secrets:
+      - source: TANTOR_TLS_CERTIFICATE
+        target: tls.crt
+      - source: TANTOR_TLS_PRIVATE_KEY
+        target: tls.key
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,mode=1777
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    cpus: 1
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz | grep -q '^ok$'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      tantor-server:
+        condition: service_healthy
+      tantor-artifact-repository:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - edge
+      - app
+
+volumes:
+  tantor_db_data:
+  tantor_repo_data:
+  tantor_security_data:
+
+networks:
+  edge:
+  egress:
+  app:
+    internal: true
+  data:
+    internal: true
+
+secrets:
+  TANTOR_DB_USER:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/TANTOR_DB_USER
+  TANTOR_DB_PASSWORD:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/TANTOR_DB_PASSWORD
+  TANTOR_ENCRYPTION_KEY:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/TANTOR_ENCRYPTION_KEY
+  TANTOR_JWT_SECRET:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/TANTOR_JWT_SECRET
+  TANTOR_TLS_CERTIFICATE:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/tls.crt
+  TANTOR_TLS_PRIVATE_KEY:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/tls.key

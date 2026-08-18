@@ -8,7 +8,9 @@ server:
 
 spring:
   config:
-    import: optional:file:.env[.properties]
+    import:
+      - optional:file:.env[.properties]
+      - optional:configtree:/run/secrets/
   application:
     name: tantor-artifact-repository
 

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage ----
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9.16-eclipse-temurin-21-noble@sha256:c07f7ccfb8ca6c9fa29ee523f00afa7d2ca6132c92f8652c4aebb5ee3491f502 AS build
 WORKDIR /src
 COPY pom.xml .
 # Pre-fetch dependencies so they cache independently of source changes.
@@ -11,7 +11,7 @@ COPY src ./src
 RUN mvn -B -q clean package -DskipTests
 
 # ---- Runtime stage ----
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:21.0.11_10-jre-resolute@sha256:b3598c584b6f797ee2324baac2ae5ceb6c8fb3a97f3b11e5a6ee4fd47308bc58
 WORKDIR /app
 
 # Non-root runtime user; matches the 'tantor' convention used by the agent.

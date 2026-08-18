@@ -9,6 +9,9 @@ node_modules/
 dist/
 build/
 .env
+deploy/production/secrets/*
+!deploy/production/secrets/README.md
+*.release.yaml
 
 # Go
 tantor-agent.exe

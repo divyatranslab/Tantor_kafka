@@ -37,13 +37,28 @@ spec:
       labels:
         app: tantor-artifact-repository
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1500
+        runAsGroup: 1500
         fsGroup: 1500
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: artifact-repository
+          # Template only: prepare-release.ps1 replaces this tag with an immutable digest.
           image: registry.translab.io/tantor/artifact-repository:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1500
+            runAsGroup: 1500
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8081
           envFrom:
@@ -63,6 +78,8 @@ spec:
           volumeMounts:
             - name: repo-storage
               mountPath: /var/lib/tantor/repository
+            - name: temporary-files
+              mountPath: /tmp
           resources:
             requests:
               cpu: "500m"
@@ -86,6 +103,9 @@ spec:
         - name: repo-storage
           persistentVolumeClaim:
             claimName: tantor-artifact-repo-pvc
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 1Gi
 ---
 apiVersion: v1
 kind: Service

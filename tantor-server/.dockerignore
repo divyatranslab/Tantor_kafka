@@ -1,0 +1,6 @@
+target
+.env
+.env.*
+*.log
+*.p12
+*.jks
