@@ -49,6 +49,7 @@ interface MonitoringOverview {
   jvmHeapAvailableBytes?: number | null;
   jvmHeapTotalBytes?: number | null;
   brokerCpuPercent?: number | null;
+  jvmProcessCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
@@ -110,7 +111,7 @@ export function Monitoring() {
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
-  const [nodes, setNodes] = useState<{ value: string, label: string }[]>([]);
+  const [nodes, setNodes] = useState<{ value: string, label: string, role?: string | null }[]>([]);
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -131,7 +132,7 @@ export function Monitoring() {
     }
     const formatted = (selectedCluster.nodes || [])
       .filter(node => Boolean(nodeValue(node)))
-      .map(node => ({ value: nodeValue(node), label: nodeLabel(node) }));
+      .map(node => ({ value: nodeValue(node), label: nodeLabel(node), role: node.role }));
     setNodes(formatted);
     setSelectedNodeId(current => formatted.some(node => node.value === current) ? current : (formatted[0]?.value || ''));
   }, [selectedCluster]);
@@ -225,7 +226,7 @@ export function Monitoring() {
         bytesOut: chartNumber(overview.bytesOutPerSecond),
         heap: chartNumber(overview.jvmHeapUsedPercent),
         hostMemory: chartNumber(overview.hostMemoryUsedPercent),
-        brokerCpu: chartNumber(overview.brokerCpuPercent),
+        brokerCpu: chartNumber(overview.jvmProcessCpuPercent ?? overview.brokerCpuPercent),
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
       return [...current, next].slice(-15); // keep 15 samples
@@ -262,8 +263,18 @@ export function Monitoring() {
     ...(overview?.warnings || []),
   ].filter((message): message is string => Boolean(message && message.trim()));
   const clusterTypeLabel = overview?.originType || selectedCluster?.originType || selectedType;
-  const displayCpuUsage = overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
+  const selectedRole = selectedNode?.role || '';
+  const controllerOnlySelected = selectedRole.toLowerCase().includes('controller')
+    && !selectedRole.toLowerCase().includes('broker');
+  const jvmRoleLabel = controllerOnlySelected ? 'Controller JVM' : 'Broker JVM';
+  const displayCpuUsage = overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
   const displayMemoryUsage = overview?.jvmHeapUsedPercent ?? overview?.hostMemoryUsedPercent;
+  const cpuUsageLabel = hasValue(overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent)
+    ? `${jvmRoleLabel} CPU`
+    : 'Host CPU Usage';
+  const memoryUsageLabel = hasValue(overview?.jvmHeapUsedPercent)
+    ? `${jvmRoleLabel} Heap`
+    : 'Host Memory Usage';
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -564,7 +575,7 @@ export function Monitoring() {
                   {/* CPU Usage Chart */}
                   <div className="chart-box-wrapper">
                     <div className="chart-box-header">
-                      <span>CPU Usage</span>
+                      <span>{cpuUsageLabel}</span>
                       <span className="chart-stat-value green">
                         {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : 'N/A'}
                       </span>
@@ -585,7 +596,7 @@ export function Monitoring() {
                   {/* Memory Usage Chart */}
                   <div className="chart-box-wrapper">
                     <div className="chart-box-header">
-                      <span>Memory Usage</span>
+                      <span>{memoryUsageLabel}</span>
                       <span className="chart-stat-value green">
                         {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : 'N/A'}
                       </span>
@@ -670,10 +681,10 @@ export function Monitoring() {
                 <h3 className="monitoring-section-title-custom">System Resources</h3>
                 <div className="resources-cards-grid">
                   <ResourceCard
-                    label="Broker CPU"
-                    value={overview?.brokerCpuPercent}
+                    label={`${jvmRoleLabel} CPU`}
+                    value={overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent}
                     tone="purple"
-                    subtext={availablePercentText(overview?.brokerCpuPercent)}
+                    subtext={availablePercentText(overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent)}
                   />
                   <ResourceCard
                     label="System CPU"

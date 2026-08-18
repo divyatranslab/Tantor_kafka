@@ -72,3 +72,4 @@ tantor:
     exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:}
     kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
     jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:7071}
+    controller-jmx-exporter-port: ${TANTOR_CONTROLLER_JMX_EXPORTER_PORT:7072}

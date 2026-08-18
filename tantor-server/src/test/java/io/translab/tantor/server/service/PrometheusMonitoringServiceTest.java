@@ -24,7 +24,7 @@ import static org.mockito.Mockito.*;
 class PrometheusMonitoringServiceTest {
 
     @Test
-    void createsOneBrokerTargetPerHostAndSkipsMirroredControllerTargets() {
+    void createsSeparateBrokerAndControllerJmxTargetsWithoutDuplicatingKafkaExporter() {
         UUID id = UUID.randomUUID();
         Cluster mirror = new Cluster();
         mirror.setId(id);
@@ -53,6 +53,7 @@ class PrometheusMonitoringServiceTest {
                 mock(EncryptionService.class), new ObjectMapper());
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
         ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
+        ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
 
         assertThat(service.prometheusTargets())
                 .extracting(
@@ -62,7 +63,42 @@ class PrometheusMonitoringServiceTest {
                         target -> target.getLabels().get("role"))
                 .containsExactlyInAnyOrder(
                         org.assertj.core.groups.Tuple.tuple("192.168.10.11:7071", "kafka_jmx", "1", "broker"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:7072", "kafka_jmx", "101", "controller"),
                         org.assertj.core.groups.Tuple.tuple("192.168.10.11:9308", "kafka_exporter", "1", "broker"));
+    }
+
+    @Test
+    void createsOneJmxTargetForCombinedBrokerControllerJvm() {
+        UUID id = UUID.randomUUID();
+        Cluster mirror = new Cluster();
+        mirror.setId(id);
+        mirror.setName("combined");
+        mirror.setOriginType("EXTERNAL");
+        mirror.setMode("EXTERNAL");
+        mirror.setMonitoringEnabled(true);
+        mirror.setJmxEnabled(true);
+
+        ExternalClusterNode combined = externalNode(id, 1, "192.168.10.21", true, true);
+        ClusterRepository clusters = mock(ClusterRepository.class);
+        ExternalClusterNodeRepository nodes = mock(ExternalClusterNodeRepository.class);
+        when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(mirror));
+        when(nodes.findByClusterId(id)).thenReturn(List.of(combined));
+
+        PrometheusMonitoringService service = new PrometheusMonitoringService(
+                clusters, mock(ExternalClusterRepository.class), nodes, mock(HostRepository.class),
+                mock(EncryptionService.class), new ObjectMapper());
+        ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
+        ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
+        ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
+
+        assertThat(service.prometheusTargets())
+                .extracting(
+                        target -> target.getTargets().getFirst(),
+                        target -> target.getLabels().get("job"),
+                        target -> target.getLabels().get("role"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.21:7071", "kafka_jmx", "broker_controller"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.21:9308", "kafka_exporter", "broker_controller"));
     }
 
     @Test

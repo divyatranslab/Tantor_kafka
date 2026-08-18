@@ -100,6 +100,9 @@ public class PrometheusMonitoringService {
     @Value("${tantor.monitoring.jmx-exporter-port:7071}")
     private int defaultJmxExporterPort;
 
+    @Value("${tantor.monitoring.controller-jmx-exporter-port:7072}")
+    private int defaultControllerJmxExporterPort;
+
     @PostConstruct
     void configureGrafanaTls() {
         if (!grafanaSkipTlsValidation) {
@@ -213,10 +216,18 @@ public class PrometheusMonitoringService {
         String clusterSelector = labelSelector(cluster.getId());
         String metricSelector = labelSelector(cluster.getId(), selectedNodeId);
         String brokerMetricSelector = metricSelector + ",role=~\"broker.*\"";
-        boolean brokerMetricsRequested = selectedNodeId == null || nodes.stream()
+        String selectedRole = selectedNodeId == null ? null : nodes.stream()
                 .filter(node -> selectedNodeId.equals(node.getNodeId()))
                 .map(MonitoringNodeSummary::getRole)
-                .anyMatch(role -> role != null && role.toLowerCase(Locale.ROOT).contains("broker"));
+                .findFirst()
+                .orElse(null);
+        boolean brokerMetricsRequested = selectedNodeId == null || roleContains(selectedRole, "broker");
+        boolean controllerMetricsRequested = selectedNodeId != null
+                && roleContains(selectedRole, "controller")
+                && !brokerMetricsRequested;
+        String jmxMetricSelector = controllerMetricsRequested
+                ? metricSelector + ",role=~\"controller.*\""
+                : brokerMetricSelector;
 
         MonitoringOverview overview = new MonitoringOverview();
         overview.setClusterId(cluster.getId());
@@ -242,9 +253,9 @@ public class PrometheusMonitoringService {
         overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", exporterHealthSelector, false));
         overview.setKafkaExporterUp(healthValue(
                 overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
-        if (brokerMetricsRequested) {
-            overview.setJmxUpTargets(targetCount("kafka_jmx", brokerMetricSelector, true));
-            overview.setJmxTotalTargets(targetCount("kafka_jmx", brokerMetricSelector, false));
+        if (brokerMetricsRequested || controllerMetricsRequested) {
+            overview.setJmxUpTargets(targetCount("kafka_jmx", jmxMetricSelector, true));
+            overview.setJmxTotalTargets(targetCount("kafka_jmx", jmxMetricSelector, false));
             overview.setJmxUp(healthValue(overview.getJmxUpTargets(), overview.getJmxTotalTargets()));
         }
         overview.setBrokerCount(firstNumber("max(kafka_brokers{" + clusterSelector + "})"));
@@ -259,47 +270,53 @@ public class PrometheusMonitoringService {
             ));
             overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesInPerSec")));
             overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesOutPerSec")));
+        }
+        if (brokerMetricsRequested || controllerMetricsRequested) {
             overview.setJvmHeapUsedPercent(firstPresentNumber(
-                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
             ));
             overview.setJvmHeapAvailableBytes(firstPresentNumber(
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
             ));
             overview.setJvmHeapTotalBytes(firstPresentNumber(
-                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_max", "heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_committed", "heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_max_bytes", "heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_committed_bytes", "heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_max", "Heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_committed", "Heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_max_bytes", "Heap"),
-                    heapBytes(brokerMetricSelector, "jvm_memory_committed_bytes", "Heap")
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_max", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_committed", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_max_bytes", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_committed_bytes", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_max", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_committed", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_max_bytes", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_committed_bytes", "Heap")
             ));
-            overview.setBrokerCpuPercent(firstPresentNumber(
-                    cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", brokerMetricSelector),
-                    cpuPercent("jvm_operatingsystem_processcpuload", brokerMetricSelector),
-                    "avg(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + brokerMetricSelector + "}[5m])) * 100"
-            ));
+            Double jvmProcessCpuPercent = firstPresentNumber(
+                    cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", jmxMetricSelector),
+                    cpuPercent("jvm_operatingsystem_processcpuload", jmxMetricSelector),
+                    "avg(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + jmxMetricSelector + "}[5m])) * 100"
+            );
+            overview.setJvmProcessCpuPercent(jvmProcessCpuPercent);
+            if (brokerMetricsRequested) {
+                overview.setBrokerCpuPercent(jvmProcessCpuPercent);
+            }
         }
         Double systemCpuPercent = firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_CpuLoad", brokerMetricSelector),
-                cpuPercent("jvm_operatingsystem_cpuload", brokerMetricSelector),
-                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", brokerMetricSelector),
-                cpuPercent("jvm_operatingsystem_systemcpuload", brokerMetricSelector)
+                cpuPercent("jvm_OperatingSystem_CpuLoad", jmxMetricSelector),
+                cpuPercent("jvm_operatingsystem_cpuload", jmxMetricSelector),
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", jmxMetricSelector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", jmxMetricSelector)
         );
         if (systemCpuPercent == null && isExternal(cluster)) {
             systemCpuPercent = computeExternalSystemCpuPercent(cluster, selectedNodeId);
@@ -310,7 +327,9 @@ public class PrometheusMonitoringService {
         overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
         overview.setHostMemoryTotalMb(computeHostMemoryTotalMb(cluster, selectedNodeId));
 
-        if (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0) {
+        if (!brokerMetricsRequested) {
+            overview.getWarnings().add("Kafka exporter is broker-level and is not applicable to the selected Controller.");
+        } else if (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
         } else if (overview.getKafkaExporterUpTargets() == null
                 || overview.getKafkaExporterUpTargets() < overview.getKafkaExporterTotalTargets()) {
@@ -318,9 +337,7 @@ public class PrometheusMonitoringService {
                     + targetCountValue(overview.getKafkaExporterUpTargets()) + "/"
                     + overview.getKafkaExporterTotalTargets().intValue() + " targets are up.");
         }
-        if (!brokerMetricsRequested) {
-            overview.getWarnings().add("Controller JVM/JMX metrics are not available because a separate controller JMX endpoint is not configured.");
-        } else if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
+        if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
             overview.getWarnings().add("JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
         } else if (overview.getJmxTotalTargets() == null || overview.getJmxTotalTargets() <= 0) {
             overview.getWarnings().add("JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
@@ -367,6 +384,11 @@ public class PrometheusMonitoringService {
                 // Add node-level kafka_exporter target
                 addTargetIfAbsent(targets, hostIp + ":" + kafkaExporterPortBase,
                         labels(cluster, "kafka_exporter", role, nodeId));
+            } else if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isControllerRole(role)) {
+                int port = validExporterPort(service.getJmxExporterPort())
+                        ? service.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                addJmxTarget(targets, cluster, hostIp, port, "controller", nodeId);
             }
             if (Boolean.TRUE.equals(cluster.getNodeExporterEnabled())) {
                 int port = service.getNodeExporterPort() != null ? service.getNodeExporterPort() : nodeExporterPort(cluster);
@@ -387,35 +409,57 @@ public class PrometheusMonitoringService {
             return;
         }
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (!Boolean.TRUE.equals(node.getIsBroker())
-                    || node.getHost() == null
-                    || node.getHost().isBlank()) {
+            if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            int jmxPort = validExporterPort(node.getJmxExporterPort())
-                    ? node.getJmxExporterPort()
-                    : defaultJmxExporterPort;
-            if (validExporterPort(jmxPort)) {
-                addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
-                        labels(cluster, "kafka_jmx", "broker", nodeId));
+            boolean broker = Boolean.TRUE.equals(node.getIsBroker());
+            boolean controller = Boolean.TRUE.equals(node.getIsController());
+            if (broker) {
+                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultJmxExporterPort;
+                if (validExporterPort(jmxPort)) {
+                    addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
+                            labels(cluster, "kafka_jmx", controller ? "broker_controller" : "broker", nodeId));
+                }
+                addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
+            } else if (controller) {
+                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                if (validExporterPort(jmxPort)) {
+                    addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
+                            labels(cluster, "kafka_jmx", "controller", nodeId));
+                }
             }
-            addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
-                    labels(cluster, "kafka_exporter", "broker", nodeId));
         }
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, ExternalCluster cluster) {
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (!Boolean.TRUE.equals(node.getIsBroker()) || node.getHost() == null || node.getHost().isBlank()) {
+            if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
-            Integer port = node.getJmxExporterPort() != null ? node.getJmxExporterPort() : defaultJmxExporterPort;
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            addTargetIfAbsent(targets, node.getHost() + ":" + port,
-                    labels(cluster, "kafka_jmx", "broker", nodeId));
-            addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
-                    labels(cluster, "kafka_exporter", "broker", nodeId));
+            boolean broker = Boolean.TRUE.equals(node.getIsBroker());
+            boolean controller = Boolean.TRUE.equals(node.getIsController());
+            if (broker) {
+                int port = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultJmxExporterPort;
+                addTargetIfAbsent(targets, node.getHost() + ":" + port,
+                        labels(cluster, "kafka_jmx", controller ? "broker_controller" : "broker", nodeId));
+                addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
+            } else if (controller) {
+                int port = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                addTargetIfAbsent(targets, node.getHost() + ":" + port,
+                        labels(cluster, "kafka_jmx", "controller", nodeId));
+            }
         }
     }
 
@@ -477,15 +521,18 @@ public class PrometheusMonitoringService {
         }
         if (isExternal(cluster)) {
             return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
-                    .anyMatch(node -> Boolean.TRUE.equals(node.getIsBroker())
+                    .anyMatch(node -> (Boolean.TRUE.equals(node.getIsBroker())
+                                    || Boolean.TRUE.equals(node.getIsController()))
                             && node.getHost() != null
                             && !node.getHost().isBlank()
                             && validExporterPort(node.getJmxExporterPort() != null
                                     ? node.getJmxExporterPort()
-                                    : defaultJmxExporterPort));
+                                    : Boolean.TRUE.equals(node.getIsBroker())
+                                            ? defaultJmxExporterPort
+                                            : defaultControllerJmxExporterPort));
         }
         return cluster.getServices() != null && cluster.getServices().stream()
-                .filter(service -> isBrokerRole(service.getRole()))
+                .filter(service -> isBrokerRole(service.getRole()) || isControllerRole(service.getRole()))
                 .map(ClusterServiceAssignment::getHostId)
                 .map(hostRepository::findById)
                 .map(optional -> optional.map(this::hostIp).orElse(null))
@@ -494,12 +541,15 @@ public class PrometheusMonitoringService {
 
     private boolean hasJmxTargets(ExternalCluster cluster) {
         return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
-                .anyMatch(node -> Boolean.TRUE.equals(node.getIsBroker())
+                .anyMatch(node -> (Boolean.TRUE.equals(node.getIsBroker())
+                                || Boolean.TRUE.equals(node.getIsController()))
                         && node.getHost() != null
                         && !node.getHost().isBlank()
                         && validExporterPort(node.getJmxExporterPort() != null
                                 ? node.getJmxExporterPort()
-                                : defaultJmxExporterPort));
+                                : Boolean.TRUE.equals(node.getIsBroker())
+                                        ? defaultJmxExporterPort
+                                        : defaultControllerJmxExporterPort));
     }
 
     private List<MonitoringNodeSummary> monitoringNodes(Cluster cluster) {
@@ -592,6 +642,14 @@ public class PrometheusMonitoringService {
                 || "broker_controller".equals(normalized)
                 || "broker+controller".equals(normalized)
                 || "broker_zookeeper".equals(normalized);
+    }
+
+    private boolean isControllerRole(String role) {
+        return roleContains(role, "controller");
+    }
+
+    private boolean roleContains(String role, String expectedRole) {
+        return role != null && role.trim().toLowerCase(Locale.ROOT).contains(expectedRole);
     }
 
     private String roleLabel(String role) {
@@ -1175,6 +1233,7 @@ public class PrometheusMonitoringService {
         private Double jvmHeapAvailableBytes;
         private Double jvmHeapTotalBytes;
         private Double brokerCpuPercent;
+        private Double jvmProcessCpuPercent;
         private Double systemCpuPercent;
         private Double hostMemoryUsedPercent;
         private Long hostMemoryAvailableMb;
