@@ -1551,8 +1551,31 @@
   font-family: monospace;
   font-size: 13px;
   line-height: 1.65;
+  max-height: clamp(280px, 50vh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   border: none;
+}
+
+.ds-version-schema-code::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-track {
+  background: #17131d;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-thumb {
+  border: 2px solid #17131d;
+  border-radius: 8px;
+  background: #77688a;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-thumb:hover {
+  background: #9b8aad;
 }
 
 @media (max-width: 860px) {
