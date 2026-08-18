@@ -2022,18 +2022,21 @@ public class ExternalClusterService {
                     cluster.setStatus(newStatus);
                     externalClusterRepository.save(cluster);
                     
-                    if (statusChanged && "DEGRADED".equals(newStatus)) {
-                        activityAlertService.createAlert("WARNING", "External Cluster Degraded", 
-                            "The Discovery Agent for external cluster '" + cluster.getName() + "' has stopped reporting, but Kafka is still reachable.", cluster.getId());
-                    } else if (statusChanged && "FAILED".equals(newStatus)) {
-                        activityAlertService.createAlert("CRITICAL", "External Cluster Failed", 
-                            "Kafka Admin API cannot reach external cluster '" + cluster.getName() + "'.", cluster.getId());
-                    }
                 }
+                // Synchronize on every health cycle, not only on a status
+                // transition. This also repairs legacy ACTIVE alerts left behind
+                // after an agent recovered before this lifecycle was introduced.
+                activityAlertService.synchronizeExternalClusterHealth(
+                        cluster.getId(), cluster.getName(), newStatus);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
             }
         }
+        activityAlertService.resolveOrphanedExternalClusterHealthAlerts(
+                externalClusters.stream()
+                        .map(ExternalCluster::getId)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toSet()));
     }
 
     @Data

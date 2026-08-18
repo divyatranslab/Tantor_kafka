@@ -37,6 +37,21 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AlertController {
 
+    private static final List<String> RUNTIME_ALERT_KEY_PREFIXES = List.of(
+            "host-offline-",
+            "host-disk-full-",
+            "host-disk-warning-",
+            "host-memory-high-",
+            "cluster-failed-",
+            "cluster-deleting-",
+            "cluster-host-offline-",
+            "cluster-disk-full-",
+            "cluster-port-closed-",
+            "external-failed-",
+            "parcel-failed-",
+            "consumer-lag-",
+            "task-failed-");
+
     private final AlertRepository alertRepository;
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
@@ -345,12 +360,18 @@ public class AlertController {
 
         alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE").stream()
                 .filter(alert -> alert.getAlertKey() != null)
+                .filter(alert -> isRuntimeManagedAlertKey(alert.getAlertKey()))
                 .filter(alert -> !observedKeys.contains(alert.getAlertKey()))
                 .forEach(alert -> {
                     alert.setStatus("RESOLVED");
                     alert.setResolvedAt(java.time.Instant.now());
                     alertRepository.save(alert);
                 });
+    }
+
+    private boolean isRuntimeManagedAlertKey(String alertKey) {
+        return alertKey != null
+                && RUNTIME_ALERT_KEY_PREFIXES.stream().anyMatch(alertKey::startsWith);
     }
 
     private UUID parseUuid(String value) {

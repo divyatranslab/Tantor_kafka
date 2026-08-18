@@ -21,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -84,6 +85,41 @@ class ExternalClusterServiceTest {
 
         assertThat(existing.getKafkaClusterId()).isEqualTo("recovered-kafka-id");
         verify(externalClusterRepository).save(existing);
+    }
+
+    @Test
+    void healthyAgentResolvesExternalHealthAlertEvenWhenClusterStatusWasAlreadySuccess() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);
+        KafkaAdminService kafkaAdminService = mock(KafkaAdminService.class);
+        ActivityAlertService alertService = mock(ActivityAlertService.class);
+        ExternalClusterService service = service(
+                externalClusterRepository,
+                discoveryAgentRepository,
+                kafkaAdminService,
+                alertService);
+
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setName("external-test");
+        cluster.setStatus("SUCCESS");
+        cluster.setKafkaClusterId("kafka-id");
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
+
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(kafkaAdminService.inspectBootstrapServers(cluster, true))
+                .thenReturn(Map.of("connected", true, "clusterId", "kafka-id"));
+        when(discoveryAgentRepository.findByClusterId(cluster.getId())).thenReturn(List.of(agent));
+
+        service.checkExternalClustersHealth();
+
+        verify(alertService).synchronizeExternalClusterHealth(
+                cluster.getId(), cluster.getName(), "SUCCESS");
+        verify(alertService).resolveOrphanedExternalClusterHealthAlerts(Set.of(cluster.getId()));
+        verify(externalClusterRepository, never()).save(cluster);
     }
 
     @Test
@@ -550,11 +586,24 @@ class ExternalClusterServiceTest {
             DiscoveryAgentRepository discoveryAgentRepository,
             KafkaAdminService kafkaAdminService) {
         return service(
+                externalClusterRepository,
+                discoveryAgentRepository,
+                kafkaAdminService,
+                mock(ActivityAlertService.class));
+    }
+
+    private ExternalClusterService service(
+            ExternalClusterRepository externalClusterRepository,
+            DiscoveryAgentRepository discoveryAgentRepository,
+            KafkaAdminService kafkaAdminService,
+            ActivityAlertService activityAlertService) {
+        return service(
                 mock(ClusterRepository.class),
                 externalClusterRepository,
                 mock(ExternalClusterNodeRepository.class),
                 discoveryAgentRepository,
-                kafkaAdminService);
+                kafkaAdminService,
+                activityAlertService);
     }
 
     private ExternalClusterService service(
@@ -563,6 +612,17 @@ class ExternalClusterServiceTest {
             ExternalClusterNodeRepository nodeRepository,
             DiscoveryAgentRepository discoveryAgentRepository,
             KafkaAdminService kafkaAdminService) {
+        return service(clusterRepository, externalClusterRepository, nodeRepository,
+                discoveryAgentRepository, kafkaAdminService, mock(ActivityAlertService.class));
+    }
+
+    private ExternalClusterService service(
+            ClusterRepository clusterRepository,
+            ExternalClusterRepository externalClusterRepository,
+            ExternalClusterNodeRepository nodeRepository,
+            DiscoveryAgentRepository discoveryAgentRepository,
+            KafkaAdminService kafkaAdminService,
+            ActivityAlertService activityAlertService) {
         return new ExternalClusterService(
                 clusterRepository,
                 externalClusterRepository,
@@ -572,7 +632,7 @@ class ExternalClusterServiceTest {
                 discoveryAgentRepository,
                 kafkaAdminService,
                 new ObjectMapper(),
-                mock(ActivityAlertService.class),
+                activityAlertService,
                 mock(AuditService.class),
                 mock(EncryptionService.class),
                 mock(TruststoreStorageService.class),
