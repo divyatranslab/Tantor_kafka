@@ -459,6 +459,61 @@ class ExternalClusterServiceTest {
     }
 
     @Test
+    void linkedAgentReportUpdatesItsClusterWhenReportIdentityDoesNotMatchBootstrapOrName() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("test-ext");
+        cluster.setBootstrapServers("192.168.3.164:9092");
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("discovery-broker-229");
+        agent.setClusterId(clusterId);
+
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setClusterId(clusterId);
+        broker.setNodeId(1);
+        broker.setHost("192.168.3.229");
+        broker.setIsBroker(true);
+
+        when(agentRepository.findById(agent.getId())).thenReturn(Optional.of(agent));
+        when(agentRepository.save(agent)).thenReturn(agent);
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(broker));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setHostId(agent.getId());
+        report.setName("production-kafka");
+        report.setBootstrapServers("192.168.3.229:9092");
+        report.setKafkaClusterId("");
+        report.setNodeId(1);
+        report.setProcessRoles("broker");
+        report.setCpuUsagePct(12.5);
+        report.setMemoryUsedMb(2048L);
+        report.setMemoryTotalMb(8192L);
+        report.setRunning(true);
+
+        Map<String, Object> result = service.recordDiscoveryReport(report);
+
+        assertThat(result).containsEntry("status", "registered")
+                .containsEntry("id", clusterId);
+        assertThat(broker.getCpuUsagePct()).isEqualTo(12.5);
+        assertThat(broker.getMemoryUsedMb()).isEqualTo(2048L);
+        assertThat(broker.getMemoryTotalMb()).isEqualTo(8192L);
+        verify(nodeRepository).save(broker);
+        verify(clusterRepository, never()).findByBootstrapServersAndStatusNot(
+                "192.168.3.229:9092", "DELETED");
+    }
+
+    @Test
     void staleDiscoveryAgentUsesConfiguredTimeoutAndReturnsOrangeDisconnectedState() {
         ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
         DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);

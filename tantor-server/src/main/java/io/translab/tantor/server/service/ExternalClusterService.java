@@ -553,12 +553,13 @@ public class ExternalClusterService {
                 : report.getHostId();
         io.translab.tantor.server.domain.DiscoveryAgent agent = discoveryAgentRepository.findById(agentId).orElse(null);
 
-        Optional<ExternalCluster> connectedCluster = findExternalCluster(report.getKafkaClusterId(), report.getName(), report.getBootstrapServers().trim());
+        Optional<ExternalCluster> connectedCluster = resolveConnectedCluster(report, agent);
 
         if (connectedCluster.isPresent() && agent != null) {
-            ExternalCluster cluster = upsertDiscoveryCluster(report);
+            ExternalCluster cluster = connectedCluster.get();
             linkDiscoveryAgent(agent, cluster);
             applyDiscoveryReportToNodes(cluster, report, agent);
+            pendingDiscoveries.remove(discoveryKey(report));
 
             return Map.of(
                     "id", cluster.getId(),
@@ -577,13 +578,39 @@ public class ExternalClusterService {
         );
     }
 
+    /**
+     * A persisted agent-to-cluster link is authoritative after onboarding.
+     * Discovery reports are intentionally node-local, so their name, bootstrap
+     * address, or Kafka cluster ID may be absent or differ from the value used
+     * when the external cluster was connected. Falling back to report identity
+     * is only appropriate for agents that have not been linked yet.
+     */
+    private Optional<ExternalCluster> resolveConnectedCluster(
+            ExternalDiscoveryReport report,
+            DiscoveryAgent agent
+    ) {
+        if (agent != null && agent.getClusterId() != null) {
+            Optional<ExternalCluster> linkedCluster = externalClusterRepository.findById(agent.getClusterId());
+            if (linkedCluster.isPresent()) {
+                return linkedCluster;
+            }
+        }
+        return findExternalCluster(
+                report.getKafkaClusterId(),
+                report.getName(),
+                report.getBootstrapServers().trim()
+        );
+    }
+
     public List<Map<String, Object>> listPendingDiscoveries() {
         return pendingDiscoveries.entrySet().stream()
-                .filter(entry -> findExternalCluster(
-                        entry.getValue().getKafkaClusterId(),
-                        entry.getValue().getName(),
-                        entry.getValue().getBootstrapServers()
-                ).isEmpty())
+                .filter(entry -> {
+                    ExternalDiscoveryReport report = entry.getValue();
+                    String agentId = report.getHostId() == null || report.getHostId().isBlank()
+                            ? discoveryHostId(report) : report.getHostId();
+                    DiscoveryAgent agent = discoveryAgentRepository.findById(agentId).orElse(null);
+                    return resolveConnectedCluster(report, agent).isEmpty();
+                })
                 .filter(entry -> entry.getValue().isRunning())
                 .filter(entry -> isFreshDiscovery(entry.getValue()))
                 .sorted(Map.Entry.comparingByValue(Comparator.comparing(
