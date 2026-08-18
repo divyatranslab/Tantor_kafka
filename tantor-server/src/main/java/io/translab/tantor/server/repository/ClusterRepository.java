@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import java.util.UUID;
 
 public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
+    java.util.Optional<Cluster> findByCanonicalClusterUuidAndStatusNot(UUID canonicalClusterUuid, String status);
     java.util.List<Cluster> findByStatusNot(String status);
     java.util.List<Cluster> findByNameAndStatus(String name, String status);
     java.util.Optional<Cluster> findByNameAndStatusNot(String name, String status);

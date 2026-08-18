@@ -1,6 +1,8 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.ClusterNameConflictException;
+import io.translab.tantor.server.service.CanonicalClusterNotFoundException;
+import io.translab.tantor.server.service.CanonicalIdentityException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -13,6 +15,17 @@ import java.util.Map;
 @RestControllerAdvice
 @Slf4j
 public class ApiExceptionHandler {
+
+    @ExceptionHandler(CanonicalClusterNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleCanonicalClusterNotFound(
+            CanonicalClusterNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", cleanMessage(ex)));
+    }
+
+    @ExceptionHandler(CanonicalIdentityException.class)
+    public ResponseEntity<Map<String, String>> handleCanonicalIdentity(CanonicalIdentityException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", cleanMessage(ex)));
+    }
 
     @ExceptionHandler(ClusterNameConflictException.class)
     public ResponseEntity<Map<String, String>> handleClusterNameConflict(ClusterNameConflictException ex) {

@@ -13,6 +13,8 @@ import java.util.UUID;
 
 public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClusterNode, UUID> {
 
+    List<ExternalClusterNode> findByCanonicalClusterUuid(UUID canonicalClusterUuid);
+
     List<ExternalClusterNode> findByClusterId(UUID clusterId);
 
     Optional<ExternalClusterNode> findByClusterIdAndNodeId(UUID clusterId, Integer nodeId);
