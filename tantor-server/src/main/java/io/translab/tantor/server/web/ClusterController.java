@@ -354,6 +354,7 @@ public class ClusterController {
             String overviewLogDir = null;
             String displayVersion = externalKafkaVersion(extCluster, nodes);
             String displayControllerType = externalControllerType(extCluster, nodes);
+            boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(displayControllerType);
             List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents =
                     discoveryAgentRepository.findByClusterId(id);
             List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents =
@@ -386,7 +387,7 @@ public class ClusterController {
                             .build());
                 }
                 
-                if (isController) {
+                if (isController && !zookeeperMode) {
                     controllerRows.add(io.translab.tantor.server.dto.ClusterOverviewDto.ControllerRow.builder()
                             .nodeId(node.getNodeId() != null ? node.getNodeId() : -1)
                             .host(node.getHost())
@@ -394,7 +395,9 @@ public class ClusterController {
                             .build());
                 }
                 
-                String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
+                String role = zookeeperMode && isBroker
+                        ? "broker"
+                        : ((isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown")));
                 String installDir = hasFreshAgent
                         ? firstNonBlank(node.getInstallDir(), extCluster.getInstallPath())
                         : null;
@@ -2240,11 +2243,15 @@ public class ClusterController {
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
     ) {
         String mode = cleanExternalValue(cluster.getKafkaMode());
-        if (mode != null) {
-            return "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
+        if ("zookeeper".equalsIgnoreCase(mode) || "zk".equalsIgnoreCase(mode)) {
+            return "ZooKeeper";
         }
-        boolean hasController = nodes.stream().anyMatch(node -> Boolean.TRUE.equals(node.getIsController()));
-        return hasController ? "KRaft" : "Not reported";
+        if ("kraft".equalsIgnoreCase(mode)) {
+            return "KRaft";
+        }
+        // describeCluster().controller() exists in ZooKeeper mode too, so a
+        // controller-looking broker is not sufficient evidence of KRaft.
+        return "Not reported";
     }
 
     private String cleanExternalValue(String value) {

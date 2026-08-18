@@ -41,7 +41,15 @@ interface BootstrapResult {
   environment?: string;
   socket_results?: unknown[];
   message?: string;
+  discoveryKey?: string;
 }
+
+const registrationKafkaMode = (result: BootstrapResult | null): string => {
+  const raw = String(result?.kafkaMode || result?.mode || '').trim();
+  if (/^zookeeper$/i.test(raw) || /^zk$/i.test(raw)) return 'ZooKeeper';
+  if (/^kraft$/i.test(raw)) return 'KRaft';
+  return 'Unknown';
+};
 
 interface DiscoveryAgentStatus {
   id: string;
@@ -295,7 +303,8 @@ export function ExternalClusters() {
         brokers: bootstrapResult?.brokers || [],
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
         kafkaVersion: bootstrapResult?.kafkaVersion || bootstrapResult?.kafka_version || 'Unknown',
-        kafkaMode: bootstrapResult?.kafkaMode || bootstrapResult?.mode || 'KRaft',
+        kafkaMode: registrationKafkaMode(bootstrapResult),
+        discoveryKey: bootstrapResult?.discoveryKey,
         selectedAgents: selectedAgents
       };
 

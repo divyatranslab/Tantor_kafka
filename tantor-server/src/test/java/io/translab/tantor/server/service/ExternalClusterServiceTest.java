@@ -35,6 +35,73 @@ import static org.mockito.Mockito.when;
 class ExternalClusterServiceTest {
 
     @Test
+    @SuppressWarnings("unchecked")
+    void successfulAdminConnectionUsesAuthoritativeZooKeeperModeFromDiscoveryAgent() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        KafkaAdminService kafkaAdminService = mock(KafkaAdminService.class);
+        ExternalClusterService service = service(
+                externalClusterRepository,
+                mock(DiscoveryAgentRepository.class),
+                kafkaAdminService);
+
+        when(kafkaAdminService.inspectBootstrapServers(any(ExternalCluster.class),
+                org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(Map.of(
+                        "connected", true,
+                        "clusterId", "zk-cluster-id",
+                        "mode", "auto-detected by Kafka client",
+                        "brokers", List.of()));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setName("legacy-zk");
+        report.setHostname("192.168.3.150");
+        report.setBootstrapServers("192.168.3.150:9092");
+        report.setKafkaMode("ZooKeeper");
+        report.setKafkaVersion("2.5.0");
+        report.setRunning(true);
+
+        Map<String, ExternalClusterService.ExternalDiscoveryReport> pending =
+                (Map<String, ExternalClusterService.ExternalDiscoveryReport>)
+                        ReflectionTestUtils.getField(service, "pendingDiscoveries");
+        pending.put("discovery-150", report);
+
+        ExternalClusterService.BootstrapExternalClusterRequest request =
+                new ExternalClusterService.BootstrapExternalClusterRequest();
+        request.setBootstrapServers("192.168.3.150:9092");
+        request.setSecurityProtocol("PLAINTEXT");
+
+        Map<String, Object> result = service.testBootstrap(request);
+
+        assertThat(result).containsEntry("connected", true)
+                .containsEntry("mode", "ZooKeeper")
+                .containsEntry("kafkaMode", "ZooKeeper")
+                .containsEntry("discoveryKey", "discovery-150");
+    }
+
+    @Test
+    void registrationDoesNotTurnUnknownAdminModeIntoKraft() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterService service = service(externalClusterRepository);
+        when(externalClusterRepository.save(any(ExternalCluster.class))).thenAnswer(invocation -> {
+            ExternalCluster cluster = invocation.getArgument(0);
+            if (cluster.getId() == null) cluster.setId(UUID.randomUUID());
+            return cluster;
+        });
+
+        ExternalClusterService.BootstrapExternalClusterRequest request =
+                new ExternalClusterService.BootstrapExternalClusterRequest();
+        request.setName("bootstrap-only");
+        request.setBootstrapServers("192.168.3.150:9092");
+        request.setClusterId("zk-cluster-id");
+        request.setKafkaMode("auto-detected by Kafka client");
+
+        ExternalCluster saved = service.registerBootstrapCluster(request);
+
+        assertThat(saved.getKafkaMode()).isEqualTo("Unknown");
+    }
+
+    @Test
     void preservesPersistedKafkaClusterIdWhenFollowUpDiscoveryReportOmitsIt() {
         ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
         ExternalClusterService service = service(externalClusterRepository);
@@ -508,6 +575,8 @@ class ExternalClusterServiceTest {
         cluster.setId(clusterId);
         cluster.setName("test-ext");
         cluster.setBootstrapServers("192.168.3.164:9092");
+        cluster.setKafkaMode("KRaft");
+        cluster.setProcessRoles("controller");
 
         DiscoveryAgent agent = new DiscoveryAgent();
         agent.setId("discovery-broker-229");
@@ -522,6 +591,7 @@ class ExternalClusterServiceTest {
         when(agentRepository.findById(agent.getId())).thenReturn(Optional.of(agent));
         when(agentRepository.save(agent)).thenReturn(agent);
         when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(clusterRepository.save(cluster)).thenReturn(cluster);
         when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(broker));
 
         ExternalClusterService.ExternalDiscoveryReport report =
@@ -531,7 +601,9 @@ class ExternalClusterServiceTest {
         report.setBootstrapServers("192.168.3.229:9092");
         report.setKafkaClusterId("");
         report.setNodeId(1);
-        report.setProcessRoles("broker");
+        report.setKafkaMode("ZooKeeper");
+        report.setKafkaVersion("2.5.0");
+        report.setProcessRoles("");
         report.setCpuUsagePct(12.5);
         report.setMemoryUsedMb(2048L);
         report.setMemoryTotalMb(8192L);
@@ -544,6 +616,10 @@ class ExternalClusterServiceTest {
         assertThat(broker.getCpuUsagePct()).isEqualTo(12.5);
         assertThat(broker.getMemoryUsedMb()).isEqualTo(2048L);
         assertThat(broker.getMemoryTotalMb()).isEqualTo(8192L);
+        assertThat(cluster.getKafkaMode()).isEqualTo("ZooKeeper");
+        assertThat(cluster.getKafkaVersion()).isEqualTo("2.5.0");
+        assertThat(cluster.getProcessRoles()).isNull();
+        verify(clusterRepository).save(cluster);
         verify(nodeRepository).save(broker);
         verify(clusterRepository, never()).findByBootstrapServersAndStatusNot(
                 "192.168.3.229:9092", "DELETED");

@@ -213,12 +213,18 @@ export function ClusterOverview() {
               <div className="overview-value">{(uptime.brokerCount || 0).toString().padStart(2, '0')}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">Active Controller ID</div>
+              <div className="overview-label">
+                {uptime.controllerType === 'ZooKeeper' ? 'Active Broker Controller ID' : 'Active Controller ID'}
+              </div>
               <div className="overview-value">{uptime.activeControllerId ?? uptime.activeController ?? '-'}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">Configured Controllers</div>
-              <div className="overview-value">{uptime.configuredControllerCount ?? '-'}</div>
+              <div className="overview-label">
+                {uptime.controllerType === 'ZooKeeper' ? 'ZooKeeper Ensemble' : 'Configured Controllers'}
+              </div>
+              <div className="overview-value">
+                {uptime.controllerType === 'ZooKeeper' ? 'Not reported' : (uptime.configuredControllerCount ?? '-')}
+              </div>
             </div>
             <div className="overview-item">
               <div className="overview-label">Version</div>
@@ -304,7 +310,10 @@ export function ClusterOverview() {
         </div>
       </section>
 
-      {overview.originType === 'EXTERNAL' && overview.controllers && overview.controllers.length > 0 && (
+      {overview.originType === 'EXTERNAL'
+        && uptime.controllerType === 'KRaft'
+        && overview.controllers
+        && overview.controllers.length > 0 && (
         <section className="overview-section">
           <div className="overview-band">
             <div className="section-header-row">

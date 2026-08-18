@@ -3,6 +3,7 @@ package io.translab.tantor.server.service;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.dto.ClusterOverviewDto;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
@@ -112,5 +113,38 @@ class ClusterOverviewServiceTest {
         assertThat(broker.getHostDiskLastSeen()).isEqualTo(host.getLastHeartbeat());
         verify(hostStatusService).agentConnectivityStatus(host);
         verify(hostStatusService, never()).isOnline(host);
+    }
+
+    @Test
+    void reportsZooKeeperModeWithoutCallingKraftMetadataQuorumApi() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("legacy-zk");
+        cluster.setKafkaVersion("2.5.0");
+        cluster.setKafkaMode("ZooKeeper");
+
+        Node brokerController = new Node(1, "192.168.3.150", 9092);
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(List.of(brokerController)));
+        when(describeClusterResult.controller()).thenReturn(KafkaFuture.completedFuture(brokerController));
+        when(describeClusterResult.clusterId()).thenReturn(KafkaFuture.completedFuture("zk-cluster-id"));
+        when(adminClient.listTopics(any())).thenReturn(listTopicsResult);
+        when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
+        when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
+        when(describeLogDirsResult.descriptions()).thenReturn(
+                Map.of(1, KafkaFuture.completedFuture(Map.of()))
+        );
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        assertThat(overview.getControllerType()).isEqualTo("ZooKeeper");
+        assertThat(overview.getUptime().getControllerType()).isEqualTo("ZooKeeper");
+        assertThat(overview.getUptime().getActiveControllerId()).isEqualTo(1);
+        assertThat(overview.getUptime().getConfiguredControllerCount()).isZero();
+        verify(kafkaAdminService, never()).getControllerId(clusterId);
     }
 }

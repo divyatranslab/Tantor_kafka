@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -178,7 +179,16 @@ public class ExternalClusterService {
                     // If we blindly copied the agent's SASL_SSL it would confuse them.
                     result.put("message", result.getOrDefault("message", "Direct Admin API connection failed. Agent is enrolled, but the bootstrap port is unreachable or invalid."));
                 } else {
-                    // Just add the agent message to the successful admin data
+                    // Kafka's Admin API exposes brokers and the elected controller,
+                    // but it does not reliably identify whether that controller is
+                    // backed by ZooKeeper or the KRaft metadata quorum. The discovery
+                    // agent reads the running properties file, so its explicit mode is
+                    // authoritative even when the AdminClient connection succeeds.
+                    String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+                    if (discoveredMode != null) {
+                        result.put("kafkaMode", discoveredMode);
+                        result.put("mode", discoveredMode);
+                    }
                     result.put("message", "Direct Connection successful. Discovery Agent also enrolled.");
                 }
                 break;
@@ -422,7 +432,9 @@ public class ExternalClusterService {
         savedCluster.setKafkaClusterId(clusterId);
         savedCluster.setKafkaVersion(blankToDefault(firstString(inspection, "kafkaVersion", "kafka_version"), "Unknown"));
         savedCluster.setEnvironment(blankToDefault(request.getEnvironment(), "unknown"));
-        savedCluster.setKafkaMode(blankToDefault(firstString(inspection, "mode", "kafkaMode", "kafka_mode"), "Unknown"));
+        savedCluster.setKafkaMode(blankToDefault(
+                normalizeKafkaMode(firstString(inspection, "mode", "kafkaMode", "kafka_mode")),
+                "Unknown"));
         savedCluster.setSecurity(blankToDefault(firstString(inspection, "security_protocol", "security"), "PLAINTEXT"));
         savedCluster.setSecurityProtocol(request.getSecurityProtocol());
         savedCluster.setSaslMechanism(request.getSaslMechanism());
@@ -487,6 +499,15 @@ public class ExternalClusterService {
                         discoveryAgentRepository.save(agent);
                     }
                 }
+            }
+        }
+
+        // A selected discovery report is the source of truth for the Kafka
+        // coordination mode. Persist it before building the overview so a
+        // ZooKeeper cluster can never inherit an AdminClient fallback.
+        for (ExternalDiscoveryReport report : selectedDiscoveryReports) {
+            if (applyAuthoritativeDiscoveryMetadata(savedCluster, report)) {
+                savedCluster = externalClusterRepository.save(savedCluster);
             }
         }
 
@@ -558,6 +579,9 @@ public class ExternalClusterService {
         if (connectedCluster.isPresent() && agent != null) {
             ExternalCluster cluster = connectedCluster.get();
             linkDiscoveryAgent(agent, cluster);
+            if (applyAuthoritativeDiscoveryMetadata(cluster, report)) {
+                cluster = externalClusterRepository.save(cluster);
+            }
             applyDiscoveryReportToNodes(cluster, report, agent);
             pendingDiscoveries.remove(discoveryKey(report));
 
@@ -779,7 +803,12 @@ public class ExternalClusterService {
         cluster.setEnvironment(blankToDefault(report.getEnvironment(), "unknown"));
         cluster.setBootstrapServers(mergedBootstrapServers);
         cluster.setStatus(report.isRunning() ? "SUCCESS" : "DEGRADED");
-        cluster.setKafkaMode(blankToDefault(report.getKafkaMode(), "KRaft"));
+        String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+        if (discoveredMode != null) {
+            cluster.setKafkaMode(discoveredMode);
+        } else if (cluster.getKafkaMode() == null || cluster.getKafkaMode().isBlank()) {
+            cluster.setKafkaMode("Unknown");
+        }
         cluster.setSecurity(blankToDefault(report.getSecurity(), "PLAINTEXT"));
         cluster.setBrokerCount(report.getBrokerCount());
         cluster.setListeners(report.getListeners());
@@ -814,6 +843,70 @@ public class ExternalClusterService {
         }
         
         return saved;
+    }
+
+    /**
+     * Applies metadata that can only be determined reliably from the running
+     * node configuration. In particular, Kafka AdminClient cannot distinguish
+     * ZooKeeper from KRaft merely from the elected controller returned by
+     * describeCluster().
+     */
+    private boolean applyAuthoritativeDiscoveryMetadata(
+            ExternalCluster cluster,
+            ExternalDiscoveryReport report) {
+        boolean changed = false;
+        String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+        if (discoveredMode != null && !Objects.equals(cluster.getKafkaMode(), discoveredMode)) {
+            cluster.setKafkaMode(discoveredMode);
+            changed = true;
+        }
+
+        String discoveredVersion = cleanReportedValue(report.getKafkaVersion());
+        if (discoveredVersion != null && !Objects.equals(cluster.getKafkaVersion(), discoveredVersion)) {
+            cluster.setKafkaVersion(discoveredVersion);
+            changed = true;
+        }
+
+        String discoveredRoles = cleanReportedValue(report.getProcessRoles());
+        if ("ZooKeeper".equals(discoveredMode)) {
+            // ZooKeeper-backed brokers do not use process.roles. Clear a stale
+            // KRaft value if this cluster was previously misclassified.
+            discoveredRoles = null;
+        }
+        if ((discoveredRoles != null || "ZooKeeper".equals(discoveredMode))
+                && !Objects.equals(cluster.getProcessRoles(), discoveredRoles)) {
+            cluster.setProcessRoles(discoveredRoles);
+            changed = true;
+        }
+        return changed;
+    }
+
+    static String normalizeKafkaMode(String value) {
+        String cleaned = cleanReportedValue(value);
+        if (cleaned == null) {
+            return null;
+        }
+        if ("zookeeper".equalsIgnoreCase(cleaned) || "zk".equalsIgnoreCase(cleaned)) {
+            return "ZooKeeper";
+        }
+        if ("kraft".equalsIgnoreCase(cleaned)) {
+            return "KRaft";
+        }
+        return null;
+    }
+
+    private static String cleanReportedValue(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String cleaned = value.trim();
+        if ("null".equalsIgnoreCase(cleaned)
+                || "unknown".equalsIgnoreCase(cleaned)
+                || "auto-detected".equalsIgnoreCase(cleaned)
+                || "auto-detected by Kafka client".equalsIgnoreCase(cleaned)) {
+            return null;
+        }
+        return cleaned;
     }
 
 

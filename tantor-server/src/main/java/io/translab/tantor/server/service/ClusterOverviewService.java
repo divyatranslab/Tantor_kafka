@@ -86,10 +86,11 @@ public class ClusterOverviewService {
             Collection<Node> nodes = clusterResult.nodes().get();
             Node controller = clusterResult.controller().get();
             String kafkaClusterId = clusterResult.clusterId().get();
-            boolean kraft = !"zookeeper".equalsIgnoreCase(mode);
+            boolean kraft = isKraftMode(mode);
+            boolean zookeeper = isZooKeeperMode(mode);
             Integer activeControllerId = kraft
                     ? kafkaAdminService.getControllerId(clusterId)
-                    : (controller == null ? null : controller.id());
+                    : (zookeeper && controller != null ? controller.id() : null);
             if (kraft && activeControllerId == null) {
                 warnings.add("The active KRaft controller is unavailable because metadata quorum details could not be loaded.");
             }
@@ -104,7 +105,7 @@ public class ClusterOverviewService {
             applyInternalHostDiskStats(internalCluster, brokerStats);
 
             int brokerCount = brokerStats.size();
-            int configuredControllerCount = configuredControllerCount(internalCluster);
+            int configuredControllerCount = kraft ? configuredControllerCount(internalCluster) : 0;
             double avgReplicas = brokerCount == 0 ? 0 : (double) partitionStats.totalReplicas / brokerCount;
             double avgLeaders = brokerCount == 0 ? 0 : (double) partitionStats.totalPartitions / brokerCount;
 
@@ -112,7 +113,7 @@ public class ClusterOverviewService {
                     .map(stats -> stats.toDto(activeControllerId != null && stats.node.id() == activeControllerId, avgReplicas, avgLeaders, brokerCount))
                     .toList();
 
-            String controllerType = "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
+            String controllerType = zookeeper ? "ZooKeeper" : (kraft ? "KRaft" : "Not reported");
             return ClusterOverviewDto.builder()
                     .clusterId(clusterId)
                     .kafkaClusterId(kafkaClusterId)
@@ -163,6 +164,14 @@ public class ClusterOverviewService {
                 .filter(service -> "controller".equalsIgnoreCase(service.getRole())
                         || "broker_controller".equalsIgnoreCase(service.getRole()))
                 .count();
+    }
+
+    private boolean isKraftMode(String mode) {
+        return "kraft".equalsIgnoreCase(mode);
+    }
+
+    private boolean isZooKeeperMode(String mode) {
+        return "zookeeper".equalsIgnoreCase(mode) || "zk".equalsIgnoreCase(mode);
     }
 
     private void applyInternalHostDiskStats(
