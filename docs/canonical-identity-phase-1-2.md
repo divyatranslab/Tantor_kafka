@@ -121,3 +121,30 @@ If a full schema rollback is required during a maintenance window:
 
 No business data needs to be reconstructed because this migration only copies
 existing UUID relationships into new columns.
+
+After the previous application build is active and writes are stopped, the
+schema portion can be undone with:
+
+```sql
+DROP TRIGGER IF EXISTS trg_assign_external_node_canonical_uuid
+    ON kf_external_cluster_nodes;
+DROP FUNCTION IF EXISTS assign_external_node_canonical_uuid();
+
+DROP TRIGGER IF EXISTS trg_assign_kf_cluster_canonical_uuid ON kf_clusters;
+DROP FUNCTION IF EXISTS assign_kf_cluster_canonical_uuid();
+
+ALTER TABLE kf_external_cluster_nodes
+    DROP CONSTRAINT IF EXISTS fk_external_nodes_canonical_cluster_uuid;
+DROP INDEX IF EXISTS ix_external_nodes_canonical_cluster_uuid;
+
+ALTER TABLE kf_clusters
+    DROP CONSTRAINT IF EXISTS uq_kf_clusters_canonical_cluster_uuid;
+
+ALTER TABLE kf_external_cluster_nodes
+    DROP COLUMN IF EXISTS canonical_cluster_uuid;
+ALTER TABLE kf_clusters
+    DROP COLUMN IF EXISTS canonical_cluster_uuid;
+```
+
+This SQL is a rollback note, not an automatic Flyway down migration. The
+schema-history reconciliation must remain a deliberate release operation.

@@ -17,6 +17,13 @@ public class ExternalClusterNode {
     @Column(name = "cluster_id", nullable = false)
     private UUID clusterId;
 
+    /**
+     * Canonical identity of the parent cluster. The database derives this from
+     * cluster_id; application code must not infer it from host or name fields.
+     */
+    @Column(name = "canonical_cluster_uuid", nullable = false, insertable = false, updatable = false)
+    private UUID canonicalClusterUuid;
+
     @Column(name = "host", nullable = false)
     private String host;
 
