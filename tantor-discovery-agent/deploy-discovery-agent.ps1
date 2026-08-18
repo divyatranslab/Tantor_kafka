@@ -155,6 +155,18 @@ discovery:
   server_url: $(Yaml-Quote $ServerUrl)
   interval: $(Yaml-Quote $Interval)
   task_poll_interval: $(Yaml-Quote $TaskPollInterval)
+  command_timeout: "30s"
+  http:
+    connect_timeout: "3s"
+    tls_handshake_timeout: "5s"
+    response_header_timeout: "5s"
+    request_timeout: "10s"
+    retry_total_timeout: "25s"
+    retry_max_attempts: 3
+    retry_initial_backoff: "250ms"
+    retry_max_backoff: "2s"
+    circuit_failure_threshold: 5
+    circuit_open_duration: "30s"
   kafka_home: $(Yaml-Quote $KafkaHome)
   kafka_config_files:
 $kafkaConfigYaml
@@ -208,6 +220,8 @@ WorkingDirectory=$AgentDir
 ExecStart=$AgentDir/tantor-discovery-agent-linux -config $AgentDir/discovery.yaml
 Restart=always
 RestartSec=5
+TimeoutStopSec=40
+KillSignal=SIGTERM
 LimitNOFILE=1024000
 LimitNPROC=1024000
 

@@ -118,6 +118,20 @@ install -m 0755 "$BINARY" "$AGENT_DIR/tantor-discovery-agent-linux"
   echo "  server_url: \"${SERVER_URL}\""
   echo "  interval: \"${INTERVAL}\""
   echo "  task_poll_interval: \"${TASK_POLL}\""
+	cat <<'HTTP_CONFIG'
+  command_timeout: "30s"
+  http:
+    connect_timeout: "3s"
+    tls_handshake_timeout: "5s"
+    response_header_timeout: "5s"
+    request_timeout: "10s"
+    retry_total_timeout: "25s"
+    retry_max_attempts: 3
+    retry_initial_backoff: "250ms"
+    retry_max_backoff: "2s"
+    circuit_failure_threshold: 5
+    circuit_open_duration: "30s"
+HTTP_CONFIG
   echo "  kafka_home: \"${KAFKA_HOME}\""
   echo "  kafka_config_files:"
   for config_file in "${KAFKA_CONFIG_FILES[@]}"; do
@@ -160,6 +174,8 @@ WorkingDirectory=${AGENT_DIR}
 ExecStart=${AGENT_DIR}/tantor-discovery-agent-linux -config ${AGENT_DIR}/discovery.yaml
 Restart=always
 RestartSec=5
+TimeoutStopSec=40
+KillSignal=SIGTERM
 LimitNOFILE=1024000
 LimitNPROC=1024000
 

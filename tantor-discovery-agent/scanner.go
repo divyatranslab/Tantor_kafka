@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // =========================================================================
@@ -43,18 +44,18 @@ func extractPropsPath(cmdline, cwd string) string {
 	return ""
 }
 
-func getRunningKafkaPropsFiles() []ProcessInfo {
+func getRunningKafkaPropsFiles(ctx context.Context, commandTimeout time.Duration) []ProcessInfo {
 	var result []ProcessInfo
 
 	// 1. Try to find running processes via pgrep java
-	out, _ := exec.Command("pgrep", "java").Output()
+	out, _ := commandOutput(ctx, commandTimeout, "pgrep", "java")
 	if len(strings.TrimSpace(string(out))) > 0 {
 		for _, pid := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			pid = strings.TrimSpace(pid)
 			if pid == "" {
 				continue
 			}
-			cmdline := readProcessCmdline(pid)
+			cmdline := readProcessCmdline(ctx, commandTimeout, pid)
 			cwd := readProcessCwd(pid)
 			if cmdline == "" || (!strings.Contains(strings.ToLower(cmdline), "kafka") && !strings.Contains(strings.ToLower(cmdline), ".properties")) {
 				continue
@@ -64,7 +65,7 @@ func getRunningKafkaPropsFiles() []ProcessInfo {
 	}
 
 	// 2. Try to find running processes via systemd
-	systemdProps := getSystemdRunningKafkaPropsFiles()
+	systemdProps := getSystemdRunningKafkaPropsFiles(ctx, commandTimeout)
 	result = append(result, systemdProps...)
 
 	return result
@@ -78,7 +79,7 @@ func readProcessCwd(pid string) string {
 	return ""
 }
 
-func readProcessCmdline(pid string) string {
+func readProcessCmdline(ctx context.Context, commandTimeout time.Duration, pid string) string {
 	// Try /proc/<pid>/cmdline first (Linux)
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%s/cmdline", pid))
 	if err == nil {
@@ -86,34 +87,37 @@ func readProcessCmdline(pid string) string {
 		return strings.ReplaceAll(string(data), "\x00", " ")
 	}
 	// Fallback to ps
-	out, err := exec.Command("ps", "-p", pid, "-o", "args=").Output()
+	out, err := commandOutput(ctx, commandTimeout, "ps", "-p", pid, "-o", "args=")
 	if err == nil {
 		return string(out)
 	}
 	return ""
 }
 
-func getSystemdRunningKafkaPropsFiles() []ProcessInfo {
+func getSystemdRunningKafkaPropsFiles(ctx context.Context, commandTimeout time.Duration) []ProcessInfo {
 	var result []ProcessInfo
-	if err := exec.Command("systemctl", "--version").Run(); err != nil {
+	if err := runCommand(ctx, commandTimeout, "systemctl", "--version"); err != nil {
 		return result
 	}
 
-	out1, _ := exec.Command("systemctl", "list-units", "--type=service", "--state=running", "--no-legend", "--plain").Output()
-	
+	out1, _ := commandOutput(ctx, commandTimeout, "systemctl", "list-units", "--type=service", "--state=running", "--no-legend", "--plain")
+
 	lines := strings.Split(string(out1), "\n")
 	for _, line := range lines {
+		if ctx.Err() != nil {
+			return result
+		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
 		}
 		unit := fields[0]
 
-		execStartOut, _ := exec.Command("systemctl", "show", unit, "--property=ExecStart", "--value").Output()
+		execStartOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=ExecStart", "--value")
 		execStartStr := string(execStartOut)
-		cwdOut, _ := exec.Command("systemctl", "show", unit, "--property=WorkingDirectory", "--value").Output()
+		cwdOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=WorkingDirectory", "--value")
 		cwdStr := strings.TrimSpace(string(cwdOut))
-		
+
 		if !strings.Contains(strings.ToLower(execStartStr), "kafka") && !strings.Contains(strings.ToLower(execStartStr), ".properties") {
 			continue
 		}
@@ -127,17 +131,23 @@ func getSystemdRunningKafkaPropsFiles() []ProcessInfo {
 // Filesystem scanning
 // =========================================================================
 
-func findAllConfigProperties(scanPaths []string) []string {
+func findAllConfigProperties(ctx context.Context, scanPaths []string) []string {
 	var results []string
 	seen := map[string]bool{}
 
 	for _, base := range scanPaths {
+		if ctx.Err() != nil {
+			return results
+		}
 		info, err := os.Stat(base)
 		if err != nil || !info.IsDir() {
 			continue
 		}
 
 		_ = filepath.Walk(base, func(path string, fi os.FileInfo, err error) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			if err != nil {
 				return nil
 			}

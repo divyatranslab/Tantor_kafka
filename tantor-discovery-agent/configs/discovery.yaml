@@ -10,6 +10,20 @@ discovery:
   interval: "15s"
   task_poll_interval: "5s"
 
+  # Every OS command and HTTP operation is bounded and cancelled on shutdown.
+  command_timeout: "30s"
+  http:
+    connect_timeout: "3s"
+    tls_handshake_timeout: "5s"
+    response_header_timeout: "5s"
+    request_timeout: "10s"
+    retry_total_timeout: "25s"
+    retry_max_attempts: 3
+    retry_initial_backoff: "250ms"
+    retry_max_backoff: "2s"
+    circuit_failure_threshold: 5
+    circuit_open_duration: "30s"
+
   # Optional but preferred in production. When set, the agent checks this
   # install first before falling back to broad scan_paths discovery.
   kafka_home: "/opt/kafka_2.13-4.1.0"

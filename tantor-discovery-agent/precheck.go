@@ -1,10 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -42,15 +42,19 @@ var (
 	seenDirs          = make(map[string]bool)
 )
 
-func runPrecheck(jsonOutput bool) {
+func runPrecheck(ctx context.Context, commandTimeout time.Duration, jsonOutput bool) {
+	precheckInstances = nil
+	seenPIDs = make(map[string]bool)
+	seenConfigs = make(map[string]string)
+	seenDirs = make(map[string]bool)
 	hostname, _ := os.Hostname()
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	osInfo := getOSInfo()
+	osInfo := getOSInfo(ctx, commandTimeout)
 
-	discoverProcessesPrecheck()
-	discoverFilesystemPrecheck()
-	discoverSystemdPrecheck()
-	discoverPortsPrecheck()
+	discoverProcessesPrecheck(ctx, commandTimeout)
+	discoverFilesystemPrecheck(ctx, commandTimeout)
+	discoverSystemdPrecheck(ctx, commandTimeout)
+	discoverPortsPrecheck(ctx, commandTimeout)
 
 	kafkaExists := len(precheckInstances) > 0
 
@@ -131,7 +135,7 @@ func runPrecheck(jsonOutput bool) {
 	}
 }
 
-func getOSInfo() string {
+func getOSInfo(ctx context.Context, commandTimeout time.Duration) string {
 	if b, err := os.ReadFile("/etc/os-release"); err == nil {
 		for _, line := range strings.Split(string(b), "\n") {
 			if strings.HasPrefix(line, "PRETTY_NAME=") {
@@ -139,7 +143,7 @@ func getOSInfo() string {
 			}
 		}
 	}
-	out, err := exec.Command("uname", "-sr").Output()
+	out, err := commandOutput(ctx, commandTimeout, "uname", "-sr")
 	if err == nil {
 		return strings.TrimSpace(string(out))
 	}
@@ -323,13 +327,16 @@ func readMeta(datadir string) (string, string) {
 	return cid, nid
 }
 
-func discoverProcessesPrecheck() {
-	out, err := exec.Command("sh", "-c", "ps -eo pid= -o args= | grep -E '[j]ava.*[Kk]afka|[j]ava.*kafka'").Output()
+func discoverProcessesPrecheck(ctx context.Context, commandTimeout time.Duration) {
+	out, err := commandOutput(ctx, commandTimeout, "sh", "-c", "ps -eo pid= -o args= | grep -E '[j]ava.*[Kk]afka|[j]ava.*kafka'")
 	if err != nil {
 		return
 	}
 	lines := strings.Split(string(out), "\n")
 	for _, line := range lines {
+		if ctx.Err() != nil {
+			return
+		}
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -343,7 +350,7 @@ func discoverProcessesPrecheck() {
 			continue
 		}
 
-		cmdline := readProcessCmdline(pid)
+		cmdline := readProcessCmdline(ctx, commandTimeout, pid)
 		var cfg string
 		for _, token := range strings.Fields(cmdline) {
 			if strings.HasSuffix(token, ".properties") {
@@ -382,15 +389,18 @@ func discoverProcessesPrecheck() {
 	}
 }
 
-func discoverFilesystemPrecheck() {
+func discoverFilesystemPrecheck(ctx context.Context, commandTimeout time.Duration) {
 	roots := []string{"/opt", "/opt_apb", "/app", "/usr/local", "/usr/share", "/srv", "/data", "/var/lib"}
 	var installDirs []string
 
 	for _, root := range roots {
+		if ctx.Err() != nil {
+			return
+		}
 		if !dirExists(root) {
 			continue
 		}
-		out, err := exec.Command("find", root, "-maxdepth", "6", "-name", "kafka-server-start.sh", "-not", "-path", "*/proc/*").Output()
+		out, err := commandOutput(ctx, commandTimeout, "find", root, "-maxdepth", "6", "-name", "kafka-server-start.sh", "-not", "-path", "*/proc/*")
 		if err == nil {
 			for _, match := range strings.Split(string(out), "\n") {
 				if match != "" {
@@ -401,6 +411,9 @@ func discoverFilesystemPrecheck() {
 	}
 
 	for _, installDir := range installDirs {
+		if ctx.Err() != nil {
+			return
+		}
 		if seenDirs[installDir] {
 			continue
 		}
@@ -411,7 +424,7 @@ func discoverFilesystemPrecheck() {
 
 		cfgDir := filepath.Join(installDir, "config")
 		if dirExists(cfgDir) {
-			out, err := exec.Command("find", cfgDir, "-maxdepth", "3", "-name", "*.properties").Output()
+			out, err := commandOutput(ctx, commandTimeout, "find", cfgDir, "-maxdepth", "3", "-name", "*.properties")
 			if err == nil {
 				for _, cfg := range strings.Split(string(out), "\n") {
 					if cfg == "" || strings.Contains(strings.ToLower(cfg), "example") || strings.Contains(strings.ToLower(cfg), "template") || strings.HasSuffix(cfg, ".bak") || strings.HasSuffix(cfg, ".orig") {
@@ -441,18 +454,21 @@ func discoverFilesystemPrecheck() {
 	}
 }
 
-func discoverSystemdPrecheck() {
-	if err := exec.Command("systemctl", "--version").Run(); err != nil {
+func discoverSystemdPrecheck(ctx context.Context, commandTimeout time.Duration) {
+	if err := runCommand(ctx, commandTimeout, "systemctl", "--version"); err != nil {
 		return
 	}
 
-	out1, _ := exec.Command("systemctl", "list-units", "--all", "--no-legend", "--plain").Output()
-	out2, _ := exec.Command("systemctl", "list-unit-files", "--no-legend", "--plain").Output()
-	
+	out1, _ := commandOutput(ctx, commandTimeout, "systemctl", "list-units", "--all", "--no-legend", "--plain")
+	out2, _ := commandOutput(ctx, commandTimeout, "systemctl", "list-unit-files", "--no-legend", "--plain")
+
 	lines := append(strings.Split(string(out1), "\n"), strings.Split(string(out2), "\n")...)
-	
+
 	seenUnits := make(map[string]bool)
 	for _, line := range lines {
+		if ctx.Err() != nil {
+			return
+		}
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			continue
@@ -471,17 +487,17 @@ func discoverSystemdPrecheck() {
 			continue
 		}
 
-		loadOut, _ := exec.Command("systemctl", "show", unit, "--property=LoadState", "--value").Output()
+		loadOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=LoadState", "--value")
 		if strings.TrimSpace(string(loadOut)) == "not-found" {
 			continue
 		}
 
-		activeOut, _ := exec.Command("systemctl", "show", unit, "--property=ActiveState", "--value").Output()
-		subOut, _ := exec.Command("systemctl", "show", unit, "--property=SubState", "--value").Output()
+		activeOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=ActiveState", "--value")
+		subOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=SubState", "--value")
 		active := strings.TrimSpace(string(activeOut))
 		sub := strings.TrimSpace(string(subOut))
 
-		execStartOut, _ := exec.Command("systemctl", "show", unit, "--property=ExecStart", "--value").Output()
+		execStartOut, _ := commandOutput(ctx, commandTimeout, "systemctl", "show", unit, "--property=ExecStart", "--value")
 		execStartStr := string(execStartOut)
 		var cfg string
 		for _, token := range strings.Fields(execStartStr) {
@@ -523,12 +539,12 @@ func discoverSystemdPrecheck() {
 	}
 }
 
-func discoverPortsPrecheck() {
+func discoverPortsPrecheck(ctx context.Context, commandTimeout time.Duration) {
 	var out []byte
 	var err error
-	out, err = exec.Command("ss", "-tlnp").Output()
+	out, err = commandOutput(ctx, commandTimeout, "ss", "-tlnp")
 	if err != nil {
-		out, err = exec.Command("netstat", "-tlnp").Output()
+		out, err = commandOutput(ctx, commandTimeout, "netstat", "-tlnp")
 		if err != nil {
 			return
 		}
@@ -542,13 +558,16 @@ func discoverPortsPrecheck() {
 	}
 
 	for _, line := range strings.Split(string(out), "\n") {
+		if ctx.Err() != nil {
+			return
+		}
 		line = strings.TrimSpace(line)
-		
+
 		idx := strings.Index(line, ":")
 		if idx == -1 {
 			continue
 		}
-		
+
 		portEnd := idx + 1
 		for portEnd < len(line) && line[portEnd] >= '0' && line[portEnd] <= '9' {
 			portEnd++
@@ -572,7 +591,7 @@ func discoverPortsPrecheck() {
 			continue
 		}
 
-		cmdline := readProcessCmdline(pid)
+		cmdline := readProcessCmdline(ctx, commandTimeout, pid)
 		if !strings.Contains(strings.ToLower(cmdline), "kafka") {
 			continue
 		}

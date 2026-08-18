@@ -1,24 +1,29 @@
 package main
 
 import (
-	"crypto/tls"
+	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	configPath := flag.String("config", "discovery.yaml", "Path to configuration YAML")
 	jsonOutput := flag.Bool("json", false, "Output precheck results in JSON format")
 	flag.Parse()
 
 	if *jsonOutput {
 		// If JSON was requested, exit after precheck to avoid mixing JSON with logs.
-		runPrecheck(true)
+		runPrecheck(ctx, 30*time.Second, true)
 		os.Exit(0)
 	}
 
@@ -35,10 +40,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	configureHTTPTransport(cfg.Discovery.TLSInsecureSkipVerify)
+	httpSettings, err := cfg.Discovery.EffectiveHTTPSettings()
+	if err != nil {
+		fmt.Printf("Invalid HTTP configuration: %v\n", err)
+		os.Exit(1)
+	}
+	commandTimeout, err := cfg.Discovery.EffectiveCommandTimeout()
+	if err != nil {
+		fmt.Printf("Invalid command configuration: %v\n", err)
+		os.Exit(1)
+	}
+	clients := newAgentHTTPClients(httpSettings, cfg.Discovery.TLSInsecureSkipVerify)
 
 	if !cfg.Discovery.SkipPrecheck {
-		runPrecheck(false)
+		runPrecheck(ctx, commandTimeout, false)
+		if ctx.Err() != nil {
+			return
+		}
 	}
 
 	serverURL := cfg.Discovery.ServerURL
@@ -90,40 +108,47 @@ func main() {
 			os.Exit(1)
 		}
 
-		go pollForTasksLoop(
-			serverURL,
-			hostname,
-			cfg.Discovery.RestartCommand,
-			cfg.Discovery.SystemdUseSudo,
-			cfg.Discovery.EffectiveMetricsURL(),
-			!cfg.Discovery.DisableMetrics,
-			taskPollInterval,
-			clustersChan,
-		)
+		var workers sync.WaitGroup
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			pollForTasksLoop(
+				ctx,
+				clients,
+				serverURL,
+				hostname,
+				cfg.Discovery.RestartCommand,
+				cfg.Discovery.SystemdUseSudo,
+				cfg.Discovery.EffectiveMetricsURL(),
+				!cfg.Discovery.DisableMetrics,
+				taskPollInterval,
+				commandTimeout,
+				clustersChan,
+				&workers,
+			)
+		}()
 
-		for {
-			clusters := runDiscovery(serverURL, hostname, environment, cfg.Discovery)
+		for ctx.Err() == nil {
+			clusters := runDiscovery(ctx, clients, serverURL, hostname, environment, cfg.Discovery, commandTimeout)
 			select {
 			case clustersChan <- clusters:
+			case <-ctx.Done():
 			default:
 			}
 
 			fmt.Printf("\nWaiting %v until next discovery scan...\n\n", duration)
-			time.Sleep(duration)
+			timer := time.NewTimer(duration)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+			case <-timer.C:
+			}
 		}
+		workers.Wait()
+		fmt.Println("Discovery agent stopped.")
 	} else {
-		runDiscovery(serverURL, hostname, environment, cfg.Discovery)
+		runDiscovery(ctx, clients, serverURL, hostname, environment, cfg.Discovery, commandTimeout)
 	}
-}
-
-func configureHTTPTransport(insecureSkipVerify bool) {
-	transport, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return
-	}
-	clone := transport.Clone()
-	if insecureSkipVerify {
-		clone.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-	http.DefaultTransport = clone
 }

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // =========================================================================
@@ -32,12 +34,15 @@ type DiscoveredCluster struct {
 	SystemdService      string
 }
 
-func runDiscovery(serverURL, hostname, environment string, discoveryCfg DiscoveryConfig) []DiscoveredCluster {
+func runDiscovery(ctx context.Context, clients *agentHTTPClients, serverURL, hostname, environment string, discoveryCfg DiscoveryConfig, commandTimeout time.Duration) []DiscoveredCluster {
 	scanPaths := discoveryCfg.EffectiveScanPaths()
-	reportAgentHeartbeat(serverURL, hostname, discoveryCfg.HostID, discoveryCfg.AgentName)
+	reportAgentHeartbeat(ctx, clients.backend, serverURL, hostname, discoveryCfg.HostID, discoveryCfg.AgentName)
+	if ctx.Err() != nil {
+		return nil
+	}
 
 	// Step 1: build a set of running Kafka PIDs and their server.properties.
-	runningProps := getRunningKafkaPropsFiles()
+	runningProps := getRunningKafkaPropsFiles(ctx, commandTimeout)
 	fmt.Printf("Running Kafka processes/services: %d\n", len(runningProps))
 	for _, props := range runningProps {
 		fmt.Printf("  - %s (Service: %s)\n", props.Cmdline, props.SystemdUnit)
@@ -78,7 +83,7 @@ func runDiscovery(serverURL, hostname, environment string, discoveryCfg Discover
 	}
 
 	// Step 4: scan the filesystem for offline properties files.
-	fsProps := findAllConfigProperties(scanPaths)
+	fsProps := findAllConfigProperties(ctx, scanPaths)
 	for _, p := range fsProps {
 		addPropsFile(p)
 	}
@@ -98,6 +103,9 @@ func runDiscovery(serverURL, hostname, environment string, discoveryCfg Discover
 	seen := map[string]bool{}
 
 	for _, propsFile := range exactProps {
+		if ctx.Err() != nil {
+			return clusters
+		}
 		isRunning := false
 		baseProps := filepath.Base(propsFile)
 		dirName := filepath.Base(filepath.Dir(propsFile)) // e.g. "config" or "kraft"
@@ -173,7 +181,7 @@ func runDiscovery(serverURL, hostname, environment string, discoveryCfg Discover
 	apiURL := strings.TrimRight(serverURL, "/") + "/api/v1/ui/external-clusters/discovery/report"
 	ok, fail := 0, 0
 	for _, c := range clusters {
-		if registerCluster(apiURL, c, discoveryCfg.HostID, discoveryCfg.AgentName) {
+		if registerCluster(ctx, clients.backend, apiURL, c, discoveryCfg.HostID, discoveryCfg.AgentName) {
 			ok++
 		} else {
 			fail++

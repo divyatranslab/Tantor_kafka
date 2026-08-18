@@ -1,16 +1,17 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,12 +37,16 @@ type AgentTaskResult struct {
 }
 
 func pollForTasksLoop(
+	ctx context.Context,
+	clients *agentHTTPClients,
 	serverURL, hostname, restartCommand string,
 	systemdUseSudo bool,
 	metricsURL string,
 	metricsEnabled bool,
 	taskPollInterval time.Duration,
+	commandTimeout time.Duration,
 	clustersChan <-chan []DiscoveredCluster,
+	workers *sync.WaitGroup,
 ) {
 	var currentClusters []DiscoveredCluster
 	ticker := time.NewTicker(taskPollInterval)
@@ -51,32 +56,48 @@ func pollForTasksLoop(
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case newClusters := <-clustersChan:
 			currentClusters = newClusters
 		case <-ticker.C:
 			for _, c := range currentClusters {
+				if ctx.Err() != nil {
+					return
+				}
 				if metricsEnabled && !metricsStarted[c.Name] {
-					startMetricsStream(serverURL, c.Name, hostname, c.BootstrapServers, metricsURL, 5*time.Second)
+					workers.Add(1)
+					go func(cluster DiscoveredCluster) {
+						defer workers.Done()
+						startMetricsStream(ctx, clients, serverURL, cluster.Name, hostname, cluster.BootstrapServers, metricsURL, 5*time.Second)
+					}(c)
 					metricsStarted[c.Name] = true
 				}
-				pollForTask(serverURL, c, hostname, restartCommand, systemdUseSudo)
+				pollForTask(ctx, clients.backend, serverURL, c, hostname, restartCommand, systemdUseSudo, commandTimeout)
 			}
 		}
 	}
 }
 
-func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultRestartCommand string, systemdUseSudo bool) {
+func pollForTask(ctx context.Context, client *resilientHTTPClient, serverURL string, cluster DiscoveredCluster, hostname, defaultRestartCommand string, systemdUseSudo bool, commandTimeout time.Duration) {
 	apiURL := externalAgentURL(serverURL, cluster.Name, "/tasks")
 	query := url.Values{}
 	query.Set("hostname", hostname)
 	query.Set("bootstrap", cluster.BootstrapServers)
 	apiURL += "?" + query.Encode()
 
-	resp, err := http.Get(apiURL)
-	if err != nil || resp.StatusCode != http.StatusOK {
+	// The server currently marks a task IN_PROGRESS when this GET succeeds, so
+	// it must not be automatically retried until the protocol supports leases.
+	resp, err := client.do(ctx, http.MethodGet, apiURL, "", nil, false)
+	if err != nil {
+		fmt.Printf("Task poll failed for cluster %s: %v\n", cluster.Name, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer closeResponse(resp)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Task poll failed for cluster %s: HTTP %d\n", cluster.Name, resp.StatusCode)
+		return
+	}
 
 	var task AgentTask
 	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
@@ -121,12 +142,12 @@ func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultR
 			result.Message = err.Error()
 		}
 	case "restart_service":
-		if err := executeRestartService(task, defaultRestartCommand, cluster, systemdUseSudo); err != nil {
+		if err := executeRestartService(ctx, task, defaultRestartCommand, cluster, systemdUseSudo, commandTimeout); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		}
 	case "service_status":
-		if active, err := executeServiceStatus(task.ServiceName, cluster, systemdUseSudo); err != nil {
+		if active, err := executeServiceStatus(ctx, task.ServiceName, cluster, systemdUseSudo, commandTimeout); err != nil {
 			result.Status = "FAILED"
 			result.Message = err.Error()
 		} else {
@@ -141,7 +162,7 @@ func pollForTask(serverURL string, cluster DiscoveredCluster, hostname, defaultR
 		result.Message = "unsupported task: " + task.Task
 	}
 
-	completeTaskWithResult(serverURL, cluster, hostname, result)
+	completeTaskWithResult(ctx, client, serverURL, cluster, hostname, result)
 }
 
 func validatePathSafety(path string, cluster DiscoveredCluster) error {
@@ -332,32 +353,34 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster) error {
 	return os.WriteFile(task.ConfigFilePath, []byte(strings.Join(lines, "\n")), fileInfo.Mode())
 }
 
-func executeRestartService(task AgentTask, defaultRestartCommand string, cluster DiscoveredCluster, systemdUseSudo bool) error {
-	var cmd *exec.Cmd
+func executeRestartService(ctx context.Context, task AgentTask, defaultRestartCommand string, cluster DiscoveredCluster, systemdUseSudo bool, commandTimeout time.Duration) error {
+	var name string
+	var args []string
 	if task.ServiceName != "" {
 		if err := validateServiceSafety(task.ServiceName, cluster); err != nil {
 			return err
 		}
 		fmt.Printf("Restarting systemd service: %s\n", task.ServiceName)
 		if systemdUseSudo {
-			cmd = exec.Command("sudo", "systemctl", "restart", task.ServiceName)
+			name, args = "sudo", []string{"-n", "systemctl", "restart", task.ServiceName}
 		} else {
-			cmd = exec.Command("systemctl", "restart", task.ServiceName)
+			name, args = "systemctl", []string{"restart", task.ServiceName}
 		}
 	} else if defaultRestartCommand != "" {
 		fmt.Printf("Executing default restart command: %s\n", defaultRestartCommand)
 		cmdParts := strings.Fields(defaultRestartCommand)
-		cmd = exec.Command(cmdParts[0], cmdParts[1:]...)
+		name, args = cmdParts[0], cmdParts[1:]
+		if name == "sudo" && (len(args) == 0 || args[0] != "-n") {
+			args = append([]string{"-n"}, args...)
+		}
 	} else {
 		return fmt.Errorf("no serviceName or restartCommand provided")
 	}
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	return runAttachedCommand(ctx, commandTimeout, name, args...)
 }
 
-func executeServiceStatus(serviceName string, cluster DiscoveredCluster, systemdUseSudo bool) (bool, error) {
+func executeServiceStatus(ctx context.Context, serviceName string, cluster DiscoveredCluster, systemdUseSudo bool, commandTimeout time.Duration) (bool, error) {
 	if serviceName == "" {
 		return false, fmt.Errorf("no serviceName provided")
 	}
@@ -365,20 +388,22 @@ func executeServiceStatus(serviceName string, cluster DiscoveredCluster, systemd
 		return false, err
 	}
 
-	var cmd *exec.Cmd
+	var err error
 	if systemdUseSudo {
-		cmd = exec.Command("sudo", "systemctl", "is-active", "--quiet", serviceName)
+		err = runCommand(ctx, commandTimeout, "sudo", "-n", "systemctl", "is-active", "--quiet", serviceName)
 	} else {
-		cmd = exec.Command("systemctl", "is-active", "--quiet", serviceName)
+		err = runCommand(ctx, commandTimeout, "systemctl", "is-active", "--quiet", serviceName)
 	}
-	err := cmd.Run()
 	if err == nil {
 		return true, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false, err
 	}
 	return false, nil
 }
 
-func completeTaskWithResult(serverURL string, cluster DiscoveredCluster, hostname string, result AgentTaskResult) {
+func completeTaskWithResult(ctx context.Context, client *resilientHTTPClient, serverURL string, cluster DiscoveredCluster, hostname string, result AgentTaskResult) {
 	completeURL := externalAgentURL(serverURL, cluster.Name, "/tasks/complete")
 	query := url.Values{}
 	query.Set("hostname", hostname)
@@ -386,8 +411,13 @@ func completeTaskWithResult(serverURL string, cluster DiscoveredCluster, hostnam
 	completeURL += "?" + query.Encode()
 
 	payload, _ := json.Marshal(result)
-	resp, err := http.Post(completeURL, "application/json", bytes.NewBuffer(payload))
-	if err == nil && resp != nil {
-		resp.Body.Close()
+	resp, err := client.do(ctx, http.MethodPost, completeURL, "application/json", payload, true)
+	if err != nil {
+		fmt.Printf("Task completion failed for cluster %s: %v\n", cluster.Name, err)
+		return
+	}
+	defer closeResponse(resp)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("Task completion failed for cluster %s: HTTP %d\n", cluster.Name, resp.StatusCode)
 	}
 }

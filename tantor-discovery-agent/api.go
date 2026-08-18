@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,7 +63,7 @@ func firstNonBlank(values ...string) string {
 	return ""
 }
 
-func completeAgentTask(serverURL string, cluster DiscoveredCluster, hostname, status, message string) {
+func completeAgentTask(ctx context.Context, client *resilientHTTPClient, serverURL string, cluster DiscoveredCluster, hostname, status, message string) {
 	completeURL := externalAgentURL(serverURL, cluster.Name, "/tasks/complete")
 	query := url.Values{}
 	query.Set("hostname", hostname)
@@ -74,13 +74,18 @@ func completeAgentTask(serverURL string, cluster DiscoveredCluster, hostname, st
 		"status":  status,
 		"message": message,
 	})
-	resp, err := http.Post(completeURL, "application/json", bytes.NewBuffer(payload))
-	if err == nil && resp != nil {
-		resp.Body.Close()
+	resp, err := client.do(ctx, http.MethodPost, completeURL, "application/json", payload, true)
+	if err != nil {
+		fmt.Printf("  [failed] Task completion connection error: %v\n", err)
+		return
+	}
+	defer closeResponse(resp)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("  [failed] Task completion HTTP %d\n", resp.StatusCode)
 	}
 }
 
-func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName string) bool {
+func registerCluster(ctx context.Context, client *resilientHTTPClient, apiURL string, c DiscoveredCluster, hostID, agentName string) bool {
 	payload := ExternalClusterPayload{
 		HostID:              hostID,
 		AgentName:           agentName,
@@ -107,15 +112,15 @@ func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName strin
 	}
 
 	// Fetch CPU, RAM, and Disk telemetry
-	cpuPercents, _ := cpu.Percent(time.Second, false)
+	cpuPercents, _ := cpu.PercentWithContext(ctx, time.Second, false)
 	if len(cpuPercents) > 0 {
 		payload.CpuUsagePct = cpuPercents[0]
 	}
-	if v, _ := mem.VirtualMemory(); v != nil {
+	if v, _ := mem.VirtualMemoryWithContext(ctx); v != nil {
 		payload.MemoryTotalMb = int64(v.Total / 1024 / 1024)
 		payload.MemoryUsedMb = int64(v.Used / 1024 / 1024)
 	}
-	if d, _ := disk.Usage("/"); d != nil {
+	if d, _ := disk.UsageWithContext(ctx, "/"); d != nil {
 		payload.DiskTotalGb = int64(d.Total / 1024 / 1024 / 1024)
 		payload.DiskUsedGb = int64(d.Used / 1024 / 1024 / 1024)
 	}
@@ -126,24 +131,24 @@ func registerCluster(apiURL string, c DiscoveredCluster, hostID, agentName strin
 		return false
 	}
 
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(body))
+	resp, err := client.do(ctx, http.MethodPost, apiURL, "application/json", body, true)
 	if err != nil {
 		fmt.Printf("  [failed] Connection error for %s: %v\n", c.Name, err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer closeResponse(resp)
 
 	if resp.StatusCode == http.StatusOK {
 		fmt.Printf("  [ok] %s registered\n", c.Name)
 		return true
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
 	fmt.Printf("  [failed] %s HTTP %d: %s\n", c.Name, resp.StatusCode, string(respBody))
 	return false
 }
 
-func reportAgentHeartbeat(serverURL, hostname, hostID, agentName string) bool {
+func reportAgentHeartbeat(ctx context.Context, client *resilientHTTPClient, serverURL, hostname, hostID, agentName string) bool {
 	payload := map[string]any{
 		"hostId":          hostID,
 		"agentName":       agentName,
@@ -160,19 +165,19 @@ func reportAgentHeartbeat(serverURL, hostname, hostID, agentName string) bool {
 	}
 
 	apiURL := strings.TrimRight(serverURL, "/") + "/api/v1/ui/external-clusters/discovery/heartbeat"
-	resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(body))
+	resp, err := client.do(ctx, http.MethodPost, apiURL, "application/json", body, true)
 	if err != nil {
 		fmt.Printf("  [failed] Agent heartbeat connection error: %v\n", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer closeResponse(resp)
 
 	if resp.StatusCode == http.StatusOK {
 		fmt.Printf("  [ok] discovery agent heartbeat reported for %s\n", hostname)
 		return true
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
 	fmt.Printf("  [failed] Agent heartbeat HTTP %d: %s\n", resp.StatusCode, string(respBody))
 	return false
 }
