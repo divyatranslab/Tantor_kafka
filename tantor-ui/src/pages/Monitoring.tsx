@@ -752,6 +752,7 @@ const targetHealthStatus = (up?: number | null, total?: number | null): {
 
 const targetHealthLabel = (name: string, health: ReturnType<typeof targetHealthStatus>) => {
   if (health.state === 'unavailable') return `${name} N/A`;
+  if (health.state === 'down') return `${name} DOWN`;
   return `${name} ${health.up}/${health.total} UP`;
 };
 
