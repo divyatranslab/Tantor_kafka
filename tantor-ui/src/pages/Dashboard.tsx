@@ -384,7 +384,6 @@ export function Dashboard() {
             detail={
               <select className="db-panel-select">
                 <option>Last 7 days</option>
-                <option>Last 30 days</option>
               </select>
             }
           />
