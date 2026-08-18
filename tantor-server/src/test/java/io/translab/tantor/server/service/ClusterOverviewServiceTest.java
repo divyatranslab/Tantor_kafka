@@ -118,6 +118,10 @@ class ClusterOverviewServiceTest {
     @Test
     void reportsZooKeeperModeWithoutCallingKraftMetadataQuorumApi() throws Exception {
         UUID clusterId = UUID.randomUUID();
+        Cluster compatibilityCluster = new Cluster();
+        compatibilityCluster.setId(clusterId);
+        compatibilityCluster.setName("legacy-zk");
+        compatibilityCluster.setMode("EXTERNAL");
         ExternalCluster cluster = new ExternalCluster();
         cluster.setId(clusterId);
         cluster.setName("legacy-zk");
@@ -125,7 +129,7 @@ class ClusterOverviewServiceTest {
         cluster.setKafkaMode("ZooKeeper");
 
         Node brokerController = new Node(1, "192.168.3.150", 9092);
-        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(compatibilityCluster));
         when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
         when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
         when(adminClient.describeCluster()).thenReturn(describeClusterResult);

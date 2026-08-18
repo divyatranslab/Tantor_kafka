@@ -54,7 +54,9 @@ public class ClusterOverviewService {
         Cluster internalCluster = null;
         
         var internalOpt = clusterRepository.findById(clusterId);
-        if (internalOpt.isPresent()) {
+        boolean hasInternalCluster = internalOpt.isPresent()
+                && !"EXTERNAL".equalsIgnoreCase(internalOpt.get().getMode());
+        if (hasInternalCluster) {
             Cluster cluster = internalOpt.get();
             internalCluster = cluster;
             clusterName = cluster.getName();
@@ -66,6 +68,10 @@ public class ClusterOverviewService {
             dataDirectory = cluster.getDataDirectory();
             logDirectory = cluster.getLogDirectory();
         } else {
+            // External-cluster registration also keeps a compatibility Cluster
+            // row with mode=EXTERNAL. That shadow row is routing metadata, not
+            // the source of Kafka coordination mode/version. Always load those
+            // fields from ExternalCluster for an external overview.
             ExternalCluster ext = externalClusterRepository.findById(clusterId)
                     .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
             clusterName = ext.getName();
