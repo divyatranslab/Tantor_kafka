@@ -233,8 +233,13 @@ public class PrometheusMonitoringService {
             overview.getWarnings().add(warning);
         }
 
-        overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", clusterSelector, true));
-        overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", clusterSelector, false));
+        // A node-specific monitoring request must report the selected broker's
+        // exporter health, not the aggregate health of every broker in the
+        // cluster. Otherwise one unreachable exporter makes every healthy node
+        // appear down in the UI.
+        String exporterHealthSelector = selectedNodeId == null ? clusterSelector : brokerMetricSelector;
+        overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", exporterHealthSelector, true));
+        overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", exporterHealthSelector, false));
         overview.setKafkaExporterUp(healthValue(
                 overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
         if (brokerMetricsRequested) {
