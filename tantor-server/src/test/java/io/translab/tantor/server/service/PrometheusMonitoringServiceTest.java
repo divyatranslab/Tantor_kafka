@@ -39,9 +39,7 @@ class PrometheusMonitoringServiceTest {
         external.setName("external-prod");
 
         ExternalClusterNode broker = externalNode(id, 1, "192.168.10.11", true, false);
-        broker.setJmxExporterPort(7071);
         ExternalClusterNode controller = externalNode(id, 101, "192.168.10.11", false, true);
-        controller.setJmxExporterPort(7071);
 
         ClusterRepository clusters = mock(ClusterRepository.class);
         ExternalClusterRepository externalClusters = mock(ExternalClusterRepository.class);
@@ -54,6 +52,7 @@ class PrometheusMonitoringServiceTest {
                 clusters, externalClusters, nodes, mock(HostRepository.class),
                 mock(EncryptionService.class), new ObjectMapper());
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
+        ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
 
         assertThat(service.prometheusTargets())
                 .extracting(

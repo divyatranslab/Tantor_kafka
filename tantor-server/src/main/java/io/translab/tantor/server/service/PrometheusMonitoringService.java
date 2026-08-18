@@ -388,8 +388,11 @@ public class PrometheusMonitoringService {
                 continue;
             }
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            if (validExporterPort(node.getJmxExporterPort())) {
-                addTargetIfAbsent(targets, node.getHost() + ":" + node.getJmxExporterPort(),
+            int jmxPort = validExporterPort(node.getJmxExporterPort())
+                    ? node.getJmxExporterPort()
+                    : defaultJmxExporterPort;
+            if (validExporterPort(jmxPort)) {
+                addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
                         labels(cluster, "kafka_jmx", "broker", nodeId));
             }
             addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
@@ -472,7 +475,9 @@ public class PrometheusMonitoringService {
                     .anyMatch(node -> Boolean.TRUE.equals(node.getIsBroker())
                             && node.getHost() != null
                             && !node.getHost().isBlank()
-                            && validExporterPort(node.getJmxExporterPort()));
+                            && validExporterPort(node.getJmxExporterPort() != null
+                                    ? node.getJmxExporterPort()
+                                    : defaultJmxExporterPort));
         }
         return cluster.getServices() != null && cluster.getServices().stream()
                 .filter(service -> isBrokerRole(service.getRole()))
