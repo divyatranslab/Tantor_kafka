@@ -443,31 +443,59 @@ public class PrometheusMonitoringService {
 
     private List<MonitoringNodeSummary> monitoringNodes(Cluster cluster) {
         Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
-        if (cluster.getServices() == null) {
-            return new ArrayList<>();
-        }
-        for (ClusterServiceAssignment service : cluster.getServices()) {
-            String key = service.getNodeId() == null ? service.getHostId() : String.valueOf(service.getNodeId());
-            if (key == null || key.isBlank()) {
-                continue;
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                String key = service.getNodeId() == null ? service.getHostId() : String.valueOf(service.getNodeId());
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                MonitoringNodeSummary node = nodes.computeIfAbsent(key, ignored -> {
+                    MonitoringNodeSummary created = new MonitoringNodeSummary();
+                    created.setNodeId(service.getNodeId() == null ? null : String.valueOf(service.getNodeId()));
+                    created.setHostId(service.getHostId());
+                    Host host = service.getHostId() == null ? null : hostRepository.findById(service.getHostId()).orElse(null);
+                    created.setHostname(host == null ? service.getHostId() : host.getHostname());
+                    created.setHostIp(hostIp(host));
+                    return created;
+                });
+                node.setRole(mergeRole(node.getRole(), roleLabel(service.getRole())));
             }
-            MonitoringNodeSummary node = nodes.computeIfAbsent(key, ignored -> {
-                MonitoringNodeSummary created = new MonitoringNodeSummary();
-                created.setNodeId(service.getNodeId() == null ? null : String.valueOf(service.getNodeId()));
-                created.setHostId(service.getHostId());
-                Host host = service.getHostId() == null ? null : hostRepository.findById(service.getHostId()).orElse(null);
-                created.setHostname(host == null ? service.getHostId() : host.getHostname());
-                created.setHostIp(hostIp(host));
-                return created;
-            });
-            node.setRole(mergeRole(node.getRole(), roleLabel(service.getRole())));
+        }
+
+        // External clusters are mirrored into kf_clusters, but their discovered
+        // topology is stored in kf_external_cluster_nodes rather than service
+        // assignments. Enrich the mirror so monitoring selectors can list and
+        // target every discovered broker/controller.
+        if (isExternal(cluster)) {
+            for (MonitoringNodeSummary externalNode : externalMonitoringNodes(cluster.getId())) {
+                String key = externalNode.getNodeId() == null ? externalNode.getHostIp() : externalNode.getNodeId();
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                MonitoringNodeSummary node = nodes.get(key);
+                if (node == null) {
+                    nodes.put(key, externalNode);
+                    continue;
+                }
+                if (node.getHostname() == null || node.getHostname().isBlank()) {
+                    node.setHostname(externalNode.getHostname());
+                }
+                if (node.getHostIp() == null || node.getHostIp().isBlank()) {
+                    node.setHostIp(externalNode.getHostIp());
+                }
+                node.setRole(mergeRole(node.getRole(), externalNode.getRole()));
+            }
         }
         return new ArrayList<>(nodes.values());
     }
 
     private List<MonitoringNodeSummary> monitoringNodes(ExternalCluster cluster) {
+        return externalMonitoringNodes(cluster.getId());
+    }
+
+    private List<MonitoringNodeSummary> externalMonitoringNodes(UUID clusterId) {
         Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
-        for (ExternalClusterNode externalNode : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+        for (ExternalClusterNode externalNode : externalClusterNodeRepository.findByClusterId(clusterId)) {
             String key = externalNode.getNodeId() == null ? externalNode.getHost() : String.valueOf(externalNode.getNodeId());
             if (key == null || key.isBlank()) {
                 continue;

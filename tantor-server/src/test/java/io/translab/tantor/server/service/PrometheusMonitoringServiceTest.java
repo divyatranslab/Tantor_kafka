@@ -36,21 +36,40 @@ class PrometheusMonitoringServiceTest {
         external.setId(id);
         external.setName("external-prod");
 
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setClusterId(id);
+        broker.setNodeId(1);
+        broker.setHost("192.168.10.11");
+        broker.setIsBroker(true);
+
+        ExternalClusterNode controller = new ExternalClusterNode();
+        controller.setClusterId(id);
+        controller.setNodeId(101);
+        controller.setHost("192.168.10.11");
+        controller.setIsController(true);
+
         ClusterRepository clusters = mock(ClusterRepository.class);
         ExternalClusterRepository externalClusters = mock(ExternalClusterRepository.class);
         ExternalClusterNodeRepository nodes = mock(ExternalClusterNodeRepository.class);
         when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(mirror));
         when(externalClusters.findByStatusNot("DELETED")).thenReturn(List.of(external));
-        when(nodes.findByClusterId(id)).thenReturn(List.of());
+        when(nodes.findByClusterId(id)).thenReturn(List.of(broker, controller));
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, externalClusters, nodes, mock(HostRepository.class),
                 mock(EncryptionService.class), new ObjectMapper());
 
-        assertThat(service.clusters("EXTERNAL"))
-                .singleElement()
-                .extracting(PrometheusMonitoringService.MonitoringClusterSummary::getId)
-                .isEqualTo(id);
+        PrometheusMonitoringService.MonitoringClusterSummary summary = service.clusters("EXTERNAL").getFirst();
+
+        assertThat(summary.getId()).isEqualTo(id);
+        assertThat(summary.getNodes())
+                .extracting(
+                        PrometheusMonitoringService.MonitoringNodeSummary::getNodeId,
+                        PrometheusMonitoringService.MonitoringNodeSummary::getHostIp,
+                        PrometheusMonitoringService.MonitoringNodeSummary::getRole)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("1", "192.168.10.11", "Broker"),
+                        org.assertj.core.groups.Tuple.tuple("101", "192.168.10.11", "Controller"));
     }
 
     @Test
