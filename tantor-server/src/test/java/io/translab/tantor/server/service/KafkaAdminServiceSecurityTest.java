@@ -10,11 +10,16 @@ import io.translab.tantor.server.security.TruststoreStorageService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.apache.kafka.clients.admin.Config;
+import org.apache.kafka.clients.admin.ConfigEntry;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 import java.util.Set;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -83,10 +88,50 @@ class KafkaAdminServiceSecurityTest {
                 service, "isManagedInternalTopic", "customer-orders")).isFalse();
     }
 
+    @Test
+    void detectsCoordinationModeFromBrokerConfiguration() {
+        KafkaAdminService service = service();
+
+        Config zooKeeper = new Config(List.of(
+                new ConfigEntry("zookeeper.connect", "192.168.3.150:9097")));
+        Config kraft = new Config(List.of(
+                new ConfigEntry("process.roles", "broker,controller")));
+        Config unknown = new Config(List.of());
+
+        assertThat((String) ReflectionTestUtils.invokeMethod(
+                service, "configuredKafkaMode", zooKeeper)).isEqualTo("ZooKeeper");
+        assertThat((String) ReflectionTestUtils.invokeMethod(
+                service, "configuredKafkaMode", kraft)).isEqualTo("KRaft");
+        assertThat((String) ReflectionTestUtils.invokeMethod(
+                service, "configuredKafkaMode", unknown)).isNull();
+    }
+
+    @Test
+    void treatsUnsupportedMetadataQuorumApiAsZooKeeperEvidence() {
+        KafkaAdminService service = service();
+        ExecutionException wrapped = new ExecutionException(
+                new UnsupportedVersionException("metadata quorum API unsupported"));
+
+        assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+                service, "isUnsupportedMetadataQuorum", wrapped)).isTrue();
+        assertThat((Boolean) ReflectionTestUtils.invokeMethod(
+                service, "isUnsupportedMetadataQuorum", new IllegalStateException("timeout"))).isFalse();
+    }
+
     private Properties securityProperties(KafkaAdminService service, ExternalCluster cluster) {
         Properties properties = new Properties();
         ReflectionTestUtils.invokeMethod(service, "applySecurityProperties", properties, cluster, true);
         return properties;
+    }
+
+    private KafkaAdminService service() {
+        return new KafkaAdminService(
+                mock(ClusterRepository.class),
+                mock(ExternalClusterRepository.class),
+                mock(HostRepository.class),
+                new ObjectMapper(),
+                mock(EncryptionService.class),
+                mock(TruststoreStorageService.class));
     }
 
     private ExternalCluster cluster(String protocol, Path truststore) {
