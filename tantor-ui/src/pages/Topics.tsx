@@ -69,8 +69,7 @@ export function Topics() {
     minInsyncReplicas: '',
     retentionMs: '',
     maxPartitionSize: '',
-    maxMessageBytes: '',
-    customConfigs: false
+    maxMessageBytes: ''
   });
   const [creating, setCreating] = useState(false);
 
@@ -189,8 +188,7 @@ export function Topics() {
         minInsyncReplicas: '',
         retentionMs: '',
         maxPartitionSize: '',
-        maxMessageBytes: '',
-        customConfigs: false
+        maxMessageBytes: ''
       });
       setNotice('Topic created successfully.');
       await fetchTopics();
@@ -514,17 +512,6 @@ export function Topics() {
               <div className="figma-topic-modal-body">
                 <div className="form-section-header">
                   <span>Cluster Details</span>
-                  <div className="custom-toggle-area">
-                    <label className="cd-toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={newTopic.customConfigs}
-                        onChange={e => setNewTopic(curr => ({ ...curr, customConfigs: e.target.checked }))}
-                      />
-                      <span className="cd-toggle-slider"></span>
-                    </label>
-                    <span className="toggle-label">Custom</span>
-                  </div>
                 </div>
 
                 <div className="form-grid-row">
