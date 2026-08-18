@@ -33,6 +33,10 @@ interface MonitoringOverview {
   jmxAvailable?: boolean;
   kafkaExporterUp?: number | null;
   jmxUp?: number | null;
+  kafkaExporterUpTargets?: number | null;
+  kafkaExporterTotalTargets?: number | null;
+  jmxUpTargets?: number | null;
+  jmxTotalTargets?: number | null;
   brokerCount?: number | null;
   topicCount?: number | null;
   partitionCount?: number | null;
@@ -71,12 +75,12 @@ interface MonitoringSample {
 }
 
 const formatNumber = (value?: number | null, digits = 0) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '0';
+  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 };
 
 const formatBytes = (value?: number | null) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '0 B';
+  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
   if (value <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let next = value;
@@ -244,15 +248,15 @@ export function Monitoring() {
   const clusterTitle = overview?.name || selectedCluster?.name || 'Select a cluster';
   const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
   const selectedNode = nodes.find(node => node.value === selectedNodeId);
-  const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
-  const jmxHealthy = overview?.jmxUp === 1;
+  const kafkaExporterHealthy = hasValue(overview?.kafkaExporterTotalTargets)
+    && Number(overview?.kafkaExporterTotalTargets) > 0
+    && Number(overview?.kafkaExporterUpTargets) === Number(overview?.kafkaExporterTotalTargets);
+  const kafkaExporterStatus = targetHealthStatus(
+    overview?.kafkaExporterUpTargets,
+    overview?.kafkaExporterTotalTargets
+  );
+  const jmxStatus = targetHealthStatus(overview?.jmxUpTargets, overview?.jmxTotalTargets);
   const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
-  const kafkaExporterLabel = overview
-    ? (kafkaExporterHealthy ? 'KAFKA_EXPORTER UP' : 'KAFKA_EXPORTER REQUIRED')
-    : 'KAFKA_EXPORTER';
-  const jmxLabel = overview
-    ? (jmxHealthy ? 'JMX UP' : 'JMX REQUIRED')
-    : 'JMX';
   const warningMessages = [
     selectedCluster?.warning,
     ...(overview?.warnings || []),
@@ -546,11 +550,11 @@ export function Monitoring() {
                   </span>
                 </div>
                 <div className="monitoring-status-pills-row">
-                  <span className={`monitoring-connection-pill ${kafkaExporterHealthy ? 'up' : 'down'}`}>
-                    {kafkaExporterHealthy ? 'Kafka Exporter UP' : 'Kafka Exporter DOWN'}
+                  <span className={`monitoring-connection-pill ${kafkaExporterStatus.state}`}>
+                    {targetHealthLabel('Kafka Exporter', kafkaExporterStatus)}
                   </span>
-                  <span className={`monitoring-connection-pill ${jmxHealthy ? 'up' : 'down'}`}>
-                    {jmxHealthy ? 'Jmx Indicator UP' : 'Jmx Indicator DOWN'}
+                  <span className={`monitoring-connection-pill ${jmxStatus.state}`}>
+                    {targetHealthLabel('JMX', jmxStatus)}
                   </span>
                 </div>
               </div>
@@ -562,7 +566,7 @@ export function Monitoring() {
                     <div className="chart-box-header">
                       <span>CPU Usage</span>
                       <span className="chart-stat-value green">
-                        {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : '-'}
+                        {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : 'N/A'}
                       </span>
                     </div>
                     <div className="chart-body-container">
@@ -583,7 +587,7 @@ export function Monitoring() {
                     <div className="chart-box-header">
                       <span>Memory Usage</span>
                       <span className="chart-stat-value green">
-                        {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : '-'}
+                        {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : 'N/A'}
                       </span>
                     </div>
                     <div className="chart-body-container">
@@ -604,7 +608,7 @@ export function Monitoring() {
                     <div className="chart-box-header">
                       <span>Messages In</span>
                       <span className="chart-stat-value red">
-                        {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : '-'}
+                        {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : 'N/A'}
                       </span>
                     </div>
                     <div className="chart-body-container">
@@ -640,7 +644,7 @@ export function Monitoring() {
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Partition</span>
-                    <strong className="kpi-card-val">{overview?.partitionCount != null ? formatNumber(overview.partitionCount) : '-'}</strong>
+                    <strong className="kpi-card-val">{formatNumber(overview?.partitionCount)}</strong>
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Under-replication</span>
@@ -656,7 +660,7 @@ export function Monitoring() {
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Topics</span>
-                    <strong className="kpi-card-val">{overview?.topicCount != null ? formatNumber(overview.topicCount) : '-'}</strong>
+                    <strong className="kpi-card-val">{formatNumber(overview?.topicCount)}</strong>
                   </div>
                 </div>
               </div>
@@ -729,6 +733,28 @@ const availableCapacityText = (availableBytes: number, totalBytes?: number | nul
     : available;
 };
 
+type TargetHealthState = 'up' | 'degraded' | 'down' | 'unavailable';
+
+const targetHealthStatus = (up?: number | null, total?: number | null): {
+  up: number;
+  total: number;
+  state: TargetHealthState;
+} => {
+  if (!hasValue(total) || Number(total) <= 0) {
+    return { up: 0, total: 0, state: 'unavailable' };
+  }
+  const totalCount = Math.max(0, Number(total));
+  const upCount = hasValue(up) ? Math.max(0, Number(up)) : 0;
+  if (upCount >= totalCount) return { up: upCount, total: totalCount, state: 'up' };
+  if (upCount > 0) return { up: upCount, total: totalCount, state: 'degraded' };
+  return { up: 0, total: totalCount, state: 'down' };
+};
+
+const targetHealthLabel = (name: string, health: ReturnType<typeof targetHealthStatus>) => {
+  if (health.state === 'unavailable') return `${name} N/A`;
+  return `${name} ${health.up}/${health.total} UP`;
+};
+
 function ResourceCard({ label, value, subtext, tone = 'blue' }: {
   label: string;
   value?: number | null;
@@ -741,7 +767,7 @@ function ResourceCard({ label, value, subtext, tone = 'blue' }: {
       <div className="resource-card-header">
         <span className="resource-card-label">{label}</span>
         <strong className="resource-card-value">
-          {hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}
+          {hasValue(value) ? `${formatNumber(value, 1)}%` : 'N/A'}
         </strong>
       </div>
       <div className="progress-track-bg">

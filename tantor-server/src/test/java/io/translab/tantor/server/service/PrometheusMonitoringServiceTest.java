@@ -12,6 +12,7 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,6 +22,49 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class PrometheusMonitoringServiceTest {
+
+    @Test
+    void createsOneBrokerTargetPerHostAndSkipsMirroredControllerTargets() {
+        UUID id = UUID.randomUUID();
+        Cluster mirror = new Cluster();
+        mirror.setId(id);
+        mirror.setName("external-prod");
+        mirror.setOriginType("EXTERNAL");
+        mirror.setMode("EXTERNAL");
+        mirror.setMonitoringEnabled(true);
+        mirror.setJmxEnabled(true);
+
+        ExternalCluster external = new ExternalCluster();
+        external.setId(id);
+        external.setName("external-prod");
+
+        ExternalClusterNode broker = externalNode(id, 1, "192.168.10.11", true, false);
+        broker.setJmxExporterPort(7071);
+        ExternalClusterNode controller = externalNode(id, 101, "192.168.10.11", false, true);
+        controller.setJmxExporterPort(7071);
+
+        ClusterRepository clusters = mock(ClusterRepository.class);
+        ExternalClusterRepository externalClusters = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodes = mock(ExternalClusterNodeRepository.class);
+        when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(mirror));
+        when(externalClusters.findByStatusNot("DELETED")).thenReturn(List.of(external));
+        when(nodes.findByClusterId(id)).thenReturn(List.of(broker, controller));
+
+        PrometheusMonitoringService service = new PrometheusMonitoringService(
+                clusters, externalClusters, nodes, mock(HostRepository.class),
+                mock(EncryptionService.class), new ObjectMapper());
+        ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
+
+        assertThat(service.prometheusTargets())
+                .extracting(
+                        target -> target.getTargets().getFirst(),
+                        target -> target.getLabels().get("job"),
+                        target -> target.getLabels().get("node_id"),
+                        target -> target.getLabels().get("role"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:7071", "kafka_jmx", "1", "broker"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:9308", "kafka_exporter", "1", "broker"));
+    }
 
     @Test
     void returnsMirroredExternalClusterOnlyOnce() {
@@ -95,9 +139,13 @@ class PrometheusMonitoringServiceTest {
         second.setCpuUsagePct(30.0);
         second.setMemoryUsedMb(300L);
         second.setMemoryTotalMb(1000L);
+        ExternalClusterNode controllerOnFirstHost = externalNode(id, 101, "host-a", false, true);
+        controllerOnFirstHost.setCpuUsagePct(10.0);
+        controllerOnFirstHost.setMemoryUsedMb(200L);
+        controllerOnFirstHost.setMemoryTotalMb(1000L);
 
         ExternalClusterNodeRepository nodes = mock(ExternalClusterNodeRepository.class);
-        when(nodes.findByClusterId(id)).thenReturn(List.of(first, second));
+        when(nodes.findByClusterId(id)).thenReturn(List.of(first, controllerOnFirstHost, second));
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodes,
                 mock(HostRepository.class), mock(EncryptionService.class), new ObjectMapper());
@@ -151,5 +199,20 @@ class PrometheusMonitoringServiceTest {
         assignment.setHostId(hostId);
         assignment.setNodeId(nodeId);
         return assignment;
+    }
+
+    private ExternalClusterNode externalNode(
+            UUID clusterId,
+            int nodeId,
+            String host,
+            boolean broker,
+            boolean controller) {
+        ExternalClusterNode node = new ExternalClusterNode();
+        node.setClusterId(clusterId);
+        node.setNodeId(nodeId);
+        node.setHost(host);
+        node.setIsBroker(broker);
+        node.setIsController(controller);
+        return node;
     }
 }

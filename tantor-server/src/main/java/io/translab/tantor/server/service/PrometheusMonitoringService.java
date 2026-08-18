@@ -38,11 +38,13 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import javax.net.ssl.HostnameVerifier;
@@ -136,6 +138,7 @@ public class PrometheusMonitoringService {
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {
         List<SdTargetGroup> targets = new ArrayList<>();
+        Set<UUID> mirroredExternalClusterIds = new HashSet<>();
         for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
             if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled()) && !isExternal(cluster)) {
                 continue;
@@ -143,12 +146,15 @@ public class PrometheusMonitoringService {
 
             if (isExternal(cluster)) {
                 addExternalJmxTargets(targets, cluster);
+                mirroredExternalClusterIds.add(cluster.getId());
             } else {
                 addInternalTargets(targets, cluster);
             }
         }
         for (ExternalCluster extCluster : externalClusterRepository.findByStatusNot("DELETED")) {
-            addExternalJmxTargets(targets, extCluster);
+            if (!mirroredExternalClusterIds.contains(extCluster.getId())) {
+                addExternalJmxTargets(targets, extCluster);
+            }
         }
         return targets;
     }
@@ -206,6 +212,11 @@ public class PrometheusMonitoringService {
         String selectedNodeId = selectedNodeId(nodes, nodeId);
         String clusterSelector = labelSelector(cluster.getId());
         String metricSelector = labelSelector(cluster.getId(), selectedNodeId);
+        String brokerMetricSelector = metricSelector + ",role=~\"broker.*\"";
+        boolean brokerMetricsRequested = selectedNodeId == null || nodes.stream()
+                .filter(node -> selectedNodeId.equals(node.getNodeId()))
+                .map(MonitoringNodeSummary::getRole)
+                .anyMatch(role -> role != null && role.toLowerCase(Locale.ROOT).contains("broker"));
 
         MonitoringOverview overview = new MonitoringOverview();
         overview.setClusterId(cluster.getId());
@@ -222,59 +233,68 @@ public class PrometheusMonitoringService {
             overview.getWarnings().add(warning);
         }
 
-        overview.setKafkaExporterUp(firstNumber("max(max_over_time(up{job=\"kafka_exporter\"," + clusterSelector + "}[90s]))"));
-        overview.setJmxUp(firstNumber("max(max_over_time(up{job=\"kafka_jmx\"," + metricSelector + "}[90s]))"));
+        overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", clusterSelector, true));
+        overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", clusterSelector, false));
+        overview.setKafkaExporterUp(healthValue(
+                overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
+        if (brokerMetricsRequested) {
+            overview.setJmxUpTargets(targetCount("kafka_jmx", brokerMetricSelector, true));
+            overview.setJmxTotalTargets(targetCount("kafka_jmx", brokerMetricSelector, false));
+            overview.setJmxUp(healthValue(overview.getJmxUpTargets(), overview.getJmxTotalTargets()));
+        }
         overview.setBrokerCount(firstNumber("max(kafka_brokers{" + clusterSelector + "})"));
         overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + clusterSelector + "}))"));
         overview.setPartitionCount(firstNumber("sum(max(kafka_topic_partitions{" + clusterSelector + "}) by (topic))"));
-        overview.setUnderReplicatedPartitions(firstOrZero("sum(kafka_topic_partition_under_replicated_partition{" + clusterSelector + "})"));
-        overview.setConsumerLag(firstOrZero("sum(max(kafka_consumergroup_lag{" + clusterSelector + "}) by (consumergroup, topic))"));
-        overview.setMessagesInPerSecond(firstPresentNumber(
-                append(brokerTopicRate(metricSelector, "MessagesInPerSec"),
-                        "sum(rate(kafka_topic_partition_current_offset{" + metricSelector + "}[5m]))")
-        ));
-        overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesInPerSec")));
-        overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesOutPerSec")));
-        overview.setJvmHeapUsedPercent(firstPresentNumber(
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
-        ));
-        overview.setJvmHeapAvailableBytes(firstPresentNumber(
-                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                heapAvailableBytes(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
-        ));
-        overview.setJvmHeapTotalBytes(firstPresentNumber(
-                heapBytes(metricSelector, "jvm_memory_bytes_max", "heap"),
-                heapBytes(metricSelector, "jvm_memory_bytes_committed", "heap"),
-                heapBytes(metricSelector, "jvm_memory_max_bytes", "heap"),
-                heapBytes(metricSelector, "jvm_memory_committed_bytes", "heap"),
-                heapBytes(metricSelector, "jvm_memory_bytes_max", "Heap"),
-                heapBytes(metricSelector, "jvm_memory_bytes_committed", "Heap"),
-                heapBytes(metricSelector, "jvm_memory_max_bytes", "Heap"),
-                heapBytes(metricSelector, "jvm_memory_committed_bytes", "Heap")
-        ));
-        overview.setBrokerCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
-                "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + metricSelector + "}[5m])) * 100"
-        ));
+        overview.setUnderReplicatedPartitions(firstNumber("sum(kafka_topic_partition_under_replicated_partition{" + clusterSelector + "})"));
+        overview.setConsumerLag(firstNumber("sum(max(kafka_consumergroup_lag{" + clusterSelector + "}) by (consumergroup, topic))"));
+        if (brokerMetricsRequested) {
+            overview.setMessagesInPerSecond(firstPresentNumber(
+                    append(brokerTopicRate(brokerMetricSelector, "MessagesInPerSec"),
+                            "sum(rate(kafka_topic_partition_current_offset{" + metricSelector + "}[5m]))")
+            ));
+            overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesInPerSec")));
+            overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesOutPerSec")));
+            overview.setJvmHeapUsedPercent(firstPresentNumber(
+                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapPercent(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+            ));
+            overview.setJvmHeapAvailableBytes(firstPresentNumber(
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapAvailableBytes(brokerMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+            ));
+            overview.setJvmHeapTotalBytes(firstPresentNumber(
+                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_max", "heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_committed", "heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_max_bytes", "heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_committed_bytes", "heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_max", "Heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_bytes_committed", "Heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_max_bytes", "Heap"),
+                    heapBytes(brokerMetricSelector, "jvm_memory_committed_bytes", "Heap")
+            ));
+            overview.setBrokerCpuPercent(firstPresentNumber(
+                    cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", brokerMetricSelector),
+                    cpuPercent("jvm_operatingsystem_processcpuload", brokerMetricSelector),
+                    "avg(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + brokerMetricSelector + "}[5m])) * 100"
+            ));
+        }
         Double systemCpuPercent = firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_CpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_cpuload", metricSelector),
-                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector)
+                cpuPercent("jvm_OperatingSystem_CpuLoad", brokerMetricSelector),
+                cpuPercent("jvm_operatingsystem_cpuload", brokerMetricSelector),
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", brokerMetricSelector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", brokerMetricSelector)
         );
         if (systemCpuPercent == null && isExternal(cluster)) {
             systemCpuPercent = computeExternalSystemCpuPercent(cluster, selectedNodeId);
@@ -285,13 +305,25 @@ public class PrometheusMonitoringService {
         overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
         overview.setHostMemoryTotalMb(computeHostMemoryTotalMb(cluster, selectedNodeId));
 
-        if (overview.getKafkaExporterUp() == null) {
+        if (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
+        } else if (overview.getKafkaExporterUpTargets() == null
+                || overview.getKafkaExporterUpTargets() < overview.getKafkaExporterTotalTargets()) {
+            overview.getWarnings().add("Kafka exporter is degraded: "
+                    + targetCountValue(overview.getKafkaExporterUpTargets()) + "/"
+                    + overview.getKafkaExporterTotalTargets().intValue() + " targets are up.");
         }
-        if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
+        if (!brokerMetricsRequested) {
+            overview.getWarnings().add("Controller JVM/JMX metrics are not available because a separate controller JMX endpoint is not configured.");
+        } else if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
             overview.getWarnings().add("JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
-        } else if (overview.getJmxUp() == null || overview.getJmxUp() <= 0) {
+        } else if (overview.getJmxTotalTargets() == null || overview.getJmxTotalTargets() <= 0) {
             overview.getWarnings().add("JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
+        } else if (overview.getJmxUpTargets() == null
+                || overview.getJmxUpTargets() < overview.getJmxTotalTargets()) {
+            overview.getWarnings().add("JMX exporter is degraded: "
+                    + targetCountValue(overview.getJmxUpTargets()) + "/"
+                    + overview.getJmxTotalTargets().intValue() + " targets are up.");
         }
         return overview;
     }
@@ -328,11 +360,12 @@ public class PrometheusMonitoringService {
                 }
                 
                 // Add node-level kafka_exporter target
-                targets.add(group(hostIp + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+                addTargetIfAbsent(targets, hostIp + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", role, nodeId));
             }
             if (Boolean.TRUE.equals(cluster.getNodeExporterEnabled())) {
                 int port = service.getNodeExporterPort() != null ? service.getNodeExporterPort() : nodeExporterPort(cluster);
-                targets.add(group(hostIp + ":" + port, labels(cluster, "node", role, nodeId)));
+                addTargetIfAbsent(targets, hostIp + ":" + port, labels(cluster, "node", role, nodeId));
             }
         }
     }
@@ -341,13 +374,7 @@ public class PrometheusMonitoringService {
         if (port <= 0) {
             return;
         }
-        String target = hostIp + ":" + port;
-        boolean exists = targets.stream()
-                .filter(group -> group.getLabels() != null && "kafka_jmx".equals(group.getLabels().get("job")))
-                .anyMatch(group -> group.getTargets() != null && group.getTargets().contains(target));
-        if (!exists) {
-            targets.add(group(target, labels(cluster, "kafka_jmx", role, nodeId)));
-        }
+        addTargetIfAbsent(targets, hostIp + ":" + port, labels(cluster, "kafka_jmx", role, nodeId));
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, Cluster cluster) {
@@ -355,30 +382,45 @@ public class PrometheusMonitoringService {
             return;
         }
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (node.getJmxExporterPort() == null || node.getHost() == null || node.getHost().isBlank()) {
+            if (!Boolean.TRUE.equals(node.getIsBroker())
+                    || node.getHost() == null
+                    || node.getHost().isBlank()) {
                 continue;
             }
-            String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
-                    ? "controller"
-                    : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            targets.add(group(node.getHost() + ":" + node.getJmxExporterPort(), labels(cluster, "kafka_jmx", role, nodeId)));
-            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+            if (validExporterPort(node.getJmxExporterPort())) {
+                addTargetIfAbsent(targets, node.getHost() + ":" + node.getJmxExporterPort(),
+                        labels(cluster, "kafka_jmx", "broker", nodeId));
+            }
+            addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                    labels(cluster, "kafka_exporter", "broker", nodeId));
         }
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, ExternalCluster cluster) {
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (node.getHost() == null || node.getHost().isBlank()) {
+            if (!Boolean.TRUE.equals(node.getIsBroker()) || node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
             Integer port = node.getJmxExporterPort() != null ? node.getJmxExporterPort() : defaultJmxExporterPort;
-            String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
-                    ? "controller"
-                    : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            targets.add(group(node.getHost() + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
-            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+            addTargetIfAbsent(targets, node.getHost() + ":" + port,
+                    labels(cluster, "kafka_jmx", "broker", nodeId));
+            addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                    labels(cluster, "kafka_exporter", "broker", nodeId));
+        }
+    }
+
+    private void addTargetIfAbsent(List<SdTargetGroup> targets, String target, Map<String, String> labels) {
+        String job = labels.get("job");
+        String clusterId = labels.get("cluster_id");
+        boolean exists = targets.stream()
+                .filter(group -> group.getLabels() != null)
+                .filter(group -> job.equals(group.getLabels().get("job")))
+                .filter(group -> clusterId.equals(group.getLabels().get("cluster_id")))
+                .anyMatch(group -> group.getTargets() != null && group.getTargets().contains(target));
+        if (!exists) {
+            targets.add(group(target, labels));
         }
     }
 
@@ -427,7 +469,10 @@ public class PrometheusMonitoringService {
         }
         if (isExternal(cluster)) {
             return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
-                    .anyMatch(node -> node.getHost() != null && !node.getHost().isBlank());
+                    .anyMatch(node -> Boolean.TRUE.equals(node.getIsBroker())
+                            && node.getHost() != null
+                            && !node.getHost().isBlank()
+                            && validExporterPort(node.getJmxExporterPort()));
         }
         return cluster.getServices() != null && cluster.getServices().stream()
                 .filter(service -> isBrokerRole(service.getRole()))
@@ -438,7 +483,13 @@ public class PrometheusMonitoringService {
     }
 
     private boolean hasJmxTargets(ExternalCluster cluster) {
-        return !externalClusterNodeRepository.findByClusterId(cluster.getId()).isEmpty();
+        return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
+                .anyMatch(node -> Boolean.TRUE.equals(node.getIsBroker())
+                        && node.getHost() != null
+                        && !node.getHost().isBlank()
+                        && validExporterPort(node.getJmxExporterPort() != null
+                                ? node.getJmxExporterPort()
+                                : defaultJmxExporterPort));
     }
 
     private List<MonitoringNodeSummary> monitoringNodes(Cluster cluster) {
@@ -723,9 +774,7 @@ public class PrometheusMonitoringService {
     }
 
     private MemoryUsage externalHostMemory(Cluster cluster, String nodeId) {
-        long totalMb = 0;
-        long usedMb = 0;
-        int counted = 0;
+        Map<String, MemoryUsage> hostMemory = new LinkedHashMap<>();
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
             if (nodeId != null && (node.getNodeId() == null || !nodeId.equals(String.valueOf(node.getNodeId())))) {
                 continue;
@@ -733,13 +782,18 @@ public class PrometheusMonitoringService {
             if (node.getMemoryTotalMb() == null || node.getMemoryTotalMb() <= 0) {
                 continue;
             }
-            totalMb += node.getMemoryTotalMb();
-            usedMb += node.getMemoryUsedMb() == null ? 0 : node.getMemoryUsedMb();
-            counted++;
+            String hostKey = node.getHost() == null || node.getHost().isBlank()
+                    ? "node:" + node.getNodeId()
+                    : node.getHost().trim().toLowerCase(Locale.ROOT);
+            hostMemory.put(hostKey, new MemoryUsage(
+                    node.getMemoryUsedMb() == null ? 0 : node.getMemoryUsedMb(),
+                    node.getMemoryTotalMb()));
         }
-        if (counted == 0 || totalMb <= 0) {
+        if (hostMemory.isEmpty()) {
             return null;
         }
+        long totalMb = hostMemory.values().stream().mapToLong(MemoryUsage::totalMb).sum();
+        long usedMb = hostMemory.values().stream().mapToLong(MemoryUsage::usedMb).sum();
         return new MemoryUsage(usedMb, totalMb);
     }
 
@@ -792,11 +846,6 @@ public class PrometheusMonitoringService {
             log.debug("Prometheus query failed: {}", promql, e);
             return null;
         }
-    }
-
-    private Double firstOrZero(String promql) {
-        Double value = firstNumber(promql);
-        return value == null ? 0.0 : value;
     }
 
     private Double firstPresentNumber(String... promqls) {
@@ -862,7 +911,24 @@ public class PrometheusMonitoringService {
     }
 
     private String cpuPercent(String metric, String selector) {
-        return "clamp_min(clamp_max(max(" + metric + "{" + selector + "}) * 100, 100), 0)";
+        return "clamp_min(clamp_max(avg(" + metric + "{" + selector + "}) * 100, 100), 0)";
+    }
+
+    private Double targetCount(String job, String selector, boolean upOnly) {
+        String sample = "max_over_time(up{job=\"" + job + "\"," + selector + "}[90s])";
+        String condition = upOnly ? " == 1" : "";
+        return firstNumber("count(count by (instance) (" + sample + condition + "))");
+    }
+
+    private Double healthValue(Double upTargets, Double totalTargets) {
+        if (totalTargets == null || totalTargets <= 0 || upTargets == null) {
+            return null;
+        }
+        return upTargets >= totalTargets ? 1.0 : 0.0;
+    }
+
+    private int targetCountValue(Double value) {
+        return value == null ? 0 : value.intValue();
     }
 
     private JsonNode prometheusGet(String path, Map<String, String> params) {
@@ -1083,6 +1149,10 @@ public class PrometheusMonitoringService {
         private Boolean jmxAvailable;
         private Double kafkaExporterUp;
         private Double jmxUp;
+        private Double kafkaExporterUpTargets;
+        private Double kafkaExporterTotalTargets;
+        private Double jmxUpTargets;
+        private Double jmxTotalTargets;
         private Double brokerCount;
         private Double topicCount;
         private Double partitionCount;
