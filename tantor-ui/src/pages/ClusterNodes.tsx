@@ -1,116 +1,143 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Loader2, RefreshCw, Server } from 'lucide-react';
-import { usePermissions } from '../hooks/usePermissions';
-import { notifyAction } from '../components/ConfirmDialog';
+import { Loader2 } from 'lucide-react';
 import './ClusterNodes.css';
 
-interface ClusterNode {
-  hostId: string;
-  hostname: string;
-  ipAddress: string;
-  status: string;
-  role: string;
-  nodeId?: number;
-  lastHeartbeat?: string;
-  agentAvailable?: boolean;
-  availableAgentId?: string;
+type ClusterType = 'INTERNAL' | 'EXTERNAL';
+type KafkaMode = 'KRAFT' | 'ZOOKEEPER' | 'UNKNOWN';
+type NodeRole = 'BROKER' | 'CONTROLLER' | 'BROKER_CONTROLLER';
+type AgentStatus = 'ONLINE' | 'OFFLINE' | 'NOT_ENROLLED' | 'UNKNOWN';
+type TelemetryStatus = 'LIVE' | 'STALE' | 'UNAVAILABLE' | 'UNKNOWN';
+
+interface CanonicalClusterIdentity {
+  clusterUuid: string;
+  kafkaClusterId: string | null;
+  type: ClusterType;
+  mode: KafkaMode;
 }
 
-interface ClusterResponse {
-  id: string;
-  hosts?: ClusterNode[];
+interface CanonicalNodeIdentity {
+  clusterUuid: string;
+  kafkaClusterId: string;
+  nodeId: number;
+  role: NodeRole;
 }
+
+interface CanonicalNode {
+  identity: CanonicalNodeIdentity;
+  host: string | null;
+  agentStatus: AgentStatus;
+  telemetryStatus: TelemetryStatus;
+}
+
+interface CanonicalClusterNodesResponse {
+  cluster: CanonicalClusterIdentity;
+  nodes: CanonicalNode[];
+}
+
+const readableRole = (role: NodeRole) =>
+  role === 'BROKER_CONTROLLER'
+    ? 'Broker + Controller'
+    : role.charAt(0) + role.slice(1).toLowerCase();
+
+const readableStatus = (status: AgentStatus | TelemetryStatus) =>
+  status.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
+
+const statusClass = (status: AgentStatus | TelemetryStatus) =>
+  status.toLowerCase().replaceAll('_', '-');
 
 export function ClusterNodes() {
   const { id } = useParams<{ id: string }>();
-  const { canManage } = usePermissions();
-  const [nodes, setNodes] = useState<ClusterNode[]>([]);
+  const [cluster, setCluster] = useState<CanonicalClusterIdentity | null>(null);
+  const [nodes, setNodes] = useState<CanonicalNode[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedAgents, setSelectedAgents] = useState<{ [host: string]: string }>({});
-  const [binding, setBinding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchNodes = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/v1/clusters/${id}/nodes`);
-      if (!res.ok) throw new Error('Failed to fetch nodes');
-      const data = await res.json();
-      setNodes(data || []);
-    } catch (e: any) {
-      console.error(e);
-      setNodes([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    const abortController = new AbortController();
 
-  const bindAgents = async () => {
-    if (!canManage) return;
-    if (Object.keys(selectedAgents).length === 0) return;
-    setBinding(true);
-    try {
-      for (const [host, agentId] of Object.entries(selectedAgents)) {
-        await fetch(`/api/v1/ui/clusters/${id}/bind-agent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ host, agentId }),
+    const loadNodes = async () => {
+      try {
+        const res = await fetch(`/api/v1/clusters/${id}/nodes`, {
+          signal: abortController.signal,
         });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.message || `Failed to fetch nodes (${res.status})`);
+        }
+        const canonical = data as CanonicalClusterNodesResponse;
+        if (!canonical?.cluster || !Array.isArray(canonical.nodes)) {
+          throw new Error('The server returned an invalid canonical node response.');
+        }
+        setCluster(canonical.cluster);
+        setNodes(canonical.nodes);
+        setError(null);
+      } catch (requestError) {
+        if (abortController.signal.aborted) return;
+        console.error(requestError);
+        setCluster(null);
+        setNodes([]);
+        setError(requestError instanceof Error ? requestError.message : 'Failed to fetch nodes');
+      } finally {
+        if (!abortController.signal.aborted) setLoading(false);
       }
-      setSelectedAgents({});
-      await fetchNodes();
-    } catch (e) {
-      notifyAction('Failed to bind agents');
-    } finally {
-      setBinding(false);
-    }
-  };
+    };
 
-  useEffect(() => { fetchNodes(); }, [id]);
+    void loadNodes();
+    return () => abortController.abort();
+  }, [id]);
 
-  if (loading && nodes.length === 0) return <div className="state-center"><Loader2 className="spin" /> Loading nodes...</div>;
-
-  const isExternalCluster = nodes.some(n => 
-    n.status?.includes('Managed') || n.status?.includes('Unmanaged') || n.status === 'Bootstrap connected' || n.agentAvailable
-  );
-  const canBindAgents = canManage && isExternalCluster;
+  if (loading && nodes.length === 0) {
+    return <div className="state-center"><Loader2 className="spin" /> Loading nodes...</div>;
+  }
 
   return (
     <div className="cluster-nodes-page animate-fade-in">
       <header className="page-header">
-        <h2 className="cluster-section-heading">Cluster Nodes</h2>
+        <div>
+          <h2 className="cluster-section-heading">Cluster Nodes</h2>
+          {cluster && (
+            <p className="cluster-node-identity-summary">
+              {cluster.type} · {cluster.mode} · Kafka ID {cluster.kafkaClusterId || 'Pending'}
+            </p>
+          )}
+        </div>
       </header>
+
+      {error && <div className="cluster-nodes-error">{error}</div>}
+
       <div className="cluster-nodes-table-wrap">
         <table className="cluster-nodes-table">
           <thead><tr>
             <th>Node ID</th>
-            <th>Host</th>
-            <th>IP Address</th>
+            <th>Host (display)</th>
             <th>Role</th>
-            <th>Status</th>
-            <th>Last updated</th>
+            <th>Agent status</th>
+            <th>Telemetry status</th>
           </tr></thead>
           <tbody>
-            {nodes.map((node, index) => {
-              const hostKey = node.hostname || node.hostId || node.ipAddress;
-              return (
-              <tr key={`${node.hostId}-${node.role}-${node.nodeId ?? index}`}>
-                <td><code>{node.nodeId ?? '-'}</code></td>
-                <td><span className="cluster-node-host">{node.hostname || node.hostId}</span></td>
-                <td><span className="cluster-node-ip">{node.ipAddress || '-'}</span></td>
-                <td><span className="cluster-node-role">{String(node.role || 'unknown').toLowerCase() === 'broker_controller' ? 'Broker Controller' : String(node.role || 'unknown').replaceAll('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</span></td>
+            {nodes.map(node => (
+              <tr key={`${node.identity.clusterUuid}-${node.identity.kafkaClusterId}-${node.identity.nodeId}-${node.identity.role}`}>
+                <td><code>{node.identity.nodeId}</code></td>
+                <td><span className="cluster-node-host">{node.host || 'Not reported'}</span></td>
+                <td><span className="cluster-node-role">{readableRole(node.identity.role)}</span></td>
                 <td>
-                  <span className={`cluster-node-status ${(node.status || '').toLowerCase()}`}>
-                    {node.status === 'SUCCESS' ? 'Success' : node.status === 'OCCUPIED' ? 'Occupied' : (node.status === 'Bootstrap connected' && node.agentAvailable ? 'Agent available' : node.status || 'UNKNOWN')}
+                  <span className={`cluster-node-status ${statusClass(node.agentStatus)}`}>
+                    {readableStatus(node.agentStatus)}
                   </span>
                 </td>
-                <td>{node.lastHeartbeat ? new Date(node.lastHeartbeat).toLocaleString() : '-'}</td>
+                <td>
+                  <span className={`cluster-node-status ${statusClass(node.telemetryStatus)}`}>
+                    {readableStatus(node.telemetryStatus)}
+                  </span>
+                </td>
               </tr>
-              );
-            })}
+            ))}
           </tbody>
         </table>
-        {nodes.length === 0 && <div className="empty-state">No service assignments are recorded for this cluster.</div>}
+        {!error && nodes.length === 0 && (
+          <div className="empty-state">No canonical Kafka nodes are recorded for this cluster.</div>
+        )}
       </div>
     </div>
   );
