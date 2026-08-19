@@ -65,7 +65,12 @@ public class PackageValidator {
             throw new PackageValidationException("JMX exporter jar validation failed: " + e.getMessage(), e);
         }
 
-        long compressedSize = Math.max(1L, Files.size(jarPath));
+        long compressedSize;
+        try {
+            compressedSize = Math.max(1L, Files.size(jarPath));
+        } catch (IOException e) {
+            throw new PackageValidationException("Unable to inspect JMX exporter archive size", e);
+        }
         long expanded = 0;
         int entries = 0;
         try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {

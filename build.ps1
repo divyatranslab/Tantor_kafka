@@ -37,12 +37,14 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-artifact-repository"
-& $MvnCmd clean package "-DskipTests"
+& $MvnCmd clean verify
+if ($LASTEXITCODE -ne 0) { throw "Artifact Repository verification failed." }
 
 # 3. Build Management Server
 Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-server"
-& $MvnCmd clean package "-Dmaven.test.skip=true"
+& $MvnCmd clean verify
+if ($LASTEXITCODE -ne 0) { throw "Management Server verification failed." }
 
 # Restore original directory
 cd $PSScriptRoot
@@ -59,7 +61,10 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
     cd "$PSScriptRoot\tantor-agent"
     $env:GOOS="linux"
     $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" test ./...
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent tests failed." }
     & "$PSScriptRoot\go\bin\go.exe" build -o tantor-agent-linux cmd/agent/main.go
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent build failed." }
     Write-Host "Agent successfully compiled to: tantor-agent\tantor-agent-linux" -ForegroundColor Green
     cd $PSScriptRoot
 } else {
@@ -72,7 +77,10 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
     cd "$PSScriptRoot\tantor-discovery-agent"
     $env:GOOS="linux"
     $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" test ./...
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent tests failed." }
     & "$PSScriptRoot\go\bin\go.exe" build -o tantor-discovery-agent-linux .
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent build failed." }
     Write-Host "Discovery agent successfully compiled to: tantor-discovery-agent\tantor-discovery-agent-linux" -ForegroundColor Green
     cd $PSScriptRoot
 } else {

@@ -8,7 +8,7 @@ COPY pom.xml .
 # In an air-gapped build, seed a local mirror instead of going offline here.
 RUN mvn -B -q dependency:go-offline
 COPY src ./src
-RUN mvn -B -q clean package -DskipTests
+RUN mvn -B -q clean package
 
 # ---- Runtime stage ----
 FROM eclipse-temurin:21.0.11_10-jre-resolute@sha256:b3598c584b6f797ee2324baac2ae5ceb6c8fb3a97f3b11e5a6ee4fd47308bc58
