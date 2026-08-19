@@ -136,6 +136,8 @@ class AlertControllerRecoveryTest {
         when(hostParcelRepository.findAll()).thenReturn(List.of());
         when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE"))
                 .thenReturn(List.of(activeAlert));
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc())
+                .thenReturn(List.of(activeAlert));
 
         AlertController controller = new AlertController(
                 alertRepository,
