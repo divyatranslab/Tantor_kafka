@@ -98,11 +98,7 @@ export function ClusterNodes() {
       <header className="page-header">
         <div>
           <h2 className="cluster-section-heading">Cluster Nodes</h2>
-          {cluster && (
-            <p className="cluster-node-identity-summary">
-              {cluster.type} · {cluster.mode} · Kafka ID {cluster.kafkaClusterId || 'Pending'}
-            </p>
-          )}
+
         </div>
       </header>
 
