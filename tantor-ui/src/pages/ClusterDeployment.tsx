@@ -1897,30 +1897,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <div className="cd-node-port-grid">
-                    {portFieldsForHost(host.id).map(field => (
-                      <label className="cd-node-port-field" key={field.key}>
-                        <span>{field.label}</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={65535}
-                          value={getHostPorts(host.id)[field.key]}
-                          onChange={event => updateHostPort(host.id, field.key, Number(event.target.value))}
-                        />
-                      </label>
-                    ))}
-                    {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
-                      <label className="cd-node-port-field read-only">
-                        <span>Broker JMX Port</span>
-                        <input type="number" value={7071} readOnly aria-label="Broker JMX port" />
-                      </label>
-                    )}
-                  </div>
-                  {selectedPortValidationErrors.filter(error => error.startsWith(`${host.hostname}:`)).map(error => (
-                    <div className="cd-node-port-error" key={error}>{error.replace(`${host.hostname}: `, '')}</div>
-                  ))}
-                  </div>
+
 
                 </div>
               ))}
@@ -2121,6 +2098,29 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                         </label>
                       </div>
                     </div>
+                    <div className="cd-node-port-grid" style={{ marginBottom: '12px' }}>
+                      {portFieldsForHost(configModalHost.id).map(field => (
+                        <label className="cd-node-port-field" key={field.key}>
+                          <span>{field.label}</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={65535}
+                            value={getHostPorts(configModalHost.id)[field.key]}
+                            onChange={event => updateHostPort(configModalHost.id, field.key, Number(event.target.value))}
+                          />
+                        </label>
+                      ))}
+                      {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[configModalHost.id] || defaultRoleForMode) && (
+                        <label className="cd-node-port-field read-only">
+                          <span>Broker JMX Port</span>
+                          <input type="number" value={7071} readOnly aria-label="Broker JMX port" />
+                        </label>
+                      )}
+                    </div>
+                    {selectedPortValidationErrors.filter(error => error.startsWith(`${configModalHost.hostname}:`)).map(error => (
+                      <div className="cd-node-port-error" key={error}>{error.replace(`${configModalHost.hostname}: `, '')}</div>
+                    ))}
                     <PropertyTable
                       rows={cfg.rows}
                       hostIp={displayIp(configModalHost)}
