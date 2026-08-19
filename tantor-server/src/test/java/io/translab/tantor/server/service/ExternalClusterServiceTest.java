@@ -223,7 +223,7 @@ class ExternalClusterServiceTest {
         service.checkExternalClustersHealth();
 
         verify(alertService).synchronizeExternalClusterHealth(
-                cluster.getId(), cluster.getName(), "SUCCESS");
+                cluster.getId(), cluster.getName(), "SUCCESS", 1, 1);
         verify(alertService).resolveOrphanedExternalClusterHealthAlerts(Set.of(cluster.getId()));
         verify(externalClusterRepository, never()).save(cluster);
     }

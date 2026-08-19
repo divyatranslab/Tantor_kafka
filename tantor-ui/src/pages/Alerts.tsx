@@ -259,14 +259,16 @@ function sourceLabel(source?: string) {
 
 function clusterLabel(alert: AlertRow) {
   if (alert.clusterName && alert.clusterName !== '-') return alert.clusterName;
-  return alert.clusterId || '-';
+  // clusterId is Tantor's internal UUID. Never display it as the Kafka
+  // cluster identity; the separate Cluster ID field contains kafkaClusterId.
+  return '-';
 }
 
 function hostLabel(alert: AlertRow) {
-  const host = alert.hostId && alert.hostId !== '-' ? alert.hostId : '';
   const ip = alert.hostIp && alert.hostIp !== '-' ? alert.hostIp : '';
-  if (host && ip) return `${host} / ${ip}`;
-  return host || ip || '-';
+  // hostId is the management-system identity, often a UUID. Alerts must
+  // present the real network address rather than exposing that internal ID.
+  return ip || '-';
 }
 
 function formatDateTime(value?: string) {

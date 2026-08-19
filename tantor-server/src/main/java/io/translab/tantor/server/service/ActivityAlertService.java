@@ -26,6 +26,7 @@ public class ActivityAlertService {
 
     static final String EXTERNAL_DEGRADED_TITLE = "External Cluster Degraded";
     static final String EXTERNAL_FAILED_TITLE = "External Cluster Failed";
+    static final String EXTERNAL_AGENT_PARTIAL_TITLE = "External agents partially connected";
 
     private final ActivityLogRepository activityLogRepository;
     private final AlertRepository alertRepository;
@@ -101,7 +102,9 @@ public class ActivityAlertService {
     public void synchronizeExternalClusterHealth(
             UUID clusterId,
             String clusterName,
-            String healthStatus) {
+            String healthStatus,
+            long freshAgents,
+            long registeredAgents) {
         if (clusterId == null) {
             return;
         }
@@ -110,7 +113,16 @@ public class ActivityAlertService {
                 ? ""
                 : healthStatus.trim().toUpperCase(Locale.ROOT);
         String activeKey = null;
-        if ("DEGRADED".equals(normalizedStatus)) {
+        if ("PARTIAL".equals(normalizedStatus)) {
+            activeKey = externalAgentPartialKey(clusterId);
+            activateAlert(
+                    activeKey,
+                    "WARNING",
+                    EXTERNAL_AGENT_PARTIAL_TITLE,
+                    "Discovery agents for external cluster '" + clusterName + "' are partially connected: "
+                            + freshAgents + " of " + registeredAgents + " agent(s) have a fresh heartbeat.",
+                    clusterId);
+        } else if ("DEGRADED".equals(normalizedStatus)) {
             activeKey = externalDegradedKey(clusterId);
             activateAlert(
                     activeKey,
@@ -144,7 +156,7 @@ public class ActivityAlertService {
         Instant resolvedAt = Instant.now();
         alertRepository.findByStatusAndTitleIn(
                         "ACTIVE",
-                        List.of(EXTERNAL_DEGRADED_TITLE, EXTERNAL_FAILED_TITLE))
+                        externalHealthAlertTitles())
                 .stream()
                 .filter(alert -> alert.getClusterId() == null
                         || !currentIds.contains(alert.getClusterId()))
@@ -180,7 +192,7 @@ public class ActivityAlertService {
         List<Alert> activeHealthAlerts = alertRepository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
-                List.of(EXTERNAL_DEGRADED_TITLE, EXTERNAL_FAILED_TITLE));
+                externalHealthAlertTitles());
         Instant resolvedAt = Instant.now();
         activeHealthAlerts.stream()
                 .filter(alert -> activeKey == null || !activeKey.equals(alert.getAlertKey()))
@@ -202,5 +214,13 @@ public class ActivityAlertService {
 
     static String externalFailedKey(UUID clusterId) {
         return "external-failed-" + clusterId;
+    }
+
+    static String externalAgentPartialKey(UUID clusterId) {
+        return "external-agent-partial-" + clusterId;
+    }
+
+    private static List<String> externalHealthAlertTitles() {
+        return List.of(EXTERNAL_DEGRADED_TITLE, EXTERNAL_FAILED_TITLE, EXTERNAL_AGENT_PARTIAL_TITLE);
     }
 }

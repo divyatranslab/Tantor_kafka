@@ -20,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -210,26 +208,6 @@ public class AlertController {
                             "storage"
                     )));
 
-            if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode())
-                    && "SUCCESS".equalsIgnoreCase(cluster.getStatus())
-                    && !assignedHosts.isEmpty()
-                    && !clusterBrokerPortListening(cluster, assignedHosts)) {
-                Host firstHost = assignedHosts.get(0);
-                alerts.add(runtimeAlert(
-                        "cluster-port-closed-" + cluster.getId(),
-                        "CRITICAL",
-                        "Cluster broker port closed",
-                        cluster.getName() + " is marked active, but broker port " + brokerPort(cluster) + " is not reachable from the management server.",
-                        cluster.getId(),
-                        cluster.getName(),
-                        firstHost.getId(),
-                        hostIp(firstHost),
-                        OffsetDateTime.now(),
-                        null,
-                        "cluster"
-                ));
-            }
-
             if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && "FAILED".equalsIgnoreCase(cluster.getStatus())) {
                 alerts.add(runtimeAlert(
                         "external-failed-" + cluster.getId(),
@@ -274,7 +252,10 @@ public class AlertController {
                         "consumer"
                 ))));
         tasks.stream()
+                // A port check is an operator-requested prerequisite result. It
+                // belongs in the audit trail, not in the live-health alert feed.
                 .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
+                .filter(task -> !"CHECK_PORTS".equalsIgnoreCase(task.getCommand()))
                 .sorted(Comparator.comparing(Task::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(12)
                 .forEach(task -> {
@@ -300,8 +281,11 @@ public class AlertController {
         // Query after synchronization so an alert resolved during this request is
         // returned as RESOLVED history instead of disappearing from the UI.
         List<Map<String, Object>> alertHistory = new ArrayList<>();
-        alertRepository.findTop100ByOrderByUpdatedAtDesc()
-                .forEach(alert -> alertHistory.add(storedAlert(alert, clusterById)));
+        alertRepository.findTop100ByOrderByUpdatedAtDesc().stream()
+                // Preserve port-check history in Audits, while keeping it out of
+                // alerts even for rows created before this policy existed.
+                .filter(alert -> !isPortCheckAlert(alert))
+                .forEach(alert -> alertHistory.add(storedAlert(alert, clusterById, hostById)));
 
         List<Map<String, Object>> deduped = alertHistory.stream()
                 .filter(Objects::nonNull)
@@ -319,8 +303,12 @@ public class AlertController {
         return ResponseEntity.ok(deduped);
     }
 
-    private Map<String, Object> storedAlert(Alert alert, Map<String, Cluster> clusterById) {
+    private Map<String, Object> storedAlert(
+            Alert alert,
+            Map<String, Cluster> clusterById,
+            Map<String, Host> hostById) {
         Cluster cluster = alert.getClusterId() == null ? null : clusterById.get(alert.getClusterId().toString());
+        Host host = alert.getHostId() == null ? null : hostById.get(alert.getHostId());
         Map<String, Object> response = runtimeAlert(
                 alert.getAlertKey() == null ? alert.getId().toString() : alert.getAlertKey(),
                 alert.getSeverity(),
@@ -329,7 +317,7 @@ public class AlertController {
                 alert.getClusterId(),
                 cluster == null ? null : cluster.getName(),
                 alert.getHostId(),
-                null,
+                hostIp(host),
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
                 alert.getErrorLog(),
                 "stored"
@@ -339,6 +327,16 @@ public class AlertController {
         response.put("resolvedAt", alert.getResolvedAt());
         response.put("updatedAt", alert.getUpdatedAt());
         return response;
+    }
+
+    private boolean isPortCheckAlert(Alert alert) {
+        String key = alert.getAlertKey() == null ? "" : alert.getAlertKey().toLowerCase();
+        String title = alert.getTitle() == null ? "" : alert.getTitle().toLowerCase();
+        String description = alert.getDescription() == null ? "" : alert.getDescription().toLowerCase();
+        return key.startsWith("cluster-port-closed-")
+                || title.contains("check ports")
+                || title.contains("broker port closed")
+                || description.contains("port check failed");
     }
 
     private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {
@@ -484,80 +482,6 @@ public class AlertController {
 
     private String consumerReason(ConsumerGroupSummaryDto group) {
         return group.getGroupId() + " has total lag " + group.getTotalLag() + " and health " + group.getHealth() + ".";
-    }
-
-    private boolean clusterBrokerPortListening(Cluster cluster, List<Host> assignedHosts) {
-
-        int port = brokerPort(cluster);
-        for (Host host : assignedHosts) {
-            String ip = hostIp(host);
-            if (ip == null || ip.isBlank()) {
-                continue;
-            }
-            try (Socket socket = new Socket()) {
-                socket.connect(new InetSocketAddress(ip, port), 600);
-                return true;
-            } catch (Exception ignored) {
-                // Try the next assigned host.
-            }
-        }
-        return false;
-    }
-
-    private int brokerPort(Cluster cluster) {
-        Integer bootstrapPort = firstBootstrapPort(cluster.getBootstrapServers());
-        if (bootstrapPort != null) {
-            return bootstrapPort;
-        }
-        Integer configPort = configInt(cluster.getConfigJson(), "listener_port");
-        return configPort == null ? 9092 : configPort;
-    }
-
-    private Integer firstBootstrapPort(String bootstrapServers) {
-        if (bootstrapServers == null || bootstrapServers.isBlank()) {
-            return null;
-        }
-        String endpoint = bootstrapServers.split(",")[0].trim();
-        int colon = endpoint.lastIndexOf(':');
-        if (colon < 0 || colon == endpoint.length() - 1) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(endpoint.substring(colon + 1));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private Integer configInt(String configJson, String key) {
-        if (configJson == null || configJson.isBlank()) {
-            return null;
-        }
-        String quotedKey = "\"" + key + "\"";
-        int keyIndex = configJson.indexOf(quotedKey);
-        if (keyIndex < 0) {
-            return null;
-        }
-        int colon = configJson.indexOf(':', keyIndex + quotedKey.length());
-        if (colon < 0) {
-            return null;
-        }
-        int start = colon + 1;
-        while (start < configJson.length() && !Character.isDigit(configJson.charAt(start))) {
-            start++;
-        }
-        int end = start;
-        while (end < configJson.length() && Character.isDigit(configJson.charAt(end))) {
-            end++;
-        }
-        if (start == end) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(configJson.substring(start, end));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
     }
 
     private String hostLabel(Host host) {

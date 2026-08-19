@@ -2116,18 +2116,22 @@ public class ExternalClusterService {
                     cluster.setKafkaClusterId(detectedKafkaClusterId.trim());
                 }
                 
+                List<DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findByClusterId(cluster.getId());
+                long registeredAgents = discoveryAgents.size();
+                long freshAgents = discoveryAgents.stream()
+                        .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus())
+                                && agent.getLastHeartbeat() != null
+                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())))
+                        .count();
+
                 String newStatus;
                 if (!connected) {
                     newStatus = "FAILED";
                 } else {
                     // Check if discovery agent is healthy
-                    List<DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findByClusterId(cluster.getId());
                     // Every registered agent must be reachable. A healthy peer must
                     // not hide an agent outage for the same external cluster.
-                    boolean agentHealthy = !discoveryAgents.isEmpty()
-                            && discoveryAgents.stream().allMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus())
-                                    && agent.getLastHeartbeat() != null
-                                    && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
+                    boolean agentHealthy = registeredAgents > 0 && freshAgents == registeredAgents;
                     
                     newStatus = agentHealthy ? "SUCCESS" : "DEGRADED";
                 }
@@ -2141,8 +2145,10 @@ public class ExternalClusterService {
                 // Synchronize on every health cycle, not only on a status
                 // transition. This also repairs legacy ACTIVE alerts left behind
                 // after an agent recovered before this lifecycle was introduced.
+                String alertHealth = connected && freshAgents > 0 && freshAgents < registeredAgents
+                        ? "PARTIAL" : newStatus;
                 activityAlertService.synchronizeExternalClusterHealth(
-                        cluster.getId(), cluster.getName(), newStatus);
+                        cluster.getId(), cluster.getName(), alertHealth, freshAgents, registeredAgents);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
             }

@@ -32,10 +32,11 @@ class ActivityAlertServiceTest {
                 clusterId,
                 "ACTIVE",
                 List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE)))
+                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
+                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
                 .thenReturn(List.of(legacy));
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED");
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED", 0, 1);
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
         verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
@@ -72,10 +73,11 @@ class ActivityAlertServiceTest {
                 clusterId,
                 "ACTIVE",
                 List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE)))
+                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
+                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
                 .thenReturn(List.of(degraded, failed));
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "SUCCESS");
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "SUCCESS", 1, 1);
 
         assertThat(degraded.getStatus()).isEqualTo("RESOLVED");
         assertThat(degraded.getResolvedAt()).isNotNull();
@@ -106,7 +108,8 @@ class ActivityAlertServiceTest {
         when(repository.findByStatusAndTitleIn(
                 "ACTIVE",
                 List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE)))
+                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
+                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
                 .thenReturn(List.of(orphaned, current));
 
         service.resolveOrphanedExternalClusterHealthAlerts(Set.of(activeClusterId));
@@ -116,6 +119,31 @@ class ActivityAlertServiceTest {
         assertThat(current.getStatus()).isEqualTo("ACTIVE");
         verify(repository).save(orphaned);
         verify(repository, org.mockito.Mockito.never()).save(current);
+    }
+
+    @Test
+    void createsExplicitPartialConnectionAlert() {
+        UUID clusterId = UUID.randomUUID();
+        AlertRepository repository = mock(AlertRepository.class);
+        ActivityAlertService service = new ActivityAlertService(
+                mock(ActivityLogRepository.class), repository);
+
+        when(repository.findByAlertKey(ActivityAlertService.externalAgentPartialKey(clusterId)))
+                .thenReturn(Optional.empty());
+        when(repository.findByClusterIdAndStatusAndTitleIn(
+                clusterId,
+                "ACTIVE",
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
+                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
+                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                .thenReturn(List.of());
+
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "PARTIAL", 2, 3);
+
+        ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getTitle()).isEqualTo(ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE);
+        assertThat(saved.getValue().getDescription()).contains("2 of 3");
     }
 
     private Alert alert(String key, String title, String status, UUID clusterId) {

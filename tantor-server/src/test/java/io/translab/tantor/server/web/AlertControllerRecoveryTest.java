@@ -2,6 +2,7 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Alert;
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.AlertRepository;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostParcelRepository;
@@ -152,5 +153,82 @@ class AlertControllerRecoveryTest {
             assertThat(alert.get("kafkaClusterId")).isEqualTo("MkU3OEVBNTcwNTJENDM2Qk");
             assertThat(alert.get("clusterId")).isEqualTo(databaseClusterId);
         });
+    }
+
+    @Test
+    void storedAlertResolvesHostIpAndDoesNotExposeManagementHostId() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+        HostStatusService hostStatusService = mock(HostStatusService.class);
+
+        Cluster cluster = new Cluster();
+        UUID clusterId = UUID.randomUUID();
+        cluster.setId(clusterId);
+        cluster.setName("payments-kafka");
+        cluster.setKafkaClusterId("Kafka-Actual-Cluster-Id");
+
+        Host host = new Host();
+        host.setId("host-internal-uuid");
+        host.setIpAddresses("[\"192.168.3.229\"]");
+
+        Alert alert = new Alert();
+        alert.setAlertKey("manual-alert");
+        alert.setSeverity("WARNING");
+        alert.setTitle("Example alert");
+        alert.setStatus("ACTIVE");
+        alert.setClusterId(clusterId);
+        alert.setHostId(host.getId());
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(hostRepository.findAll()).thenReturn(List.of(host));
+        when(hostStatusService.isInfrastructureHost(host)).thenReturn(true);
+        when(hostStatusService.effectiveStatus(host)).thenReturn("ONLINE");
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")).thenReturn(List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc()).thenReturn(List.of(alert));
+
+        AlertController controller = new AlertController(
+                alertRepository, clusterRepository, hostRepository, taskRepository,
+                hostStatusService, hostParcelRepository, mock(ConsumerLagCacheService.class));
+
+        var response = controller.getActiveAlerts();
+
+        assertThat(response.getBody()).singleElement().satisfies(item -> {
+            assertThat(item.get("hostIp")).isEqualTo("192.168.3.229");
+            assertThat(item.get("kafkaClusterId")).isEqualTo("Kafka-Actual-Cluster-Id");
+        });
+    }
+
+    @Test
+    void hidesPortCheckHistoryFromAlertsBecauseItBelongsInAudits() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+
+        Alert portCheck = new Alert();
+        portCheck.setAlertKey("task-failed-port-check");
+        portCheck.setSeverity("CRITICAL");
+        portCheck.setTitle("Check Ports failed");
+        portCheck.setDescription("Port check failed: one port is unavailable");
+        portCheck.setStatus("RESOLVED");
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(hostRepository.findAll()).thenReturn(List.of());
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")).thenReturn(List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc()).thenReturn(List.of(portCheck));
+
+        AlertController controller = new AlertController(
+                alertRepository, clusterRepository, hostRepository, taskRepository,
+                mock(HostStatusService.class), hostParcelRepository, mock(ConsumerLagCacheService.class));
+
+        assertThat(controller.getActiveAlerts().getBody()).isEmpty();
     }
 }
