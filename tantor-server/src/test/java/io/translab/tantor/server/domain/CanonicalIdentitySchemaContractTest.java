@@ -43,6 +43,23 @@ class CanonicalIdentitySchemaContractTest {
         assertReadOnlyCanonicalColumn(ExternalClusterNode.class);
     }
 
+    @Test
+    void migrationRemovesKraftControllerRoleOnlyFromZooKeeperBrokerRows() throws IOException {
+        String sql;
+        try (var stream = getClass().getResourceAsStream(
+                "/db/migration/V73__normalize_zookeeper_node_roles.sql")) {
+            assertNotNull(stream, "V73 migration resource must exist");
+            sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8).toLowerCase();
+        }
+
+        assertTrue(sql.contains("update kf_external_cluster_nodes"));
+        assertTrue(sql.contains("set is_controller = false"));
+        assertTrue(sql.contains("node.is_broker = true"));
+        assertTrue(sql.contains("node.is_controller = true"));
+        assertTrue(sql.contains("cluster.kafka_mode"));
+        assertTrue(sql.contains("'zookeeper'"));
+    }
+
     private void assertReadOnlyCanonicalColumn(Class<?> entityType) throws Exception {
         Field field = entityType.getDeclaredField("canonicalClusterUuid");
         Column column = field.getAnnotation(Column.class);

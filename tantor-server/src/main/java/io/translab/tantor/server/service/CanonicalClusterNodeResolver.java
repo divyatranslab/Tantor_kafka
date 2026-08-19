@@ -119,11 +119,14 @@ public class CanonicalClusterNodeResolver {
                 throw new CanonicalIdentityException(
                         "External node " + externalNode.getId() + " has no node id");
             }
-            CanonicalNodeRole role = externalRole(externalNode);
+            Optional<CanonicalNodeRole> role = externalRole(clusterContract, externalNode);
+            if (role.isEmpty()) {
+                continue;
+            }
             resolved.add(node(
                     clusterContract,
                     externalNode.getNodeId(),
-                    role,
+                    role.get(),
                     externalNode.getHost(),
                     agentStatus,
                     externalTelemetryStatus(externalNode.getLastSeen())));
@@ -212,17 +215,22 @@ public class CanonicalClusterNodeResolver {
         };
     }
 
-    private CanonicalNodeRole externalRole(ExternalClusterNode node) {
+    private Optional<CanonicalNodeRole> externalRole(
+            CanonicalClusterContract cluster,
+            ExternalClusterNode node) {
         boolean broker = Boolean.TRUE.equals(node.getIsBroker());
         boolean controller = Boolean.TRUE.equals(node.getIsController());
+        if (cluster.mode() == CanonicalKafkaMode.ZOOKEEPER) {
+            return broker ? Optional.of(CanonicalNodeRole.BROKER) : Optional.empty();
+        }
         if (broker && controller) {
-            return CanonicalNodeRole.BROKER_CONTROLLER;
+            return Optional.of(CanonicalNodeRole.BROKER_CONTROLLER);
         }
         if (broker) {
-            return CanonicalNodeRole.BROKER;
+            return Optional.of(CanonicalNodeRole.BROKER);
         }
         if (controller) {
-            return CanonicalNodeRole.CONTROLLER;
+            return Optional.of(CanonicalNodeRole.CONTROLLER);
         }
         throw new CanonicalIdentityException("External node " + node.getId() + " has no canonical Kafka role");
     }

@@ -203,6 +203,10 @@ public class ExternalClusterService {
             }
         }
 
+        normalizeInspectionNodeRolesForMode(
+                result,
+                firstString(result, "mode", "kafkaMode", "kafka_mode"));
+
         // 3. Inject node-level agent availability
         if (adminSuccess && result.get("brokers") != null) {
             List<Map<String, Object>> nodes = (List<Map<String, Object>>) result.get("brokers");
@@ -510,6 +514,8 @@ public class ExternalClusterService {
                 savedCluster = externalClusterRepository.save(savedCluster);
             }
         }
+
+        normalizeInspectionNodeRolesForMode(inspection, savedCluster.getKafkaMode());
 
         // Map brokers to externalClusterNodeRepository (full topology)
         List<Map<String, Object>> brokers = (List<Map<String, Object>>) inspection.get("brokers");
@@ -1430,12 +1436,16 @@ public class ExternalClusterService {
         List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
         List<DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
         List<ExternalBrokerRecord> records = new ArrayList<>();
+        boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
         for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
+            if (zookeeperMode && !Boolean.TRUE.equals(n.getIsBroker())) {
+                continue;
+            }
             ExternalBrokerRecord r = new ExternalBrokerRecord();
             r.setHostname(n.getHost());
             r.setBootstrap(cluster.getBootstrapServers());
-            boolean isBroker = Boolean.TRUE.equals(n.getIsBroker());
-            boolean isController = Boolean.TRUE.equals(n.getIsController());
+            boolean isBroker = zookeeperMode || Boolean.TRUE.equals(n.getIsBroker());
+            boolean isController = !zookeeperMode && Boolean.TRUE.equals(n.getIsController());
             if (isBroker && isController) r.setRole("broker_controller");
             else if (isBroker) r.setRole("broker");
             else if (isController) r.setRole("controller");
@@ -1495,8 +1505,9 @@ public class ExternalClusterService {
             node.setHost(firstNonBlank(extractHostFromBootstrap(report.getBootstrapServers()), report.getHostname(), agent.getHostname()));
             node.setNodeId(report.getNodeId());
             String roles = blankToDefault(report.getProcessRoles(), "").toLowerCase();
-            node.setIsBroker(roles.isBlank() || roles.contains("broker"));
-            node.setIsController(roles.contains("controller"));
+            boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
+            node.setIsBroker(zookeeperMode || roles.isBlank() || roles.contains("broker"));
+            node.setIsController(!zookeeperMode && roles.contains("controller"));
             node.setCpuUsagePct(report.getCpuUsagePct());
             node.setMemoryUsedMb(report.getMemoryUsedMb());
             node.setMemoryTotalMb(report.getMemoryTotalMb());
@@ -2130,6 +2141,24 @@ public class ExternalClusterService {
                         .map(ExternalCluster::getId)
                         .filter(java.util.Objects::nonNull)
                         .collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void normalizeInspectionNodeRolesForMode(Map<String, Object> inspection, String kafkaMode) {
+        if (!"ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(kafkaMode))) {
+            return;
+        }
+        Object rawNodes = inspection.get("brokers");
+        if (!(rawNodes instanceof List<?> nodes)) {
+            return;
+        }
+        for (Object rawNode : nodes) {
+            if (rawNode instanceof Map<?, ?> rawMap) {
+                Map<String, Object> node = (Map<String, Object>) rawMap;
+                node.put("isBroker", true);
+                node.put("isController", false);
+            }
+        }
     }
 
     @Data

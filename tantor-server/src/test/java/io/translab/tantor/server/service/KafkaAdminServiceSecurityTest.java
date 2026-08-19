@@ -16,6 +16,8 @@ import org.apache.kafka.common.errors.UnsupportedVersionException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.List;
@@ -116,6 +118,32 @@ class KafkaAdminServiceSecurityTest {
                 service, "isUnsupportedMetadataQuorum", wrapped)).isTrue();
         assertThat((Boolean) ReflectionTestUtils.invokeMethod(
                 service, "isUnsupportedMetadataQuorum", new IllegalStateException("timeout"))).isFalse();
+    }
+
+    @Test
+    void treatsZooKeeperActiveControllerAsBrokerRoleNotKraftControllerRole() {
+        KafkaAdminService service = service();
+        Map<String, Object> node = new HashMap<>();
+        node.put("isBroker", true);
+        node.put("isController", true);
+
+        service.normalizeNodeRolesForMode(List.of(node), "ZooKeeper");
+
+        assertThat(node).containsEntry("isBroker", true)
+                .containsEntry("isController", false);
+    }
+
+    @Test
+    void preservesKraftBrokerControllerRole() {
+        KafkaAdminService service = service();
+        Map<String, Object> node = new HashMap<>();
+        node.put("isBroker", true);
+        node.put("isController", true);
+
+        service.normalizeNodeRolesForMode(List.of(node), "KRaft");
+
+        assertThat(node).containsEntry("isBroker", true)
+                .containsEntry("isController", true);
     }
 
     private Properties securityProperties(KafkaAdminService service, ExternalCluster cluster) {

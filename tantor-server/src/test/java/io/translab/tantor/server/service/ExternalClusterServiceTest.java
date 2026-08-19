@@ -44,13 +44,20 @@ class ExternalClusterServiceTest {
                 mock(DiscoveryAgentRepository.class),
                 kafkaAdminService);
 
+        Map<String, Object> activeBrokerController = new java.util.HashMap<>();
+        activeBrokerController.put("id", 1);
+        activeBrokerController.put("host", "192.168.3.150");
+        activeBrokerController.put("isBroker", true);
+        activeBrokerController.put("isController", true);
+        Map<String, Object> inspection = new java.util.HashMap<>();
+        inspection.put("connected", true);
+        inspection.put("clusterId", "zk-cluster-id");
+        inspection.put("mode", "auto-detected by Kafka client");
+        inspection.put("brokers", List.of(activeBrokerController));
+
         when(kafkaAdminService.inspectBootstrapServers(any(ExternalCluster.class),
                 org.mockito.ArgumentMatchers.eq(false)))
-                .thenReturn(Map.of(
-                        "connected", true,
-                        "clusterId", "zk-cluster-id",
-                        "mode", "auto-detected by Kafka client",
-                        "brokers", List.of()));
+                .thenReturn(inspection);
 
         ExternalClusterService.ExternalDiscoveryReport report =
                 new ExternalClusterService.ExternalDiscoveryReport();
@@ -77,6 +84,38 @@ class ExternalClusterServiceTest {
                 .containsEntry("mode", "ZooKeeper")
                 .containsEntry("kafkaMode", "ZooKeeper")
                 .containsEntry("discoveryKey", "discovery-150");
+        assertThat(activeBrokerController).containsEntry("isBroker", true)
+                .containsEntry("isController", false);
+    }
+
+    @Test
+    void brokerRecordsNormalizePreviouslyPersistedZooKeeperCombinedRole() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setKafkaMode("ZooKeeper");
+
+        ExternalClusterNode activeBrokerController = new ExternalClusterNode();
+        activeBrokerController.setClusterId(cluster.getId());
+        activeBrokerController.setNodeId(1);
+        activeBrokerController.setHost("192.168.3.150");
+        activeBrokerController.setIsBroker(true);
+        activeBrokerController.setIsController(true);
+
+        when(nodeRepository.findByClusterId(cluster.getId()))
+                .thenReturn(List.of(activeBrokerController));
+        when(agentRepository.findByClusterId(cluster.getId())).thenReturn(List.of());
+
+        assertThat(service.brokerRecords(cluster)).singleElement().satisfies(record -> {
+            assertThat(record.getNodeId()).isEqualTo(1);
+            assertThat(record.getRole()).isEqualTo("broker");
+        });
     }
 
     @Test

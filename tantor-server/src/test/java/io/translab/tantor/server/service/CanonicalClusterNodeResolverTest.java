@@ -103,7 +103,7 @@ class CanonicalClusterNodeResolverTest {
         externalCluster.setId(clusterUuid);
         externalCluster.setKafkaMode("ZooKeeper");
         ExternalClusterNode broker = externalNode(clusterUuid, 2, true, false, "192.168.20.22");
-        ExternalClusterNode controller = externalNode(clusterUuid, 101, false, true, "192.168.20.23");
+        ExternalClusterNode activeBrokerController = externalNode(clusterUuid, 1, true, true, "192.168.20.23");
         DiscoveryAgent agent = new DiscoveryAgent();
         agent.setClusterId(clusterUuid);
         agent.setStatus("ONLINE");
@@ -114,16 +114,16 @@ class CanonicalClusterNodeResolverTest {
         when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
         when(discoveryAgentRepository.findByClusterId(clusterUuid)).thenReturn(List.of(agent));
         when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
-                .thenReturn(List.of(controller, broker));
+                .thenReturn(List.of(activeBrokerController, broker));
 
         CanonicalClusterNodesResponse response = resolver.resolve(clusterUuid);
 
         assertThat(response.cluster().type()).isEqualTo(CanonicalClusterType.EXTERNAL);
         assertThat(response.cluster().mode()).isEqualTo(CanonicalKafkaMode.ZOOKEEPER);
         assertThat(response.nodes()).extracting(node -> node.identity().nodeId())
-                .containsExactly(2, 101);
+                .containsExactly(1, 2);
         assertThat(response.nodes()).extracting(node -> node.identity().role())
-                .containsExactly(CanonicalNodeRole.BROKER, CanonicalNodeRole.CONTROLLER);
+                .containsExactly(CanonicalNodeRole.BROKER, CanonicalNodeRole.BROKER);
         assertThat(response.nodes()).allSatisfy(node -> {
             assertThat(node.agentStatus()).isEqualTo(CanonicalAgentStatus.ONLINE);
             assertThat(node.telemetryStatus()).isEqualTo(CanonicalTelemetryStatus.LIVE);

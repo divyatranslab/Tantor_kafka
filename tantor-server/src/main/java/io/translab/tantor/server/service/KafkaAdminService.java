@@ -294,6 +294,7 @@ public class KafkaAdminService {
                     log.warn("Failed to fetch KRaft quorum info (likely Zookeeper mode): {}", e.getMessage());
                 }
 
+                normalizeNodeRolesForMode(nodeMap.values(), detectedKafkaMode);
                 finalNodes.addAll(nodeMap.values());
                 
                 // Deterministic sorting by node ID
@@ -361,6 +362,20 @@ public class KafkaAdminService {
         }
         
         throw new RuntimeException("Failed to connect to bootstrap servers: " + (lastException != null ? lastException.getMessage() : "Unknown error"));
+    }
+
+    void normalizeNodeRolesForMode(Collection<Map<String, Object>> nodes, String kafkaMode) {
+        if (!"ZooKeeper".equalsIgnoreCase(kafkaMode)) {
+            return;
+        }
+
+        // describeCluster().controller() identifies the active broker controller
+        // in ZooKeeper clusters. It is not a KRaft controller process role.
+        // Every node returned by describeCluster().nodes() is therefore a broker.
+        for (Map<String, Object> node : nodes) {
+            node.put("isBroker", true);
+            node.put("isController", false);
+        }
     }
 
     private static String configuredKafkaMode(org.apache.kafka.clients.admin.Config brokerConfig) {
