@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import java.util.UUID;
 
@@ -105,6 +106,22 @@ public class ActivityAlertService {
             String healthStatus,
             long freshAgents,
             long registeredAgents) {
+        synchronizeExternalClusterHealth(
+                clusterId, clusterName, healthStatus, freshAgents, registeredAgents, List.of());
+    }
+
+    /**
+     * Captures the affected discovery-agent IPs so resolved alert history still
+     * identifies the nodes that were unavailable at the time of the event.
+     */
+    @Transactional
+    public void synchronizeExternalClusterHealth(
+            UUID clusterId,
+            String clusterName,
+            String healthStatus,
+            long freshAgents,
+            long registeredAgents,
+            List<String> affectedIps) {
         if (clusterId == null) {
             return;
         }
@@ -121,7 +138,8 @@ public class ActivityAlertService {
                     EXTERNAL_AGENT_PARTIAL_TITLE,
                     "Discovery agents for external cluster '" + clusterName + "' are partially connected: "
                             + freshAgents + " of " + registeredAgents + " agent(s) have a fresh heartbeat.",
-                    clusterId);
+                    clusterId,
+                    affectedIps);
         } else if ("DEGRADED".equals(normalizedStatus)) {
             activeKey = externalDegradedKey(clusterId);
             activateAlert(
@@ -130,7 +148,8 @@ public class ActivityAlertService {
                     EXTERNAL_DEGRADED_TITLE,
                     "The Discovery Agent for external cluster '" + clusterName
                             + "' has stopped reporting, but Kafka is still reachable.",
-                    clusterId);
+                    clusterId,
+                    affectedIps);
         } else if ("FAILED".equals(normalizedStatus)) {
             // This key intentionally matches AlertController's runtime failure
             // key so one Kafka outage cannot create two ACTIVE alert rows.
@@ -140,7 +159,8 @@ public class ActivityAlertService {
                     "CRITICAL",
                     EXTERNAL_FAILED_TITLE,
                     "Kafka Admin API cannot reach external cluster '" + clusterName + "'.",
-                    clusterId);
+                    clusterId,
+                    List.of());
         }
 
         resolveSupersededExternalHealthAlerts(clusterId, activeKey);
@@ -168,7 +188,8 @@ public class ActivityAlertService {
             String severity,
             String title,
             String description,
-            UUID clusterId) {
+            UUID clusterId,
+            List<String> affectedIps) {
         Alert alert = alertRepository.findByAlertKey(alertKey).orElseGet(Alert::new);
         boolean newlyActive = alert.getId() == null || !"ACTIVE".equalsIgnoreCase(alert.getStatus());
         if (newlyActive) {
@@ -179,6 +200,7 @@ public class ActivityAlertService {
         alert.setTitle(title);
         alert.setDescription(description);
         alert.setClusterId(clusterId);
+        alert.setAffectedIps(formatAffectedIps(affectedIps));
         alert.setSource("external_health");
         alert.setStatus("ACTIVE");
         alert.setResolvedAt(null);
@@ -186,6 +208,18 @@ public class ActivityAlertService {
         if (newlyActive) {
             log.warn("ALERT [{}]: {} - {}", severity, title, description);
         }
+    }
+
+    private String formatAffectedIps(List<String> affectedIps) {
+        if (affectedIps == null) {
+            return null;
+        }
+        String value = affectedIps.stream()
+                .filter(ip -> ip != null && !ip.isBlank())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.joining(", "));
+        return value.isBlank() ? null : value;
     }
 
     private void resolveSupersededExternalHealthAlerts(UUID clusterId, String activeKey) {

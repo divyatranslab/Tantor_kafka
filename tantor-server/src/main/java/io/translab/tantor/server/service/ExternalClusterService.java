@@ -1717,6 +1717,10 @@ public class ExternalClusterService {
                 && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
     }
 
+    private boolean isFreshOnlineAgent(DiscoveryAgent agent) {
+        return "ONLINE".equalsIgnoreCase(agent.getStatus()) && isFreshAgent(agent);
+    }
+
     private boolean isFreshDiscovery(ExternalDiscoveryReport report) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(report.getLastSeen());
@@ -2119,10 +2123,14 @@ public class ExternalClusterService {
                 List<DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findByClusterId(cluster.getId());
                 long registeredAgents = discoveryAgents.size();
                 long freshAgents = discoveryAgents.stream()
-                        .filter(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus())
-                                && agent.getLastHeartbeat() != null
-                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())))
+                        .filter(this::isFreshOnlineAgent)
                         .count();
+                List<String> affectedAgentIps = discoveryAgents.stream()
+                        .filter(agent -> !isFreshOnlineAgent(agent))
+                        .flatMap(agent -> parseAgentAddresses(agent.getIpAddresses()).stream())
+                        .filter(address -> address != null && !address.isBlank())
+                        .distinct()
+                        .toList();
 
                 String newStatus;
                 if (!connected) {
@@ -2148,7 +2156,7 @@ public class ExternalClusterService {
                 String alertHealth = connected && freshAgents > 0 && freshAgents < registeredAgents
                         ? "PARTIAL" : newStatus;
                 activityAlertService.synchronizeExternalClusterHealth(
-                        cluster.getId(), cluster.getName(), alertHealth, freshAgents, registeredAgents);
+                        cluster.getId(), cluster.getName(), alertHealth, freshAgents, registeredAgents, affectedAgentIps);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
             }

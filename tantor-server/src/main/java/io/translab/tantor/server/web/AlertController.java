@@ -317,7 +317,7 @@ public class AlertController {
                 alert.getClusterId(),
                 cluster == null ? null : cluster.getName(),
                 alert.getHostId(),
-                hostIp(host),
+                hostIp(host) == null ? alert.getAffectedIps() : hostIp(host),
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
                 alert.getErrorLog(),
                 "stored"

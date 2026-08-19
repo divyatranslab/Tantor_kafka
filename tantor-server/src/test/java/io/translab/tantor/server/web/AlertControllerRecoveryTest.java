@@ -206,6 +206,36 @@ class AlertControllerRecoveryTest {
     }
 
     @Test
+    void storedClusterAlertUsesAffectedNodeIpsWhenItHasNoSingleHost() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+
+        Alert alert = new Alert();
+        alert.setAlertKey("external-agent-partial-test");
+        alert.setSeverity("WARNING");
+        alert.setTitle("External agents partially connected");
+        alert.setStatus("ACTIVE");
+        alert.setAffectedIps("192.168.3.191, 192.168.3.229");
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(hostRepository.findAll()).thenReturn(List.of());
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc()).thenReturn(List.of(alert));
+
+        AlertController controller = new AlertController(
+                alertRepository, clusterRepository, hostRepository, taskRepository,
+                mock(HostStatusService.class), hostParcelRepository, mock(ConsumerLagCacheService.class));
+
+        assertThat(controller.getActiveAlerts().getBody()).singleElement()
+                .satisfies(item -> assertThat(item.get("hostIp"))
+                        .isEqualTo("192.168.3.191, 192.168.3.229"));
+    }
+
+    @Test
     void hidesPortCheckHistoryFromAlertsBecauseItBelongsInAudits() {
         AlertRepository alertRepository = mock(AlertRepository.class);
         ClusterRepository clusterRepository = mock(ClusterRepository.class);

@@ -32,6 +32,13 @@ public class Alert {
     @Column(name = "host_id")
     private String hostId;
 
+    /**
+     * Snapshot of the concrete node IPs affected when a cluster-level alert
+     * was raised. A cluster health event can affect more than one agent.
+     */
+    @Column(name = "affected_ips", columnDefinition = "TEXT")
+    private String affectedIps;
+
     @Column(nullable = false)
     private String source = "stored";
 

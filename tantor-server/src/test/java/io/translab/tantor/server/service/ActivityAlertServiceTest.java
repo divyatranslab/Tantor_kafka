@@ -138,12 +138,14 @@ class ActivityAlertServiceTest {
                         ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
                 .thenReturn(List.of());
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "PARTIAL", 2, 3);
+        service.synchronizeExternalClusterHealth(
+                clusterId, "payments", "PARTIAL", 2, 3, List.of("192.168.3.191", "192.168.3.191"));
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
         verify(repository).save(saved.capture());
         assertThat(saved.getValue().getTitle()).isEqualTo(ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE);
         assertThat(saved.getValue().getDescription()).contains("2 of 3");
+        assertThat(saved.getValue().getAffectedIps()).isEqualTo("192.168.3.191");
     }
 
     private Alert alert(String key, String title, String status, UUID clusterId) {
