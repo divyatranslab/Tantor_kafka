@@ -172,7 +172,7 @@ class AlertControllerRecoveryTest {
 
         Host host = new Host();
         host.setId("host-internal-uuid");
-        host.setIpAddresses("[\"192.168.3.229\"]");
+        host.setHostIp("192.168.3.229");
 
         Alert alert = new Alert();
         alert.setAlertKey("manual-alert");
