@@ -6,6 +6,7 @@ import io.translab.tantor.server.domain.ConfigVersion;
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.service.ConfigVersionService;
+import io.translab.tantor.server.service.ConfigurationSanitizer;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class ConfigVersionController {
     private final ClusterRepository clusterRepository;
     private final ConfigVersionService configVersionService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final ConfigurationSanitizer configurationSanitizer;
     private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
 
     @PostMapping("/services/{serviceId}/versions/preview")
@@ -75,11 +77,15 @@ public class ConfigVersionController {
 
     @GetMapping("/versions")
     public ResponseEntity<List<ConfigVersion>> history(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestParam(required = false) UUID serviceId
     ) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_READ)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
         if (!clusterRepository.existsById(clusterId)) return ResponseEntity.notFound().build();
-        return ResponseEntity.ok(configVersionService.history(clusterId, serviceId));
+        return ResponseEntity.ok(configurationSanitizer.sanitizeVersions(configVersionService.history(clusterId, serviceId)));
     }
 
     @PostMapping("/versions/{versionId}/approve")

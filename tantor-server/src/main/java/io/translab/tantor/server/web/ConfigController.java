@@ -14,6 +14,7 @@ import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.service.DeploymentService;
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.ActivityAlertService;
+import io.translab.tantor.server.service.ConfigurationSanitizer;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
@@ -50,6 +51,7 @@ public class ConfigController {
     private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final ConfigurationSanitizer configurationSanitizer;
 
     private ResponseEntity<Map<String, Object>> unauthorized() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -57,7 +59,12 @@ public class ConfigController {
     }
 
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getBrokerConfigs(@PathVariable UUID clusterId) {
+    public ResponseEntity<Map<String, Object>> getBrokerConfigs(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_READ)) {
+            return unauthorized();
+        }
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster != null && !"EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
             Map<Integer, Map<String, Object>> dynamicConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
@@ -87,7 +94,7 @@ public class ConfigController {
             response.put("serviceTopology", buildServiceTopology(cluster, deploymentConfig, installDir));
             response.put("staticConfigs", staticConfigs);
 
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(configurationSanitizer.sanitize(response));
         }
 
         io.translab.tantor.server.domain.ExternalCluster externalCluster = externalClusterRepository.findById(clusterId).orElse(null);
@@ -149,7 +156,7 @@ public class ConfigController {
         staticConfigs.put("configFiles", configFiles);
         response.put("staticConfigs", staticConfigs);
         
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(configurationSanitizer.sanitize(response));
 
 
     }
@@ -986,7 +993,13 @@ public class ConfigController {
     }
 
     @PostMapping("/read")
-    public ResponseEntity<Map<String, Object>> readConfig(@PathVariable UUID clusterId, @RequestBody Map<String, Object> request) {
+    public ResponseEntity<Map<String, Object>> readConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @RequestBody Map<String, Object> request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
+            return unauthorized();
+        }
         String nodeIdStr = String.valueOf(request.get("nodeId"));
         Integer targetNodeId = null;
         try { targetNodeId = Integer.parseInt(nodeIdStr); } catch (Exception e) {}

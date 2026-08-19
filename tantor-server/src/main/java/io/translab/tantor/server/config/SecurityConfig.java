@@ -43,6 +43,7 @@ public class SecurityConfig {
                     // In production, mTLS filters would handle /api/v1/agents/**
                     .requestMatchers("/api/v1/agents/**").permitAll()
                     .requestMatchers("/api/v1/ui/**").permitAll()
+                    .requestMatchers("/api/v1/clusters/*/config", "/api/v1/clusters/*/config/**").authenticated()
                     .requestMatchers("/api/v1/clusters/**").permitAll()
                     .requestMatchers("/api/v1/monitoring/**").permitAll()
                     .requestMatchers("/internal/prometheus/**").permitAll()

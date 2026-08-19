@@ -24,6 +24,7 @@ public class RoleAuthenticationUtil {
     public static final String ROLLING_RESTART = "ROLLING_RESTART";
     public static final String ADD_NODE = "ADD_NODE";
     public static final String CONFIGURATION_CHANGE = "CONFIGURATION_CHANGE";
+    public static final String CONFIGURATION_READ = "CONFIGURATION_READ";
     public static final String CONFIG_VERSION_CHANGE = "CONFIG_VERSION_CHANGE";
     public static final String BIND_AGENT = "BIND_AGENT";
     public static final String HOST_ONBOARDING = "HOST_ONBOARDING";
