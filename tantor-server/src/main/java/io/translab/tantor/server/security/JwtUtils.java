@@ -111,7 +111,7 @@ public class JwtUtils {
                     OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(configuredIssuer);
                     String expectedAudience = oidcAudience == null ? "" : oidcAudience.trim();
                     if (!expectedAudience.isBlank()) {
-                        OAuth2TokenValidator<Jwt> audienceValidator = jwt -> jwt.getAudience().contains(expectedAudience)
+                        OAuth2TokenValidator<Jwt> audienceValidator = jwt -> isAudienceAccepted(jwt, expectedAudience)
                                 ? OAuth2TokenValidatorResult.success()
                                 : OAuth2TokenValidatorResult.failure(new OAuth2Error("invalid_token", "Token audience is not permitted", null));
                         nimbusDecoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerValidator, audienceValidator));
@@ -124,6 +124,19 @@ public class JwtUtils {
             }
         }
         return externalDecoder;
+    }
+
+    /**
+     * Keycloak access tokens normally carry the resource audience in {@code aud}.
+     * Some standard client configurations instead expose the requesting client in
+     * {@code azp} while retaining only Keycloak's account service in {@code aud}.
+     * Both values remain issuer-signed claims, so accepting an exact configured
+     * client match preserves token binding without weakening signature, issuer or
+     * expiry validation.
+     */
+    boolean isAudienceAccepted(Jwt jwt, String expectedAudience) {
+        return jwt.getAudience().contains(expectedAudience)
+                || expectedAudience.equals(jwt.getClaimAsString("azp"));
     }
 
     private VerifiedPrincipal principal(String username, Map<String, Object> claims) {

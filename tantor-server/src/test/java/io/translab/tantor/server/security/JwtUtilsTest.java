@@ -1,6 +1,7 @@
 package io.translab.tantor.server.security;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Base64;
@@ -29,6 +30,19 @@ class JwtUtilsTest {
         String payload = encode("{\"sub\":\"attacker\",\"roles\":[\"admin\"]}");
 
         assertThat(jwtUtils.verify(header + "." + payload + ".signature")).isNull();
+    }
+
+    @Test
+    void acceptsKeycloakAuthorizedPartyWhenAudienceMapperIsNotConfigured() {
+        JwtUtils jwtUtils = configuredJwtUtils();
+        Jwt token = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .claim("aud", java.util.List.of("account"))
+                .claim("azp", "apb-kafka")
+                .build();
+
+        assertThat(jwtUtils.isAudienceAccepted(token, "apb-kafka")).isTrue();
+        assertThat(jwtUtils.isAudienceAccepted(token, "another-client")).isFalse();
     }
 
     private JwtUtils configuredJwtUtils() {
