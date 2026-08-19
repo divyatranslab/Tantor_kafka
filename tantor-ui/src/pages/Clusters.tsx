@@ -420,7 +420,6 @@ export function Clusters() {
                             <td>
                               <div className="env-cell-v2">
                                 <strong>{cluster.environment?.toUpperCase() || 'DEV'}</strong>
-                                <span>{cluster.nodeCount || cluster.hosts?.length || 0} node{(cluster.nodeCount || cluster.hosts?.length || 0) === 1 ? '' : 's'}</span>
                               </div>
                             </td>
                             <td>
