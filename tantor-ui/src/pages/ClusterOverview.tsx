@@ -310,8 +310,7 @@ export function ClusterOverview() {
         </div>
       </section>
 
-      {overview.originType === 'EXTERNAL'
-        && uptime.controllerType === 'KRaft'
+      {uptime.controllerType === 'KRaft'
         && overview.controllers
         && overview.controllers.length > 0 && (
         <section className="overview-section">

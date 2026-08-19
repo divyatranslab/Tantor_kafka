@@ -151,4 +151,77 @@ class ClusterOverviewServiceTest {
         assertThat(overview.getUptime().getConfiguredControllerCount()).isZero();
         verify(kafkaAdminService, never()).getControllerId(clusterId);
     }
+
+    @Test
+    void returnsManagedControllerVotersForInternalKraftCluster() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setName("internal-kraft");
+        cluster.setKafkaVersion("4.1.0");
+        cluster.setOriginType("INTERNAL");
+        cluster.setMode("kraft");
+        cluster.setConfigJson("{\"controller_port\":9093}");
+
+        ClusterServiceAssignment controller101 = assignment(cluster, "controller-a", 101, "controller");
+        controller101.setConfigJson("{\"controller_port\":19093}");
+        ClusterServiceAssignment controller102 = assignment(cluster, "controller-b", 102, "broker_controller");
+        cluster.setServices(List.of(controller102, controller101));
+
+        Host firstHost = host("controller-a", "controller-a.local", "192.168.3.229");
+        Host secondHost = host("controller-b", "controller-b.local", "192.168.3.164");
+        Node brokerNode = new Node(2, "192.168.3.164", 9092);
+
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(List.of(brokerNode)));
+        when(describeClusterResult.controller()).thenReturn(KafkaFuture.completedFuture(brokerNode));
+        when(describeClusterResult.clusterId()).thenReturn(KafkaFuture.completedFuture("kraft-cluster-id"));
+        when(kafkaAdminService.getControllerId(clusterId)).thenReturn(102);
+        when(adminClient.listTopics(any())).thenReturn(listTopicsResult);
+        when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
+        when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
+        when(describeLogDirsResult.descriptions()).thenReturn(
+                Map.of(2, KafkaFuture.completedFuture(Map.of()))
+        );
+        when(hostRepository.findById("controller-a")).thenReturn(Optional.of(firstHost));
+        when(hostRepository.findById("controller-b")).thenReturn(Optional.of(secondHost));
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        assertThat(overview.getControllers())
+                .extracting(
+                        ClusterOverviewDto.ControllerRow::getNodeId,
+                        ClusterOverviewDto.ControllerRow::getHost,
+                        ClusterOverviewDto.ControllerRow::getPort,
+                        ClusterOverviewDto.ControllerRow::isActiveLeader)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(101, "192.168.3.229", 19093, false),
+                        org.assertj.core.groups.Tuple.tuple(102, "192.168.3.164", 9093, true)
+                );
+        assertThat(overview.getUptime().getConfiguredControllerCount()).isEqualTo(2);
+    }
+
+    private ClusterServiceAssignment assignment(
+            Cluster cluster,
+            String hostId,
+            int nodeId,
+            String role
+    ) {
+        ClusterServiceAssignment assignment = new ClusterServiceAssignment();
+        assignment.setCluster(cluster);
+        assignment.setHostId(hostId);
+        assignment.setNodeId(nodeId);
+        assignment.setRole(role);
+        return assignment;
+    }
+
+    private Host host(String id, String hostname, String hostIp) {
+        Host host = new Host();
+        host.setId(id);
+        host.setHostname(hostname);
+        host.setHostIp(hostIp);
+        return host;
+    }
 }

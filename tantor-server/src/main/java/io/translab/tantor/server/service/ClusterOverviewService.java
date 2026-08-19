@@ -19,6 +19,7 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -42,6 +43,7 @@ public class ClusterOverviewService {
     private final KafkaAdminService kafkaAdminService;
     private final HostStatusService hostStatusService;
 
+    @Transactional(readOnly = true)
     public ClusterOverviewDto getOverview(UUID clusterId) {
         String clusterName;
         String kafkaVersion;
@@ -111,7 +113,10 @@ public class ClusterOverviewService {
             applyInternalHostDiskStats(internalCluster, brokerStats);
 
             int brokerCount = brokerStats.size();
-            int configuredControllerCount = kraft ? configuredControllerCount(internalCluster) : 0;
+            List<ClusterOverviewDto.ControllerRow> controllers = kraft
+                    ? internalControllerRows(internalCluster, activeControllerId)
+                    : List.of();
+            int configuredControllerCount = controllers.size();
             double avgReplicas = brokerCount == 0 ? 0 : (double) partitionStats.totalReplicas / brokerCount;
             double avgLeaders = brokerCount == 0 ? 0 : (double) partitionStats.totalPartitions / brokerCount;
 
@@ -150,6 +155,7 @@ public class ClusterOverviewService {
                             .outOfSyncReplicas(Math.max(0, partitionStats.totalReplicas - partitionStats.inSyncReplicas))
                             .build())
                     .brokers(brokers)
+                    .controllers(controllers)
                     .build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -161,15 +167,77 @@ public class ClusterOverviewService {
         }
     }
 
-    private int configuredControllerCount(Cluster cluster) {
+    private List<ClusterOverviewDto.ControllerRow> internalControllerRows(
+            Cluster cluster,
+            Integer activeControllerId
+    ) {
         if (cluster == null || cluster.getServices() == null) {
-            return 0;
+            return List.of();
         }
-        return (int) cluster.getServices().stream()
-                .filter(service -> service.getRole() != null)
-                .filter(service -> "controller".equalsIgnoreCase(service.getRole())
-                        || "broker_controller".equalsIgnoreCase(service.getRole()))
-                .count();
+        return cluster.getServices().stream()
+                .filter(service -> isControllerRole(service.getRole()))
+                .filter(service -> service.getNodeId() != null)
+                .sorted(Comparator.comparingInt(service -> service.getNodeId()))
+                .map(service -> ClusterOverviewDto.ControllerRow.builder()
+                        .nodeId(service.getNodeId())
+                        .host(controllerHost(service.getHostId()))
+                        .port(controllerPort(service.getConfigJson(), cluster.getConfigJson()))
+                        .activeLeader(activeControllerId != null
+                                && activeControllerId.equals(service.getNodeId()))
+                        .build())
+                .toList();
+    }
+
+    private boolean isControllerRole(String role) {
+        if (role == null) {
+            return false;
+        }
+        String normalized = role.trim().toLowerCase(java.util.Locale.ROOT);
+        return "controller".equals(normalized) || "broker_controller".equals(normalized);
+    }
+
+    private String controllerHost(String hostId) {
+        if (hostId == null || hostId.isBlank()) {
+            return "unknown";
+        }
+        return hostRepository.findById(hostId)
+                .map(host -> firstNonBlank(host.getHostIp(), host.getHostname(), hostId))
+                .orElse(hostId);
+    }
+
+    private Integer controllerPort(String serviceConfigJson, String clusterConfigJson) {
+        Integer servicePort = configInt(serviceConfigJson, "controller_port");
+        if (servicePort != null) {
+            return servicePort;
+        }
+        Integer clusterPort = configInt(clusterConfigJson, "controller_port");
+        return clusterPort != null ? clusterPort : 9093;
+    }
+
+    private Integer configInt(String configJson, String key) {
+        if (configJson == null || configJson.isBlank()) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*\"?(\\d+)\"?"
+        ).matcher(configJson);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "unknown";
     }
 
     private boolean isKraftMode(String mode) {
