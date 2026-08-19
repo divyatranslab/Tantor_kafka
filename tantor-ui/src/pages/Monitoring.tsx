@@ -101,7 +101,7 @@ const nodeValue = (node: MonitoringNode) => String(node.nodeId || '');
 
 const nodeLabel = (node: MonitoringNode) => {
   const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
-  const host = node.hostname || node.hostIp;
+  const host = node.hostIp || node.hostname;
   const role = node.role;
   return [nodeName, role, host].filter(Boolean).join(' · ');
 };
