@@ -37,9 +37,8 @@ spring:
 
   servlet:
     multipart:
-      # Allow large multipart uploads; raw streaming PUT bypasses these limits.
-      max-file-size: 4GB
-      max-request-size: 4GB
+      max-file-size: ${TANTOR_MAX_UPLOAD_SIZE:512MB}
+      max-request-size: ${TANTOR_MAX_UPLOAD_SIZE:512MB}
       file-size-threshold: 16MB
 
 # Tantor artifact repository specific settings
@@ -51,6 +50,20 @@ tantor:
     enforce-checksum: true
     # Buffer size used when streaming files to/from disk.
     stream-buffer-bytes: 1048576
+    max-upload-bytes: ${TANTOR_MAX_UPLOAD_BYTES:536870912}
+    max-bundle-bytes: ${TANTOR_MAX_BUNDLE_BYTES:536870912}
+    minimum-free-space-bytes: ${TANTOR_MINIMUM_FREE_SPACE_BYTES:5368709120}
+    max-concurrent-uploads: ${TANTOR_MAX_CONCURRENT_UPLOADS:2}
+    max-archive-entries: ${TANTOR_MAX_ARCHIVE_ENTRIES:10000}
+    max-archive-entry-bytes: ${TANTOR_MAX_ARCHIVE_ENTRY_BYTES:1073741824}
+    max-archive-expanded-bytes: ${TANTOR_MAX_ARCHIVE_EXPANDED_BYTES:2147483648}
+    max-archive-compression-ratio: ${TANTOR_MAX_ARCHIVE_COMPRESSION_RATIO:100}
+    malware-scan:
+      enabled: ${TANTOR_MALWARE_SCAN_ENABLED:false}
+      required: ${TANTOR_MALWARE_SCAN_REQUIRED:false}
+      host: ${TANTOR_MALWARE_SCAN_HOST:clamav}
+      port: ${TANTOR_MALWARE_SCAN_PORT:3310}
+      timeout-ms: ${TANTOR_MALWARE_SCAN_TIMEOUT_MS:30000}
 
 management:
   endpoints:

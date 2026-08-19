@@ -1,6 +1,7 @@
 package io.translab.tantor.artifact.service;
 
 import io.translab.tantor.artifact.dto.ChecksumResult;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -8,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ChecksumServiceTest {
 
@@ -33,5 +35,12 @@ class ChecksumServiceTest {
         ChecksumResult result = service.digest(new ByteArrayInputStream(input));
         assertThat(result.sizeBytes()).isEqualTo(input.length);
         assertThat(result.sha256()).hasSize(64);
+    }
+
+    @Test
+    void rejectsAStreamThatExceedsTheConfiguredLimit() {
+        assertThatThrownBy(() -> service.copyAndDigest(
+                new ByteArrayInputStream(new byte[6]), new ByteArrayOutputStream(), 5))
+                .isInstanceOf(UploadLimitExceededException.class);
     }
 }

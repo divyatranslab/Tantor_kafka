@@ -4,6 +4,8 @@ import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.exception.ArtifactNotFoundException;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
 import io.translab.tantor.artifact.exception.StorageException;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
+import io.translab.tantor.artifact.exception.PackageValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,16 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleStorage(StorageException ex) {
         log.error("Storage failure", ex);
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Storage error", ex.getMessage(), "storage-error");
+    }
+
+    @ExceptionHandler(PackageValidationException.class)
+    public ProblemDetail handlePackageValidation(PackageValidationException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Package validation failed", ex.getMessage(), "package-validation-failed");
+    }
+
+    @ExceptionHandler(UploadLimitExceededException.class)
+    public ProblemDetail handleUploadLimit(UploadLimitExceededException ex) {
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload limit exceeded", ex.getMessage(), "upload-limit-exceeded");
     }
 
     @ExceptionHandler(Exception.class)

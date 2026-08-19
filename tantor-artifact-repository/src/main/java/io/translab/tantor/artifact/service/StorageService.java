@@ -4,6 +4,7 @@ import io.translab.tantor.artifact.config.StorageProperties;
 import io.translab.tantor.artifact.domain.ServiceType;
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.exception.StorageException;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.Semaphore;
+import java.util.UUID;
 
 /**
  * Owns the on-disk repository layout:
@@ -38,6 +41,7 @@ public class StorageService {
     private final StorageProperties properties;
     private final ChecksumService checksumService;
     private Path artifactsRoot;
+    private Semaphore uploadSlots;
 
     public StorageService(StorageProperties properties, ChecksumService checksumService) {
         this.properties = properties;
@@ -52,6 +56,7 @@ public class StorageService {
             for (ServiceType type : ServiceType.values()) {
                 Files.createDirectories(artifactsRoot.resolve(type.directory()));
             }
+            uploadSlots = new Semaphore(properties.getMaxConcurrentUploads(), true);
             log.info("Tantor artifact repository initialised at {}", artifactsRoot);
         } catch (IOException e) {
             throw new StorageException("Unable to initialise repository at " + properties.getBasePath(), e);
@@ -75,15 +80,25 @@ public class StorageService {
      * @return the path to the temporary file and computed checksums
      */
     public TempStoreResult storeTemporarily(String fileNameHint, InputStream data) {
+        validateFileName(fileNameHint);
+        if (!uploadSlots.tryAcquire()) {
+            throw new UploadLimitExceededException("Too many concurrent uploads; try again shortly");
+        }
         try {
+            ensureFreeSpace();
             Path tmp = Files.createTempFile(artifactsRoot, ".upload-", "-" + fileNameHint);
             ChecksumResult result;
             try (OutputStream out = Files.newOutputStream(tmp)) {
-                result = checksumService.copyAndDigest(data, out);
+                result = checksumService.copyAndDigest(data, out, properties.getMaxUploadBytes());
+            } catch (RuntimeException e) {
+                Files.deleteIfExists(tmp);
+                throw e;
             }
             return new TempStoreResult(tmp, result);
         } catch (IOException e) {
             throw new StorageException("Failed to store temporary upload for " + fileNameHint, e);
+        } finally {
+            uploadSlots.release();
         }
     }
 
@@ -99,7 +114,11 @@ public class StorageService {
         Path targetDir = resolveSafe(relDir);
         try {
             Files.createDirectories(targetDir);
-            Path target = targetDir.resolve(fileName);
+            validateFileName(fileName);
+            Path target = targetDir.resolve(fileName).normalize();
+            if (!target.startsWith(targetDir)) {
+                throw new StorageException("Path traversal blocked for artifact filename");
+            }
             Files.move(tempPath, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             log.info("Stored {}", relDir + "/" + fileName);
         } catch (IOException e) {
@@ -171,5 +190,39 @@ public class StorageService {
             throw new StorageException("Path traversal blocked for: " + relativeDir);
         }
         return resolved;
+    }
+
+    /**
+     * Keeps rejected bytes outside the downloadable artifact tree for forensic
+     * review. Quarantined files are never referenced by an AVAILABLE artifact.
+     */
+    public void quarantine(Path tempPath, String fileName) {
+        if (tempPath == null || !Files.exists(tempPath)) return;
+        try {
+            validateFileName(fileName);
+            Path quarantineDir = artifactsRoot.resolve("quarantine").normalize();
+            Files.createDirectories(quarantineDir);
+            Files.move(tempPath, quarantineDir.resolve(UUID.randomUUID() + "-" + fileName),
+                    StandardCopyOption.ATOMIC_MOVE);
+            log.warn("Quarantined rejected upload {}", fileName);
+        } catch (Exception e) {
+            log.warn("Unable to quarantine rejected upload {}; deleting temporary bytes", fileName, e);
+            deleteTemp(tempPath);
+        }
+    }
+
+    private void ensureFreeSpace() throws IOException {
+        long usable = Files.getFileStore(artifactsRoot).getUsableSpace();
+        long required = Math.addExact(properties.getMinimumFreeSpaceBytes(), properties.getMaxUploadBytes());
+        if (usable < required) {
+            throw new UploadLimitExceededException("Insufficient repository disk space for a safe upload");
+        }
+    }
+
+    public static void validateFileName(String value) {
+        if (value == null || value.isBlank() || !value.equals(Paths.get(value).getFileName().toString())
+                || value.contains("\\") || value.contains("/") || value.equals(".") || value.equals("..")) {
+            throw new IllegalArgumentException("Artifact filename must be a single safe filename");
+        }
     }
 }
