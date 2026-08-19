@@ -248,11 +248,13 @@ public class PrometheusMonitoringService {
         // exporter health, not the aggregate health of every broker in the
         // cluster. Otherwise one unreachable exporter makes every healthy node
         // appear down in the UI.
-        String exporterHealthSelector = selectedNodeId == null ? clusterSelector : brokerMetricSelector;
-        overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", exporterHealthSelector, true));
-        overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", exporterHealthSelector, false));
-        overview.setKafkaExporterUp(healthValue(
-                overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
+        if (brokerMetricsRequested) {
+            String exporterHealthSelector = selectedNodeId == null ? clusterSelector : brokerMetricSelector;
+            overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", exporterHealthSelector, true));
+            overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", exporterHealthSelector, false));
+            overview.setKafkaExporterUp(healthValue(
+                    overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
+        }
         if (brokerMetricsRequested || controllerMetricsRequested) {
             overview.setJmxUpTargets(targetCount("kafka_jmx", jmxMetricSelector, true));
             overview.setJmxTotalTargets(targetCount("kafka_jmx", jmxMetricSelector, false));
@@ -327,20 +329,23 @@ public class PrometheusMonitoringService {
         overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
         overview.setHostMemoryTotalMb(computeHostMemoryTotalMb(cluster, selectedNodeId));
 
-        if (!brokerMetricsRequested) {
-            overview.getWarnings().add("Kafka exporter is broker-level and is not applicable to the selected Controller.");
-        } else if (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0) {
+        if (brokerMetricsRequested
+                && (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0)) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
-        } else if (overview.getKafkaExporterUpTargets() == null
-                || overview.getKafkaExporterUpTargets() < overview.getKafkaExporterTotalTargets()) {
+        } else if (brokerMetricsRequested && (overview.getKafkaExporterUpTargets() == null
+                || overview.getKafkaExporterUpTargets() < overview.getKafkaExporterTotalTargets())) {
             overview.getWarnings().add("Kafka exporter is degraded: "
                     + targetCountValue(overview.getKafkaExporterUpTargets()) + "/"
                     + overview.getKafkaExporterTotalTargets().intValue() + " targets are up.");
         }
         if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
-            overview.getWarnings().add("JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
+            overview.getWarnings().add(controllerMetricsRequested
+                    ? "Controller JVM/JMX metrics are unavailable because a separate controller JMX endpoint is not configured."
+                    : "Broker JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
         } else if (overview.getJmxTotalTargets() == null || overview.getJmxTotalTargets() <= 0) {
-            overview.getWarnings().add("JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
+            overview.getWarnings().add(controllerMetricsRequested
+                    ? "Controller JVM/JMX metrics are unavailable because Prometheus has no recent samples for the selected Controller."
+                    : "Broker JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
         } else if (overview.getJmxUpTargets() == null
                 || overview.getJmxUpTargets() < overview.getJmxTotalTargets()) {
             overview.getWarnings().add("JMX exporter is degraded: "

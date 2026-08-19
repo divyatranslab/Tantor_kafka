@@ -511,7 +511,7 @@ export function Topics() {
             <form onSubmit={createTopic} className="create-topic-form">
               <div className="figma-topic-modal-body">
                 <div className="form-section-header">
-                  <span>Cluster Details</span>
+                  <span>Topic Details</span>
                 </div>
 
                 <div className="form-grid-row">

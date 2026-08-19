@@ -110,8 +110,8 @@ export function Brokers() {
     return normalizedRole === 'broker' || normalizedRole === 'broker_controller';
   });
   const agg = {
-    totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
-    totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
+    totalMsgIn: brokerNodes.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
+    totalBytesIn: brokerNodes.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
     avgCpu: (() => {
       const liveCpu = brokers.filter(b => b.hostMetricStatus === 'LIVE' && b.cpuUsagePct != null);
       return liveCpu.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (liveCpu.length || 1);
@@ -140,7 +140,7 @@ export function Brokers() {
   };
 
   if (loading && brokers.length === 0) {
-    return <div className="state-center">Loading broker metrics…</div>;
+    return <div className="state-center">Loading role metrics…</div>;
   }
 
   return (
@@ -160,7 +160,7 @@ export function Brokers() {
 
         <div className="metric-card figma-card">
           <div className="card-header">
-            <span className="label">Active Broker</span>
+            <span className="label">Active Brokers</span>
           </div>
           <div className="card-body">
             <span className="value">{brokerNodes.length - agg.offline}/{brokerNodes.length}</span>
@@ -181,7 +181,7 @@ export function Brokers() {
 
       {/* ── Controls ── */}
       <div className="brokers-list-header">
-        <h2 className="brokers-list-title cluster-section-heading">Brokers List</h2>
+        <h2 className="brokers-list-title cluster-section-heading">Roles List</h2>
         <div className="brokers-controls figma-controls">
           <div className="search-wrapper">
             <Search size={16} className="search-icon" />
@@ -291,7 +291,9 @@ export function Brokers() {
 
                 {/* Msg/s */}
                 <td className="font-mono">
-                  {broker.messagesInPerSec ? broker.messagesInPerSec.toFixed(1) : '0'}
+                  {normalizeRole(broker) === 'controller'
+                    ? 'N/A'
+                    : (broker.messagesInPerSec || 0).toFixed(1)}
                 </td>
 
                 {/* Heartbeat */}
@@ -305,7 +307,7 @@ export function Brokers() {
             {filteredBrokers.length === 0 && (
               <tr>
                 <td colSpan={8} className="text-center py-4 text-muted">
-                  No brokers found matching criteria
+                  No roles found matching criteria
                 </td>
               </tr>
             )}

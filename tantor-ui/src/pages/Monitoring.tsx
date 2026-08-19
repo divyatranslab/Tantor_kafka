@@ -266,7 +266,18 @@ export function Monitoring() {
   const selectedRole = selectedNode?.role || '';
   const controllerOnlySelected = selectedRole.toLowerCase().includes('controller')
     && !selectedRole.toLowerCase().includes('broker');
-  const jvmRoleLabel = controllerOnlySelected ? 'Controller JVM' : 'Broker JVM';
+  const combinedRoleSelected = selectedRole.toLowerCase().includes('controller')
+    && selectedRole.toLowerCase().includes('broker');
+  const brokerMetricsApplicable = !controllerOnlySelected;
+  const jvmRoleLabel = controllerOnlySelected
+    ? 'Controller JVM'
+    : (combinedRoleSelected ? 'Broker + Controller JVM' : 'Broker JVM');
+  const jmxTargetLabel = controllerOnlySelected
+    ? 'Controller JMX'
+    : (combinedRoleSelected ? 'Broker + Controller JMX' : 'Broker JMX');
+  const visibleWarnings = warningMessages.filter(message => !(
+    controllerOnlySelected && message.toLowerCase().includes('kafka exporter')
+  ));
   const displayCpuUsage = overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
   const displayMemoryUsage = overview?.jvmHeapUsedPercent ?? overview?.hostMemoryUsedPercent;
   const cpuUsageLabel = hasValue(overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent)
@@ -516,9 +527,9 @@ export function Monitoring() {
               </div>
             )}
 
-            {warningMessages.length > 0 && (
+            {visibleWarnings.length > 0 && (
               <div className="monitoring-warning-list">
-                {warningMessages.map(message => (
+                {visibleWarnings.map(message => (
                   <div className="monitoring-warning" key={message}>
                     <AlertTriangle size={16} />
                     <span>{message}</span>
@@ -561,11 +572,13 @@ export function Monitoring() {
                   </span>
                 </div>
                 <div className="monitoring-status-pills-row">
-                  <span className={`monitoring-connection-pill ${kafkaExporterStatus.state}`}>
-                    {targetHealthLabel('Kafka Exporter', kafkaExporterStatus)}
-                  </span>
+                  {brokerMetricsApplicable && (
+                    <span className={`monitoring-connection-pill ${kafkaExporterStatus.state}`}>
+                      {targetHealthLabel('Kafka Exporter', kafkaExporterStatus)}
+                    </span>
+                  )}
                   <span className={`monitoring-connection-pill ${jmxStatus.state}`}>
-                    {targetHealthLabel('JMX', jmxStatus)}
+                    {targetHealthLabel(jmxTargetLabel, jmxStatus)}
                   </span>
                 </div>
               </div>
@@ -614,33 +627,36 @@ export function Monitoring() {
                     </div>
                   </div>
 
-                  {/* Messages In Chart */}
-                  <div className="chart-box-wrapper">
-                    <div className="chart-box-header">
-                      <span>Messages In</span>
-                      <span className="chart-stat-value red">
-                        {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : 'N/A'}
-                      </span>
+                  {/* Messages In is a broker metric and does not apply to controller-only nodes. */}
+                  {brokerMetricsApplicable && (
+                    <div className="chart-box-wrapper">
+                      <div className="chart-box-header">
+                        <span>Messages In</span>
+                        <span className="chart-stat-value red">
+                          {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="chart-body-container">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                            <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                            <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                            <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
-                    <div className="chart-body-container">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                          <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                          <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
-                          <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Kafka Broker Section */}
-              <div className="monitoring-bottom-section">
-                <h3 className="monitoring-section-title-custom">Kafka Broker</h3>
-                <div className="monitoring-kpi-row">
+              {/* Kafka broker traffic is not exposed by controller-only nodes. */}
+              {brokerMetricsApplicable && (
+                <div className="monitoring-bottom-section">
+                  <h3 className="monitoring-section-title-custom">Kafka Broker</h3>
+                  <div className="monitoring-kpi-row">
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">MSG IN/Sec</span>
                     <strong className="kpi-card-val">{formatNumber(overview?.messagesInPerSecond, 2)}</strong>
@@ -673,8 +689,9 @@ export function Monitoring() {
                     <span className="kpi-card-label">Topics</span>
                     <strong className="kpi-card-val">{formatNumber(overview?.topicCount)}</strong>
                   </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* System Resources Section */}
               <div className="monitoring-bottom-section">
