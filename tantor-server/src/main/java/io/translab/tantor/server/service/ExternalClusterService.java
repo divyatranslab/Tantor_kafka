@@ -2112,11 +2112,13 @@ public class ExternalClusterService {
                     newStatus = "FAILED";
                 } else {
                     // Check if discovery agent is healthy
-                    boolean agentHealthy = discoveryAgentRepository.findByClusterId(cluster.getId())
-                        .stream()
-                        .anyMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) 
-                                && agent.getLastHeartbeat() != null 
-                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
+                    List<DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findByClusterId(cluster.getId());
+                    // Every registered agent must be reachable. A healthy peer must
+                    // not hide an agent outage for the same external cluster.
+                    boolean agentHealthy = !discoveryAgents.isEmpty()
+                            && discoveryAgents.stream().allMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus())
+                                    && agent.getLastHeartbeat() != null
+                                    && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
                     
                     newStatus = agentHealthy ? "SUCCESS" : "DEGRADED";
                 }

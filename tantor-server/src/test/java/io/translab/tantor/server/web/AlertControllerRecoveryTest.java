@@ -23,7 +23,7 @@ import static org.mockito.Mockito.never;
 class AlertControllerRecoveryTest {
 
     @Test
-    void recoveredRuntimeAlertIsResolvedAndExcludedFromCurrentResponse() {
+    void recoveredRuntimeAlertRemainsInResponseAsResolvedHistory() {
         AlertRepository alertRepository = mock(AlertRepository.class);
         ClusterRepository clusterRepository = mock(ClusterRepository.class);
         HostRepository hostRepository = mock(HostRepository.class);
@@ -44,6 +44,8 @@ class AlertControllerRecoveryTest {
                 .thenAnswer(ignored -> "ACTIVE".equals(recoveredAlert.getStatus())
                         ? List.of(recoveredAlert)
                         : List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc())
+                .thenReturn(List.of(recoveredAlert));
 
         AlertController controller = new AlertController(
                 alertRepository,
@@ -56,7 +58,8 @@ class AlertControllerRecoveryTest {
 
         var response = controller.getActiveAlerts();
 
-        assertThat(response.getBody()).isEmpty();
+        assertThat(response.getBody()).singleElement().satisfies(alert ->
+                assertThat(alert.get("status")).isEqualTo("RESOLVED"));
         assertThat(recoveredAlert.getStatus()).isEqualTo("RESOLVED");
         assertThat(recoveredAlert.getResolvedAt()).isNotNull();
         verify(alertRepository).save(recoveredAlert);
@@ -84,6 +87,8 @@ class AlertControllerRecoveryTest {
         when(taskRepository.findAll()).thenReturn(List.of());
         when(hostParcelRepository.findAll()).thenReturn(List.of());
         when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE"))
+                .thenReturn(List.of(externalHealthAlert));
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc())
                 .thenReturn(List.of(externalHealthAlert));
 
         AlertController controller = new AlertController(

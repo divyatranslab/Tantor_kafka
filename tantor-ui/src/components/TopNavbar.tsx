@@ -54,7 +54,9 @@ export function TopNavbar() {
         const res = await fetch('/api/v1/ui/alerts');
         if (res.ok) {
           const data = await res.json();
-          setAlertsCount(Array.isArray(data) ? data.length : 0);
+          setAlertsCount(Array.isArray(data)
+            ? data.filter((alert: { status?: string }) => alert.status?.toUpperCase() !== 'RESOLVED').length
+            : 0);
         }
       } catch (e) {
         console.error('Failed to fetch alerts count', e);

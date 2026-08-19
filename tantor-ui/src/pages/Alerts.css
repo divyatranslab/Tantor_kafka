@@ -548,3 +548,8 @@
     margin-top: 8px;
   }
 }
+
+.alerts-detail-status-pill.resolved {
+  background: #dcfce7;
+  color: #15803d;
+}

@@ -297,13 +297,13 @@ public class AlertController {
         syncRuntimeAlerts(alerts.stream()
                 .toList());
 
-        // Query after synchronization so alerts resolved during this request are not
-        // returned as stale ACTIVE alerts in the same response.
-        List<Map<String, Object>> activeAlerts = new ArrayList<>();
-        alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")
-                .forEach(alert -> activeAlerts.add(storedAlert(alert, clusterById)));
+        // Query after synchronization so an alert resolved during this request is
+        // returned as RESOLVED history instead of disappearing from the UI.
+        List<Map<String, Object>> alertHistory = new ArrayList<>();
+        alertRepository.findTop100ByOrderByUpdatedAtDesc()
+                .forEach(alert -> alertHistory.add(storedAlert(alert, clusterById)));
 
-        List<Map<String, Object>> deduped = activeAlerts.stream()
+        List<Map<String, Object>> deduped = alertHistory.stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(
                         alert -> String.valueOf(alert.get("id")),
@@ -313,7 +313,7 @@ public class AlertController {
                 ))
                 .values()
                 .stream()
-                .sorted((a, b) -> compareCreatedAt(b.get("createdAt"), a.get("createdAt")))
+                .sorted((a, b) -> compareCreatedAt(b.get("updatedAt"), a.get("updatedAt")))
                 .limit(50)
                 .toList();
         return ResponseEntity.ok(deduped);
@@ -335,6 +335,9 @@ public class AlertController {
                 "stored"
         );
         response.put("kafkaClusterId", cluster == null ? null : cluster.getKafkaClusterId());
+        response.put("status", alert.getStatus() == null ? "ACTIVE" : alert.getStatus());
+        response.put("resolvedAt", alert.getResolvedAt());
+        response.put("updatedAt", alert.getUpdatedAt());
         return response;
     }
 

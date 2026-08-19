@@ -17,6 +17,7 @@ interface AlertRow {
   hostIp?: string;
   status?: string;
   createdAt?: string;
+  resolvedAt?: string;
   errorLog?: string;
   source?: string;
 }
@@ -53,12 +54,17 @@ export function Alerts() {
     };
   }, [fetchAlerts]);
 
+  const activeAlerts = useMemo(
+    () => alerts.filter(alert => alert.status?.toUpperCase() !== 'RESOLVED'),
+    [alerts],
+  );
+
   const summary = useMemo(() => {
-    const critical = alerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
-    const warning = alerts.filter(alert => alert.severity?.toUpperCase() === 'WARNING').length;
-    const clusters = new Set(alerts.map(alert => alert.clusterId).filter(Boolean)).size;
+    const critical = activeAlerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
+    const warning = activeAlerts.filter(alert => alert.severity?.toUpperCase() === 'WARNING').length;
+    const clusters = new Set(activeAlerts.map(alert => alert.clusterId).filter(Boolean)).size;
     return { critical, warning, clusters };
-  }, [alerts]);
+  }, [activeAlerts]);
 
   return (
     <div className="alerts-container">
@@ -74,8 +80,8 @@ export function Alerts() {
           
           {/* Right side actions */}
           <div className="alerts-header-actions">
-            <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
-              {alerts.length ? 'Live system needs attention' : 'Live system is healthy'}
+            <span className={`alerts-status-badge ${activeAlerts.length ? 'needs-attention' : 'healthy'}`}>
+              {activeAlerts.length ? 'Live system needs attention' : 'Live system is healthy'}
             </span>
             <button className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
               <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
@@ -148,7 +154,7 @@ export function Alerts() {
               ) : alerts.length === 0 ? (
                 <div className="alerts-empty-state healthy">
                   <CheckCircle size={44} />
-                  <strong>No active alerts</strong>
+                  <strong>No alert history</strong>
                   <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
                 </div>
               ) : (
@@ -210,7 +216,9 @@ export function Alerts() {
 
                               {/* Status Badge */}
                               <div className="alerts-meta-status-container">
-                                <span className="alerts-detail-status-pill">Active</span>
+                                <span className={`alerts-detail-status-pill ${alert.status?.toUpperCase() === 'RESOLVED' ? 'resolved' : ''}`}>
+                                  {alert.status?.toUpperCase() === 'RESOLVED' ? 'Resolved' : 'Active'}
+                                </span>
                               </div>
                             </div>
 

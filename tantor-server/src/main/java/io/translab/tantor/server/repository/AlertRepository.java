@@ -12,6 +12,7 @@ import java.util.UUID;
 @Repository
 public interface AlertRepository extends JpaRepository<Alert, UUID> {
     List<Alert> findByStatusOrderByCreatedAtDesc(String status);
+    List<Alert> findTop100ByOrderByUpdatedAtDesc();
     Optional<Alert> findByAlertKey(String alertKey);
     List<Alert> findByClusterIdAndStatusAndTitleIn(
             UUID clusterId,
