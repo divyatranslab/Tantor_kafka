@@ -50,8 +50,9 @@ tantor:
       audience: ${TANTOR_JWT_AUDIENCE:tantor-api}
     oidc:
       # Configure this in production to verify Keycloak/OIDC signatures through its issuer metadata/JWKS.
-      issuer-uri: ${TANTOR_OIDC_ISSUER_URI:}
-      audience: ${TANTOR_OIDC_AUDIENCE:apb-kafka}
+      # TANTOR_KEYCLOAK_* names are retained as deployment-compatible aliases.
+      issuer-uri: ${TANTOR_OIDC_ISSUER_URI:${TANTOR_KEYCLOAK_ISSUER_URI:}}
+      audience: ${TANTOR_OIDC_AUDIENCE:${TANTOR_KEYCLOAK_CLIENT_ID:apb-kafka}}
     local-break-glass:
       enabled: ${TANTOR_BREAK_GLASS_ENABLED:false}
       username: ${TANTOR_BREAK_GLASS_USERNAME:}
