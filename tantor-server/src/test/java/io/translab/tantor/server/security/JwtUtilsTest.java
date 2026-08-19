@@ -1,43 +1,48 @@
 package io.translab.tantor.server.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.Instant;
 import java.util.Base64;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class JwtUtilsTest {
 
     @Test
-    void resolvesPreferredUsernameFromKeycloakToken() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
-        JwtUtils jwtUtils = new JwtUtils(mapper);
-        String header = encode(mapper.writeValueAsBytes(Map.of("alg", "RS256", "typ", "JWT")));
-        String payload = encode(mapper.writeValueAsBytes(Map.of(
-                "preferred_username", "jayesh",
-                "email", "jayesh@example.com",
-                "exp", Instant.now().plusSeconds(300).getEpochSecond())));
+    void signsAndVerifiesIdentityAndRoleClaims() {
+        JwtUtils jwtUtils = configuredJwtUtils();
+        String token = jwtUtils.generateToken("jayesh", "admin", "ldap");
 
-        assertThat(jwtUtils.getIdentityFromJwtToken(header + "." + payload + ".signature"))
-                .isEqualTo("jayesh");
+        JwtUtils.VerifiedPrincipal principal = jwtUtils.verify(token);
+
+        assertThat(principal).isNotNull();
+        assertThat(principal.username()).isEqualTo("jayesh");
+        assertThat(principal.roles()).containsExactly("admin");
+        assertThat(principal.claims()).containsEntry("auth_source", "ldap");
     }
 
     @Test
-    void rejectsExpiredKeycloakToken() throws Exception {
-        ObjectMapper mapper = new ObjectMapper();
-        JwtUtils jwtUtils = new JwtUtils(mapper);
-        String header = encode(mapper.writeValueAsBytes(Map.of("alg", "RS256")));
-        String payload = encode(mapper.writeValueAsBytes(Map.of(
-                "preferred_username", "old-user",
-                "exp", Instant.now().minusSeconds(1).getEpochSecond())));
+    void rejectsUnsignedOrForgedJwtPayloads() {
+        JwtUtils jwtUtils = configuredJwtUtils();
+        String header = encode("{\"alg\":\"none\"}");
+        String payload = encode("{\"sub\":\"attacker\",\"roles\":[\"admin\"]}");
 
-        assertThat(jwtUtils.getIdentityFromJwtToken(header + "." + payload + ".signature")).isNull();
+        assertThat(jwtUtils.verify(header + "." + payload + ".signature")).isNull();
     }
 
-    private String encode(byte[] value) {
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    private JwtUtils configuredJwtUtils() {
+        JwtUtils jwtUtils = new JwtUtils();
+        ReflectionTestUtils.setField(jwtUtils, "jwtSecret",
+                Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes()));
+        ReflectionTestUtils.setField(jwtUtils, "jwtExpirationMs", 60_000);
+        ReflectionTestUtils.setField(jwtUtils, "issuer", "tantor-server");
+        ReflectionTestUtils.setField(jwtUtils, "audience", "tantor-api");
+        ReflectionTestUtils.setField(jwtUtils, "oidcIssuerUri", "");
+        return jwtUtils;
+    }
+
+    private String encode(String value) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes());
     }
 }

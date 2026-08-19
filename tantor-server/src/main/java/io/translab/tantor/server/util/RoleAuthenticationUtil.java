@@ -1,14 +1,13 @@
 package io.translab.tantor.server.util;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import io.translab.tantor.server.security.JwtUtils;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -46,10 +45,12 @@ public class RoleAuthenticationUtil {
     public static final String USER_MANAGEMENT = "USER_MANAGEMENT";
 
     private final ObjectMapper objectMapper;
+    private final JwtUtils jwtUtils;
     private final Map<String, Set<String>> allowedRolesByAction;
 
-    public RoleAuthenticationUtil(ObjectMapper objectMapper) {
+    public RoleAuthenticationUtil(ObjectMapper objectMapper, JwtUtils jwtUtils) {
         this.objectMapper = objectMapper;
+        this.jwtUtils = jwtUtils;
         this.allowedRolesByAction = loadAllowedRoles();
     }
 
@@ -64,12 +65,12 @@ public class RoleAuthenticationUtil {
             return false;
         }
 
-        Map<String, Object> claims = decodeClaims(token);
-        if (claims.isEmpty()) {
+        JwtUtils.VerifiedPrincipal principal = jwtUtils.verify(token);
+        if (principal == null) {
             return false;
         }
 
-        Set<String> roles = extractRoles(claims);
+        Set<String> roles = extractRoles(principal.claims());
         return roles.stream().anyMatch(allowedRoles::contains);
     }
 
@@ -78,23 +79,11 @@ public class RoleAuthenticationUtil {
         if (token == null || token.isBlank()) {
             return "system";
         }
-        Map<String, Object> claims = decodeClaims(token);
-        if (claims.isEmpty()) {
+        JwtUtils.VerifiedPrincipal principal = jwtUtils.verify(token);
+        if (principal == null) {
             return "system";
         }
-        if (claims.containsKey("preferred_username")) {
-            return String.valueOf(claims.get("preferred_username"));
-        }
-        if (claims.containsKey("email")) {
-            return String.valueOf(claims.get("email"));
-        }
-        if (claims.containsKey("name")) {
-            return String.valueOf(claims.get("name"));
-        }
-        if (claims.containsKey("sub")) {
-            return String.valueOf(claims.get("sub"));
-        }
-        return "system";
+        return principal.username();
     }
 
     private Map<String, Set<String>> loadAllowedRoles() {
@@ -125,24 +114,12 @@ public class RoleAuthenticationUtil {
         return value;
     }
 
-    private Map<String, Object> decodeClaims(String token) {
-        String[] parts = token.split("\\.");
-        if (parts.length < 2) {
-            return Map.of();
-        }
-        try {
-            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
-            return objectMapper.readValue(new String(payload, StandardCharsets.UTF_8), new TypeReference<>() {});
-        } catch (Exception ignored) {
-            return Map.of();
-        }
-    }
-
     private Set<String> extractRoles(Map<String, Object> claims) {
         Set<String> roles = new HashSet<>();
         collectRoleValue(claims.get("role"), roles);
         collectRoleValue(claims.get("roles"), roles);
         collectRoleValue(claims.get("authorities"), roles);
+        collectRoleValue(claims.get("groups"), roles);
 
         Object realmAccess = claims.get("realm_access");
         if (realmAccess instanceof Map<?, ?> realmMap) {
@@ -183,6 +160,12 @@ public class RoleAuthenticationUtil {
         if (normalized.startsWith("role_")) {
             normalized = normalized.substring(5);
         }
+        int lastSeparator = normalized.lastIndexOf('/');
+        if (lastSeparator >= 0) {
+            normalized = normalized.substring(lastSeparator + 1);
+        }
+        if ("administrator".equals(normalized)) return "admin";
+        if ("viewer".equals(normalized) || "readonly".equals(normalized) || "read_only".equals(normalized)) return "monitor";
         return normalized;
     }
 

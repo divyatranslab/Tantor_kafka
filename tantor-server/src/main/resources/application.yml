@@ -46,6 +46,15 @@ tantor:
     jwt:
       secret: ${TANTOR_JWT_SECRET:v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E=}
       expiration-ms: 86400000 # 24 hours
+      issuer: ${TANTOR_JWT_ISSUER:tantor-server}
+      audience: ${TANTOR_JWT_AUDIENCE:tantor-api}
+    oidc:
+      # Configure this in production to verify Keycloak/OIDC signatures through its issuer metadata/JWKS.
+      issuer-uri: ${TANTOR_OIDC_ISSUER_URI:}
+      audience: ${TANTOR_OIDC_AUDIENCE:apb-kafka}
+    local-break-glass:
+      enabled: ${TANTOR_BREAK_GLASS_ENABLED:false}
+      username: ${TANTOR_BREAK_GLASS_USERNAME:}
   artifact-repo:
     url: ${TANTOR_REPO_URL:http://localhost:8081}
     jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
