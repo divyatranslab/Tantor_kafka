@@ -104,6 +104,7 @@ export function ExternalClusters() {
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
+  const bootstrapIsZooKeeper = registrationKafkaMode(bootstrapResult) === 'ZooKeeper';
   const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.PKCS12;
 
   const serverHint = useMemo(() => {
@@ -292,6 +293,12 @@ export function ExternalClusters() {
     setError('');
     setBanner('');
     try {
+      const kafkaMode = registrationKafkaMode(bootstrapResult);
+      const normalizedBrokers = (bootstrapResult?.brokers || []).map((broker: any) =>
+        kafkaMode === 'ZooKeeper'
+          ? { ...broker, isBroker: true, isController: false }
+          : broker
+      );
       const payload = {
         ...form,
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
@@ -300,10 +307,10 @@ export function ExternalClusters() {
           ?? 0,
         agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
         security: form.securityProtocol,
-        brokers: bootstrapResult?.brokers || [],
+        brokers: normalizedBrokers,
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
         kafkaVersion: bootstrapResult?.kafkaVersion || bootstrapResult?.kafka_version || 'Unknown',
-        kafkaMode: registrationKafkaMode(bootstrapResult),
+        kafkaMode,
         discoveryKey: bootstrapResult?.discoveryKey,
         selectedAgents: selectedAgents
       };
@@ -691,7 +698,9 @@ export function ExternalClusters() {
                                 </td>
                                 <td style={{ padding: '6px' }}>{broker.port}</td>
                                 <td style={{ padding: '6px' }}>
-                                  {broker.isController && broker.isBroker ? (
+                                  {bootstrapIsZooKeeper ? (
+                                    <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                                  ) : broker.isController && broker.isBroker ? (
                                     <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
                                   ) : broker.isController ? (
                                     <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>

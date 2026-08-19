@@ -244,9 +244,6 @@ export function Brokers() {
                 <td>
                   <div className="broker-id-cell">
                     <span>{broker.brokerId}</span>
-                    {broker.controller && (
-                      <span className="controller-badge" title="Controller">C</span>
-                    )}
                   </div>
                 </td>
 
