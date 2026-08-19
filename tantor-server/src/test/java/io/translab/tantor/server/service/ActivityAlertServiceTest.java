@@ -36,7 +36,7 @@ class ActivityAlertServiceTest {
                         ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
                 .thenReturn(List.of(legacy));
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED", 0, 1);
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED", 0, 0);
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
         verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
@@ -146,6 +146,34 @@ class ActivityAlertServiceTest {
         assertThat(saved.getValue().getTitle()).isEqualTo(ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE);
         assertThat(saved.getValue().getDescription()).contains("2 of 3");
         assertThat(saved.getValue().getAffectedIps()).isEqualTo("192.168.3.191");
+    }
+
+    @Test
+    void keepsAgentAvailabilityAlertActiveWhenNoAgentsAreFresh() {
+        UUID clusterId = UUID.randomUUID();
+        AlertRepository repository = mock(AlertRepository.class);
+        ActivityAlertService service = new ActivityAlertService(
+                mock(ActivityLogRepository.class), repository);
+
+        when(repository.findByAlertKey(ActivityAlertService.externalAgentPartialKey(clusterId)))
+                .thenReturn(Optional.empty());
+        when(repository.findByClusterIdAndStatusAndTitleIn(
+                clusterId,
+                "ACTIVE",
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
+                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
+                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                .thenReturn(List.of());
+
+        service.synchronizeExternalClusterHealth(
+                clusterId, "payments", "DEGRADED", 0, 3, List.of("192.168.3.229"));
+
+        ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getAlertKey())
+                .isEqualTo(ActivityAlertService.externalAgentPartialKey(clusterId));
+        assertThat(saved.getValue().getStatus()).isEqualTo("ACTIVE");
+        assertThat(saved.getValue().getAffectedIps()).isEqualTo("192.168.3.229");
     }
 
     private Alert alert(String key, String title, String status, UUID clusterId) {

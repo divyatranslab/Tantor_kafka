@@ -2153,10 +2153,8 @@ public class ExternalClusterService {
                 // Synchronize on every health cycle, not only on a status
                 // transition. This also repairs legacy ACTIVE alerts left behind
                 // after an agent recovered before this lifecycle was introduced.
-                String alertHealth = connected && freshAgents > 0 && freshAgents < registeredAgents
-                        ? "PARTIAL" : newStatus;
                 activityAlertService.synchronizeExternalClusterHealth(
-                        cluster.getId(), cluster.getName(), alertHealth, freshAgents, registeredAgents, affectedAgentIps);
+                        cluster.getId(), cluster.getName(), newStatus, freshAgents, registeredAgents, affectedAgentIps);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
             }

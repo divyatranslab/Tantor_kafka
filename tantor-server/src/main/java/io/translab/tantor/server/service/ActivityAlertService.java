@@ -129,33 +129,39 @@ public class ActivityAlertService {
         String normalizedStatus = healthStatus == null
                 ? ""
                 : healthStatus.trim().toUpperCase(Locale.ROOT);
-        String activeKey = null;
-        if ("PARTIAL".equals(normalizedStatus)) {
-            activeKey = externalAgentPartialKey(clusterId);
+        Set<String> activeKeys = new java.util.HashSet<>();
+        boolean agentsUnavailable = registeredAgents > 0 && freshAgents < registeredAgents;
+        if (agentsUnavailable || "PARTIAL".equals(normalizedStatus)) {
+            String partialKey = externalAgentPartialKey(clusterId);
+            activeKeys.add(partialKey);
             activateAlert(
-                    activeKey,
+                    partialKey,
                     "WARNING",
                     EXTERNAL_AGENT_PARTIAL_TITLE,
                     "Discovery agents for external cluster '" + clusterName + "' are partially connected: "
                             + freshAgents + " of " + registeredAgents + " agent(s) have a fresh heartbeat.",
                     clusterId,
                     affectedIps);
-        } else if ("DEGRADED".equals(normalizedStatus)) {
-            activeKey = externalDegradedKey(clusterId);
+        }
+        if ("DEGRADED".equals(normalizedStatus) && !agentsUnavailable) {
+            String degradedKey = externalDegradedKey(clusterId);
+            activeKeys.add(degradedKey);
             activateAlert(
-                    activeKey,
+                    degradedKey,
                     "WARNING",
                     EXTERNAL_DEGRADED_TITLE,
                     "The Discovery Agent for external cluster '" + clusterName
                             + "' has stopped reporting, but Kafka is still reachable.",
                     clusterId,
                     affectedIps);
-        } else if ("FAILED".equals(normalizedStatus)) {
+        }
+        if ("FAILED".equals(normalizedStatus)) {
             // This key intentionally matches AlertController's runtime failure
             // key so one Kafka outage cannot create two ACTIVE alert rows.
-            activeKey = externalFailedKey(clusterId);
+            String failedKey = externalFailedKey(clusterId);
+            activeKeys.add(failedKey);
             activateAlert(
-                    activeKey,
+                    failedKey,
                     "CRITICAL",
                     EXTERNAL_FAILED_TITLE,
                     "Kafka Admin API cannot reach external cluster '" + clusterName + "'.",
@@ -163,7 +169,7 @@ public class ActivityAlertService {
                     List.of());
         }
 
-        resolveSupersededExternalHealthAlerts(clusterId, activeKey);
+        resolveSupersededExternalHealthAlerts(clusterId, activeKeys);
     }
 
     /**
@@ -222,14 +228,14 @@ public class ActivityAlertService {
         return value.isBlank() ? null : value;
     }
 
-    private void resolveSupersededExternalHealthAlerts(UUID clusterId, String activeKey) {
+    private void resolveSupersededExternalHealthAlerts(UUID clusterId, Set<String> activeKeys) {
         List<Alert> activeHealthAlerts = alertRepository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
                 externalHealthAlertTitles());
         Instant resolvedAt = Instant.now();
         activeHealthAlerts.stream()
-                .filter(alert -> activeKey == null || !activeKey.equals(alert.getAlertKey()))
+                .filter(alert -> activeKeys == null || !activeKeys.contains(alert.getAlertKey()))
                 .forEach(alert -> resolveAlert(alert, resolvedAt));
     }
 
