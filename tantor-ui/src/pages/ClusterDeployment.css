@@ -1848,6 +1848,53 @@ input:checked+.cd-toggle-slider:before {
 .cd-figma-icon-btn:hover {
   color: #332849;
 }
+
+.cd-node-port-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 10px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid #eeeaf4;
+}
+
+.cd-node-port-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #5d526d;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cd-node-port-field input {
+  width: 100%;
+  height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #d9d3e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #332849;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cd-node-port-field input:focus {
+  border-color: #6f3b8f;
+  outline: 2px solid rgba(111, 59, 143, 0.12);
+}
+
+.cd-node-port-field.read-only input {
+  background: #f5f3f7;
+  color: #777080;
+}
+
+.cd-node-port-error {
+  color: #c53939;
+  font-size: 12px;
+  line-height: 16px;
+}
 /* -- Create New Cluster Popup Modal Styles -- */
 .cd-deployment-modal-container {
   background: #FFFFFF;

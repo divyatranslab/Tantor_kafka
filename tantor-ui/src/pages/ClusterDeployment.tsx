@@ -829,11 +829,40 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors];
 
+  const selectedPortValidationErrors = selectedHosts.flatMap(host => {
+    const role = rolesByHost[host.id] || defaultRoleForMode;
+    const ports = hostPorts[host.id] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+    const selected: Array<{ label: string; value: number }> = [];
+    if (['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role)) {
+      selected.push({ label: 'Broker port', value: ports.listenerPort });
+      selected.push({ label: 'Broker JMX port', value: 7071 });
+    }
+    if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
+      selected.push({ label: 'Controller port', value: ports.controllerPort });
+    }
+    if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
+      selected.push(
+        { label: 'ZooKeeper client port', value: ports.controllerPort },
+        { label: 'ZooKeeper peer port', value: ports.zookeeperPeerPort },
+        { label: 'ZooKeeper election port', value: ports.zookeeperElectionPort },
+      );
+    }
+
+    const invalid = selected
+      .filter(port => !Number.isInteger(port.value) || port.value < 1 || port.value > 65535)
+      .map(port => `${host.hostname}: ${port.label} must be between 1 and 65535.`);
+    const duplicates = selected
+      .filter((port, index) => selected.findIndex(candidate => candidate.value === port.value) !== index)
+      .map(port => `${host.hostname}: port ${port.value} is assigned more than once.`);
+    return [...invalid, ...new Set(duplicates)];
+  });
+
   const canPreview = clusterName.trim()
     && kafkaVersion
     && selectedHosts.length > 0
     && brokerCount > 0
-    && (isAddNodeMode || (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0));
+    && (isAddNodeMode || (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0))
+    && selectedPortValidationErrors.length === 0;
 
   const serviceTemplate = (kind: ConfigKind, cfg: NodeConfigState) => {
     const commonRows = commonConfigs[kind] || [];
@@ -1060,6 +1089,30 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       ...prev,
       [hostId]: { ...getHostPorts(hostId), [key]: value }
     }));
+    setPortCheckResults(prev => {
+      const next = { ...prev };
+      delete next[hostId];
+      return next;
+    });
+  };
+
+  const portFieldsForHost = (hostId: string) => {
+    const role = rolesByHost[hostId] || defaultRoleForMode;
+    const fields: Array<{ key: 'listenerPort' | 'controllerPort' | 'zookeeperPeerPort' | 'zookeeperElectionPort'; label: string }> = [];
+    if (['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role)) {
+      fields.push({ key: 'listenerPort', label: 'Broker Port' });
+    }
+    if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
+      fields.push({ key: 'controllerPort', label: 'Controller Port' });
+    }
+    if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
+      fields.push(
+        { key: 'controllerPort', label: 'ZooKeeper Client Port' },
+        { key: 'zookeeperPeerPort', label: 'ZooKeeper Peer Port' },
+        { key: 'zookeeperElectionPort', label: 'ZooKeeper Election Port' },
+      );
+    }
+    return fields;
   };
 
   const prerequisitePortsForHost = (hostId: string): number[] => {
@@ -1844,6 +1897,29 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  <div className="cd-node-port-grid">
+                    {portFieldsForHost(host.id).map(field => (
+                      <label className="cd-node-port-field" key={field.key}>
+                        <span>{field.label}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={65535}
+                          value={getHostPorts(host.id)[field.key]}
+                          onChange={event => updateHostPort(host.id, field.key, Number(event.target.value))}
+                        />
+                      </label>
+                    ))}
+                    {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode) && (
+                      <label className="cd-node-port-field read-only">
+                        <span>Broker JMX Port</span>
+                        <input type="number" value={7071} readOnly aria-label="Broker JMX port" />
+                      </label>
+                    )}
+                  </div>
+                  {selectedPortValidationErrors.filter(error => error.startsWith(`${host.hostname}:`)).map(error => (
+                    <div className="cd-node-port-error" key={error}>{error.replace(`${host.hostname}: `, '')}</div>
+                  ))}
                   </div>
 
                 </div>
