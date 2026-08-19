@@ -218,7 +218,7 @@ export function Brokers() {
                 ID
               </th>
               <th onClick={() => handleSort('hostname')} className="sortable">
-                Host Name
+                Host IP
               </th>
               <th>Role</th>
               <th onClick={() => handleSort('cpuUsagePct')} className="sortable">
@@ -230,9 +230,7 @@ export function Brokers() {
               <th onClick={() => handleSort('diskUsedBytes')} className="sortable" title="OS filesystem containing the Kafka data directory; reported by the node agent">
                 Host Disk <span className="broker-metric-level">OS level</span>
               </th>
-              <th onClick={() => handleSort('messagesInPerSec')} className="sortable">
-                Msg/S
-              </th>
+
               <th>Last Update</th>
             </tr>
           </thead>
@@ -289,12 +287,7 @@ export function Brokers() {
                   ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
-                {/* Msg/s */}
-                <td className="font-mono">
-                  {normalizeRole(broker) === 'controller'
-                    ? 'N/A'
-                    : (broker.messagesInPerSec || 0).toFixed(1)}
-                </td>
+
 
                 {/* Heartbeat */}
                 <td className="text-muted text-sm">
@@ -306,7 +299,7 @@ export function Brokers() {
 
             {filteredBrokers.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center py-4 text-muted">
+                <td colSpan={7} className="text-center py-4 text-muted">
                   No roles found matching criteria
                 </td>
               </tr>
