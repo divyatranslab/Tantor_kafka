@@ -74,7 +74,7 @@ if [ -n "`$JAVA17_BIN" ]; then
 else
   echo "WARN: Java 17 was not found under /usr/lib/jvm; using the system Java" >&2
 fi
-exec ${AgentDir}/tantor-agent-linux -config ${AgentDir}/agent.yaml >> ${AgentDir}/agent.log 2>&1
+exec ${AgentDir}/tantor-agent-linux -config ${AgentDir}/agent.yaml
 "@
 $serviceContent = @"
 [Unit]
@@ -91,14 +91,31 @@ LimitNPROC=1024000
 ExecStart=${AgentDir}/run-agent.sh
 Restart=always
 RestartSec=5
+StandardOutput=append:/var/log/tantor-agent/tantor-agent.log
+StandardError=append:/var/log/tantor-agent/tantor-agent.log
 
 [Install]
 WantedBy=multi-user.target
 "@
+$logrotateContent = @"
+/var/log/tantor-agent/tantor-agent.log {
+    daily
+    rotate 14
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root root
+}
+"@
 $launcherContent = $launcherContent -replace "`r`n", "`n"
 $serviceContent = $serviceContent -replace "`r`n", "`n"
+$logrotateContent = $logrotateContent -replace "`r`n", "`n"
 $launcherBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($launcherContent))
 $serviceBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($serviceContent))
+$logrotateBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($logrotateContent))
 $startCommand = @"
 set -Eeuo pipefail
 trap 'rc=`$?; echo "Agent deployment failed at remote line `$LINENO (exit `$rc)" >&2' ERR
@@ -108,10 +125,15 @@ sleep 2
 mkdir -p ${AgentDir}/data
 mkdir -p ${AgentDir}/artifacts
 mkdir -p ${AgentDir}/logs
+mkdir -p /var/log/tantor-agent
+touch /var/log/tantor-agent/tantor-agent.log
+chmod 0640 /var/log/tantor-agent/tantor-agent.log
 chmod +x ${AgentDir}/tantor-agent-linux
 printf '%s' '${launcherBase64}' | base64 --decode > ${AgentDir}/run-agent.sh
 chmod 0755 ${AgentDir}/run-agent.sh
 printf '%s' '${serviceBase64}' | base64 --decode > /etc/systemd/system/tantor-agent.service
+printf '%s' '${logrotateBase64}' | base64 --decode > /etc/logrotate.d/tantor-agent
+chmod 0644 /etc/logrotate.d/tantor-agent
 test -s ${AgentDir}/run-agent.sh || exit 1
 test -s /etc/systemd/system/tantor-agent.service || exit 1
 systemctl daemon-reload
@@ -127,7 +149,7 @@ $startCommandBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($
 ssh "${VmUser}@${VmIp}" "printf '%s' '${startCommandBase64}' | base64 --decode | bash"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Agent service failed to start!" -ForegroundColor Red
-    ssh "${VmUser}@${VmIp}" "ls -l /etc/systemd/system/tantor-agent.service ${AgentDir}/run-agent.sh 2>/dev/null || true; systemctl status tantor-agent.service --no-pager || true; journalctl -u tantor-agent.service -n 50 --no-pager || true; tail -n 50 ${AgentDir}/agent.log 2>/dev/null || true"
+    ssh "${VmUser}@${VmIp}" "ls -l /etc/systemd/system/tantor-agent.service ${AgentDir}/run-agent.sh 2>/dev/null || true; systemctl status tantor-agent.service --no-pager || true; journalctl -u tantor-agent.service -n 50 --no-pager || true; tail -n 50 /var/log/tantor-agent/tantor-agent.log 2>/dev/null || true"
     exit 1
 }
 
@@ -135,6 +157,6 @@ Write-Host ""
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host "  SUCCESS! Agent deployed and running!" -ForegroundColor Green
 Write-Host "  To view live logs, SSH into the VM and run:" -ForegroundColor Green
-Write-Host "  tail -f ${AgentDir}/agent.log" -ForegroundColor Cyan
+Write-Host "  tail -f /var/log/tantor-agent/tantor-agent.log" -ForegroundColor Cyan
 Write-Host "  Service status: systemctl status tantor-agent" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Green

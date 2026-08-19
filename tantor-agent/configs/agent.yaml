@@ -10,5 +10,5 @@ agent:
 
 paths:
   data_dir: "/srv/tantor/data"
-  log_dir: "/srv/tantor/logs"
+  log_dir: "/var/log/tantor-agent"
   artifacts_dir: "/srv/tantor/artifacts"

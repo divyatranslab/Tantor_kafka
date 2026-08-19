@@ -17,7 +17,8 @@ SERVER_URL=${SERVER_URL:-"http://192.168.3.68:8443"}
 CERT_PATH="/etc/tantor/certs"
 AGENT_DATA_DIR="/var/lib/tantor/agent/data"
 AGENT_ARTIFACTS_DIR="/var/lib/tantor/agent/artifacts"
-AGENT_LOG_DIR="/var/log/tantor"
+AGENT_LOG_DIR="/var/log/tantor-agent"
+AGENT_LOG_FILE="$AGENT_LOG_DIR/tantor-agent.log"
 
 echo "=== Tantor Agent Installer ==="
 
@@ -51,6 +52,9 @@ chown -R $TANTOR_USER:$TANTOR_USER $TANTOR_HOME
 # Runtime directories used by the agent for downloads, extraction, and logs.
 mkdir -p "$AGENT_DATA_DIR" "$AGENT_ARTIFACTS_DIR" "$AGENT_LOG_DIR"
 chown -R $TANTOR_USER:$TANTOR_USER /var/lib/tantor "$AGENT_LOG_DIR"
+touch "$AGENT_LOG_FILE"
+chown $TANTOR_USER:$TANTOR_USER "$AGENT_LOG_FILE"
+chmod 0640 "$AGENT_LOG_FILE"
 
 # 3. Configure certificates and agent config
 echo "Setting up certificates and configs..."
@@ -97,10 +101,27 @@ Group=$TANTOR_USER
 ExecStart=$TANTOR_HOME/bin/tantor-agent -config /etc/tantor/config/agent.yaml
 Restart=on-failure
 RestartSec=5s
+StandardOutput=append:$AGENT_LOG_FILE
+StandardError=append:$AGENT_LOG_FILE
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+cat <<EOF > /etc/logrotate.d/tantor-agent
+$AGENT_LOG_FILE {
+    daily
+    rotate 14
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 $TANTOR_USER $TANTOR_USER
+}
+EOF
+chmod 0644 /etc/logrotate.d/tantor-agent
 
 # 5. Start Service & Register Host
 echo "Starting Tantor Agent..."
