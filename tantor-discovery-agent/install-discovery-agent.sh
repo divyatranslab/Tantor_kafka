@@ -12,6 +12,7 @@ Options:
   --agent-dir PATH         Install directory. Default: /srv/tantor-discovery-agent
   --service-name NAME      systemd service name. Default: tantor-discovery-agent
   --runtime-user USER      Linux user for systemd service. Default: root
+  --log-dir PATH           Persistent log directory. Default: /var/log/tantor/discovery-agent
   --host-id ID             Discovery agent host ID. Default: discovery-<hostname>
   --agent-name NAME        Discovery agent display name. Default: tantor-discovery-<hostname>
   --node-name NAME         Reported node name. Default: OS hostname
@@ -37,6 +38,7 @@ BINARY="/srv/tantor-discovery-agent-linux"
 AGENT_DIR="/srv/tantor-discovery-agent"
 SERVICE_NAME="tantor-discovery-agent"
 RUNTIME_USER="root"
+LOG_DIR="/var/log/tantor/discovery-agent"
 HOST_ID=""
 AGENT_NAME=""
 NODE_NAME=""
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --agent-dir) AGENT_DIR="${2:-}"; shift 2 ;;
     --service-name) SERVICE_NAME="${2:-}"; shift 2 ;;
     --runtime-user) RUNTIME_USER="${2:-}"; shift 2 ;;
+    --log-dir) LOG_DIR="${2:-}"; shift 2 ;;
     --host-id) HOST_ID="${2:-}"; shift 2 ;;
     --agent-name) AGENT_NAME="${2:-}"; shift 2 ;;
     --node-name) NODE_NAME="${2:-}"; shift 2 ;;
@@ -106,9 +109,26 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+if [[ "$LOG_DIR" != /* ]]; then
+  echo "ERROR: --log-dir must be an absolute path." >&2
+  exit 2
+fi
+
+if ! id "$RUNTIME_USER" >/dev/null 2>&1; then
+  echo "ERROR: runtime user '$RUNTIME_USER' does not exist." >&2
+  exit 1
+fi
+RUNTIME_GROUP="$(id -gn "$RUNTIME_USER")"
+LOG_FILE="${LOG_DIR}/${SERVICE_NAME}.log"
+
 systemctl disable --now "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
 
 mkdir -p "$AGENT_DIR/logs"
+mkdir -p "$LOG_DIR"
+touch "$LOG_FILE"
+chown "$RUNTIME_USER:$RUNTIME_GROUP" "$LOG_DIR" "$LOG_FILE"
+chmod 0750 "$LOG_DIR"
+chmod 0640 "$LOG_FILE"
 install -m 0755 "$BINARY" "$AGENT_DIR/tantor-discovery-agent-linux"
 
 {
@@ -178,10 +198,27 @@ TimeoutStopSec=40
 KillSignal=SIGTERM
 LimitNOFILE=1024000
 LimitNPROC=1024000
+StandardOutput=append:${LOG_FILE}
+StandardError=append:${LOG_FILE}
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+cat > "/etc/logrotate.d/${SERVICE_NAME}" <<EOF
+${LOG_FILE} {
+    daily
+    rotate 14
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 ${RUNTIME_USER} ${RUNTIME_GROUP}
+}
+EOF
+chmod 0644 "/etc/logrotate.d/${SERVICE_NAME}"
 
 systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}.service"
@@ -190,4 +227,5 @@ echo
 echo "Tantor Discovery Agent installed."
 echo "Config : ${AGENT_DIR}/discovery.yaml"
 echo "Status : systemctl status ${SERVICE_NAME}.service --no-pager"
-echo "Logs   : journalctl -u ${SERVICE_NAME}.service -f"
+echo "Logs   : tail -F ${LOG_FILE}"
+echo "Journal: journalctl -u ${SERVICE_NAME}.service --no-pager"

@@ -58,6 +58,26 @@ tail -f discovery-agent.log
 
 The discovered cluster appears in Tantor UI under **External Clusters**.
 
+## Persistent service logs
+
+Use `install-discovery-agent.sh` or `deploy-discovery-agent.ps1` for a managed
+installation. Both installers write stdout and stderr to:
+
+```text
+/var/log/tantor/discovery-agent/tantor-discovery-agent.log
+```
+
+This directory is persistent across reboot. The installers also create
+`/etc/logrotate.d/tantor-discovery-agent` with daily rotation, a 50 MB size
+limit, compression, and 14 retained rotations. The location can be changed
+with `--log-dir` on Linux or `-LogDir` in PowerShell.
+
+Follow the persistent log with:
+
+```bash
+sudo tail -F /var/log/tantor/discovery-agent/tantor-discovery-agent.log
+```
+
 ## Network and shutdown behavior
 
 All backend and local metrics requests use explicit connection, TLS, response,

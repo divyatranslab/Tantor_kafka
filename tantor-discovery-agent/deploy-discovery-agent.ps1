@@ -12,6 +12,7 @@ param (
     [string]$RuntimeUser = "tantor",
     [string]$AgentDir = "/opt/tantor-discovery-agent",
     [string]$ServiceName = "tantor-discovery-agent",
+    [string]$LogDir = "/var/log/tantor/discovery-agent",
 
     [string]$HostId = "",
     [string]$AgentName = "",
@@ -115,6 +116,7 @@ try {
     Write-Host "SSH User       : $SshUser"
     Write-Host "Runtime User   : $RuntimeUser"
     Write-Host "Install Dir    : $AgentDir"
+    Write-Host "Persistent Logs: $LogDir"
     Write-Host ""
 
     if (-not $SkipBuild) {
@@ -203,6 +205,7 @@ mkdir -p $remoteTmpQ
     $agentDirQ = Bash-Quote $AgentDir
     $runtimeUserQ = Bash-Quote $RuntimeUser
     $serviceNameQ = Bash-Quote $ServiceName
+    $logDirQ = Bash-Quote $LogDir
     $kafkaServiceNameQ = Bash-Quote $KafkaServiceName
     $installSudoers = Bool-Lower $InstallSudoers.IsPresent
     $systemdUseSudo = Bool-Lower $effectiveSystemdUseSudo
@@ -224,11 +227,27 @@ TimeoutStopSec=40
 KillSignal=SIGTERM
 LimitNOFILE=1024000
 LimitNPROC=1024000
+StandardOutput=append:$LogDir/$ServiceName.log
+StandardError=append:$LogDir/$ServiceName.log
 
 [Install]
 WantedBy=multi-user.target
 "@
     $serviceBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($serviceContent -replace "`r`n", "`n")))
+    $logrotateContent = @"
+$LogDir/$ServiceName.log {
+    daily
+    rotate 14
+    maxsize 50M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 $RuntimeUser __RUNTIME_GROUP__
+}
+"@
+    $logrotateBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($logrotateContent -replace "`r`n", "`n")))
 
     Write-Step "[5/5] Installing and starting systemd service..."
     Invoke-RemoteScript @"
@@ -236,6 +255,7 @@ set -Eeuo pipefail
 AGENT_DIR=$agentDirQ
 RUNTIME_USER=$runtimeUserQ
 SERVICE_NAME=$serviceNameQ
+LOG_DIR=$logDirQ
 KAFKA_SERVICE_NAME=$kafkaServiceNameQ
 REMOTE_TMP=$remoteTmpQ
 INSTALL_SUDOERS=$installSudoers
@@ -249,11 +269,20 @@ if [ "`$RUNTIME_USER" != "root" ] && ! id "`$RUNTIME_USER" >/dev/null 2>&1; then
 fi
 
 sudo mkdir -p "`$AGENT_DIR/logs"
+sudo mkdir -p "`$LOG_DIR"
+sudo touch "`$LOG_DIR/`$SERVICE_NAME.log"
 sudo install -m 0755 "`$REMOTE_TMP/tantor-discovery-agent-linux" "`$AGENT_DIR/tantor-discovery-agent-linux"
 sudo install -m 0640 "`$REMOTE_TMP/discovery.yaml" "`$AGENT_DIR/discovery.yaml"
 sudo chown -R "`$RUNTIME_USER:`$RUNTIME_USER" "`$AGENT_DIR" 2>/dev/null || sudo chown -R "`$RUNTIME_USER" "`$AGENT_DIR"
+sudo chown "`$RUNTIME_USER:`$RUNTIME_USER" "`$LOG_DIR" "`$LOG_DIR/`$SERVICE_NAME.log" 2>/dev/null || sudo chown "`$RUNTIME_USER" "`$LOG_DIR" "`$LOG_DIR/`$SERVICE_NAME.log"
+sudo chmod 0750 "`$LOG_DIR"
+sudo chmod 0640 "`$LOG_DIR/`$SERVICE_NAME.log"
 
 printf '%s' '$serviceBase64' | base64 --decode | sudo tee "/etc/systemd/system/`$SERVICE_NAME.service" >/dev/null
+printf '%s' '$logrotateBase64' | base64 --decode | sudo tee "/etc/logrotate.d/`$SERVICE_NAME" >/dev/null
+RUNTIME_GROUP="`$(id -gn "`$RUNTIME_USER")"
+sudo sed -i "s/__RUNTIME_GROUP__/`$RUNTIME_GROUP/g" "/etc/logrotate.d/`$SERVICE_NAME"
+sudo chmod 0644 "/etc/logrotate.d/`$SERVICE_NAME"
 
 if [ "`$INSTALL_SUDOERS" = "true" ] && [ "`$SYSTEMD_USE_SUDO" = "true" ] && [ "`$RUNTIME_USER" != "root" ]; then
   SUDOERS_FILE="/etc/sudoers.d/`$SERVICE_NAME"
@@ -280,7 +309,8 @@ rm -rf "`$REMOTE_TMP"
     Write-Host ""
     Write-Host "==========================================" -ForegroundColor Green
     Write-Host "  SUCCESS! Discovery Agent deployed." -ForegroundColor Green
-    Write-Host "  Logs   : ssh $SshUser@$VmIp 'sudo journalctl -u $ServiceName -f'" -ForegroundColor Cyan
+    Write-Host "  Logs   : ssh $SshUser@$VmIp 'sudo tail -F $LogDir/$ServiceName.log'" -ForegroundColor Cyan
+    Write-Host "  Journal: ssh $SshUser@$VmIp 'sudo journalctl -u $ServiceName --no-pager'" -ForegroundColor Cyan
     Write-Host "  Config : $AgentDir/discovery.yaml" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Green
 } finally {
