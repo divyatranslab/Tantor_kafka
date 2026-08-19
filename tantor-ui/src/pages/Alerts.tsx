@@ -11,6 +11,7 @@ interface AlertRow {
   title: string;
   description?: string;
   clusterId?: string;
+  kafkaClusterId?: string;
   clusterName?: string;
   hostId?: string;
   hostIp?: string;
@@ -189,7 +190,7 @@ export function Alerts() {
                               {/* Cluster ID */}
                               <div className="alerts-meta-block">
                                 <span className="meta-block-label">Cluster ID</span>
-                                <span className="meta-block-val mono">{alert.clusterId || '-'}</span>
+                                <span className="meta-block-val mono">{alert.kafkaClusterId || '-'}</span>
                               </div>
                               <div className="alerts-meta-separator" />
                               

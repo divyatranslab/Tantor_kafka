@@ -321,7 +321,7 @@ public class AlertController {
 
     private Map<String, Object> storedAlert(Alert alert, Map<String, Cluster> clusterById) {
         Cluster cluster = alert.getClusterId() == null ? null : clusterById.get(alert.getClusterId().toString());
-        return runtimeAlert(
+        Map<String, Object> response = runtimeAlert(
                 alert.getAlertKey() == null ? alert.getId().toString() : alert.getAlertKey(),
                 alert.getSeverity(),
                 alert.getTitle(),
@@ -334,6 +334,8 @@ public class AlertController {
                 alert.getErrorLog(),
                 "stored"
         );
+        response.put("kafkaClusterId", cluster == null ? null : cluster.getKafkaClusterId());
+        return response;
     }
 
     private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {

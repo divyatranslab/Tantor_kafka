@@ -1,6 +1,7 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Alert;
+import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.repository.AlertRepository;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostParcelRepository;
@@ -99,5 +100,52 @@ class AlertControllerRecoveryTest {
         assertThat(response.getBody()).hasSize(1);
         assertThat(externalHealthAlert.getStatus()).isEqualTo("ACTIVE");
         verify(alertRepository, never()).save(externalHealthAlert);
+    }
+
+    @Test
+    void alertResponseUsesClusterNameAndKafkaClusterIdInsteadOfDatabaseUuid() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+
+        UUID databaseClusterId = UUID.randomUUID();
+        Cluster cluster = new Cluster();
+        cluster.setId(databaseClusterId);
+        cluster.setName("payments-kafka");
+        cluster.setKafkaClusterId("MkU3OEVBNTcwNTJENDM2Qk");
+
+        Alert activeAlert = new Alert();
+        activeAlert.setAlertKey("external-agent-degraded-" + databaseClusterId);
+        activeAlert.setSeverity("WARNING");
+        activeAlert.setTitle("External Cluster Degraded");
+        activeAlert.setClusterId(databaseClusterId);
+        activeAlert.setSource("external_health");
+        activeAlert.setStatus("ACTIVE");
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(hostRepository.findAll()).thenReturn(List.of());
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE"))
+                .thenReturn(List.of(activeAlert));
+
+        AlertController controller = new AlertController(
+                alertRepository,
+                clusterRepository,
+                hostRepository,
+                taskRepository,
+                mock(HostStatusService.class),
+                hostParcelRepository,
+                mock(ConsumerLagCacheService.class));
+
+        var response = controller.getActiveAlerts();
+
+        assertThat(response.getBody()).singleElement().satisfies(alert -> {
+            assertThat(alert.get("clusterName")).isEqualTo("payments-kafka");
+            assertThat(alert.get("kafkaClusterId")).isEqualTo("MkU3OEVBNTcwNTJENDM2Qk");
+            assertThat(alert.get("clusterId")).isEqualTo(databaseClusterId);
+        });
     }
 }
