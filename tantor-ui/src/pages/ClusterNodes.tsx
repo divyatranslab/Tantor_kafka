@@ -26,6 +26,8 @@ interface CanonicalNodeIdentity {
 interface CanonicalNode {
   identity: CanonicalNodeIdentity;
   host: string | null;
+  hostname: string | null;
+  ipAddress: string | null;
   agentStatus: AgentStatus;
   telemetryStatus: TelemetryStatus;
 }
@@ -110,7 +112,8 @@ export function ClusterNodes() {
         <table className="cluster-nodes-table">
           <thead><tr>
             <th>Node ID</th>
-            <th>Host (display)</th>
+            <th>Hostname</th>
+            <th>IP Address</th>
             <th>Role</th>
             <th>Agent status</th>
             <th>Telemetry status</th>
@@ -119,7 +122,8 @@ export function ClusterNodes() {
             {nodes.map(node => (
               <tr key={`${node.identity.clusterUuid}-${node.identity.kafkaClusterId}-${node.identity.nodeId}-${node.identity.role}`}>
                 <td><code>{node.identity.nodeId}</code></td>
-                <td><span className="cluster-node-host">{node.host || 'Not reported'}</span></td>
+                <td><span className="cluster-node-host">{node.hostname || 'Not reported'}</span></td>
+                <td><span className="cluster-node-host">{node.ipAddress || 'Not reported'}</span></td>
                 <td><span className="cluster-node-role">{readableRole(node.identity.role)}</span></td>
                 <td>
                   <span className={`cluster-node-status ${statusClass(node.agentStatus)}`}>

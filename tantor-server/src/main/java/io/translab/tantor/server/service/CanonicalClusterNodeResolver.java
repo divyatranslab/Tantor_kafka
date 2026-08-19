@@ -95,13 +95,17 @@ public class CanonicalClusterNodeResolver {
             CanonicalTelemetryStatus telemetryStatus = host
                     .map(this::internalTelemetryStatus)
                     .orElse(CanonicalTelemetryStatus.UNAVAILABLE);
-            String displayHost = host.map(this::displayHost).orElse(assignment.getHostId());
+            String hostname = host.map(Host::getHostname).orElse(null);
+            String ipAddress = host.map(Host::getHostIp).orElse(null);
+            String displayHost = firstNonBlank(hostname, ipAddress, assignment.getHostId());
 
             resolved.add(node(
                     clusterContract,
                     assignment.getNodeId(),
                     role.get(),
                     displayHost,
+                    hostname,
+                    ipAddress,
                     agentStatus,
                     telemetryStatus));
         }
@@ -123,11 +127,14 @@ public class CanonicalClusterNodeResolver {
             if (role.isEmpty()) {
                 continue;
             }
+            DisplayAddress displayAddress = externalDisplayAddress(externalNode.getHost(), boundAgents);
             resolved.add(node(
                     clusterContract,
                     externalNode.getNodeId(),
                     role.get(),
                     externalNode.getHost(),
+                    displayAddress.hostname(),
+                    displayAddress.ipAddress(),
                     agentStatus,
                     externalTelemetryStatus(externalNode.getLastSeen())));
         }
@@ -139,11 +146,13 @@ public class CanonicalClusterNodeResolver {
             int nodeId,
             CanonicalNodeRole role,
             String host,
+            String hostname,
+            String ipAddress,
             CanonicalAgentStatus agentStatus,
             CanonicalTelemetryStatus telemetryStatus) {
         CanonicalNodeIdentity identity = new CanonicalNodeIdentity(
                 cluster.clusterUuid(), cluster.kafkaClusterId(), nodeId, role);
-        return new CanonicalNodeContract(identity, host, agentStatus, telemetryStatus);
+        return new CanonicalNodeContract(identity, host, hostname, ipAddress, agentStatus, telemetryStatus);
     }
 
     private List<CanonicalNodeContract> uniqueAndSorted(List<CanonicalNodeContract> nodes) {
@@ -277,13 +286,59 @@ public class CanonicalClusterNodeResolver {
                 : CanonicalTelemetryStatus.STALE;
     }
 
-    private String displayHost(Host host) {
-        if (host.getHostIp() != null && !host.getHostIp().isBlank()) {
-            return host.getHostIp();
+    /**
+     * Enrich display fields only. Canonical identity never depends on IP or hostname.
+     */
+    private DisplayAddress externalDisplayAddress(String reportedHost, List<DiscoveryAgent> agents) {
+        boolean reportedAsIp = looksLikeIpAddress(reportedHost);
+        for (DiscoveryAgent agent : agents) {
+            List<String> agentIps = parseIpAddresses(agent.getIpAddresses());
+            boolean match = reportedAsIp
+                    ? agentIps.stream().anyMatch(reportedHost::equalsIgnoreCase)
+                    : agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(reportedHost);
+            if (match) {
+                return new DisplayAddress(
+                        firstNonBlank(agent.getHostname(), reportedAsIp ? null : reportedHost),
+                        reportedAsIp ? reportedHost : agentIps.stream().findFirst().orElse(null));
+            }
         }
-        if (host.getHostname() != null && !host.getHostname().isBlank()) {
-            return host.getHostname();
-        }
-        return host.getId();
+        return reportedAsIp
+                ? new DisplayAddress(null, reportedHost)
+                : new DisplayAddress(reportedHost, null);
     }
+
+    private List<String> parseIpAddresses(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        String normalized = raw.trim();
+        if (normalized.startsWith("[") && normalized.endsWith("]")) {
+            normalized = normalized.substring(1, normalized.length() - 1);
+        }
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(normalized.split(","))
+                .map(value -> value.trim().replaceAll("^\"|\"$", ""))
+                .filter(value -> !value.isBlank())
+                .toList();
+    }
+
+    private boolean looksLikeIpAddress(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        return value.contains(":") || value.matches("^\\d{1,3}(?:\\.\\d{1,3}){3}$");
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private record DisplayAddress(String hostname, String ipAddress) {}
 }

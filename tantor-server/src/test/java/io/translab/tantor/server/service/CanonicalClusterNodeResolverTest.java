@@ -87,7 +87,9 @@ class CanonicalClusterNodeResolverTest {
             assertThat(node.identity().kafkaClusterId()).isEqualTo("internal-kafka-id");
             assertThat(node.identity().nodeId()).isEqualTo(1);
             assertThat(node.identity().role()).isEqualTo(CanonicalNodeRole.BROKER);
-            assertThat(node.host()).isEqualTo("192.168.10.21");
+            assertThat(node.host()).isEqualTo("broker-1");
+            assertThat(node.hostname()).isEqualTo("broker-1");
+            assertThat(node.ipAddress()).isEqualTo("192.168.10.21");
             assertThat(node.agentStatus()).isEqualTo(CanonicalAgentStatus.ONLINE);
             assertThat(node.telemetryStatus()).isEqualTo(CanonicalTelemetryStatus.LIVE);
         });
@@ -108,6 +110,8 @@ class CanonicalClusterNodeResolverTest {
         agent.setClusterId(clusterUuid);
         agent.setStatus("ONLINE");
         agent.setLastHeartbeat(OffsetDateTime.now());
+        agent.setHostname("broker-2.example.test");
+        agent.setIpAddresses("[\"192.168.20.22\"]");
 
         when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
                 .thenReturn(Optional.of(cluster));
@@ -128,6 +132,8 @@ class CanonicalClusterNodeResolverTest {
             assertThat(node.agentStatus()).isEqualTo(CanonicalAgentStatus.ONLINE);
             assertThat(node.telemetryStatus()).isEqualTo(CanonicalTelemetryStatus.LIVE);
         });
+        assertThat(response.nodes().get(1).hostname()).isEqualTo("broker-2.example.test");
+        assertThat(response.nodes().get(1).ipAddress()).isEqualTo("192.168.20.22");
         verify(hostRepository, never()).findById("192.168.20.22");
         verify(hostRepository, never()).findById("192.168.20.23");
         verify(serviceAssignmentRepository, never()).findByClusterId(cluster.getId());
