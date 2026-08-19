@@ -1897,7 +1897,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <Trash2 size={16} />
                     </button>
                   </div>
-
+                  </div>
 
                 </div>
               ))}
