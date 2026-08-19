@@ -55,6 +55,9 @@ tantor:
     local-break-glass:
       enabled: ${TANTOR_BREAK_GLASS_ENABLED:false}
       username: ${TANTOR_BREAK_GLASS_USERNAME:}
+  tasks:
+    claim-lease-seconds: ${TANTOR_TASK_CLAIM_LEASE_SECONDS:300}
+    max-claim-attempts: ${TANTOR_TASK_MAX_CLAIM_ATTEMPTS:3}
   artifact-repo:
     url: ${TANTOR_REPO_URL:http://localhost:8081}
     jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}

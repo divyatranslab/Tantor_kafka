@@ -104,9 +104,10 @@ func (e *Engine) executeTasks(tasks []api.Task) {
 func (e *Engine) executeTask(t api.Task) {
 	// Report intermediate status: RUNNING
 	if err := e.client.ReportTaskResult(&api.TaskResult{
-		TaskID: t.TaskID,
-		HostID: e.cfg.Agent.HostID,
-		Status: "RUNNING",
+		TaskID:     t.TaskID,
+		ClaimToken: t.ClaimToken,
+		HostID:     e.cfg.Agent.HostID,
+		Status:     "RUNNING",
 	}); err != nil {
 		slog.Error("Failed to report RUNNING status", "err", err)
 	}
@@ -122,6 +123,9 @@ func (e *Engine) executeTask(t api.Task) {
 				ErrorMsg: err.Error(),
 			}
 		}
+	}
+	if result != nil {
+		result.ClaimToken = t.ClaimToken
 	}
 
 	slog.Info("Task executed", "taskId", t.TaskID, "status", result.Status)

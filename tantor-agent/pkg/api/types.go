@@ -25,6 +25,7 @@ type HostHeartbeat struct {
 // Task represents a deployment or management task from the server
 type Task struct {
 	TaskID      string            `json:"task_id"`
+	ClaimToken  string            `json:"claim_token"`
 	ClusterID   string            `json:"cluster_id,omitempty"`
 	Command     string            `json:"command"` // e.g. INSTALL_KAFKA, START_SERVICE
 	Parameters  map[string]string `json:"parameters"`
@@ -35,6 +36,7 @@ type Task struct {
 // TaskResult reports the result of a task execution
 type TaskResult struct {
 	TaskID       string `json:"task_id"`
+	ClaimToken   string `json:"claim_token"`
 	HostID       string `json:"host_id"`
 	Status       string `json:"status"` // SUCCESS, FAILED
 	LogOutput    string `json:"log_output"`

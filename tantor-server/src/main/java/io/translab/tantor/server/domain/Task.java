@@ -41,6 +41,18 @@ public class Task {
     @Column(nullable = false)
     private String status; // PENDING, IN_PROGRESS, SUCCESS, FAILED
 
+    @Column(name = "claim_token")
+    private String claimToken;
+
+    @Column(name = "claimed_at")
+    private OffsetDateTime claimedAt;
+
+    @Column(name = "lease_expires_at")
+    private OffsetDateTime leaseExpiresAt;
+
+    @Column(name = "attempt_count", nullable = false)
+    private Integer attemptCount = 0;
+
     @Column(name = "log_output")
     private String logOutput;
 

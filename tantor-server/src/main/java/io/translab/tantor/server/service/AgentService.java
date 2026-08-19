@@ -39,6 +39,12 @@ public class AgentService {
     @Value("${tantor.hosts.heartbeat-timeout-seconds:90}")
     private long heartbeatTimeoutSeconds;
 
+    @Value("${tantor.tasks.claim-lease-seconds:300}")
+    private long taskClaimLeaseSeconds;
+
+    @Value("${tantor.tasks.max-claim-attempts:3}")
+    private int maxTaskClaimAttempts;
+
     public enum HeartbeatResult {
         ACCEPTED,
         NOT_FOUND,
@@ -203,29 +209,39 @@ public class AgentService {
 
     @Transactional
     public List<TaskDto> getPendingTasks(String hostId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        int maxAttempts = Math.max(maxTaskClaimAttempts, 1);
+        taskRepository.failExpiredClaims(hostId, now, maxAttempts);
+        taskRepository.releaseExpiredClaims(hostId, now, maxAttempts);
         List<Task> pendingTasks = taskRepository.findByHostIdAndStatusOrderByCreatedAtAsc(hostId, "PENDING");
-        
+        OffsetDateTime leaseExpiresAt = now.plusSeconds(Math.max(taskClaimLeaseSeconds, 1));
+
         return pendingTasks.stream().map(t -> {
-            t.setStatus("IN_PROGRESS");
-            taskRepository.save(t);
+            String claimToken = UUID.randomUUID().toString();
+            if (taskRepository.claimPendingTask(t.getId(), hostId, claimToken, now, leaseExpiresAt) != 1) {
+                return null;
+            }
+            Task claimed = taskRepository.findById(t.getId()).orElse(null);
+            if (claimed == null) return null;
             
             TaskDto dto = new TaskDto();
-            dto.setTaskId(t.getId().toString());
-            if (t.getClusterId() != null) {
-                dto.setClusterId(t.getClusterId().toString());
+            dto.setTaskId(claimed.getId().toString());
+            dto.setClaimToken(claimToken);
+            if (claimed.getClusterId() != null) {
+                dto.setClusterId(claimed.getClusterId().toString());
             }
-            dto.setCommand(t.getCommand());
-            dto.setArtifactUrl(t.getArtifactUrl());
-            dto.setChecksum(t.getChecksum());
+            dto.setCommand(claimed.getCommand());
+            dto.setArtifactUrl(claimed.getArtifactUrl());
+            dto.setChecksum(claimed.getChecksum());
             try {
-                if (t.getParameters() != null) {
-                    dto.setParameters(objectMapper.readValue(t.getParameters(), new TypeReference<Map<String, Object>>() {}));
+                if (claimed.getParameters() != null) {
+                    dto.setParameters(objectMapper.readValue(claimed.getParameters(), new TypeReference<Map<String, Object>>() {}));
                 }
             } catch (JsonProcessingException e) {
-                log.warn("Failed to deserialize parameters for task {}", t.getId(), e);
+                log.warn("Failed to deserialize parameters for task {}", claimed.getId(), e);
             }
             return dto;
-        }).collect(Collectors.toList());
+        }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
     }
 
     @Transactional
@@ -233,6 +249,14 @@ public class AgentService {
         try {
             UUID taskId = UUID.fromString(dto.getTaskId());
             taskRepository.findById(taskId).ifPresent(task -> {
+                if (isTerminalTaskStatus(task.getStatus())) {
+                    log.info("Ignoring duplicate result for terminal task {}", taskId);
+                    return;
+                }
+                if (dto.getClaimToken() == null || !dto.getClaimToken().equals(task.getClaimToken())) {
+                    log.warn("Ignoring result for task {} with a missing or stale claim token", taskId);
+                    return;
+                }
                 if (!isTerminalTaskStatus(dto.getStatus())) {
                     task.setCurrentStep(dto.getCurrentStep());
                     try {

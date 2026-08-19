@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class TaskDto {
     private String taskId;
+    private String claimToken;
     private String clusterId;
     private String command;
     private Map<String, Object> parameters;

@@ -1073,11 +1073,20 @@ public class ExternalClusterService {
     }
 
     public Map<String, Object> pollAgentTask(String clusterName, String hostname, String bootstrap) {
-        ExternalAgentTask task = pendingTasks.get(taskKey(clusterName, hostname, bootstrap));
-        if (task == null || !"PENDING".equals(task.getStatus())) {
+        String key = taskKey(clusterName, hostname, bootstrap);
+        ExternalAgentTask[] claimed = new ExternalAgentTask[1];
+        pendingTasks.compute(key, (unused, candidate) -> {
+            if (candidate == null || !"PENDING".equals(candidate.getStatus())) {
+                return candidate;
+            }
+            candidate.setStatus("IN_PROGRESS");
+            claimed[0] = candidate;
+            return candidate;
+        });
+        ExternalAgentTask task = claimed[0];
+        if (task == null) {
             return Map.of("task", "NONE");
         }
-        task.setStatus("IN_PROGRESS");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("task", task.getTask());
         response.put("taskId", task.getTaskId());
