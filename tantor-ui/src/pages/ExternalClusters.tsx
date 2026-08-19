@@ -12,6 +12,7 @@ import {
   X,
   Wifi,
 } from 'lucide-react';
+import { getValidToken } from '../services/KeycloakService';
 import './ExternalClusters.css';
 
 interface BootstrapResult {
@@ -315,9 +316,19 @@ export function ExternalClusters() {
         selectedAgents: selectedAgents
       };
 
+      // Registration mutates managed-cluster state, so obtain a fresh Keycloak
+      // token explicitly instead of relying solely on the global fetch wrapper.
+      const token = await getValidToken();
+      if (!token) {
+        throw new Error('Your sign-in session is unavailable. Please sign in again and retry.');
+      }
+
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
