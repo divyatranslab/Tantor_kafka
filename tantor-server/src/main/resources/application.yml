@@ -22,12 +22,12 @@ spring:
 
   flyway:
     enabled: true
-    baseline-on-migrate: true
+    baseline-on-migrate: false
     locations: classpath:db/migration
     clean-disabled: true
     clean-on-validation-error: false
-    ignore-missing-migrations: true
-    validate-on-migrate: false
+    ignore-missing-migrations: false
+    validate-on-migrate: true
 
 server:
   port: 8443
