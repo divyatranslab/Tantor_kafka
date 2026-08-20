@@ -48,6 +48,8 @@ services:
       SPRING_CONFIG_IMPORT: optional:configtree:/run/secrets/
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
       TANTOR_REPO_PATH: /var/lib/tantor/repository
+      TANTOR_DB_CONNECTION_TIMEOUT_MS: ${TANTOR_DB_CONNECTION_TIMEOUT_MS:-5000}
+      TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS: ${TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS:-60000}
     secrets:
       - TANTOR_DB_USER
       - TANTOR_DB_PASSWORD
@@ -72,7 +74,9 @@ services:
     depends_on:
       database:
         condition: service_healthy
-    restart: unless-stopped
+      tantor-server:
+        condition: service_healthy
+    restart: "on-failure:5"
     networks:
       - app
       - data
@@ -113,8 +117,6 @@ services:
       start_period: 60s
     depends_on:
       database:
-        condition: service_healthy
-      tantor-artifact-repository:
         condition: service_healthy
     restart: unless-stopped
     networks:

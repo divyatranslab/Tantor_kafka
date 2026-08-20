@@ -1,35 +1,55 @@
 services:
   database:
-    image: postgres:13.23@sha256:4689940c683801b4ab839ab3b0a0a3555a5fe425371422310944e89eca7d8068
-    container_name: tantor_db
+    image: docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
     environment:
       POSTGRES_DB: tantor
-      POSTGRES_USER: ${TANTOR_DB_USER}
-      POSTGRES_PASSWORD: ${TANTOR_DB_PASSWORD}
+      POSTGRES_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
+      POSTGRES_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - tantor_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d \"$${POSTGRES_DB}\" -U \"$${POSTGRES_USER}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     restart: unless-stopped
 
   tantor-artifact-repository:
     build:
       context: ./tantor-artifact-repository
-    container_name: tantor_artifact_repo
+    environment:
+      TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
+      TANTOR_DB_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
+      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
+      TANTOR_DB_CONNECTION_TIMEOUT_MS: ${TANTOR_DB_CONNECTION_TIMEOUT_MS:-5000}
+      TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS: ${TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS:-60000}
     ports:
       - "8081:8081"
     volumes:
       - tantor_repo_data:/var/lib/tantor/repository
-    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8081; printf \"GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3; head -n 1 <&3 | grep -q \" 200 \"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+    depends_on:
+      database:
+        condition: service_healthy
+      tantor-server:
+        condition: service_healthy
+    restart: "on-failure:5"
 
   tantor-server:
     build:
       context: ./tantor-server
-    container_name: tantor_server
     environment:
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
-      TANTOR_DB_USER: ${TANTOR_DB_USER}
-      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD}
+      TANTOR_DB_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
+      TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
       TANTOR_ENCRYPTION_KEY: ${TANTOR_ENCRYPTION_KEY}
       TANTOR_JWT_SECRET: ${TANTOR_JWT_SECRET}
       TANTOR_KEYSTORE_PASSWORD: ${TANTOR_KEYSTORE_PASSWORD}
@@ -38,20 +58,27 @@ services:
       TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
     ports:
       - "8443:8443"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/8443'"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
     depends_on:
-      - database
-      - tantor-artifact-repository
+      database:
+        condition: service_healthy
     restart: unless-stopped
 
   tantor-ui:
     build:
       context: ./tantor-ui
-    container_name: tantor_ui
     ports:
       - "80:8080"
     depends_on:
-      - tantor-server
-      - tantor-artifact-repository
+      tantor-server:
+        condition: service_healthy
+      tantor-artifact-repository:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

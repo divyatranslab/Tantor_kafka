@@ -26,6 +26,31 @@ application/data networks.
 7. Confirm every service becomes healthy and only ports 80 and 443 are
    published by the Tantor deployment.
 
+The database name and private service endpoint are fixed as `tantor` and
+`database:5432`. Supply the database username and password only through the
+`TANTOR_DB_USER` and `TANTOR_DB_PASSWORD` secret files. PostgreSQL readiness is
+checked with `pg_isready`; `start.sh` explicitly starts and waits for database,
+`tantor-server`, Artifact Repository, and UI in that order using `up --no-deps`.
+It does not rely on the Compose provider enforcing `depends_on` health
+conditions. The required provider contract is `podman-compose` support for
+`config`, `up --no-deps`, and `ps --quiet`; the script prints the provider
+version and fails immediately if those commands are unavailable.
+
+`tantor-server` remains the only Flyway migration owner. Artifact readiness
+uses its configured database connection to verify both `public.kf_artifact` and
+the successful V67 Flyway history entry, the latest migration defining the
+current Artifact Repository table contract. The check is read-only. Initial
+connection wait is bounded to 60 seconds after a five-second connection attempt,
+and the restart policy is capped at five failures, so invalid settings do not
+create an endless silent retry loop.
+
+Before packaging a release, run the repository's clean-environment check on a
+Podman build host:
+
+```bash
+bash scripts/test-h01-deployment.sh
+```
+
 `manifest.lock.json` records the source revision and immutable image references
 used by the release. Production updates must generate a new bundle; do not edit
 the locked image references on the target host. Per-image Trivy reports and

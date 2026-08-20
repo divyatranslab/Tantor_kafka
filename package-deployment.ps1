@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$postgresReference = 'docker.io/library/postgres:13.23@sha256:4689940c683801b4ab839ab3b0a0a3555a5fe425371422310944e89eca7d8068'
+$postgresReference = 'docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b'
 $bundleDirectory = Join-Path $OutputDirectory "tantor-$Version"
 $archivePath = Join-Path $OutputDirectory "tantor-$Version.tar.gz"
 $imagesDirectory = Join-Path $bundleDirectory 'images'
@@ -130,6 +130,60 @@ $startScript = @'
 #!/usr/bin/env bash
 set -euo pipefail
 
+command -v podman-compose >/dev/null 2>&1 || {
+  echo 'podman-compose is required. The deployment uses its config, up --no-deps, and ps --quiet commands.' >&2
+  exit 1
+}
+command -v podman >/dev/null 2>&1 || {
+  echo 'podman is required.' >&2
+  exit 1
+}
+
+echo "Compose provider: $(podman-compose version 2>&1 | head -n 1)"
+
+compose() {
+  podman-compose --env-file .env.production --file compose.yml "$@"
+}
+
+service_id() {
+  compose ps --quiet "$1"
+}
+
+wait_for_health() {
+  local service="$1"
+  local attempts="${2:-60}"
+  local container_id status
+
+  container_id="$(service_id "$service")"
+  test -n "$container_id" || {
+    echo "No container exists for service: $service" >&2
+    return 1
+  }
+
+  for ((attempt=1; attempt<=attempts; attempt++)); do
+    status="$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")"
+    case "$status" in
+      healthy) return 0 ;;
+      exited|dead|unhealthy)
+        echo "$service failed readiness with state: $status" >&2
+        compose logs --no-color "$service" >&2
+        return 1
+        ;;
+    esac
+    sleep 5
+  done
+
+  echo "$service did not become healthy within $((attempts * 5)) seconds" >&2
+  compose logs --no-color "$service" >&2
+  return 1
+}
+
+start_and_wait() {
+  local service="$1"
+  compose up --detach --no-deps "$service"
+  wait_for_health "$service"
+}
+
 sha256sum --check SHA256SUMS
 test "$(stat -c '%a' ./secrets)" = "700" || {
   echo "The ./secrets directory must have mode 0700" >&2
@@ -159,9 +213,29 @@ while IFS= read -r archive; do
   podman load --input "$archive"
 done < <(find ./images -maxdepth 1 -type f -name '*.oci.tar' -print | sort)
 
-podman-compose --env-file .env.production --file compose.yml config >/dev/null
-podman-compose --env-file .env.production --file compose.yml up --detach
-podman-compose --env-file .env.production --file compose.yml ps
+compose config >/dev/null
+
+# Do not rely on provider-specific depends_on health enforcement. Each service
+# is started without dependencies and must pass its own health check before the
+# next service is created.
+start_and_wait database
+database_id="$(service_id database)"
+podman exec "$database_id" test -s /run/secrets/TANTOR_DB_USER
+podman exec "$database_id" test -s /run/secrets/TANTOR_DB_PASSWORD
+
+start_and_wait tantor-server
+start_and_wait tantor-artifact-repository
+artifact_id="$(service_id tantor-artifact-repository)"
+podman exec "$artifact_id" test -s /run/secrets/TANTOR_DB_USER
+podman exec "$artifact_id" test -s /run/secrets/TANTOR_DB_PASSWORD
+if podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$artifact_id" |
+    grep -Eq '^TANTOR_DB_(USER|PASSWORD)='; then
+  echo 'Database credentials must not be present in the Artifact Repository environment.' >&2
+  exit 1
+fi
+
+start_and_wait tantor-ui
+compose ps
 '@
 Set-Content -LiteralPath (Join-Path $bundleDirectory 'start.sh') -Value $startScript -Encoding utf8NoBOM
 

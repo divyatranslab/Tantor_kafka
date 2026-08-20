@@ -15,7 +15,7 @@ The server uses Flyway migrations to create and update the PostgreSQL schema.
 Install these before running the project:
 
 - Java 21
-- PostgreSQL 13 or newer
+- PostgreSQL 16.14
 - Node.js 20 or newer
 - npm
 - PowerShell
@@ -63,12 +63,15 @@ Copy-Item .env.example .env
 
 Then edit `.env` for your machine.
 
-Minimum local development values:
+Minimum local development values are shown below. Generate a random,
+development-only password rather than copying a shared or production secret.
+When Compose is used, PostgreSQL is reachable from the host only through
+`127.0.0.1:5432`.
 
 ```properties
 TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
-TANTOR_DB_USER=postgres
-TANTOR_DB_PASSWORD=postgres
+TANTOR_DB_USER=tantor_dev
+TANTOR_DB_PASSWORD=<generated-local-only-password>
 TANTOR_REPO_URL=http://localhost:8081
 TANTOR_REPO_PATH=./.runtime/repository
 TANTOR_MONITORING_MODE=direct
@@ -83,7 +86,38 @@ TANTOR_REPO_URL=http://192.168.3.191:8081
 TANTOR_MONITORING_EXPORTER_HOST=192.168.3.191
 ```
 
-Do not commit real passwords or production secrets in `.env`.
+Do not commit real passwords or production secrets in `.env`. Containerized
+services connect privately through `database:5432`; production does not publish
+the database port on the host.
+
+### Podman composition
+
+Start the repository composition after setting the required values in `.env`:
+
+```bash
+podman-compose --env-file .env --file podman-compose.yml up --detach --build
+```
+
+PostgreSQL must pass `pg_isready` before `tantor-server` runs the Flyway
+migrations. Production `start.sh` enforces this sequence explicitly with
+`up --no-deps` and health polling; correctness does not depend on the Compose
+provider honoring `depends_on`. The Artifact Repository uses the explicit
+`jdbc:postgresql://database:5432/tantor` URL and becomes ready only when its
+database is connected, `public.kf_artifact` exists, and server-owned Flyway
+migration V67 is recorded as successful. Missing database settings fail
+startup; there is no localhost database fallback.
+
+To validate the same sequence against a fresh, isolated project and volumes:
+
+```bash
+bash scripts/test-h01-deployment.sh
+```
+
+The validator deliberately starts the Artifact Repository once with PostgreSQL
+unavailable and once with an empty database. It verifies bounded failure and a
+503 readiness response until `tantor-server` migrates the schema, then exercises
+the production file-backed secret/config-tree path and restart persistence. It
+removes its uniquely named test containers and volumes when complete.
 
 ## 4. Build Backend And Agents
 

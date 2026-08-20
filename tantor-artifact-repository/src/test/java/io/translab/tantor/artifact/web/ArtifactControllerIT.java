@@ -1,5 +1,8 @@
 package io.translab.tantor.artifact.web;
 
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -35,7 +38,8 @@ class ArtifactControllerIT {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgres:16-alpine").withDatabaseName("tantor");
+            new PostgreSQLContainer<>("docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b")
+                    .withDatabaseName("tantor");
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) throws Exception {
@@ -110,6 +114,3 @@ class ArtifactControllerIT {
         return archive.toByteArray();
     }
 }
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
