@@ -238,6 +238,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	// 6. Setup JMX Exporter
 	jmxDir := filepath.Join(installDir, "jmx")
 	d.exec.RunSudo(ctx, "mkdir", "-p", jmxDir)
+	d.exec.RunSudo(ctx, "chmod", "755", jmxDir)
 	jmxJarPath := filepath.Join(jmxDir, "jmx_prometheus_javaagent.jar")
 
 	log("Downloading JMX Exporter to %s", jmxJarPath)
@@ -300,9 +301,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		return logs.String(), fmt.Errorf("JMX exporter jar is unavailable. Upload a JMX_EXPORTER artifact to Tantor and retry deployment")
 	}
 
-	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, filepath.Join(jmxDir, "jmx_config.yml")); err != nil {
+	jmxConfigPath := jmxConfigPathForRole(installDir, t.Parameters["role"])
+	if err := d.writeTemplateToSudoFile(ctx, JmxConfigTemplate, nil, jmxConfigPath); err != nil {
 		return logs.String(), fmt.Errorf("failed to write JMX exporter config: %w", err)
 	}
+	log("JMX exporter config written for role %s at %s", t.Parameters["role"], jmxConfigPath)
 
 	setStep("Backup old config if exists")
 	configPath := configPathForTask(activeInstallDir, t)
@@ -494,10 +497,12 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 	if listenerPort == "" {
 		listenerPort = "9092"
 	}
+	role, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
 	jmxMetricsPort := t.Parameters["jmx_port"]
 	if jmxMetricsPort == "" {
-		jmxMetricsPort = "7071"
+		jmxMetricsPort = defaultJmxMetricsPort(t.Parameters["role"])
 	}
+	jmxRequired := jmxRequiredForTask(t, isBroker, isController)
 
 	// Report VALIDATING status
 	if err := d.client.ReportTaskResult(&api.TaskResult{
@@ -543,7 +548,6 @@ check2:
 	}
 	log("  ✓ KRaft meta.properties exists")
 
-	role, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
 	controllerPort := t.Parameters["controller_port"]
 	if controllerPort == "" {
 		controllerPort = "9093"
@@ -578,14 +582,15 @@ controllerPortCheck:
 check5:
 	log("Validation [5/6]: Checking JMX Exporter javaagent...")
 	out2, _, _ := d.exec.Run(ctx, "bash", "-c", "ps aux | grep javaagent | grep -v grep")
-	if strings.Contains(out2, "jmx_prometheus_javaagent") {
+	if strings.Contains(out2, "jmx_prometheus_javaagent") && strings.Contains(out2, "="+jmxMetricsPort+":") {
 		log("  JMX Prometheus Exporter attached")
 	} else {
-		if isBroker {
+		if jmxRequired {
 			journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceNameForTask(t), "-n", "80", "--no-pager")
-			return fmt.Errorf("JMX exporter not attached to Kafka process. Logs:\n%s", journalOut)
+			return fmt.Errorf("JMX exporter not attached to %s process on port %s. Logs:\n%s", role, jmxMetricsPort, journalOut)
 		}
-		log("  JMX Exporter not detected for non-broker role")
+		log("  JMX Exporter is disabled for role %s", role)
+		return nil
 	}
 
 	log("Validation [6/6]: Checking metrics endpoint on port %s...", jmxMetricsPort)
@@ -597,11 +602,11 @@ check5:
 		}
 		time.Sleep(3 * time.Second)
 	}
-	if isBroker {
+	if jmxRequired {
 		journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", serviceNameForTask(t), "-n", "80", "--no-pager")
 		return fmt.Errorf("JMX metrics endpoint not responding on port %s. Logs:\n%s", jmxMetricsPort, journalOut)
 	}
-	log("  Metrics endpoint not responding on port %s for non-broker role", jmxMetricsPort)
+	log("  Metrics endpoint is disabled for role %s", role)
 
 	return nil
 }
@@ -1553,6 +1558,35 @@ func isUsableJar(path string) bool {
 	return err == nil && len(data) >= 2 && data[0] == 'P' && data[1] == 'K'
 }
 
+func defaultJmxMetricsPort(role string) string {
+	_, isBroker, isController := normalizeKRaftRole(role)
+	if isController && !isBroker {
+		return "7072"
+	}
+	return "7071"
+}
+
+func jmxConfigPathForRole(installDir, role string) string {
+	_, isBroker, isController := normalizeKRaftRole(role)
+	name := "broker.yml"
+	if isController && !isBroker {
+		name = "controller.yml"
+	} else if isBroker && isController {
+		name = "broker-controller.yml"
+	}
+	return filepath.Join(installDir, "jmx", name)
+}
+
+func jmxRequiredForTask(t *api.Task, isBroker, isController bool) bool {
+	if strings.EqualFold(strings.TrimSpace(t.Parameters["jmx_enabled"]), "false") {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(t.Parameters["jmx_required"]), "true") {
+		return true
+	}
+	return isBroker || isController
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
 	findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname $(dirname $(readlink -f $(command -v $JAVA_CMD))); fi`
@@ -1569,7 +1603,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 
 	jmxPort := t.Parameters["jmx_port"]
 	if jmxPort == "" {
-		jmxPort = "7071"
+		jmxPort = defaultJmxMetricsPort(t.Parameters["role"])
 	}
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
@@ -1580,14 +1614,14 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 
 	serviceName := serviceNameForTask(t)
 	jmxAgentPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
-	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
-	_, isBroker, _ := normalizeKRaftRole(t.Parameters["role"])
-	if serviceName == "controller" {
+	jmxConfigPath := jmxConfigPathForRole(installDir, t.Parameters["role"])
+	_, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
+	if !jmxRequiredForTask(t, isBroker, isController) {
 		jmxPort = ""
 		jmxAgentPath = ""
 		jmxConfigPath = ""
 	} else if !isUsableJar(jmxAgentPath) {
-		if isBroker {
+		if isBroker || isController {
 			return fmt.Errorf("JMX exporter jar is missing or invalid at %s", jmxAgentPath)
 		}
 		jmxPort = ""
@@ -1709,7 +1743,7 @@ func (d *Deployer) Rollback(ctx context.Context, t *api.Task) (string, error) {
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 
 	log("Terminating processes on Kafka and ZooKeeper ports...")
-	for _, port := range []string{"9092/tcp", "9093/tcp", "9095/tcp", "7071/tcp", "2181/tcp", "2888/tcp", "3888/tcp"} {
+	for _, port := range []string{"9092/tcp", "9093/tcp", "9095/tcp", "7071/tcp", "7072/tcp", "2181/tcp", "2888/tcp", "3888/tcp"} {
 		d.exec.RunSudo(ctx, "fuser", "-k", port)
 	}
 
@@ -1751,6 +1785,7 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	d.exec.RunSudo(ctx, "fuser", "-k", "9093/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "9095/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "7071/tcp")
+	d.exec.RunSudo(ctx, "fuser", "-k", "7072/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "2181/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "2888/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "3888/tcp")
@@ -1767,7 +1802,7 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	// 4. Validate ports are free
 	log("Validating ports are free...")
 	out, _, _ := d.exec.RunSudo(ctx, "ss", "-tlnp")
-	if strings.Contains(out, ":9092 ") || strings.Contains(out, ":9093 ") || strings.Contains(out, ":9095 ") || strings.Contains(out, ":7071 ") ||
+	if strings.Contains(out, ":9092 ") || strings.Contains(out, ":9093 ") || strings.Contains(out, ":9095 ") || strings.Contains(out, ":7071 ") || strings.Contains(out, ":7072 ") ||
 		strings.Contains(out, ":2181 ") || strings.Contains(out, ":2888 ") || strings.Contains(out, ":3888 ") {
 		return logs.String(), fmt.Errorf("Ports are still in use after cleanup")
 	}

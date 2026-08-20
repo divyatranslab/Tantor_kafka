@@ -83,7 +83,7 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
-            params.put("jmx_port", "7071");
+            params.put("jmx_port", defaultJmxPortForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("db_cluster_id", clusterId.toString());
             }
@@ -277,7 +277,7 @@ public class DeploymentService {
             params.put("service_role", normalizedRole);
             params.put("service_name", systemdServiceName(normalizedRole));
             params.put("systemd_service", systemdServiceName(normalizedRole));
-            params.put("jmx_port", "7071");
+            params.put("jmx_port", defaultJmxPortForRole(normalizedRole));
             if (clusterId != null) {
                 params.put("cluster_id", clusterId.toString());
             }
@@ -711,8 +711,8 @@ public class DeploymentService {
         putParam(params, "broker_port", brokerPort);
         putParam(params, "controller_port", controllerPort);
         putParam(params, "jmx_enabled", firstNonBlank(firstParam(params, "jmx_enabled"), "true"));
-        putParam(params, "jmx_port", firstNonBlank(firstParam(params, "jmx_port"), "7071"));
-        if (isBrokerRole(role) && !"false".equalsIgnoreCase(firstParam(params, "jmx_enabled"))) {
+        putParam(params, "jmx_port", firstNonBlank(firstParam(params, "jmx_port"), defaultJmxPortForRole(role)));
+        if ((isBrokerRole(role) || isControllerRole(role)) && !"false".equalsIgnoreCase(firstParam(params, "jmx_enabled"))) {
             putParam(params, "jmx_required", "true");
         }
         putParam(params, "heap_xms", heapXms);
@@ -750,6 +750,15 @@ public class DeploymentService {
     private boolean isBrokerRole(String role) {
         String normalized = role == null ? "" : role.toLowerCase();
         return normalized.contains("broker");
+    }
+
+    private boolean isControllerRole(String role) {
+        String normalized = role == null ? "" : role.toLowerCase();
+        return normalized.contains("controller");
+    }
+
+    private String defaultJmxPortForRole(String role) {
+        return "controller".equalsIgnoreCase(role) ? "7072" : "7071";
     }
 
     private String activeSymlinkPath(String installBasePath) {

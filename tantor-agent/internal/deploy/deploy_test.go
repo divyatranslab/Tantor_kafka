@@ -15,7 +15,7 @@ func TestPrerequisitePorts(t *testing.T) {
 
 func TestPrerequisitePortsUsesKafkaDefaults(t *testing.T) {
 	got := prerequisitePorts("")
-	want := []string{"9092", "9093", "7071"}
+	want := []string{"9092", "9093", "7071", "7072"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("prerequisitePorts() = %v, want %v", got, want)
 	}

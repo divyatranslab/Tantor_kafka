@@ -91,6 +91,43 @@ func TestDeploymentModeDefaultsToKRaft(t *testing.T) {
 	}
 }
 
+func TestJmxDefaultsAreRoleAware(t *testing.T) {
+	tests := []struct {
+		role string
+		port string
+		file string
+	}{
+		{role: "broker", port: "7071", file: "broker.yml"},
+		{role: "controller", port: "7072", file: "controller.yml"},
+		{role: "broker_controller", port: "7071", file: "broker-controller.yml"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.role, func(t *testing.T) {
+			if got := defaultJmxMetricsPort(tc.role); got != tc.port {
+				t.Fatalf("defaultJmxMetricsPort(%q) = %q, want %q", tc.role, got, tc.port)
+			}
+			if got := filepath.Base(jmxConfigPathForRole("/opt/kafka", tc.role)); got != tc.file {
+				t.Fatalf("jmx config for %q = %q, want %q", tc.role, got, tc.file)
+			}
+		})
+	}
+}
+
+func TestJmxRequiredForBrokerAndControllerUnlessDisabled(t *testing.T) {
+	for _, role := range []string{"broker", "controller", "broker_controller"} {
+		_, isBroker, isController := normalizeKRaftRole(role)
+		task := &api.Task{Parameters: map[string]string{"role": role}}
+		if !jmxRequiredForTask(task, isBroker, isController) {
+			t.Fatalf("expected JMX to be required for role %q", role)
+		}
+		task.Parameters["jmx_enabled"] = "false"
+		if jmxRequiredForTask(task, isBroker, isController) {
+			t.Fatalf("expected explicit jmx_enabled=false to disable JMX for role %q", role)
+		}
+	}
+}
+
 func TestMergeCustomKafkaPropertiesRemovesConflictingQuorumKeys(t *testing.T) {
 	base := "process.roles=controller\ncontroller.quorum.voters=1@old:9093\nnum.io.threads=8\n"
 	merged := mergeCustomKafkaProperties(base, map[string]string{

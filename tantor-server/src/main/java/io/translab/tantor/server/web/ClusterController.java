@@ -42,6 +42,7 @@ import java.util.stream.Collectors;
 @lombok.extern.slf4j.Slf4j
 public class ClusterController {
     private static final int DEFAULT_JMX_EXPORTER_PORT = 7071;
+    private static final int DEFAULT_CONTROLLER_JMX_EXPORTER_PORT = 7072;
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
@@ -610,9 +611,7 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
-            if (isBrokerRole(sa.getRole())) {
-                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
-            }
+            assign.setJmxExporterPort(jmxPortForService(sa));
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             assignments.add(assign);
         }
@@ -725,6 +724,7 @@ public class ClusterController {
                 svc.setHost_id(existing.getHostId());
                 svc.setRole(existing.getRole());
                 svc.setNode_id(existing.getNodeId());
+                svc.setJmx_port(existing.getJmxExporterPort());
                 allServices.add(svc);
             }
         }
@@ -771,9 +771,7 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
-            if (isBrokerRole(sa.getRole())) {
-                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
-            }
+            assign.setJmxExporterPort(jmxPortForService(sa));
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             cluster.getServices().add(assign);
         }
@@ -1003,7 +1001,9 @@ public class ClusterController {
                 targetVersion,
                 service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()),
                 service.getRole(),
-                cluster.getConfigJson()
+                service.getConfigJson() == null || service.getConfigJson().isBlank()
+                        ? cluster.getConfigJson()
+                        : service.getConfigJson()
             );
         }
 
@@ -1207,6 +1207,7 @@ public class ClusterController {
         private String heap_size;
         private Integer listener_port;
         private Integer controller_port;
+        private Integer jmx_port;
         private Integer zookeeper_peer_port;
         private Integer zookeeper_election_port;
     }
@@ -1225,6 +1226,11 @@ public class ClusterController {
         }
         if (svc.getController_port() != null) {
             serviceConfig.put("controller_port", svc.getController_port());
+        }
+        Integer jmxPort = jmxPortForService(svc);
+        if (jmxPort != null) {
+            serviceConfig.put("jmx_port", jmxPort);
+            serviceConfig.put("jmx_enabled", true);
         }
         if (svc.getProperties_template() != null && !svc.getProperties_template().isBlank()) {
             String role = svc.getRole();
@@ -1266,6 +1272,7 @@ public class ClusterController {
 
         Set<String> assignmentKeys = new HashSet<>();
         Set<Integer> nodeIds = new HashSet<>();
+        Map<String, Set<Integer>> jmxPortsByHost = new HashMap<>();
         boolean hasBroker = false;
         int brokerCount = 0;
         boolean hasController = false;
@@ -1282,6 +1289,13 @@ public class ClusterController {
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            Integer jmxPort = jmxPortForService(service);
+            if (jmxPort != null && (jmxPort < 1 || jmxPort > 65535)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port must be between 1 and 65535 for host " + service.getHost_id() + "."));
+            }
+            if (jmxPort != null && !jmxPortsByHost.computeIfAbsent(service.getHost_id(), ignored -> new HashSet<>()).add(jmxPort)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port " + jmxPort + " is assigned more than once on host " + service.getHost_id() + "."));
             }
             if (!nodeIds.add(service.getNode_id())) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Node id " + service.getNode_id() + " is assigned more than once."));
@@ -1389,6 +1403,10 @@ public class ClusterController {
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            Integer jmxPort = jmxPortForService(service);
+            if (jmxPort != null && (jmxPort < 1 || jmxPort > 65535)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port must be between 1 and 65535 for host " + service.getHost_id() + "."));
             }
             if (!nodeIds.add(service.getNode_id())) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Node id " + service.getNode_id() + " is already used in this cluster."));
@@ -1781,6 +1799,18 @@ public class ClusterController {
             return "broker".equals(role) || "zookeeper".equals(role) || "broker_zookeeper".equals(role);
         }
         return "broker".equals(role) || "controller".equals(role) || "broker_controller".equals(role);
+    }
+
+    private Integer jmxPortForService(ServiceAssignmentReq service) {
+        if (service == null || service.getRole() == null || isZooKeeperRole(service.getRole())) {
+            return null;
+        }
+        if (service.getJmx_port() != null) {
+            return service.getJmx_port();
+        }
+        return "controller".equals(service.getRole())
+                ? DEFAULT_CONTROLLER_JMX_EXPORTER_PORT
+                : DEFAULT_JMX_EXPORTER_PORT;
     }
 
     private boolean isBrokerRole(String role) {

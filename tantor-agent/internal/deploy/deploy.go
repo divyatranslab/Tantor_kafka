@@ -342,7 +342,7 @@ func prerequisitePorts(raw string) []string {
 		}
 	}
 	if len(ports) == 0 {
-		return []string{"9092", "9093", "7071"}
+		return []string{"9092", "9093", "7071", "7072"}
 	}
 	return ports
 }

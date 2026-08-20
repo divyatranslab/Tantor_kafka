@@ -93,9 +93,24 @@ type ServiceAssignment = {
   heap_size: string;
   listener_port?: number;
   controller_port?: number;
+  jmx_port?: number;
   zookeeper_peer_port?: number;
   zookeeper_election_port?: number;
 };
+
+type HostPorts = {
+  listenerPort: number;
+  controllerPort: number;
+  brokerJmxPort: number;
+  controllerJmxPort: number;
+  zookeeperPeerPort: number;
+  zookeeperElectionPort: number;
+};
+
+type HostPortKey = keyof HostPorts;
+
+const DEFAULT_BROKER_JMX_PORT = 7071;
+const DEFAULT_CONTROLLER_JMX_PORT = 7072;
 
 type PropertyRow = {
   key: string;
@@ -400,7 +415,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [controllerPort, setControllerPort] = useState(9093);
   const [zookeeperPeerPort, setZookeeperPeerPort] = useState(2888);
   const [zookeeperElectionPort, setZookeeperElectionPort] = useState(3888);
-  const [hostPorts, setHostPorts] = useState<Record<string, { listenerPort: number, controllerPort: number, zookeeperPeerPort: number, zookeeperElectionPort: number }>>({});
+  const [hostPorts, setHostPorts] = useState<Record<string, HostPorts>>({});
   const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
   const [hoveredPortCheckHostId, setHoveredPortCheckHostId] = useState<string | null>(null);
   const [numPartitions, setNumPartitions] = useState(1);
@@ -840,16 +855,23 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const selectedPortValidationErrors = selectedHosts.flatMap(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
-    const ports = hostPorts[host.id] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+    const ports = hostPorts[host.id] || {
+      listenerPort,
+      controllerPort,
+      brokerJmxPort: DEFAULT_BROKER_JMX_PORT,
+      controllerJmxPort: DEFAULT_CONTROLLER_JMX_PORT,
+      zookeeperPeerPort,
+      zookeeperElectionPort,
+    };
     const selected: Array<{ label: string; value: number }> = [];
     if (['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role)) {
       selected.push({ label: 'Broker port', value: ports.listenerPort });
-      selected.push({ label: 'Broker JMX port', value: 7071 });
+      selected.push({ label: 'Broker JMX port', value: ports.brokerJmxPort });
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
       selected.push({ label: 'Controller port', value: ports.controllerPort });
       if (role === 'controller' || role === 'separate') {
-        selected.push({ label: 'Controller JMX port', value: 7072 });
+        selected.push({ label: 'Controller JMX port', value: ports.controllerJmxPort });
       }
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
@@ -893,7 +915,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     };
     const services: ServiceAssignment[] = [];
 
-    const getHp = (hostId: string) => hostPorts[hostId] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+    const getHp = (hostId: string): HostPorts => hostPorts[hostId] || {
+      listenerPort,
+      controllerPort,
+      brokerJmxPort: DEFAULT_BROKER_JMX_PORT,
+      controllerJmxPort: DEFAULT_CONTROLLER_JMX_PORT,
+      zookeeperPeerPort,
+      zookeeperElectionPort,
+    };
 
     selectedHosts.forEach(host => {
       const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -901,27 +930,27 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort, jmx_port: hp.brokerJmxPort });
       } else if (role === 'broker_zookeeper') {
         const brokerCfg = configFor('server');
         const zookeeperCfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
         services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: zookeeperCfg.mode, properties_template: serviceTemplate('zookeeper', zookeeperCfg), heap_size: zookeeperCfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else if (role === 'separate') {
         const brokerCfg = configFor('broker');
         const controllerCfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort });
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize, controller_port: hp.controllerPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize, controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
       } else if (role === 'zookeeper') {
         const cfg = configFor('zookeeper');
         services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else {
         const kind: ConfigKind = deploymentMode === 'zookeeper' ? 'server' : 'broker';
         const cfg = configFor(kind);
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
       }
     });
 
@@ -949,6 +978,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         scala_version: selectedArtifact?.scala_version || '2.13',
         listener_port: listenerPort,
         controller_port: controllerPort,
+        broker_jmx_port: DEFAULT_BROKER_JMX_PORT,
+        controller_jmx_port: DEFAULT_CONTROLLER_JMX_PORT,
         zookeeper_port: deploymentMode === 'zookeeper' ? controllerPort : undefined,
         zookeeper_peer_port: zookeeperPeerPort,
         zookeeper_election_port: zookeeperElectionPort,
@@ -1090,9 +1121,16 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-  const getHostPorts = (hostId: string) => hostPorts[hostId] || { listenerPort, controllerPort, zookeeperPeerPort, zookeeperElectionPort };
+  const getHostPorts = (hostId: string): HostPorts => hostPorts[hostId] || {
+    listenerPort,
+    controllerPort,
+    brokerJmxPort: DEFAULT_BROKER_JMX_PORT,
+    controllerJmxPort: DEFAULT_CONTROLLER_JMX_PORT,
+    zookeeperPeerPort,
+    zookeeperElectionPort,
+  };
 
-  const updateHostPort = (hostId: string, key: string, value: number) => {
+  const updateHostPort = (hostId: string, key: HostPortKey, value: number) => {
     setHostPorts(prev => ({
       ...prev,
       [hostId]: { ...getHostPorts(hostId), [key]: value }
@@ -1106,12 +1144,16 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const portFieldsForHost = (hostId: string) => {
     const role = rolesByHost[hostId] || defaultRoleForMode;
-    const fields: Array<{ key: 'listenerPort' | 'controllerPort' | 'zookeeperPeerPort' | 'zookeeperElectionPort'; label: string }> = [];
+    const fields: Array<{ key: HostPortKey; label: string }> = [];
     if (['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role)) {
       fields.push({ key: 'listenerPort', label: 'Broker Port' });
+      fields.push({ key: 'brokerJmxPort', label: 'Broker JMX Port' });
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
       fields.push({ key: 'controllerPort', label: 'Controller Port' });
+      if (role === 'controller' || role === 'separate') {
+        fields.push({ key: 'controllerJmxPort', label: 'Controller JMX Port' });
+      }
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
       fields.push(
@@ -1130,12 +1172,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     const hasBroker = ['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(role);
     if (hasBroker) {
       ports.add(hp.listenerPort);
-      ports.add(7071);
+      ports.add(hp.brokerJmxPort);
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
       ports.add(hp.controllerPort);
       if (role === 'controller' || role === 'separate') {
-        ports.add(7072);
+        ports.add(hp.controllerJmxPort);
       }
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
@@ -2070,9 +2112,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                     </div>
                     <div className="cd-node-port-grid" style={{ marginBottom: '12px' }}>
                       {portFieldsForHost(configModalHost.id).filter(field => {
-                        if (kind === 'broker') return field.key === 'listenerPort';
-                        if (kind === 'controller') return field.key === 'controllerPort';
-                        if (kind === 'zookeeper') return field.key !== 'listenerPort';
+                        if (kind === 'broker') return field.key === 'listenerPort' || field.key === 'brokerJmxPort';
+                        if (kind === 'controller') return field.key === 'controllerPort' || field.key === 'controllerJmxPort';
+                        if (kind === 'zookeeper') return ['controllerPort', 'zookeeperPeerPort', 'zookeeperElectionPort'].includes(field.key);
                         return true;
                       }).map(field => (
                         <label className="cd-node-port-field" key={field.key}>
@@ -2086,15 +2128,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                           />
                         </label>
                       ))}
-                      {kind === 'controller' ? (
+                      {kind === 'zookeeper' ? (
                         <label className="cd-node-port-field read-only">
-                          <span>Controller JMX Port</span>
-                          <input type="number" value={7072} readOnly aria-label="Controller JMX port" />
-                        </label>
-                      ) : ['broker', 'server', 'zookeeper'].includes(kind) ? (
-                        <label className="cd-node-port-field read-only">
-                          <span>{kind === 'zookeeper' ? 'ZooKeeper JMX Port' : 'Broker JMX Port'}</span>
-                          <input type="number" value={7071} readOnly aria-label={kind === 'zookeeper' ? 'ZooKeeper JMX port' : 'Broker JMX port'} />
+                          <span>ZooKeeper JMX Port</span>
+                          <input type="number" value={7071} readOnly aria-label="ZooKeeper JMX port" />
                         </label>
                       ) : null}
                     </div>
