@@ -28,6 +28,9 @@ public class ActivityAlertService {
     static final String EXTERNAL_DEGRADED_TITLE = "External Cluster Degraded";
     static final String EXTERNAL_FAILED_TITLE = "External Cluster Failed";
     static final String EXTERNAL_AGENT_PARTIAL_TITLE = "External agents partially connected";
+    static final String EXTERNAL_AGENT_OFFLINE_TITLE = "External Agent Offline";
+
+    public record OfflineAgentInfo(String id, String hostname, List<String> ips) {}
 
     private final ActivityLogRepository activityLogRepository;
     private final AlertRepository alertRepository;
@@ -121,7 +124,7 @@ public class ActivityAlertService {
             String healthStatus,
             long freshAgents,
             long registeredAgents,
-            List<String> affectedIps) {
+            List<OfflineAgentInfo> offlineAgents) {
         if (clusterId == null) {
             return;
         }
@@ -132,17 +135,26 @@ public class ActivityAlertService {
         Set<String> activeKeys = new java.util.HashSet<>();
         boolean agentsUnavailable = registeredAgents > 0 && freshAgents < registeredAgents;
         if (agentsUnavailable || "PARTIAL".equals(normalizedStatus)) {
-            String partialKey = externalAgentPartialKey(clusterId);
-            activeKeys.add(partialKey);
-            activateAlert(
-                    partialKey,
-                    "WARNING",
-                    EXTERNAL_AGENT_PARTIAL_TITLE,
-                    "Discovery agents for external cluster '" + clusterName + "' are partially connected: "
-                            + freshAgents + " of " + registeredAgents + " agent(s) have a fresh heartbeat.",
-                    clusterId,
-                    affectedIps);
+            if (offlineAgents != null) {
+                for (OfflineAgentInfo agent : offlineAgents) {
+                    String agentKey = externalAgentOfflineKey(clusterId, agent.id());
+                    activeKeys.add(agentKey);
+                    activateAlert(
+                            agentKey,
+                            "WARNING",
+                            EXTERNAL_AGENT_OFFLINE_TITLE,
+                            "The discovery agent on " + (agent.hostname() != null && !agent.hostname().isBlank() ? agent.hostname() : "an unknown host") + " for external cluster '" + clusterName + "' has stopped reporting.",
+                            clusterId,
+                            agent.ips() != null ? agent.ips() : List.of());
+                }
+            }
         }
+
+        List<String> allOfflineIps = offlineAgents != null ? offlineAgents.stream()
+                .flatMap(a -> a.ips() == null ? java.util.stream.Stream.empty() : a.ips().stream())
+                .distinct()
+                .toList() : List.of();
+
         if ("DEGRADED".equals(normalizedStatus) && !agentsUnavailable) {
             String degradedKey = externalDegradedKey(clusterId);
             activeKeys.add(degradedKey);
@@ -153,7 +165,7 @@ public class ActivityAlertService {
                     "The Discovery Agent for external cluster '" + clusterName
                             + "' has stopped reporting, but Kafka is still reachable.",
                     clusterId,
-                    affectedIps);
+                    allOfflineIps);
         }
         if ("FAILED".equals(normalizedStatus)) {
             // This key intentionally matches AlertController's runtime failure
@@ -260,7 +272,11 @@ public class ActivityAlertService {
         return "external-agent-partial-" + clusterId;
     }
 
+    static String externalAgentOfflineKey(UUID clusterId, String agentId) {
+        return "external-agent-offline-" + clusterId + "-" + agentId;
+    }
+
     private static List<String> externalHealthAlertTitles() {
-        return List.of(EXTERNAL_DEGRADED_TITLE, EXTERNAL_FAILED_TITLE, EXTERNAL_AGENT_PARTIAL_TITLE);
+        return List.of(EXTERNAL_DEGRADED_TITLE, EXTERNAL_FAILED_TITLE, EXTERNAL_AGENT_PARTIAL_TITLE, EXTERNAL_AGENT_OFFLINE_TITLE);
     }
 }

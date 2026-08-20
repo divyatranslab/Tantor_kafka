@@ -31,12 +31,10 @@ class ActivityAlertServiceTest {
         when(repository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
-                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
-                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
                 .thenReturn(List.of(legacy));
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED", 0, 0);
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "DEGRADED", 0, 0, (List<ActivityAlertService.OfflineAgentInfo>) null);
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
         verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
@@ -72,12 +70,10 @@ class ActivityAlertServiceTest {
         when(repository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
-                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
-                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
                 .thenReturn(List.of(degraded, failed));
 
-        service.synchronizeExternalClusterHealth(clusterId, "payments", "SUCCESS", 1, 1);
+        service.synchronizeExternalClusterHealth(clusterId, "payments", "SUCCESS", 1, 1, (List<ActivityAlertService.OfflineAgentInfo>) null);
 
         assertThat(degraded.getStatus()).isEqualTo("RESOLVED");
         assertThat(degraded.getResolvedAt()).isNotNull();
@@ -107,9 +103,7 @@ class ActivityAlertServiceTest {
                 activeClusterId);
         when(repository.findByStatusAndTitleIn(
                 "ACTIVE",
-                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
-                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
                 .thenReturn(List.of(orphaned, current));
 
         service.resolveOrphanedExternalClusterHealthAlerts(Set.of(activeClusterId));
@@ -122,58 +116,67 @@ class ActivityAlertServiceTest {
     }
 
     @Test
-    void createsExplicitPartialConnectionAlert() {
+    void createsIndependentOfflineAgentAlerts() {
         UUID clusterId = UUID.randomUUID();
         AlertRepository repository = mock(AlertRepository.class);
         ActivityAlertService service = new ActivityAlertService(
                 mock(ActivityLogRepository.class), repository);
 
-        when(repository.findByAlertKey(ActivityAlertService.externalAgentPartialKey(clusterId)))
+        String agentId = "agent-1";
+        when(repository.findByAlertKey(ActivityAlertService.externalAgentOfflineKey(clusterId, agentId)))
                 .thenReturn(Optional.empty());
         when(repository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
-                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
-                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
                 .thenReturn(List.of());
 
+        List<ActivityAlertService.OfflineAgentInfo> offlineAgents = List.of(
+                new ActivityAlertService.OfflineAgentInfo(agentId, "host-1", List.of("192.168.3.191")));
+
         service.synchronizeExternalClusterHealth(
-                clusterId, "payments", "PARTIAL", 2, 3, List.of("192.168.3.191", "192.168.3.191"));
+                clusterId, "payments", "PARTIAL", 2, 3, offlineAgents);
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
         verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getTitle()).isEqualTo(ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE);
-        assertThat(saved.getValue().getDescription()).contains("2 of 3");
+        assertThat(saved.getValue().getTitle()).isEqualTo(ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE);
+        assertThat(saved.getValue().getDescription()).contains("host-1");
         assertThat(saved.getValue().getAffectedIps()).isEqualTo("192.168.3.191");
+        assertThat(saved.getValue().getAlertKey()).isEqualTo(ActivityAlertService.externalAgentOfflineKey(clusterId, agentId));
     }
 
     @Test
-    void keepsAgentAvailabilityAlertActiveWhenNoAgentsAreFresh() {
+    void keepsAgentOfflineAlertsActive() {
         UUID clusterId = UUID.randomUUID();
         AlertRepository repository = mock(AlertRepository.class);
         ActivityAlertService service = new ActivityAlertService(
                 mock(ActivityLogRepository.class), repository);
 
-        when(repository.findByAlertKey(ActivityAlertService.externalAgentPartialKey(clusterId)))
+        String agentId = "agent-2";
+        when(repository.findByAlertKey(ActivityAlertService.externalAgentOfflineKey(clusterId, agentId)))
                 .thenReturn(Optional.empty());
         when(repository.findByClusterIdAndStatusAndTitleIn(
                 clusterId,
                 "ACTIVE",
-                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE,
-                        ActivityAlertService.EXTERNAL_FAILED_TITLE,
-                        ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE)))
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
                 .thenReturn(List.of());
 
+        List<ActivityAlertService.OfflineAgentInfo> offlineAgents = List.of(
+                new ActivityAlertService.OfflineAgentInfo(agentId, "host-2", List.of("192.168.3.229")));
+
         service.synchronizeExternalClusterHealth(
-                clusterId, "payments", "DEGRADED", 0, 3, List.of("192.168.3.229"));
+                clusterId, "payments", "DEGRADED", 0, 3, offlineAgents);
 
         ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getAlertKey())
-                .isEqualTo(ActivityAlertService.externalAgentPartialKey(clusterId));
-        assertThat(saved.getValue().getStatus()).isEqualTo("ACTIVE");
-        assertThat(saved.getValue().getAffectedIps()).isEqualTo("192.168.3.229");
+        verify(repository, org.mockito.Mockito.atLeastOnce()).save(saved.capture());
+        Alert active = saved.getAllValues().stream()
+                .filter(value -> ActivityAlertService.externalAgentOfflineKey(clusterId, agentId)
+                        .equals(value.getAlertKey()))
+                .findFirst()
+                .orElseThrow();
+        
+        assertThat(active.getStatus()).isEqualTo("ACTIVE");
+        assertThat(active.getAffectedIps()).isEqualTo("192.168.3.229");
     }
 
     private Alert alert(String key, String title, String status, UUID clusterId) {
@@ -186,3 +189,4 @@ class ActivityAlertServiceTest {
         return alert;
     }
 }
+

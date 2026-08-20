@@ -2125,11 +2125,16 @@ public class ExternalClusterService {
                 long freshAgents = discoveryAgents.stream()
                         .filter(this::isFreshOnlineAgent)
                         .count();
-                List<String> affectedAgentIps = discoveryAgents.stream()
+                List<ActivityAlertService.OfflineAgentInfo> offlineAgents = discoveryAgents.stream()
                         .filter(agent -> !isFreshOnlineAgent(agent))
-                        .flatMap(agent -> parseAgentAddresses(agent.getIpAddresses()).stream())
-                        .filter(address -> address != null && !address.isBlank())
-                        .distinct()
+                        .map(agent -> new ActivityAlertService.OfflineAgentInfo(
+                                agent.getId(),
+                                agent.getHostname(),
+                                parseAgentAddresses(agent.getIpAddresses()).stream()
+                                        .filter(address -> address != null && !address.isBlank())
+                                        .distinct()
+                                        .toList()
+                        ))
                         .toList();
 
                 String newStatus;
@@ -2154,7 +2159,7 @@ public class ExternalClusterService {
                 // transition. This also repairs legacy ACTIVE alerts left behind
                 // after an agent recovered before this lifecycle was introduced.
                 activityAlertService.synchronizeExternalClusterHealth(
-                        cluster.getId(), cluster.getName(), newStatus, freshAgents, registeredAgents, affectedAgentIps);
+                        cluster.getId(), cluster.getName(), newStatus, freshAgents, registeredAgents, offlineAgents);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
             }
