@@ -56,6 +56,21 @@ $applicationImages = [ordered]@{
     'tantor-artifact-repository' = "localhost/tantor-artifact-repository:$Version"
 }
 
+Write-Host "Running release quality gates..."
+Write-Host "Validating UI..."
+Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-ui docker.io/library/node:20-bookworm bash -c "npm ci && npm run lint:ci"
+
+Write-Host "Validating Server..."
+Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-server docker.io/library/maven:3.9.16-eclipse-temurin-21-noble mvn -B verify
+
+Write-Host "Validating Artifact Repository..."
+Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-artifact-repository docker.io/library/maven:3.9.16-eclipse-temurin-21-noble mvn -B verify
+
+Write-Host "Validating Agents..."
+Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-agent docker.io/library/golang:1.22-bookworm go test ./...
+Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-discovery-agent docker.io/library/golang:1.22-bookworm go test ./...
+
+
 Write-Host "Building Tantor $Version images from digest-pinned Dockerfiles..."
 Invoke-Podman build --pull=always --build-arg NGINX_CONFIG=nginx.production.conf --label "org.opencontainers.image.version=$Version" --tag $applicationImages['tantor-ui'] (Join-Path $PSScriptRoot 'tantor-ui')
 Invoke-Podman build --pull=always --label "org.opencontainers.image.version=$Version" --tag $applicationImages['tantor-server'] (Join-Path $PSScriptRoot 'tantor-server')

@@ -1,5 +1,7 @@
 # build.ps1 - Automated Build Script for Tantor Java Backends
 
+$ErrorActionPreference = 'Stop'
+
 $MavenVersion = "3.9.6"
 $MavenUrl = "https://archive.apache.org/dist/maven/maven-3/$MavenVersion/binaries/apache-maven-$MavenVersion-bin.zip"
 $MavenZip = "$PSScriptRoot\apache-maven.zip"
@@ -49,12 +51,6 @@ if ($LASTEXITCODE -ne 0) { throw "Management Server verification failed." }
 # Restore original directory
 cd $PSScriptRoot
 
-Write-Host "`nBuild Complete!" -ForegroundColor Green
-Write-Host "To start the Artifact Repository:"
-Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
-Write-Host "To start the Management Server:"
-Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"
-
 # 4. Build Agent (Linux amd64)
 Write-Host "`n=== Building Tantor Agent (Linux) ===" -ForegroundColor Magenta
 if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
@@ -86,3 +82,9 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
 } else {
     Write-Host "Go compiler not found in the 'go' directory. Skipping discovery agent compilation." -ForegroundColor Yellow
 }
+
+Write-Host "`nBuild Complete!" -ForegroundColor Green
+Write-Host "To start the Artifact Repository:"
+Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+Write-Host "To start the Management Server:"
+Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"

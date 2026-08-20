@@ -4,7 +4,7 @@ WORKDIR /src
 COPY pom.xml .
 RUN mvn -B -q dependency:go-offline
 COPY src ./src
-RUN mvn -B -q clean package \
+RUN mvn -B -q clean package -DskipTests \
     && cp "$(find target -maxdepth 1 -type f -name 'tantor-server-*.jar' ! -name '*-dns-resolver.jar' -print -quit)" target/app.jar \
     && cp "$(find target -maxdepth 1 -type f -name 'tantor-server-*-dns-resolver.jar' -print -quit)" target/dns-resolver.jar
 
