@@ -513,7 +513,7 @@ export function Artifacts() {
       <header className="page-header flex-between">
         <div>
           <h1>Artifacts</h1>
-          <p>Manage your Linux sDistribute, activate, deactivate, and remove Kafka parcels on managed hostservers for Kafka deployment</p>
+          <p>Manage your Linux Distribute, activate, deactivate, and remove Kafka parcels on managed hostservers for Kafka deployment</p>
         </div>
         <div className="header-actions">
           {uploadMsg && (
