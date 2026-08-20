@@ -171,7 +171,6 @@ export function Brokers() {
           </div>
           <div className="card-body">
             <span className="value">{agg.avgCpu.toFixed(1)}%</span>
-            <span className="subtext">{brokers.length} Across {brokers.length === 1 ? 'Node' : 'Nodes'}</span>
           </div>
         </div>
       </div>
