@@ -1591,9 +1591,12 @@ func jmxRequiredForTask(t *api.Task, isBroker, isController bool) bool {
 
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
-	findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname $(dirname $(readlink -f $(command -v $JAVA_CMD))); fi`
-	out, _, _ := d.exec.Run(ctx, "bash", "-c", findJavaCmd)
-	javaHome := strings.TrimSpace(out)
+	javaHome := strings.TrimSpace(t.Parameters["java_home"])
+	if javaHome == "" {
+		findJavaCmd := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/*/bin/java /usr/java/*/bin/java /opt/*/bin/java; do if [ -x "$p" ]; then JAVA_CMD="$p"; break; fi; if command -v "$p" >/dev/null 2>&1; then JAVA_CMD=$(command -v "$p"); break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname "$(dirname "$(readlink -f "$JAVA_CMD")")"; fi`
+		out, _, _ := d.exec.Run(ctx, "bash", "-c", findJavaCmd)
+		javaHome = strings.TrimSpace(out)
+	}
 	if javaHome == "" || javaHome == "." {
 		javaHome = "/usr" // fallback
 	}

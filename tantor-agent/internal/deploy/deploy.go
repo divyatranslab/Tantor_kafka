@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -173,6 +174,9 @@ func (e *Engine) rollbackDeployment(ctx context.Context, t *api.Task) (*api.Task
 }
 
 func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	if err := e.prepareJavaRuntime(ctx, t); err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka deployment failed: %v", err)), nil
+	}
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
 	currentStep := "Starting deployment"
 
@@ -204,6 +208,55 @@ func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult
 		Status:    "SUCCESS",
 		LogOutput: logOutput,
 	}, nil
+}
+
+// prepareJavaRuntime makes Java installed outside the systemd service PATH
+// available to Kafka launch scripts. Prerequisite checks source login profiles,
+// while deployment commands inherit the agent's deliberately restricted PATH;
+// resolving Java here keeps both paths consistent.
+func (e *Engine) prepareJavaRuntime(ctx context.Context, t *api.Task) error {
+	const discoverJava = `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/*/bin/java /usr/java/*/bin/java /opt/*/bin/java; do if [ -x "$p" ]; then JAVA_CMD="$p"; break; fi; if command -v "$p" >/dev/null 2>&1; then JAVA_CMD=$(command -v "$p"); break; fi; done; if [ -n "$JAVA_CMD" ]; then dirname "$(dirname "$(readlink -f "$JAVA_CMD")")"; fi`
+
+	out, _, err := e.exec.Run(ctx, "bash", "-c", discoverJava)
+	javaHome := filepath.Clean(strings.TrimSpace(out))
+	if err != nil || javaHome == "" || javaHome == "." || !filepath.IsAbs(javaHome) {
+		return fmt.Errorf("Java runtime was not found; install Java and expose it through PATH or a standard JVM directory")
+	}
+	javaBin := filepath.Join(javaHome, "bin", "java")
+	if _, _, err := e.exec.Run(ctx, javaBin, "-version"); err != nil {
+		return fmt.Errorf("resolved Java runtime %s is not executable: %w", javaBin, err)
+	}
+
+	if err := os.Setenv("JAVA_HOME", javaHome); err != nil {
+		return fmt.Errorf("set JAVA_HOME: %w", err)
+	}
+	binDir := filepath.Join(javaHome, "bin")
+	pathValue := os.Getenv("PATH")
+	if !pathListContains(pathValue, binDir) {
+		if pathValue == "" {
+			pathValue = binDir
+		} else {
+			pathValue = binDir + string(os.PathListSeparator) + pathValue
+		}
+		if err := os.Setenv("PATH", pathValue); err != nil {
+			return fmt.Errorf("add Java to PATH: %w", err)
+		}
+	}
+	if t.Parameters == nil {
+		t.Parameters = map[string]string{}
+	}
+	t.Parameters["java_home"] = javaHome
+	return nil
+}
+
+func pathListContains(pathValue, expected string) bool {
+	expected = filepath.Clean(expected)
+	for _, entry := range filepath.SplitList(pathValue) {
+		if filepath.Clean(entry) == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func friendlyDeploymentFailure(step string, err error) string {
