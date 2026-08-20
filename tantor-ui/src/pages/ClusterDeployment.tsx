@@ -848,6 +848,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
       selected.push({ label: 'Controller port', value: ports.controllerPort });
+      if (role === 'controller' || role === 'separate') {
+        selected.push({ label: 'Controller JMX port', value: 7072 });
+      }
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
       selected.push(
@@ -1131,6 +1134,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
     if (deploymentMode === 'kraft' && ['controller', 'broker_controller', 'separate'].includes(role)) {
       ports.add(hp.controllerPort);
+      if (role === 'controller' || role === 'separate') {
+        ports.add(7072);
+      }
     }
     if (deploymentMode === 'zookeeper' && ['zookeeper', 'broker_zookeeper'].includes(role)) {
       ports.add(hp.controllerPort);
@@ -2063,7 +2069,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       </div>
                     </div>
                     <div className="cd-node-port-grid" style={{ marginBottom: '12px' }}>
-                      {portFieldsForHost(configModalHost.id).map(field => (
+                      {portFieldsForHost(configModalHost.id).filter(field => {
+                        if (kind === 'broker') return field.key === 'listenerPort';
+                        if (kind === 'controller') return field.key === 'controllerPort';
+                        if (kind === 'zookeeper') return field.key !== 'listenerPort';
+                        return true;
+                      }).map(field => (
                         <label className="cd-node-port-field" key={field.key}>
                           <span>{field.label}</span>
                           <input
@@ -2075,12 +2086,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                           />
                         </label>
                       ))}
-                      {['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[configModalHost.id] || defaultRoleForMode) && (
+                      {kind === 'controller' ? (
                         <label className="cd-node-port-field read-only">
-                          <span>Broker JMX Port</span>
-                          <input type="number" value={7071} readOnly aria-label="Broker JMX port" />
+                          <span>Controller JMX Port</span>
+                          <input type="number" value={7072} readOnly aria-label="Controller JMX port" />
                         </label>
-                      )}
+                      ) : ['broker', 'server', 'zookeeper'].includes(kind) ? (
+                        <label className="cd-node-port-field read-only">
+                          <span>{kind === 'zookeeper' ? 'ZooKeeper JMX Port' : 'Broker JMX Port'}</span>
+                          <input type="number" value={7071} readOnly aria-label={kind === 'zookeeper' ? 'ZooKeeper JMX port' : 'Broker JMX port'} />
+                        </label>
+                      ) : null}
                     </div>
                     {selectedPortValidationErrors.filter(error => error.startsWith(`${configModalHost.hostname}:`)).map(error => (
                       <div className="cd-node-port-error" key={error}>{error.replace(`${configModalHost.hostname}: `, '')}</div>
