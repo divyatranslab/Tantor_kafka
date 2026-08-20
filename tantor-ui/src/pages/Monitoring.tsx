@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check, Server } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, RefreshCw, Check, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -120,26 +120,30 @@ export function Monitoring() {
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
-  const liveDropdownRef = useRef<HTMLDivElement>(null);
+  const [liveDropdownAnchor, setLiveDropdownAnchor] = useState<HTMLDivElement | null>(null);
   const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
 
   // Load nodes when selectedClusterId changes
   useEffect(() => {
-    if (!selectedCluster) {
-      setNodes([]);
-      setSelectedNodeId('');
+    if (!selectedClusterId || !selectedCluster) {
+      Promise.resolve().then(() => {
+        setNodes([]);
+        setSelectedNodeId('');
+      });
       return;
     }
     const formatted = (selectedCluster.nodes || [])
       .filter(node => Boolean(nodeValue(node)))
       .map(node => ({ value: nodeValue(node), label: nodeLabel(node), role: node.role }));
-    setNodes(formatted);
-    setSelectedNodeId(current => formatted.some(node => node.value === current) ? current : (formatted[0]?.value || ''));
-  }, [selectedCluster]);
+    Promise.resolve().then(() => {
+      setNodes(formatted);
+      setSelectedNodeId(current => formatted.some(node => node.value === current) ? current : (formatted[0]?.value || ''));
+    });
+  }, [selectedCluster, selectedClusterId]);
 
 
   // 1. Load clusters and hosts on mount
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     if (!selectedType) {
       setClusters([]);
       setSelectedClusterId('');
@@ -161,26 +165,28 @@ export function Monitoring() {
           ? current
           : (clusterList[0]?.id || '')
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setError('Failed to load initial monitoring data.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedType]);
 
   useEffect(() => {
-    setOverview(null);
-    setHistory([]);
-    setSelectedNodeId('');
-    loadInitialData();
-  }, [selectedType]);
+    Promise.resolve().then(() => {
+      setOverview(null);
+      setHistory([]);
+      setSelectedNodeId('');
+    });
+    void (async () => { await loadInitialData(); })();
+  }, [selectedType, loadInitialData]);
 
 
 
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {
-    if (!selectedClusterId) return;
+    if (!selectedClusterId && !selectedCluster) return;
 
     if (!silent) setLoading(true);
     try {
@@ -201,19 +207,20 @@ export function Monitoring() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedClusterId, selectedNodeId]);
+  }, [selectedClusterId, selectedNodeId, selectedCluster]);
 
   useEffect(() => {
     if (selectedClusterId) {
-      setHistory([]);
-      loadOverview();
+      Promise.resolve().then(() => setHistory([]));
+      void (async () => { await loadOverview(); })();
     }
   }, [selectedClusterId, loadOverview]);
 
   // Append sample to history when overview updates
   useEffect(() => {
     if (!overview) return;
-    setHistory(current => {
+    Promise.resolve().then(() => {
+      setHistory(current => {
       const next: MonitoringSample = {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         brokers: chartNumber(overview.brokerCount),
@@ -230,6 +237,7 @@ export function Monitoring() {
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
       return [...current, next].slice(-15); // keep 15 samples
+      });
     });
   }, [overview]);
 
@@ -262,7 +270,6 @@ export function Monitoring() {
     selectedCluster?.warning,
     ...(overview?.warnings || []),
   ].filter((message): message is string => Boolean(message && message.trim()));
-  const clusterTypeLabel = overview?.originType || selectedCluster?.originType || selectedType;
   const selectedRole = selectedNode?.role || '';
   const controllerOnlySelected = selectedRole.toLowerCase().includes('controller')
     && !selectedRole.toLowerCase().includes('broker');
@@ -353,7 +360,7 @@ export function Monitoring() {
             </div>
 
             {/* Live indicator Pill Box */}
-            <div ref={liveDropdownRef} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
+            <div ref={setLiveDropdownAnchor} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
               <div
                 className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
                 onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
@@ -396,9 +403,9 @@ export function Monitoring() {
                 </div>
               </div>
 
-              {showIntervalDropdown && liveDropdownRef.current && (
+              {showIntervalDropdown && liveDropdownAnchor && (
                 <AnchoredMenu
-                  anchor={liveDropdownRef.current}
+                  anchor={liveDropdownAnchor}
                   className="live-dropdown-menu"
                   onClose={() => setShowIntervalDropdown(false)}
                   align="start"

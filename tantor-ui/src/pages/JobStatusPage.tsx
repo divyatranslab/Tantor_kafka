@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check, MoreVertical } from 'lucide-react';
+import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction } from '../components/ConfirmDialog';
+import { confirmAction } from '../components/confirmUtils';
 import './JobStatusPage.css';
 
 type Job = {
@@ -53,7 +53,7 @@ function getFirstIp(ipAddresses?: string): string {
   } catch {
     // Fall back to a plain IP value if this server does not return JSON.
   }
-  return ipAddresses.replace(/[\[\]"]/g, '').split(',')[0]?.trim() || '';
+  return ipAddresses.replace(/[[\]"]/g, '').split(',')[0]?.trim() || '';
 }
 
 function getBusinessStepName(rawName: string): string {
@@ -110,7 +110,7 @@ export function JobStatusPage() {
   const [showDropdown, setShowDropdown] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchJob = async () => {
+  const fetchJob = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}`);
       if (res.ok) {
@@ -134,17 +134,17 @@ export function JobStatusPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchJob();
+    void (async () => { await fetchJob(); })();
     const interval = setInterval(() => {
       if (!['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job?.status || '')) {
-         fetchJob();
+        void (async () => { await fetchJob(); })();
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [id, job?.status]);
+  }, [fetchJob, job?.status]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -284,7 +284,7 @@ export function JobStatusPage() {
 
   const renderLogs = (logsText: string) => {
     if (!logsText) return 'Waiting for execution logs...';
-    return logsText.split('\n').map((line, idx) => {
+    return logsText.split('\n').map((line, lineIndex) => {
       let className = 'log-line';
       const lowerLine = line.toLowerCase();
       if (lowerLine.includes('completed')) {
@@ -300,7 +300,7 @@ export function JobStatusPage() {
           return host.ip ? `${host.name} (${host.ip})` : host.name;
         }
       );
-      return <div key={idx} className={className}>{displayLine || ' '}</div>;
+      return <div key={lineIndex} className={className}>{displayLine || ' '}</div>;
     });
   };
 
@@ -317,7 +317,6 @@ export function JobStatusPage() {
 
   const totalSteps = displaySteps.length;
   const completedStepsCount = displaySteps.filter(s => ['SUCCESS', 'ROLLED_BACK'].includes(s.status)).length;
-  const progressPercentage = totalSteps === 0 ? 0 : Math.round((completedStepsCount / totalSteps) * 100);
 
   return (
     <div className="job-status-page animate-fade-in">
@@ -453,7 +452,7 @@ export function JobStatusPage() {
                 </div>
               )}
               <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                {displaySteps.map((step, idx) => {
+                {displaySteps.map((step) => {
                   const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
                   const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
                   const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);

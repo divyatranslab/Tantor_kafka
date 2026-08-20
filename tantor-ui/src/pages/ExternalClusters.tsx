@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -15,6 +15,19 @@ import {
 import { getValidToken } from '../services/KeycloakService';
 import './ExternalClusters.css';
 
+interface BrokerNode {
+  node_id?: string | number;
+  broker_id?: string | number;
+  id?: string | number;
+  host?: string;
+  port?: number;
+  isBroker?: boolean;
+  isController?: boolean;
+  hasActiveAgent?: boolean;
+  agentDiscoveryKey?: string;
+  [key: string]: unknown;
+}
+
 interface BootstrapResult {
   name?: string;
   success?: boolean;
@@ -29,7 +42,7 @@ interface BootstrapResult {
   cluster_id?: string;
   kafka_cluster_id?: string;
   brokerCount?: number;
-  brokers?: any[];
+  brokers?: BrokerNode[];
   topicCount?: number;
   topic_count?: number;
   topics?: unknown[];
@@ -138,7 +151,7 @@ export function ExternalClusters() {
   tls_insecure_skip_verify: true`
   ), [serverHint]);
 
-  const loadAgents = async () => {
+  const loadAgents = useCallback(async () => {
     setAgentsLoading(true);
     try {
       const res = await fetch('/api/v1/ui/external-clusters/agents');
@@ -148,13 +161,13 @@ export function ExternalClusters() {
     } finally {
       setAgentsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadAgents();
-    const timer = window.setInterval(loadAgents, 10000);
+    void (async () => { await loadAgents(); })();
+    const timer = window.setInterval(() => { void (async () => { await loadAgents(); })(); }, 10000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [loadAgents]);
 
   const formatHeartbeat = (value?: string) => {
     if (!value) return 'Never';
@@ -223,14 +236,14 @@ export function ExternalClusters() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      const data: BootstrapResult = await res.json();
       setBootstrapResult(data);
 
       if (data.brokers) {
         const initialSelection: Record<string, string> = {};
-        data.brokers.forEach((b: any) => {
+        data.brokers.forEach((b) => {
           if (b.hasActiveAgent && b.agentDiscoveryKey) {
-            initialSelection[b.host] = b.agentDiscoveryKey;
+            initialSelection[b.host ?? ''] = b.agentDiscoveryKey;
           }
         });
         setSelectedAgents(initialSelection);
@@ -240,8 +253,8 @@ export function ExternalClusters() {
         throw new Error(data.message || 'Bootstrap connection failed');
       }
       setBanner('Kafka details fetched successfully.');
-    } catch (e: any) {
-      setError(e.message || 'Failed to inspect the Kafka cluster');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to inspect the Kafka cluster');
     } finally {
       setTesting(false);
     }
@@ -295,7 +308,7 @@ export function ExternalClusters() {
     setBanner('');
     try {
       const kafkaMode = registrationKafkaMode(bootstrapResult);
-      const normalizedBrokers = (bootstrapResult?.brokers || []).map((broker: any) =>
+      const normalizedBrokers = (bootstrapResult?.brokers || []).map((broker) =>
         kafkaMode === 'ZooKeeper'
           ? { ...broker, isBroker: true, isController: false }
           : broker
@@ -304,9 +317,9 @@ export function ExternalClusters() {
         ...form,
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
         brokerCount: bootstrapResult?.brokerCount
-          ?? bootstrapResult?.brokers?.filter((node: any) => node.isBroker !== false).length
+          ?? bootstrapResult?.brokers?.filter((node) => node.isBroker !== false).length
           ?? 0,
-        agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
+        agentFound: !!bootstrapResult?.brokers?.some((b) => b.hasActiveAgent),
         security: form.securityProtocol,
         brokers: normalizedBrokers,
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
@@ -345,8 +358,8 @@ export function ExternalClusters() {
       setForm(prev => ({ ...prev, name: '', bootstrapServers: '', kafkaVersion: '' }));
       setBootstrapResult(null);
       navigate(`/clusters`);
-    } catch (e: any) {
-      setError(e.message || 'Failed to connect external cluster');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to connect external cluster');
     } finally {
       setRegistering(false);
     }
@@ -638,7 +651,7 @@ export function ExternalClusters() {
                   <div className="bootstrap-summary">
                     <div className="summary-item">
                       <span>{bootstrapResult.brokerCount
-                        ?? bootstrapResult.brokers?.filter((node: any) => node.isBroker !== false).length
+                        ?? bootstrapResult.brokers?.filter((node) => node.isBroker !== false).length
                         ?? 0} broker(s) detected</span>
                     </div>
                     <div className="summary-item">
@@ -678,11 +691,11 @@ export function ExternalClusters() {
                           </tr>
                         </thead>
                         <tbody>
-                          {bootstrapResult.brokers.map((broker: any) => {
-                            const isSelected = !!selectedAgents[broker.host];
+                          {bootstrapResult.brokers.map((broker) => {
+                            const isSelected = !!selectedAgents[broker.host ?? ''];
                             const hasAgent = !!broker.hasActiveAgent;
                             return (
-                              <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                              <tr key={broker.node_id ?? broker.broker_id ?? broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
                                 <td style={{ padding: '6px', textAlign: 'center' }}>
                                   <input
                                     type="checkbox"
@@ -692,9 +705,9 @@ export function ExternalClusters() {
                                       setSelectedAgents(prev => {
                                         const next = { ...prev };
                                         if (e.target.checked) {
-                                          next[broker.host] = broker.agentDiscoveryKey || broker.host;
+                                          next[broker.host ?? ''] = broker.agentDiscoveryKey || broker.host || '';
                                         } else {
-                                          delete next[broker.host];
+                                          delete next[broker.host ?? ''];
                                         }
                                         return next;
                                       });
@@ -702,7 +715,7 @@ export function ExternalClusters() {
                                     style={{ cursor: 'pointer' }}
                                   />
                                 </td>
-                                <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
+                                <td style={{ padding: '6px' }}><strong>{broker.node_id ?? broker.broker_id ?? broker.id}</strong></td>
                                 <td style={{ padding: '6px' }}>
                                   {broker.host}
                                   {!hasAgent && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}

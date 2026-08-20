@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
+import { ChevronLeft, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -80,6 +80,9 @@ const compatibilityOptions = [
   'FULL',
   'FULL_TRANSITIVE'
 ];
+
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 /** Unwraps Schema Registry responses that contain an encoded schema string. */
 const schemaSource = (schema: unknown, fallback = '{}'): string => {
@@ -235,11 +238,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -248,9 +251,9 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
+          anchor={anchor}
           className="ds-custom-select-dropdown"
           onClose={() => setIsOpen(false)}
           align="start"
@@ -279,7 +282,7 @@ type View = 'list' | 'detail' | 'edit';
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
-  const initialSession = useRef(readDataServiceSession<SchemaSummary>('schema-registry', id)).current;
+  const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
   const [summary, setSummary] = useState<SchemaSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
@@ -413,7 +416,7 @@ export function SchemaRegistry() {
   // ── Data fetching ─────────────────────────────────────────────
 
   /** Load all saved SR connections for the instance switcher. */
-  const loadConnections = async () => {
+  const loadConnections = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
       if (!res.ok) return;
@@ -424,7 +427,7 @@ export function SchemaRegistry() {
         setSelectedConnectionId(prev => prev ?? defaultConn.id);
       }
     } catch { /* non-fatal */ }
-  };
+  }, [id]);
 
   /** Open connection modal, optionally pre-filling from an existing connection. */
   const openConnectionModal = (conn?: SavedConnection) => {
@@ -487,8 +490,8 @@ export function SchemaRegistry() {
       await loadConnections();
       if (data.id) setSelectedConnectionId(data.id);
       await load(data.id || null);
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to save connection.');
+    } catch (e: unknown) {
+      setConnectError(errorMessage(e, 'Failed to save connection.'));
     } finally {
       setConnectSaving(false);
     }
@@ -512,8 +515,8 @@ export function SchemaRegistry() {
       setSelectedConnectionId(null);
       await loadConnections();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete connection.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete connection.'));
       setLoading(false);
     }
   };
@@ -573,8 +576,8 @@ export function SchemaRegistry() {
         metadata: { globalCompatibility: compatibility }
       });
       return true;
-    } catch (e: any) {
-      if (requestId === loadRequestId.current) setError(e.message || 'Failed to load Schema Registry.');
+    } catch (e: unknown) {
+      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Schema Registry.'));
       return false;
     } finally {
       if (requestId === loadRequestId.current) setLoading(false);
@@ -660,16 +663,25 @@ export function SchemaRegistry() {
       } else {
         await load(null, discovered);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setHasFetched(false);
-      setError(e.message || 'Failed to detect Schema Registry.');
+      setError(errorMessage(e, 'Failed to detect Schema Registry.'));
     } finally {
       setLoading(false);
     }
   };
 
+  const loadConnectionsRef = useRef(loadConnections);
+  useLayoutEffect(() => {
+    loadConnectionsRef.current = loadConnections;
+  }, [loadConnections]);
+
   // Initial load
-  useEffect(() => { if (id) { loadConnections(); } }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    const timer = window.setTimeout(() => { void loadConnectionsRef.current(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [id]);
 
   // Commit the latest fetched snapshot before the browser can navigate away and
   // unmount this route. A normal effect can run too late when another tab is
@@ -697,7 +709,7 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
       setSubjectCompatibility(data.compatibility || globalCompatibility);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setDetails({
         subject: item.subject,
         latest: { version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema },
@@ -705,7 +717,7 @@ export function SchemaRegistry() {
         compatibility: globalCompatibility
       });
       setSubjectCompatibility(globalCompatibility);
-      setError(e.message || 'Failed to load subject details.');
+      setError(errorMessage(e, 'Failed to load subject details.'));
     } finally {
       setLoadingDetails(false);
     }
@@ -754,7 +766,8 @@ export function SchemaRegistry() {
   const toggleVersion = (version: number) => {
     setExpandedVersions(prev => {
       const next = new Set(prev);
-      next.has(version) ? next.delete(version) : next.add(version);
+      if (next.has(version)) next.delete(version);
+      else next.add(version);
       return next;
     });
   };
@@ -778,8 +791,8 @@ export function SchemaRegistry() {
       setCreateSchema(emptySchema);
       setCreateSchemaType('AVRO');
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to create schema.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to create schema.'));
     } finally {
       setSaving(false);
     }
@@ -810,8 +823,8 @@ export function SchemaRegistry() {
       // Reload detail
       const refreshed = summary?.subjects.find(s => s.subject === selected.subject) || selected;
       await openSubject(refreshed);
-    } catch (e: any) {
-      setError(e.message || 'Failed to update schema.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update schema.'));
     } finally {
       setSaving(false);
     }
@@ -833,8 +846,8 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to delete subject.');
       backToList();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete subject.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete subject.'));
     } finally {
       setSaving(false);
     }
@@ -851,8 +864,8 @@ export function SchemaRegistry() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to update global compatibility.');
-    } catch (e: any) {
-      setError(e.message || 'Failed to update global compatibility.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update global compatibility.'));
     } finally { setSaving(false); }
   };
 
@@ -868,8 +881,8 @@ export function SchemaRegistry() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to update subject compatibility.');
       setDetails(prev => prev ? { ...prev, compatibility: subjectCompatibility } : prev);
-    } catch (e: any) {
-      setError(e.message || 'Failed to update subject compatibility.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update subject compatibility.'));
     } finally { setSaving(false); }
   };
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import {
   AlertTriangle,
@@ -13,11 +13,9 @@ import {
   Download,
   Loader2,
   MoreVertical,
-  Network,
   Play,
   RefreshCw,
   Search,
-  Server,
   Settings2,
   Trash2,
   X,
@@ -54,8 +52,19 @@ type ExistingCluster = {
   mode: string;
   environment?: string;
   kafkaClusterId?: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   hosts?: ClusterHost[];
+};
+
+type KafkaVersionRaw = {
+  id?: string;
+  version: string;
+  status?: string;
+  attributes?: { scala_version?: string; release_date?: string };
+  createdAt?: string;
+  fileSizeBytes?: number;
+  fileName?: string;
+  filename?: string;
 };
 
 type KafkaVersionInfo = {
@@ -299,7 +308,7 @@ function setRowsValue(rows: PropertyRow[], key: string, value: string): Property
   return rows.map(row => row.key === key ? { ...row, value } : row);
 }
 
-function syncCommonRows(rows: PropertyRow[], config: Record<string, any>): PropertyRow[] {
+function syncCommonRows(rows: PropertyRow[], config: Record<string, unknown>): PropertyRow[] {
   return rows.map(row => {
     if (row.key === 'default.replication.factor' && config.replication_factor) return { ...row, value: String(config.replication_factor) };
     if (row.key === 'min.insync.replicas' && config.min_insync_replicas) return { ...row, value: String(config.min_insync_replicas) };
@@ -308,13 +317,13 @@ function syncCommonRows(rows: PropertyRow[], config: Record<string, any>): Prope
   });
 }
 
-function parseIpList(raw: any): string[] {
+function parseIpList(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
   if (typeof raw === 'string' && raw.startsWith('[')) {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-    } catch {}
+    } catch { /* ignore */ }
   }
   if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
   return [];
@@ -398,7 +407,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const [nodeSearch, setNodeSearch] = useState('');
   const [nodeDropdownOpen, setNodeDropdownOpen] = useState(false);
-  const [draftNodeIds, setDraftNodeIds] = useState<string[]>([]);
+
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [rolesByHost, setRolesByHost] = useState<Record<string, RoleChoice>>({});
   const [configsByService, setConfigsByService] = useState<Record<string, NodeConfigState>>({});
@@ -489,13 +498,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     try {
       const res = await fetch('/api/v1/artifacts?serviceType=KAFKA');
       const data = await res.json();
-      const mapped = (data.content || []).map((a: any) => ({
+      const mapped = (data.content || []).map((a: KafkaVersionRaw) => ({
         version: a.version,
         available: a.status === 'AVAILABLE',
         scala_version: a.attributes?.scala_version || '2.13',
-        release_date: a.attributes?.release_date || new Date(a.createdAt).toLocaleDateString(),
-        size_mb: parseFloat((a.fileSizeBytes / 1024 / 1024).toFixed(1)),
-        filename: a.fileName,
+        release_date: a.attributes?.release_date || (a.createdAt ? new Date(a.createdAt).toLocaleDateString() : ''),
+        size_mb: parseFloat(((a.fileSizeBytes ?? 0) / 1024 / 1024).toFixed(1)),
+        filename: a.fileName ?? a.filename ?? '',
         id: a.id,
       }));
       setVersions(mapped);
@@ -982,10 +991,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-  const confirmNodeSelection = () => {
-    setPrereqResults({});
-    setNodeDropdownOpen(false);
-  };
 
   const toggleNodeSelection = (hostId: string) => {
     setSelectedNodeIds(prev => {
@@ -1043,7 +1048,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const removeNode = (hostId: string) => {
     setSelectedNodeIds(prev => prev.filter(id => id !== hostId));
-    setDraftNodeIds(prev => prev.filter(id => id !== hostId));
+    // // setDraftNodeIds(prev => prev.filter(id => id !== hostId));
     setRolesByHost(prev => {
       const next = { ...prev };
       delete next[hostId];
@@ -1214,48 +1219,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
-  const getPortTooltipText = (hostId: string) => {
-    const result = portCheckResults[hostId];
-    if (!result) return 'Click to check ports';
-    if (result.status === 'RUNNING') return 'Checking ports...';
 
-    const log = result.logOutput || '';
-    const lines = log.split('\n');
-    const available: number[] = [];
-    const unavailable: number[] = [];
-
-    lines.forEach(line => {
-      const match = line.match(/Port (\d+):\s*(Available|Unavailable)/i);
-      if (match) {
-        const port = parseInt(match[1], 10);
-        if (match[2].toLowerCase() === 'available') {
-          available.push(port);
-        } else {
-          unavailable.push(port);
-        }
-      }
-    });
-
-    if (result.status === 'SUCCESS') {
-      if (available.length > 0) {
-        return 'Available ports:\n' + available.map(p => '- Port ' + p).join('\n');
-      }
-      return 'All required ports are available';
-    }
-
-    if (unavailable.length > 0 || available.length > 0) {
-      const parts: string[] = [];
-      if (unavailable.length > 0) {
-        parts.push('Unavailable (in use):\n' + unavailable.map(p => '- Port ' + p).join('\n'));
-      }
-      if (available.length > 0) {
-        parts.push('Available (free):\n' + available.map(p => '- Port ' + p).join('\n'));
-      }
-      return parts.join('\n\n');
-    }
-
-    return result.errorMsg || 'Failed to check ports';
-  };
 
   const checkPrerequisites = async () => {
     setCheckingPrereqs(true);
@@ -2279,8 +2243,8 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
         ? <Loader2 size={13} className="spin" />
         : null;
         
-  let text = '';
-  if (normalized === 'IDLE') {
+    let text;
+    if (normalized === 'IDLE') {
     text = 'Idle';
   } else if (normalized === 'SUCCESS') {
     text = 'Success';

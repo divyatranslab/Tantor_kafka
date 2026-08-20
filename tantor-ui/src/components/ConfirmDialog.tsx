@@ -1,42 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { type ConfirmRequest, CONFIRM_EVENT } from './confirmUtils';
 import { X } from 'lucide-react';
 import orangeBanner from '../assets/orange.png';
 import './ConfirmDialog.css';
-
-type ConfirmRequest = {
-  message: string;
-  title?: string;
-  confirmLabel?: string;
-  showCancel?: boolean;
-  resolve?: (confirmed: boolean) => void;
-};
-
-const CONFIRM_EVENT = 'tantor:confirm';
-
-export function confirmAction(
-  message: string,
-  options: { title?: string; confirmLabel?: string } = {},
-) {
-  return new Promise<boolean>(resolve => {
-    window.dispatchEvent(new CustomEvent<ConfirmRequest>(CONFIRM_EVENT, {
-      detail: { message, resolve, ...options },
-    }));
-  });
-}
-
-export function notifyAction(
-  message: string,
-  options: { title?: string; confirmLabel?: string } = {},
-) {
-  window.dispatchEvent(new CustomEvent<ConfirmRequest>(CONFIRM_EVENT, {
-    detail: {
-      message,
-      title: options.title || 'Notice',
-      confirmLabel: options.confirmLabel || 'OK',
-      showCancel: false,
-    },
-  }));
-}
 
 export function GlobalConfirmDialog() {
   const [request, setRequest] = useState<ConfirmRequest | null>(null);
@@ -50,6 +16,12 @@ export function GlobalConfirmDialog() {
     return () => window.removeEventListener(CONFIRM_EVENT, handleRequest);
   }, []);
 
+  const finish = useCallback((confirmed: boolean) => {
+    if (!request) return;
+    request.resolve?.(confirmed);
+    setRequest(null);
+  }, [request]);
+
   useEffect(() => {
     if (!request) return;
     confirmButtonRef.current?.focus();
@@ -58,13 +30,7 @@ export function GlobalConfirmDialog() {
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [request]);
-
-  function finish(confirmed: boolean) {
-    if (!request) return;
-    request.resolve?.(confirmed);
-    setRequest(null);
-  }
+  }, [request, finish]);
 
   if (!request) return null;
 

@@ -1,9 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Download, RefreshCw, Loader2, Save, UploadCloud, X, Plus, Trash2, Server, GitCompare, FileCheck } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import {
-  CheckCircle2, FileText, GitCompare, History, Loader2, Plus, RefreshCw,
-  RotateCcw, Save, Server, Trash2, UploadCloud, FileCheck, Download, X,
-} from 'lucide-react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
@@ -93,7 +90,7 @@ export function InternalConfigEditor() {
 
   const showNotice = (message: string) => setDialog({ message, confirmLabel: 'OK' });
 
-  const fetchConfigs = async () => {
+  const fetchConfigs = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config`);
@@ -101,15 +98,15 @@ export function InternalConfigEditor() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
-  useEffect(() => { fetchConfigs(); }, [id]);
+  useEffect(() => { void (async () => { await fetchConfigs(); })(); }, [fetchConfigs]);
 
   const files = payload?.staticConfigs.configFiles || [];
-  const topology = payload?.serviceTopology || [];
   const hosts = useMemo(() => {
     const unique = new Map<string, { id: string; address: string; services: number }>();
-    topology.forEach(service => {
+    const topo = payload?.serviceTopology || [];
+    topo.forEach(service => {
       const current = unique.get(service.hostId);
       unique.set(service.hostId, {
         id: service.hostId,
@@ -118,17 +115,21 @@ export function InternalConfigEditor() {
       });
     });
     return Array.from(unique.values());
-  }, [topology]);
+  }, [payload?.serviceTopology]);
 
   useEffect(() => {
-    if (!selectedHostId && hosts[0]) setSelectedHostId(hosts[0].id);
+    Promise.resolve().then(() => {
+      if (!selectedHostId && hosts[0]) setSelectedHostId(hosts[0].id);
+    });
   }, [hosts, selectedHostId]);
 
-  const hostFiles = files.filter(file => !selectedHostId || file.hostId === selectedHostId);
+  const hostFiles = files.filter((file: StaticConfigFile) => !selectedHostId || file.hostId === selectedHostId);
   const selectedFile = hostFiles.find(file => file.id === selectedFileId) || hostFiles[0];
 
   useEffect(() => {
-    if (selectedFile && selectedFile.id !== selectedFileId) setSelectedFileId(selectedFile.id);
+    Promise.resolve().then(() => {
+      if (selectedFile && selectedFile.id !== selectedFileId) setSelectedFileId(selectedFile.id);
+    });
   }, [selectedFile, selectedFileId]);
 
   useEffect(() => {
@@ -136,18 +137,20 @@ export function InternalConfigEditor() {
     const properties = Object.fromEntries(
       Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
     );
-    setBaselineProperties(properties);
-    setDraftProperties(properties);
-    setPreview(null);
-  }, [selectedFile?.id, selectedFile?.properties]);
+    Promise.resolve().then(() => {
+      setBaselineProperties(properties);
+      setDraftProperties(properties);
+      setPreview(null);
+    });
+  }, [selectedFile]);
 
-  const fetchVersions = async (serviceId?: string) => {
+  const fetchVersions = useCallback(async (serviceId?: string) => {
     if (!serviceId) { setVersions([]); return; }
     const response = await fetch(`/api/v1/clusters/${id}/config/versions?serviceId=${serviceId}`);
-    if (response.ok) setVersions(await response.json());
-  };
+    if (response.ok) setVersions(await response.json() as ConfigVersion[]);
+  }, [id]);
 
-  useEffect(() => { fetchVersions(selectedFile?.serviceId); }, [id, selectedFile?.serviceId]);
+  useEffect(() => { void (async () => { await fetchVersions(selectedFile?.serviceId); })(); }, [fetchVersions, selectedFile?.serviceId]);
 
   const selectHost = (hostId: string) => {
     setSelectedHostId(hostId);
@@ -465,7 +468,7 @@ export function InternalConfigEditor() {
                   border: 'none',
                   fontSize: '13px',
                   fontWeight: 500,
-                  cursor: !!working ? 'not-allowed' : 'pointer'
+                  cursor: working ? 'not-allowed' : 'pointer'
                 }}
               >
                 {working === 'preview' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} 

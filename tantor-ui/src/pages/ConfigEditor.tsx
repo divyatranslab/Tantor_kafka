@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
 import { usePermissions } from '../hooks/usePermissions';
-import { notifyAction } from '../components/ConfirmDialog';
+import { notifyAction } from '../components/confirmUtils';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
 
@@ -65,7 +65,7 @@ export function ConfigEditor() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoadingCluster(true);
+    Promise.resolve().then(() => setLoadingCluster(true));
     fetch(`/api/v1/ui/clusters/${id}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => {
@@ -82,6 +82,10 @@ export function ConfigEditor() {
 
   if (loadingCluster) {
     return <div className="state-center"><Loader2 className="spin" /> Loading cluster configuration...</div>;
+  }
+
+  if (cluster?.mode === 'EXTERNAL') {
+    return <ExternalConfigEditor />;
   }
 
   return <InternalConfigEditor />;
@@ -121,7 +125,7 @@ function ExternalConfigEditor() {
       } else {
         notifyAction('Failed to fetch cluster configuration');
       }
-    } catch (e) {
+    } catch {
       notifyAction('Error fetching config');
     } finally {
       setLoading(false);
@@ -191,7 +195,7 @@ function ExternalConfigEditor() {
            setReadStatus('Waiting for agent to read file...');
         }
       }
-    } catch (e) {
+    } catch {
        setReadStatus('Error reading config.');
     } finally {
        setReadingConfig(false);
@@ -237,10 +241,11 @@ function ExternalConfigEditor() {
   };
 
   useEffect(() => {
-    if (!selectedFile) {
-      setDraftProperties({});
-      return;
-    }
+    Promise.resolve().then(() => {
+      if (!selectedFile) {
+        setDraftProperties({});
+        return;
+      }
     const liveProps = fetchedProperties[selectedFile.nodeId!] || selectedFile.properties || {};
     const baseProps = Object.fromEntries(
       Object.entries(liveProps).map(([key, value]) => [key, String(value ?? '')])
@@ -257,7 +262,8 @@ function ExternalConfigEditor() {
       });
     }
     setDraftProperties(baseProps);
-  }, [selectedFile, selectedNodeId]); // re-run when node changes
+    });
+  }, [selectedFile, selectedNodeId, fetchedProperties, stagedChanges]); // re-run when node changes
 
   const mutateDraft = (key: string, value: string | null) => {
     if (!canManage) return;
@@ -296,7 +302,7 @@ function ExternalConfigEditor() {
       } else {
         notifyAction(data.message || 'Failed to apply configuration.');
       }
-    } catch (e) {
+    } catch {
       notifyAction('Error applying changes.');
     } finally {
       setApplying(false);

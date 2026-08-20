@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight,
-  Clock3, Database, Edit3, Gauge, KeyRound, MessageSquare,
-  MoreVertical, RefreshCw, RotateCcw, Save, Search, Send, Settings2,
-  ShieldCheck, Trash2, Users, X, Share2, Plus
+  AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, ChevronDown, ChevronRight,
+  Edit3, Gauge, MessageSquare, MoreVertical, RefreshCw, Search, Settings2,
+  ShieldCheck, Users, X, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { CustomSelect } from '../components/CustomSelect';
@@ -163,7 +162,7 @@ export function TopicDetails() {
   const [loadingDetail, setLoadingDetail] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState(false);
-  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const [actionMenuAnchor, setActionMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'recreate' | 'remove' | null>(null);
   const [acting, setActing] = useState(false);
   const [showProduce, setShowProduce] = useState(false);
@@ -402,18 +401,6 @@ export function TopicDetails() {
     }
   };
 
-  const resetConfig = async (config: TopicConfig) => {
-    if (!canManage) return;
-    try {
-      const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(config.name), { method: 'DELETE' });
-      if (!response.ok) throw new Error(await responseError(response));
-      await loadSimpleTab('configs');
-      await loadDetail();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to reset setting');
-    }
-  };
-
   const filteredConsumers = useMemo(() => consumers.filter(group =>
     group.groupId.toLowerCase().includes(consumerSearch.toLowerCase())), [consumerSearch, consumers]);
   const filteredConfigs = useMemo(() => configs.filter(config =>
@@ -439,11 +426,11 @@ export function TopicDetails() {
         </div>
         {canManage && <div className="topic-heading-actions">
           <button className="topic-detail-button primary" onClick={() => setShowProduce(true)}><Plus size={16} /> Produce message</button>
-          <div ref={actionMenuRef} className="detail-menu-wrap">
+          <div ref={setActionMenuAnchor} className="detail-menu-wrap">
             <button className="detail-icon-button" aria-label="Topic actions" onClick={() => setActionMenu(current => !current)}><MoreVertical size={19} /></button>
-            {actionMenu && actionMenuRef.current && (
+            {actionMenu && actionMenuAnchor && (
               <AnchoredMenu
-                anchor={actionMenuRef.current}
+                anchor={actionMenuAnchor}
                 className="detail-action-menu"
                 onClose={() => setActionMenu(false)}
                 minWidth={180}
@@ -783,10 +770,6 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
   );
 }
 
-function CopyIcon({ size }: { size?: number }) {
-  return <KeyRound size={size} />;
-}
-
 function StatisticsView({ statistics }: { statistics: TopicStatistics }) {
   return <div>
     <div className="statistics-banner-container">
@@ -898,13 +881,6 @@ function SizeStatSection({ title, stats }: { title: string; stats: SizeStatistic
       </div>
     </div>
   );
-}
-
-function StatCard({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
-  return <article className={wide ? 'wide' : ''} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px' }}>
-    <span style={{ fontSize: '12px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>{label}</span>
-    <strong style={{ fontSize: '18px', color: '#332849', fontFamily: 'Satoshi, sans-serif' }}>{value}</strong>
-  </article>;
 }
 
 function LoadingRow({ columns }: { columns: number }) {

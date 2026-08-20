@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
-  CheckCircle2, FileClock,
-  History, Info, Package, Search, XCircle, Database,
+  History, Info, Package, Search,
   ChevronLeft, ChevronRight, RefreshCw
 } from 'lucide-react';
 import './AuditLogs.css';
@@ -73,21 +72,11 @@ interface AuditEvent {
 
 interface AuditResponse { events?: AuditEvent[] }
 
-const parseJson = (value: unknown): unknown => {
-  if (typeof value !== 'string' || !value.trim()) return value;
-  try { return JSON.parse(value); } catch { return value; }
-};
-
 const title = (value: string) => value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase());
 const actorOf = (event: AuditEvent) => event.actor || event.userName || 'system';
 const timeOf = (event: AuditEvent) => event.createdAt || event.createdTime || '';
 
 const normalized = (value?: string) => (value || '').toUpperCase();
-
-const isArtifactEvent = (event: AuditEvent) => {
-  const resourceType = normalized(event.resourceType);
-  return resourceType === 'ARTIFACT' || resourceType === 'HOST_PARCEL' || normalized(event.category) === 'PACKAGE';
-};
 
 const isHostOnboardingEvent = (event: AuditEvent) => {
   const action = normalized(event.action);
@@ -141,11 +130,11 @@ interface CustomDropdownProps {
 
 function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const anchorRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(opt => opt.value === value) || options[0];
 
   return (
-    <div ref={anchorRef} className="custom-select-wrapper">
+    <div ref={setAnchor} className="custom-select-wrapper">
       <div
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(prev => !prev)}
@@ -157,9 +146,9 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
           </svg>
         </span>
       </div>
-      {isOpen && anchorRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={anchorRef.current}
+          anchor={anchor}
           className="custom-select-options"
           onClose={() => setIsOpen(false)}
           align="start"
@@ -206,7 +195,7 @@ export function AuditLogs() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -229,9 +218,9 @@ export function AuditLogs() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchLogs(); }, []);
+  useEffect(() => { void (async () => { await fetchLogs(); })(); }, [fetchLogs]);
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
@@ -256,7 +245,7 @@ export function AuditLogs() {
 
   // Reset pagination when filters change
   useEffect(() => {
-    setCurrentPage(1);
+    Promise.resolve().then(() => setCurrentPage(1));
   }, [filtered.length]);
 
   const paginatedEvents = useMemo(() => {

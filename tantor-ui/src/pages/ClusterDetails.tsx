@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useCluster } from '../contexts/ClusterContext';
+import { useCluster } from '../contexts/useCluster';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './ClusterDetails.css';
@@ -34,7 +34,7 @@ export function ClusterDetails() {
   const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownAnchor, setDropdownAnchor] = useState<HTMLDivElement | null>(null);
 
   const { setActiveClusterId } = useCluster();
 
@@ -44,12 +44,14 @@ export function ClusterDetails() {
   }, [id, setActiveClusterId]);
 
   useEffect(() => {
-    // Clear stale data when switching clusters to prevent flash of old data
-    setCluster(null);
-    fetch(`/api/v1/ui/clusters/${id}`)
-      .then(res => res.json())
-      .then(setCluster)
-      .catch(console.error);
+    // Clear stale data when switching clusters; then fetch new data async
+    void (async () => {
+      setCluster(null);
+      try {
+        const res = await fetch(`/api/v1/ui/clusters/${id}`);
+        setCluster(await res.json());
+      } catch (e) { console.error(e); }
+    })();
   }, [id]);
 
   // Handle redirects
@@ -327,7 +329,7 @@ export function ClusterDetails() {
             </div>
 
             {dropdownTabs.length > 0 && (
-              <div className="cluster-tabs-dropdown-container" ref={dropdownRef}>
+              <div className="cluster-tabs-dropdown-container" ref={setDropdownAnchor}>
                 <button
                   type="button"
                   className={`cluster-tabs-dropdown-trigger ${isDropdownActive ? 'active' : ''} ${isDropdownOpen ? 'open' : ''}`}
@@ -336,9 +338,9 @@ export function ClusterDetails() {
                 >
                   <ChevronDown size={18} />
                 </button>
-                {isDropdownOpen && dropdownRef.current && (
+                {isDropdownOpen && dropdownAnchor && (
                   <AnchoredMenu
-                    anchor={dropdownRef.current}
+                    anchor={dropdownAnchor}
                     className="cluster-tabs-dropdown-menu"
                     onClose={() => setIsDropdownOpen(false)}
                     minWidth={180}

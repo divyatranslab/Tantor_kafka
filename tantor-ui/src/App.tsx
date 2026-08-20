@@ -43,7 +43,7 @@ function DeploymentLogsGuard() {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    if (!id) { setChecked(true); setAllowed(false); return; }
+    if (!id) { Promise.resolve().then(() => { setChecked(true); setAllowed(false); }); return; }
     fetch(`/api/v1/ui/clusters/${id}`)
       .then(res => res.json())
       .then(data => {

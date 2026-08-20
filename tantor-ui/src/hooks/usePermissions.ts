@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 
 type TokenLike = {
   role?: string;

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Users, Plus, Shield, Eye, Trash2, Key, Check, X } from 'lucide-react';
 import { getUsers, createAuthUser, updateAuthUser, deleteAuthUser } from '../lib/api.ts';
 import type { UserResponse } from '../types/index.ts';
-import { confirmAction } from '../components/ConfirmDialog';
+import { confirmAction } from '../components/confirmUtils';
 import './UserManagement.css';
 
 export default function UserManagement() {
@@ -15,7 +15,7 @@ export default function UserManagement() {
   const [editingPassword, setEditingPassword] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState('');
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       const data = await getUsers();
       setUsers(data);
@@ -24,9 +24,9 @@ export default function UserManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { void (async () => { await fetchUsers(); })(); }, [fetchUsers]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +58,7 @@ export default function UserManagement() {
 
   const handleToggleActive = async (user: UserResponse) => {
     try {
-      await updateAuthUser(user.id, { is_active: !user.is_active });
+      await updateAuthUser(user.id, { active: !user.is_active });
       fetchUsers();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update status';

@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { KeycloakTokenParsed } from 'keycloak-js';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+
 import {
   getKeycloak,
   getToken,
@@ -10,32 +10,7 @@ import {
   logout as keycloakLogout,
 } from '../services/KeycloakService';
 
-type DecodedToken = KeycloakTokenParsed & {
-  name?: string;
-  given_name?: string;
-  family_name?: string;
-  preferred_username?: string;
-  email?: string;
-  sid?: string;
-  auth_time?: number;
-  role?: string;
-  roles?: string[];
-  realm_access?: { roles?: string[] };
-  resource_access?: Record<string, { roles?: string[] }>;
-  groups?: string[];
-};
-
-type AuthContextValue = {
-  isInitializing: boolean;
-  isAuthenticated: boolean;
-  accessToken?: string;
-  decodedToken?: DecodedToken;
-  currentSessionId?: string;
-  logout: () => Promise<void>;
-  refreshToken: () => Promise<boolean>;
-};
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+import { type DecodedToken, type AuthContextValue, AuthContext } from './authContextDef';
 
 const sessionIdFromToken = (token?: DecodedToken) => {
   const sessionState = token?.session_state;
@@ -102,13 +77,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!authEnabled) {
       installAuthenticatedFetch();
-      setDecodedToken({
-        preferred_username: 'shaukat',
-        roles: ['admin'],
-        realm_access: { roles: ['admin'] }
+      Promise.resolve().then(() => {
+        setDecodedToken({
+          preferred_username: 'shaukat',
+          roles: ['admin'],
+          realm_access: { roles: ['admin'] }
+        });
+        setIsInitializing(false);
+        setIsAuthenticated(true);
       });
-      setIsInitializing(false);
-      setIsAuthenticated(true);
       return;
     }
 
@@ -179,10 +156,3 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used inside AuthProvider');
-  }
-  return context;
-};

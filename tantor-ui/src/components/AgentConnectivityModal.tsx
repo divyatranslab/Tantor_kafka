@@ -1,31 +1,43 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
-import { confirmAction, notifyAction } from './ConfirmDialog';
+import { confirmAction, notifyAction } from './confirmUtils';
 
 type AgentConnectivityModalProps = {
   onClose: () => void;
 };
 
+interface HostRecord {
+  id?: string;
+  hostname?: string;
+  status?: string;
+  agentStatus?: string;
+  ipAddresses?: string;
+  lastHeartbeat?: string;
+  agentName?: string;
+  agentPath?: string;
+  [key: string]: unknown;
+}
+
 export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps) {
-  const [hosts, setHosts] = useState<any[]>([]);
+  const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
-  const fetchHosts = async () => {
+  const fetchHosts = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/ui/hosts');
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchHosts();
-    const t = setInterval(fetchHosts, 5000);
+    void (async () => { await fetchHosts(); })();
+    const t = setInterval(() => { void (async () => { await fetchHosts(); })(); }, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [fetchHosts]);
 
   const deleteHost = async (id: string) => {
     if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
@@ -43,19 +55,19 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  const parseIpList = (raw: any): string[] => {
+  const parseIpList = (raw: unknown): string[] => {
     if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
     if (typeof raw === 'string' && raw.startsWith('[')) {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
+      } catch { /* ignore */ }
     }
     if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
     return [];
   };
 
-  const displayIp = (raw: any) => {
+  const displayIp = (raw: unknown) => {
     const ips = parseIpList(raw);
     return ips.find(ip => ip.startsWith('192.168.'))
       || ips.find(ip => !ip.startsWith('127.') && !ip.startsWith('172.'))
@@ -68,11 +80,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
   const pendingHosts = Array.from(
     hosts
       .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h.ipAddresses)))
-      .reduce<Map<string, any>>((byIp, host) => {
+      .reduce<Map<string, HostRecord>>((byIp, host) => {
         const ip = displayIp(host.ipAddresses);
         const existing = byIp.get(ip);
-        const heartbeat = Date.parse(host.lastHeartbeat || '') || 0;
-        const existingHeartbeat = Date.parse(existing?.lastHeartbeat || '') || 0;
+        const heartbeat = Date.parse(String(host.lastHeartbeat ?? '')) || 0;
+        const existingHeartbeat = Date.parse(String(existing?.lastHeartbeat ?? '')) || 0;
         const expectedSuffix = `-${ip.split('.').pop()}`;
         const isCanonicalId = String(host.id || '').endsWith(expectedSuffix);
         const existingIsCanonicalId = String(existing?.id || '').endsWith(expectedSuffix);
@@ -85,10 +97,10 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           byIp.set(ip, host);
         }
         return byIp;
-      }, new Map<string, any>())
+      }, new Map<string, HostRecord>())
       .values(),
   );
-  const selectedCount = pendingHosts.filter(host => selectedPendingIds[host.id]).length;
+  const selectedCount = pendingHosts.filter(host => selectedPendingIds[String(host.id)]).length;
   const allPendingSelected = pendingHosts.length > 0 && selectedCount === pendingHosts.length;
 
   const togglePendingHost = (id: string) => {
@@ -100,11 +112,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
       setSelectedPendingIds({});
       return;
     }
-    setSelectedPendingIds(Object.fromEntries(pendingHosts.map(host => [host.id, true])));
+    setSelectedPendingIds(Object.fromEntries(pendingHosts.map(host => [String(host.id), true])));
   };
 
   const connectSelectedAgents = async () => {
-    const selectedIds = pendingHosts.filter(host => selectedPendingIds[host.id]).map(host => host.id);
+    const selectedIds = pendingHosts.filter(host => selectedPendingIds[String(host.id)]).map(host => host.id);
     if (selectedIds.length === 0) return;
     setConnectingAgents(true);
     try {
@@ -163,11 +175,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
               <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
                 {pendingHosts.map(host => (
                   <div
-                    key={host.id}
-                    onClick={() => togglePendingHost(host.id)}
+                    key={String(host.id)}
+                    onClick={() => togglePendingHost(String(host.id))}
                     style={{
                       background: '#FFFFFF',
-                      border: selectedPendingIds[host.id] ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
+                      border: selectedPendingIds[String(host.id)] ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
                       borderRadius: '8px',
                       padding: '12px 14px',
                       display: 'flex',
@@ -180,8 +192,8 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     <label onClick={e => e.stopPropagation()} style={{ margin: 0, display: 'flex', flexShrink: 0 }}>
                       <input
                         type="checkbox"
-                        checked={!!selectedPendingIds[host.id]}
-                        onChange={() => togglePendingHost(host.id)}
+                        checked={!!selectedPendingIds[String(host.id)]}
+                        onChange={() => togglePendingHost(String(host.id))}
                         style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                       />
                     </label>
@@ -191,7 +203,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     </div>
                     <button
                       title="Reject & remove"
-                      onClick={e => { e.stopPropagation(); deleteHost(host.id); }}
+                      onClick={e => { e.stopPropagation(); deleteHost(String(host.id)); }}
                       style={{ border: 'none', background: 'transparent', color: '#CBD5E1', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
                       onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}

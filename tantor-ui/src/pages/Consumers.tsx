@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
@@ -59,7 +59,7 @@ export function Consumers() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<ConsumerGroupDetailDto | null>(null);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -70,17 +70,17 @@ export function Consumers() {
       }
       const json = await res.json();
       setData(json);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'Failed to load consumer groups');
+      setError(e instanceof Error ? e.message : 'Failed to load consumer groups');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
-    fetchGroups();
-  }, [id, page, searchQuery, sortBy]);
+    void (async () => { await fetchGroups(); })();
+  }, [fetchGroups]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
+import { Activity, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 
 interface ClusterInfo {
   id: string;
@@ -41,7 +41,7 @@ export function ClusterActions() {
   const [grafanaUrl, setGrafanaUrl] = useState('');
   const [monitoringLoading, setMonitoringLoading] = useState(false);
 
-  const fetchUpgradeContext = async () => {
+  const fetchUpgradeContext = useCallback(async () => {
     try {
       const [clusterRes, parcelsRes] = await Promise.all([
         fetch(`/api/v1/ui/clusters/${id}`),
@@ -56,7 +56,7 @@ export function ClusterActions() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [id]);
 
   const triggerRollingRestart = async () => {
     if (!canManage) return;
@@ -79,7 +79,7 @@ export function ClusterActions() {
         const data = await res.json().catch(() => ({}));
         notifyAction(data.error || "Failed to trigger rolling restart.");
       }
-    } catch (e) {
+    } catch {
       notifyAction("Error triggering rolling restart.");
     } finally {
       setLoading(false);
@@ -91,8 +91,6 @@ export function ClusterActions() {
       .filter(p => p.serviceType === 'KAFKA' && p.active && p.status === 'ACTIVE' && p.version !== cluster?.kafkaVersion)
       .map(p => p.version)
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
-  const isExternal = cluster?.mode === 'EXTERNAL';
-  const externalCanRestart = !isExternal || cluster?.managementLevel === 'AGENT_MANAGED';
 
   const enableMonitoring = async () => {
     if (!canManage) return;
@@ -118,14 +116,18 @@ export function ClusterActions() {
   };
 
   useEffect(() => {
-    fetchUpgradeContext();
-  }, [id]);
+    void (async () => { await fetchUpgradeContext(); })();
+  }, [fetchUpgradeContext]);
 
   useEffect(() => {
-    if (!targetVersion && activeUpgradeVersions.length > 0) {
-      setTargetVersion(activeUpgradeVersions[0]);
-    }
-  }, [activeUpgradeVersions, targetVersion]);
+    Promise.resolve().then(() => {
+      if (!targetVersion && activeUpgradeVersions.length > 0) {
+        setTargetVersion(activeUpgradeVersions[0]);
+      }
+    });
+  // activeUpgradeVersions reference changes on every render — only react to length change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUpgradeVersions.length, targetVersion]);
 
   const triggerUpgrade = async () => {
     if (!canManage) return;
@@ -146,8 +148,8 @@ export function ClusterActions() {
       }
       setUpgradeMsg(`Upgrade to Kafka ${targetVersion} scheduled. Watch Deployment Logs for symlink switch, validation, and automatic rollback details.`);
       await fetchUpgradeContext();
-    } catch (e: any) {
-      setUpgradeMsg(e.message || 'Failed to schedule upgrade.');
+    } catch (e: unknown) {
+      setUpgradeMsg(e instanceof Error ? e.message : 'Failed to schedule upgrade.');
     } finally {
       setUpgradeLoading(false);
     }

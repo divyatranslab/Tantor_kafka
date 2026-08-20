@@ -50,7 +50,7 @@ const statusClass = (status: AgentStatus | TelemetryStatus) =>
 
 export function ClusterNodes() {
   const { id } = useParams<{ id: string }>();
-  const [cluster, setCluster] = useState<CanonicalClusterIdentity | null>(null);
+  const [, setCluster] = useState<CanonicalClusterIdentity | null>(null);
   const [nodes, setNodes] = useState<CanonicalNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

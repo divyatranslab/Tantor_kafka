@@ -1,19 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 import './Hosts.css';
+
+interface HostInfo {
+  id: string;
+  hostname: string;
+  status: string;
+  agentStatus?: string;
+  ipAddresses?: string;
+  cpuUsagePct?: number;
+  memTotalMb?: number;
+  memUsedMb?: number;
+  agentName?: string;
+  agentVersion?: string;
+  agentPath?: string;
+  lastHeartbeat?: string;
+  [key: string]: unknown;
+}
 
 export function Hosts() {
   const { canManage } = usePermissions();
-  const [hosts, setHosts] = useState<any[]>([]);
+  const [hosts, setHosts] = useState<HostInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
-  const fetchHosts = async () => {
+  const fetchHosts = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/ui/hosts');
@@ -23,7 +39,7 @@ export function Hosts() {
     }
     setLoading(false);
     setHasLoaded(true);
-  };
+  }, []);
 
   const deleteHost = async (id: string) => {
     if (!canManage) return;
@@ -43,24 +59,24 @@ export function Hosts() {
   };
 
   useEffect(() => {
-    fetchHosts();
-    const t = setInterval(fetchHosts, 5000);
+    void (async () => { await fetchHosts(); })();
+    const t = setInterval(() => { void (async () => { await fetchHosts(); })(); }, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [fetchHosts]);
 
-  const parseIpList = (raw: any): string[] => {
+  const parseIpList = (raw: unknown): string[] => {
     if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
     if (typeof raw === 'string' && raw.startsWith('[')) {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
+      } catch { /* ignore */ }
     }
     if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
     return [];
   };
 
-  const displayIp = (raw: any) => {
+  const displayIp = (raw: unknown) => {
     const ips = parseIpList(raw);
     return ips.find(ip => ip.startsWith('192.168.'))
       || ips.find(ip => !ip.startsWith('127.') && !ip.startsWith('172.'))
@@ -73,7 +89,7 @@ export function Hosts() {
   const pendingHosts = Array.from(
     hosts
       .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h.ipAddresses)))
-      .reduce<Map<string, any>>((byIp, host) => {
+      .reduce<Map<string, HostInfo>>((byIp, host) => {
         const ip = displayIp(host.ipAddresses);
         const existing = byIp.get(ip);
         const heartbeat = Date.parse(host.lastHeartbeat || '') || 0;
@@ -90,7 +106,7 @@ export function Hosts() {
           byIp.set(ip, host);
         }
         return byIp;
-      }, new Map<string, any>())
+      }, new Map<string, HostInfo>())
       .values(),
   );
   const selectedCount = pendingHosts.filter(host => selectedPendingIds[host.id]).length;
@@ -202,8 +218,8 @@ export function Hosts() {
             ) : activeHosts.map(host => {
               const ip = displayIp(host.ipAddresses);
               const cpu = host.cpuUsagePct ? Math.round(host.cpuUsagePct) : 0;
-              const mem = host.memTotalMb > 0
-                ? Math.round((host.memUsedMb / host.memTotalMb) * 100)
+              const mem = (host.memTotalMb ?? 0) > 0
+                ? Math.round(((host.memUsedMb ?? 0) / host.memTotalMb!) * 100)
                 : 0;
               return (
                 <tr key={host.id}>

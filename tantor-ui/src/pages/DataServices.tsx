@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Database, Activity, Box, Server, Settings, Layers, HardDrive, CheckCircle2, X } from 'lucide-react';
-import { notifyAction } from '../components/ConfirmDialog';
+import { notifyAction } from '../components/confirmUtils';
 import './DataServices.css';
+
+interface DataServiceHost {
+  id: string;
+  hostname?: string;
+  ipAddresses?: string;
+  status?: string;
+}
 
 export function DataServices() {
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<string | null>(null);
-  const [hosts, setHosts] = useState<any[]>([]);
+  const [hosts, setHosts] = useState<DataServiceHost[]>([]);
   const [isHostModalOpen, setIsHostModalOpen] = useState(false);
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
 

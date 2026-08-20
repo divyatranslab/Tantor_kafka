@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { KeyRound, Save, TestTube, RefreshCw, X, Check } from 'lucide-react';
 import './LdapSettings.css';
 
@@ -56,11 +56,7 @@ export function LdapSettings() {
   const [testPassword, setTestPassword] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; message: string; userDn?: string; groups?: string[] } | null>(null);
 
-  useEffect(() => {
-    fetchConfig();
-  }, []);
-
-  const fetchConfig = async () => {
+  const fetchConfig = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/ldap/config');
       if (res.ok) {
@@ -74,7 +70,11 @@ export function LdapSettings() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void (async () => { await fetchConfig(); })();
+  }, [fetchConfig]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,7 +86,7 @@ export function LdapSettings() {
     setError('');
     setSuccess('');
     try {
-      const payload: any = {
+      const payload: LdapConfig & { bindPassword?: string } = {
         ...config,
         bindPassword: bindPassword || undefined,
       };
@@ -105,8 +105,8 @@ export function LdapSettings() {
       setBindPassword('');
       setSuccess('LDAP configuration saved successfully');
       setTimeout(() => setSuccess(''), 5000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to save configuration');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save configuration');
     } finally {
       setSaving(false);
     }
@@ -127,8 +127,8 @@ export function LdapSettings() {
       if (!res.ok) throw new Error('Test failed');
       const result = await res.json();
       setTestResult(result);
-    } catch (err: any) {
-      setTestResult({ success: false, message: err.message || 'Test failed' });
+    } catch (err: unknown) {
+      setTestResult({ success: false, message: err instanceof Error ? err.message : 'Test failed' });
     } finally {
       setTesting(false);
     }

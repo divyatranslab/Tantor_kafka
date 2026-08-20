@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction } from '../components/ConfirmDialog';
+import { confirmAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import './DataServiceTabs.css';
@@ -69,6 +69,9 @@ const connectorTemplate = `{
   }
 }`;
 
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+
 interface CustomSelectProps {
   value: string;
   onChange: (val: string) => void;
@@ -80,11 +83,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -93,9 +96,9 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
+          anchor={anchor}
           className="ds-custom-select-dropdown"
           onClose={() => setIsOpen(false)}
           align="start"
@@ -122,7 +125,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
-  const initialSession = useRef(readDataServiceSession<ConnectSummary>('kafka-connect', id)).current;
+  const [initialSession] = useState(() => readDataServiceSession<ConnectSummary>('kafka-connect', id));
   const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
@@ -194,7 +197,7 @@ export function KafkaConnect() {
   };
 
   // ── Load all connections (for instance switcher) ──────────────
-  const loadConnections = async () => {
+  const loadConnections = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
       if (!res.ok) return;
@@ -205,7 +208,7 @@ export function KafkaConnect() {
         setSelectedConnectionId(prev => prev ?? defaultConn.id);
       }
     } catch { /* non-fatal */ }
-  };
+  }, [id]);
 
   /**
    * Open connection modal.
@@ -273,8 +276,8 @@ export function KafkaConnect() {
       await loadConnections();
       if (data.id) setSelectedConnectionId(data.id);
       await load(data.id || null);
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to save connection.');
+    } catch (e: unknown) {
+      setConnectError(errorMessage(e, 'Failed to save connection.'));
     } finally {
       setConnectSaving(false);
     }
@@ -297,8 +300,8 @@ export function KafkaConnect() {
       setSelectedConnectionId(null);
       await loadConnections();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete connection.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete connection.'));
       setLoading(false);
     }
   };
@@ -336,8 +339,8 @@ export function KafkaConnect() {
         hasFetched: true
       });
       return true;
-    } catch (e: any) {
-      if (requestId === loadRequestId.current) setError(e.message || 'Failed to load Kafka Connect.');
+    } catch (e: unknown) {
+      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Kafka Connect.'));
       return false;
     } finally {
       if (requestId === loadRequestId.current) setLoading(false);
@@ -421,17 +424,24 @@ export function KafkaConnect() {
       } else {
         await load(null, discovered);
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setHasFetched(false);
-      setError(e.message || 'Failed to detect Kafka Connect.');
+      setError(errorMessage(e, 'Failed to detect Kafka Connect.'));
     } finally {
       setLoading(false);
     }
   };
 
+  const loadConnectionsRef = useRef(loadConnections);
+  useLayoutEffect(() => {
+    loadConnectionsRef.current = loadConnections;
+  }, [loadConnections]);
+
   // Initial load
   useEffect(() => {
-    if (id) { loadConnections(); }
+    if (!id) return;
+    const timer = window.setTimeout(() => { void loadConnectionsRef.current(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [id]);
 
   // Commit the latest fetched snapshot before the browser can navigate away and
@@ -471,7 +481,7 @@ export function KafkaConnect() {
       }
       if (!payloads.length) throw new Error('No connector definitions found.');
       setConnectorJson(JSON.stringify(payloads.length === 1 ? payloads[0] : payloads, null, 2));
-    } catch (e: any) { setCreateError(e.message || 'Unable to read connector JSON.'); }
+    } catch (e: unknown) { setCreateError(errorMessage(e, 'Unable to read connector JSON.')); }
   };
 
   const createConnector = async (e: React.FormEvent) => {
@@ -491,7 +501,7 @@ export function KafkaConnect() {
       }
       setShowCreate(false); setConnectorJson(connectorTemplate); await load();
       setSuccessMessage(deployed === 1 ? 'Connector deployed successfully.' : (deployed + ' connectors deployed successfully.'));
-    } catch (e: any) { setCreateError(e.message || 'Failed to deploy connector.'); }
+    } catch (e: unknown) { setCreateError(errorMessage(e, 'Failed to deploy connector.')); }
     finally { setSaving(false); }
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
@@ -509,8 +519,8 @@ export function KafkaConnect() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
       await load();
-    } catch (e: any) {
-      setError(e.message || `Failed to ${action} connector.`);
+    } catch (e: unknown) {
+      setError(errorMessage(e, `Failed to ${action} connector.`));
     } finally {
       setSaving(false);
     }

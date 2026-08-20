@@ -1,35 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { type Cluster, ClusterContext } from './clusterContextDef';
 
-export interface Cluster {
-  id: string;
-  name: string;
-  status: string;
-  kafkaVersion: string;
-  mode: string;
-  [key: string]: any;
-}
-
-interface ClusterContextProps {
-  clusters: Cluster[];
-  activeClusterId: string | null;
-  setActiveClusterId: (id: string | null) => void;
-  /** The mode of the currently active cluster ('EXTERNAL' or other values like 'kraft') */
-  activeClusterMode: string | null;
-  /** Convenience boolean: true when the active cluster is External */
-  isExternalCluster: boolean;
-  loading: boolean;
-}
-
-const ClusterContext = createContext<ClusterContextProps>({
-  clusters: [],
-  activeClusterId: null,
-  setActiveClusterId: () => {},
-  activeClusterMode: null,
-  isExternalCluster: false,
-  loading: true,
-});
-
-export const useCluster = () => useContext(ClusterContext);
 
 export const ClusterProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [clusters, setClusters] = useState<Cluster[]>([]);

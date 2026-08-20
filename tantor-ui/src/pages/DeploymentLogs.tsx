@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Server, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 import './DeploymentLogs.css';
 
 interface Task {
@@ -37,27 +37,8 @@ const friendlyFailure = (task: Task) => {
   return `Deployment stopped during ${task.currentStep || 'an unknown step'}. Review the technical log below.`;
 };
 
-const DEPLOYMENT_STEPS = [
-  'Validate agent',
-  'Validate host prerequisites',
-  'Validate package',
-  'Download package to agent',
-  'Verify checksum',
-  'Extract Kafka',
-  'Backup old config if exists',
-  'Generate config',
-  'Format KRaft storage / setup Zookeeper',
-  'Create systemd service',
-  'Start service',
-  'Validate port',
-  'Validate Kafka AdminClient connection',
-  'Validate cluster health',
-  'Mark DB state RUNNING',
-];
-
 export function DeploymentLogs() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState('');
@@ -69,7 +50,7 @@ export function DeploymentLogs() {
   const logBodyRef = useRef<HTMLDivElement>(null);
   const copyNoticeTimerRef = useRef<number | null>(null);
 
-  const fetchTasks = async (manual = false) => {
+  const fetchTasks = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
       const [clusterRes, tasksRes] = await Promise.all([
@@ -93,20 +74,20 @@ export function DeploymentLogs() {
       setLoading(false);
       if (manual) setRefreshing(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchTasks();
-  }, [id]);
+    void (async () => { await fetchTasks(); })();
+  }, [fetchTasks]);
 
   const shouldPoll = tasks.some(task => activeStatus(task.status))
     || ['PENDING', 'RUNNING', 'VALIDATING', 'DELETING'].includes(cluster?.status || '');
 
   useEffect(() => {
     if (!shouldPoll) return;
-    const interval = window.setInterval(fetchTasks, 3000);
+    const interval = window.setInterval(() => { fetchTasks(); }, 3000);
     return () => window.clearInterval(interval);
-  }, [id, shouldPoll]);
+  }, [fetchTasks, shouldPoll]);
 
   const selectedTask = tasks.find(task => task.id === selectedTaskId) || tasks[0];
 
@@ -150,15 +131,6 @@ export function DeploymentLogs() {
         <p>No task has been executed for this cluster.</p>
       </div>
     );
-  }
-
-  let stepLogsObj: Record<string, string> = {};
-  try {
-    if (selectedTask.stepLogs) {
-      stepLogsObj = JSON.parse(selectedTask.stepLogs);
-    }
-  } catch (e) {
-    console.error("Failed to parse step logs", e);
   }
 
   const handleRetry = async () => {
@@ -235,7 +207,6 @@ export function DeploymentLogs() {
     URL.revokeObjectURL(url);
   };
 
-  const activeStepIndex = DEPLOYMENT_STEPS.indexOf(selectedTask.currentStep || '');
   const isFailed = selectedTask.status === 'FAILED';
   const renderLogs = (logsText: string) => {
     if (!logsText) return 'No output recorded.';

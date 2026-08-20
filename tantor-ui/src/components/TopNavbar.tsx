@@ -1,43 +1,21 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Bell, LogOut } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { usePermissions } from '../hooks/usePermissions';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
-
-interface ClusterInfo {
-  id: string;
-  name: string;
-  mode: string;
-}
-
-interface TopicInfo {
-  name: string;
-}
 
 export function TopNavbar() {
   const { decodedToken, logout } = useAuth();
   const { isAdmin } = usePermissions();
   const navigate = useNavigate();
-  const location = useLocation();
 
   // State
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [alertsCount, setAlertsCount] = useState(0);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [allClusters, setAllClusters] = useState<ClusterInfo[]>([]);
-  const [clusterTopics, setClusterTopics] = useState<TopicInfo[]>([]);
 
   const profileRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLDivElement>(null);
-
-  // Extract active cluster ID if in a cluster path
-  const activeClusterId = useMemo(() => {
-    const match = location.pathname.match(/\/clusters\/([^/]+)/);
-    return match ? match[1] : null;
-  }, [location.pathname]);
 
   // Resolve the first letter of the username
   const userInitial = useMemo(() => {
@@ -67,33 +45,7 @@ export function TopNavbar() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch all clusters for search context
-  useEffect(() => {
-    fetch('/api/v1/ui/clusters')
-      .then(res => res.ok ? res.json() : [])
-      .then(setAllClusters)
-      .catch(console.error);
-  }, []);
 
-  // Fetch topics in current cluster for search context
-  useEffect(() => {
-    if (activeClusterId) {
-      fetch(`/api/v1/clusters/${activeClusterId}/topics`)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data && Array.isArray(data.content)) {
-            setClusterTopics(data.content);
-          } else {
-            setClusterTopics([]);
-          }
-        })
-        .catch(() => {
-          setClusterTopics([]);
-        });
-    } else {
-      setClusterTopics([]);
-    }
-  }, [activeClusterId]);
 
   // Click outside handlers
   useEffect(() => {
@@ -101,22 +53,12 @@ export function TopNavbar() {
       if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
       }
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setIsSearchFocused(false);
-      }
+
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Search filter matches
-  const filteredResults = useMemo(() => {
-    if (!searchQuery.trim()) return { clusters: [], topics: [] };
-    const query = searchQuery.toLowerCase();
-    const clusters = allClusters.filter(c => c.name.toLowerCase().includes(query));
-    const topics = clusterTopics.filter(t => t.name.toLowerCase().includes(query));
-    return { clusters, topics };
-  }, [searchQuery, allClusters, clusterTopics]);
 
   const handleSignOut = () => {
     // keycloak.logout() triggers a full-page redirect to the Keycloak

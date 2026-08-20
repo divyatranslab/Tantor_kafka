@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MoreVertical, Network, RefreshCw, Trash2, Server, HardDrive, ExternalLink, RotateCcw, ServerCog, Settings, Plus } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Network, RefreshCw, Trash2, ExternalLink, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Clusters.css';
 
@@ -51,34 +50,12 @@ interface ClusterInfo {
 const EXTERNAL_HEALTH_REFRESH_MS = 15000;
 
 export function Clusters() {
-  const navigate = useNavigate();
   const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
 
-  const fetchClusters = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/v1/ui/clusters');
-      if (res.ok) {
-        const data: ClusterInfo[] = await res.json();
-        const visibleData = data.map(cluster => ({
-          ...cluster,
-          kafkaHealthChecking: false,
-        }));
-        setClusters(visibleData);
-        refreshExternalKafkaHealth(visibleData);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshExternalKafkaHealth = (items: ClusterInfo[]) => {
+  const refreshExternalKafkaHealth = useCallback((items: ClusterInfo[]) => {
     const externalClusters = items.filter(cluster => cluster.mode === 'EXTERNAL');
     if (externalClusters.length === 0) return;
 
@@ -118,18 +95,43 @@ export function Clusters() {
               ? {
                 ...current,
                 kafkaHealthChecking: false,
-                kafkaHealth: 'OFFLINE',
-                runtimeHealth: 'OFFLINE',
-                overallHealth: 'OFFLINE',
-                runtimeStatusLabel: 'Kafka Offline',
-                runtimeStatusReason: 'Kafka live check timed out or failed.',
+                kafkaHealth: 'UNKNOWN',
+                agentHealth: 'UNKNOWN',
+                monitoringHealth: 'UNKNOWN',
+                overallHealth: 'UNKNOWN',
+                runtimeHealth: 'UNKNOWN',
+                runtimeStatusLabel: 'Error',
+                runtimeStatusReason: 'Failed to check Kafka health',
               }
               : current
             ));
           })
-          .finally(() => window.clearTimeout(timeout));
+          .finally(() => {
+            window.clearTimeout(timeout);
+          });
       });
-  };
+  }, []);
+
+  const fetchClusters = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/ui/clusters');
+      if (res.ok) {
+        const data: ClusterInfo[] = await res.json();
+        const visibleData = data.map(cluster => ({
+          ...cluster,
+          kafkaHealthChecking: false,
+        }));
+        setClusters(visibleData);
+        refreshExternalKafkaHealth(visibleData);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  // refreshExternalKafkaHealth is intentionally stable (defined outside callback)
+  }, [refreshExternalKafkaHealth]);
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
@@ -155,28 +157,6 @@ export function Clusters() {
     }
   };
 
-  const triggerRollingRestart = async (cluster: ClusterInfo) => {
-    if (!canManage) return;
-    const nodeCount = cluster.nodeCount || cluster.hosts?.length || 0;
-    const warning = nodeCount === 1
-      ? `WARNING: '${cluster.name}' has only one node. Three nodes are recommended for availability, and this restart will interrupt Kafka service. Do you want to continue?`
-      : `Start rolling restart for '${cluster.name}'?`;
-    if (!(await confirmAction(warning))) return;
-    try {
-      const res = await fetch(`/api/v1/clusters/${cluster.id}/actions/rolling-restart`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmSingleNode: nodeCount === 1 }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        navigate(data.jobId ? `/jobs/${data.jobId}` : `/clusters/${cluster.id}/actions`);
-      } else {
-        notifyAction(data.error || 'Failed to schedule rolling restart.');
-      }
-    } catch {
-      notifyAction('Network error while scheduling rolling restart.');
-    }
-  };
 
   const isClickable = (c: ClusterInfo) =>
     c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
@@ -212,17 +192,6 @@ export function Clusters() {
 
   const displayKafkaClusterId = (value?: string) => value && value.trim() ? value : '-';
 
-  const formatHeartbeat = (value?: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '-';
-    return date.toLocaleString([], {
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
 
   const formatCreatedDate = (value?: string) => {
     if (!value) return '-';
@@ -286,7 +255,7 @@ export function Clusters() {
   const sourceLabel = (cluster: ClusterInfo) =>
     cluster.sourceLabel || (cluster.mode === 'EXTERNAL' ? 'External' : 'Internal managed');
 
-  useEffect(() => { fetchClusters(); }, []);
+  useEffect(() => { void (async () => { await fetchClusters(); })(); }, [fetchClusters]);
 
   useEffect(() => {
     const externalClusters = clusters.filter(cluster => cluster.mode === 'EXTERNAL');
@@ -295,7 +264,7 @@ export function Clusters() {
       refreshExternalKafkaHealth(externalClusters);
     }, EXTERNAL_HEALTH_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [clusters]);
+  }, [clusters, refreshExternalKafkaHealth]);
 
   const renderHeader = () => (
     <header className="clusters-header flex-between">
@@ -320,7 +289,7 @@ export function Clusters() {
   );
 
   return (
-    <div className={`clusters-page animate-fade-in ${!loading && clusters.length === 0 ? 'is-empty' : ''}`} onClick={() => setOpenMenuId(null)}>
+    <div className={`clusters-page animate-fade-in ${!loading && clusters.length === 0 ? 'is-empty' : ''}`}>
       <div className="clusters-surface">
         {renderHeader()}
         {(!loading && clusters.length === 0) ? (
@@ -387,7 +356,7 @@ export function Clusters() {
                             key={cluster.id}
                             className={!isClickable(cluster) ? 'disabled' : ''}
                             onClick={() => {
-                              if (isClickable(cluster)) navigate(`/clusters/${cluster.id}/overview`);
+                              if (isClickable(cluster)) window.location.assign(`/clusters/${cluster.id}/overview`);
                             }}
                           >
                             <td>
@@ -507,7 +476,7 @@ export function Clusters() {
                     <h3>Create your Cluster</h3>
                     <p>Build a new KRaft or ZooKeeper cluster on selected Tantor host</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/cluster-deployment'); }}>Create</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); window.location.assign('/cluster-deployment'); }}>Create</button>
                 </div>
 
                 <div className="cd-deployment-card">
@@ -518,7 +487,7 @@ export function Clusters() {
                     <h3>Existing Cluster</h3>
                     <p>Connect or discover an external Kafka cluster</p>
                   </div>
-                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); navigate('/external-clusters'); }}>Explorer</button>
+                  <button className="cd-deployment-btn outline" onClick={() => { setShowDeploymentModal(false); window.location.assign('/external-clusters'); }}>Explorer</button>
                 </div>
               </div>
             </div>

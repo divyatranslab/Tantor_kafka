@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 
@@ -37,7 +37,7 @@ export function Partitions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('topicName');
 
-  const fetchPartitions = async () => {
+  const fetchPartitions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -48,17 +48,17 @@ export function Partitions() {
       }
       const json = await res.json();
       setData(json);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || "Failed to load partitions");
+      setError(e instanceof Error ? e.message : "Failed to load partitions");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
-    fetchPartitions();
-  }, [id, page, size, searchQuery, sortBy]);
+    void (async () => { await fetchPartitions(); })();
+  }, [fetchPartitions]);
 
   // Handle Search submit
   const handleSearchSubmit = (e: React.FormEvent) => {

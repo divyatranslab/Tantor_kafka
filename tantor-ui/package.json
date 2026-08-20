@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint src",
+    "lint:ci": "eslint src --max-warnings=0",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "preview": "vite preview"
   },

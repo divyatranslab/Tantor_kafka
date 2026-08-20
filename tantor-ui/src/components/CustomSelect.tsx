@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AnchoredMenu } from './AnchoredMenu';
 import './CustomSelect.css';
@@ -19,12 +19,12 @@ interface CustomSelectProps {
 
 export function CustomSelect({ value, onChange, options, width = '209px', placeholder, variant = 'default' }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
 
   const selectedOption = options.find(opt => opt.value === value);
 
   return (
-    <div className={`custom-select-container ${variant === 'audit' ? 'audit-style-select' : ''}`} ref={containerRef} style={{ width }}>
+    <div className={`custom-select-container ${variant === 'audit' ? 'audit-style-select' : ''}`} ref={setAnchor} style={{ width }}>
       <button
         type="button"
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
@@ -39,9 +39,9 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
         <ChevronDown size={18} className="custom-select-chevron" />
       </button>
 
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
+          anchor={anchor}
           className={`custom-select-options-wrapper ${variant === 'audit' ? 'audit-style-select-options' : ''}`}
           onClose={() => setIsOpen(false)}
           align="start"

@@ -68,6 +68,6 @@ jobs:
       - name: Install locked UI dependencies
         run: npm ci
       - name: Lint UI
-        run: npm run lint
+        run: npm run lint:ci
       - name: Build UI
         run: npm run build

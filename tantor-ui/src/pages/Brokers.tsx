@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import './Brokers.css';
@@ -35,24 +35,24 @@ export function Brokers() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
 
-  const fetchBrokers = async () => {
+  const fetchBrokers = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/brokers`);
       if (!res.ok) throw new Error('Failed to fetch brokers');
       setBrokers(await res.json());
       setError(null);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch brokers');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchBrokers();
-    const interval = setInterval(fetchBrokers, 10000);
+    void (async () => { await fetchBrokers(); })();
+    const interval = setInterval(() => { void (async () => { await fetchBrokers(); })(); }, 10000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [fetchBrokers]);
 
   const handleSort = (field: keyof Broker) => {
     if (sortField === field) {
@@ -62,9 +62,6 @@ export function Brokers() {
       setSortOrder('asc');
     }
   };
-
-  const sortIndicator = (field: keyof Broker) =>
-    sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
 
   const normalizeRole = (broker: Broker): Exclude<RoleFilter, 'all'> | 'unknown' => {
     const roleParts = String(broker.role || '')

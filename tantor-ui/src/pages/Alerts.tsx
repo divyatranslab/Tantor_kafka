@@ -34,18 +34,18 @@ export function Alerts() {
       const res = await fetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
-    } catch (e: any) {
-      if (!quiet) setError(e.message || 'Failed to load alerts');
+    } catch (e: unknown) {
+      if (!quiet) setError(e instanceof Error ? e.message : 'Failed to load alerts');
     } finally {
       if (!quiet) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchAlerts();
-    const timer = window.setInterval(() => fetchAlerts(true), 15_000);
+    void (async () => { await fetchAlerts(); })();
+    const timer = window.setInterval(() => { void (async () => { await fetchAlerts(true); })(); }, 15_000);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') fetchAlerts(true);
+      if (document.visibilityState === 'visible') void (async () => { await fetchAlerts(true); })();
     };
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {

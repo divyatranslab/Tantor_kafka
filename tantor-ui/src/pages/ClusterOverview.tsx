@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Database, Download, Server, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import './ClusterOverview.css';
 
 interface OverviewSummary {
@@ -81,7 +81,7 @@ export function ClusterOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOverview = async () => {
+  const fetchOverview = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/overview`);
       if (!res.ok) {
@@ -90,18 +90,18 @@ export function ClusterOverview() {
       const data = await res.json();
       setOverview(data);
       setError(null);
-    } catch (e: any) {
-      setError(e.message || 'Failed to fetch cluster overview');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch cluster overview');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchOverview();
-    const interval = setInterval(fetchOverview, 10000);
+    void (async () => { await fetchOverview(); })();
+    const interval = setInterval(() => { void (async () => { await fetchOverview(); })(); }, 10000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [fetchOverview]);
 
   const csv = useMemo(() => {
     if (!overview) return '';
@@ -406,20 +406,6 @@ function Notice({ kind, text }: { kind: 'error' | 'warning'; text: string }) {
   );
 }
 
-function OverviewTile({ icon, label, value, healthy }: { icon?: React.ReactNode; label: string; value: React.ReactNode; healthy?: boolean }) {
-  return (
-    <div className="overview-tile">
-      <div className="overview-tile-label">
-        {label}
-        {healthy !== undefined && <span className={healthy ? 'status-dot ok' : 'status-dot warn'} />}
-      </div>
-      <div className="overview-tile-main">
-        {icon && <span className="overview-tile-icon">{icon}</span>}
-        <span>{value}</span>
-      </div>
-    </div>
-  );
-}
 
 function formatSkew(value: number | null) {
   if (value === null || value === undefined) return '-';

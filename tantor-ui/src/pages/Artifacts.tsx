@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Upload, XCircle, ChevronDown, ChevronUp,
   Loader2, X, RefreshCw, Server, DownloadCloud,
@@ -8,6 +8,20 @@ import { usePermissions } from '../hooks/usePermissions';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
 import orangeBanner from '../assets/orange.png';
+
+interface ArtifactVersionRaw {
+  id: string;
+  serviceType?: string;
+  version: string;
+  status?: string;
+  createdAt?: string;
+  fileSizeBytes?: number;
+  fileName?: string;
+  filename?: string;
+  sha256: string;
+  downloadUrl?: string;
+  download_url?: string;
+}
 
 interface ArtifactVersion {
   id: string;
@@ -136,36 +150,36 @@ export function Artifacts() {
     .split(',')
     .some(extension => file.name.toLowerCase().endsWith(extension.trim().toLowerCase()));
 
-  const fetchVersions = async () => {
+  const fetchVersions = useCallback(async () => {
     const res = await fetch('/api/v1/artifacts?status=AVAILABLE&size=100');
     if (!res.ok) return;
     const data = await res.json();
-    setVersions((data.content || []).map((a: any) => ({
+    setVersions((data.content || []).map((a: ArtifactVersionRaw) => ({
       id: a.id,
       service_type: (a.serviceType || 'KAFKA').toUpperCase(),
       version: a.version,
       available: a.status === 'AVAILABLE',
       release_date: a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '',
-      size_mb: (a.fileSizeBytes / 1024 / 1024).toFixed(1),
-      filename: a.fileName,
+      size_mb: ((a.fileSizeBytes ?? 0) / 1024 / 1024).toFixed(1),
+      filename: a.fileName ?? a.filename ?? '',
       sha256: a.sha256,
-      download_url: a.downloadUrl || `/api/v1/artifacts/${a.id}/download`,
+      download_url: a.downloadUrl || a.download_url || `/api/v1/artifacts/${a.id}/download`,
     })));
-  };
+  }, []);
 
-  const fetchHosts = async () => {
+  const fetchHosts = useCallback(async () => {
     const res = await fetch('/api/v1/ui/hosts');
     if (!res.ok) return;
     setHosts(await res.json());
-  };
+  }, []);
 
-  const fetchParcelState = async () => {
+  const fetchParcelState = useCallback(async () => {
     const res = await fetch('/api/v1/ui/parcels');
     if (!res.ok) return;
     setHostParcels(await res.json());
-  };
+  }, []);
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
       await Promise.all([fetchVersions(), fetchHosts(), fetchParcelState()]);
@@ -174,13 +188,13 @@ export function Artifacts() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchVersions, fetchHosts, fetchParcelState]);
 
   useEffect(() => {
-    refreshAll();
-    const timer = window.setInterval(fetchParcelState, 5000);
+    void (async () => { await refreshAll(); })();
+    const timer = window.setInterval(() => { void (async () => { await fetchParcelState(); })(); }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [refreshAll, fetchParcelState]);
 
   useEffect(() => {
     window.localStorage.setItem('tantor.universalDistributionDir', universalDistributionDir);
@@ -254,8 +268,8 @@ export function Artifacts() {
       }
       await fetchParcelState();
       setUploadMsg({ text: `${actionLabel(action)} scheduled on ${host.hostname || host.id}`, ok: true });
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || `${actionLabel(action)} failed`, ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : `${actionLabel(action)} failed`, ok: false });
     } finally {
       setActingKey(null);
     }
@@ -299,8 +313,8 @@ export function Artifacts() {
       }
       setUploadMsg({ text: `Distribution scheduled on ${eligible.length} hosts.`, ok: true });
       await fetchParcelState();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Distribute all failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Distribute all failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -340,8 +354,8 @@ export function Artifacts() {
       setUploadMsg({ text: `Distribution scheduled on ${targets.length} selected host${targets.length === 1 ? '' : 's'}.`, ok: true });
       setSelectedHosts(current => ({ ...current, [ver.id]: [] }));
       await fetchParcelState();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Selected-host distribution failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Selected-host distribution failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -389,8 +403,8 @@ export function Artifacts() {
       if (expanded === ver.id) setExpanded(null);
       setUploadMsg({ text: `Deleted ${artifactServiceLabel(ver.service_type)} ${ver.version} binary.`, ok: true });
       await refreshAll();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Delete failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Delete failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -406,8 +420,8 @@ export function Artifacts() {
       if (!res.ok) throw new Error('Unable to load artifact logs.');
       const body = await res.json();
       setArtifactAuditEvents(body.events || []);
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Unable to load artifact logs.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Unable to load artifact logs.', ok: false });
     } finally {
       setArtifactAuditLoading(false);
     }

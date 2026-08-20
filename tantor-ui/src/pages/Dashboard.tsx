@@ -2,17 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, Bot, Database, ExternalLink,
-  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck, FileText, FileCode
+  Activity, AlertTriangle, ExternalLink, Info, Network, Plus, RefreshCw, Server, X, FileCheck, FileText, FileCode,
+  type LucideIcon
 } from 'lucide-react';
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis
+  Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis, type LegendProps
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Dashboard.css';
-import { NewClusterModal } from '../components/NewClusterModal';
 
 interface DashboardSummary {
   totalHosts: number;
@@ -147,11 +146,16 @@ const STATUS_COLORS: Record<string, string> = {
   UNKNOWN: '#8b8982',
 };
 
-const renderTaskLegend = (props: any) => {
-  const { payload } = props;
+interface TaskLegendPayload {
+  color?: string;
+  value?: React.ReactNode;
+}
+
+const renderTaskLegend = (props: LegendProps & { payload?: readonly TaskLegendPayload[] }) => {
+  const { payload = [] } = props;
   return (
     <div className="task-legend">
-      {payload.map((entry: any, index: number) => (
+      {payload.map((entry, index) => (
         <span key={`item-${index}`} className="task-legend-item">
           <i style={{ background: entry.color }} />
           {entry.value}
@@ -161,7 +165,7 @@ const renderTaskLegend = (props: any) => {
   );
 };
 
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { ClusterDeployment } from './ClusterDeployment';
 
 export function Dashboard() {
@@ -190,15 +194,18 @@ export function Dashboard() {
       const res = await fetch('/api/v1/ui/dashboard');
       if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
       setDashboard(await res.json());
-    } catch (e: any) {
-      setError(e.message || 'Failed to load dashboard');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboard();
+    const timer = window.setTimeout(() => {
+      void fetchDashboard();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const summary = dashboard.summary;
@@ -242,7 +249,7 @@ export function Dashboard() {
     },
   ], [summary]);
 
-  const serviceIcon = (type: string) => {
+  const serviceIcon = () => {
     return FileCheck;
   };
 
@@ -584,7 +591,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
   );
 }
 
-function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => LucideIcon }) {
   if (!rows.length) return <EmptyPanel text="No services found for this status." compact />;
   return (
     <div className="db-service-list">
@@ -614,7 +621,9 @@ function statusLabel(status: string) {
   return status.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function DiskTooltip({ active, payload }: any) {
+interface DiskTooltipRow { name: string; usedGb: number; totalGb: number; freeGb: number }
+
+function DiskTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: DiskTooltipRow }> }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   return (

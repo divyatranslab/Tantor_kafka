@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Shield, Plus, Trash2, RefreshCw, Loader2, Search, Check, AlertCircle,
+  Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle,
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
@@ -23,7 +23,6 @@ export interface AclEntry {
 }
 
 const OPERATIONS = ['Read', 'Write', 'Create', 'Describe', 'Alter', 'Delete', 'All'];
-const RESOURCE_TYPES = ['topic', 'group', 'cluster', 'transactional-id'];
 
 export default function SecurityManager({ clusterId }: Props) {
   const { canManage } = usePermissions();
@@ -60,9 +59,7 @@ export default function SecurityManager({ clusterId }: Props) {
     }
   }, [clusterId]);
 
-  useEffect(() => {
-    fetchAcls();
-  }, [fetchAcls]);
+  useEffect(() => { void (async () => { await fetchAcls(); })(); }, [fetchAcls]);
 
   const handleCreateAcl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,8 +72,8 @@ export default function SecurityManager({ clusterId }: Props) {
     try {
       for (const op of aclOperations) {
         await createAcl(clusterId, {
-          resource_type: aclResourceType,
-          resource_name: aclResourceName,
+          resourceType: aclResourceType,
+          resourceName: aclResourceName,
           pattern_type: aclPatternType,
           principal: 'User:' + aclPrincipal.replace(/^User:/, ''),
           host: aclHost,
@@ -89,8 +86,10 @@ export default function SecurityManager({ clusterId }: Props) {
       setAclPrincipal('');
       setAclResourceName('');
       fetchAcls();
-    } catch (err: any) {
-      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to create ACL');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        || (err instanceof Error ? err.message : 'Failed to create ACL');
+      setAlertMessage(msg);
     } finally {
       setAclCreating(false);
     }
@@ -104,8 +103,8 @@ export default function SecurityManager({ clusterId }: Props) {
   const confirmDeleteAcl = async (acl: AclEntry) => {
     try {
       await deleteAcl(clusterId, {
-        resource_type: acl.resourceType,
-        resource_name: acl.resourceName,
+        resourceType: acl.resourceType,
+        resourceName: acl.resourceName,
         pattern_type: acl.patternType,
         principal: acl.principal,
         host: acl.host,
@@ -113,8 +112,10 @@ export default function SecurityManager({ clusterId }: Props) {
         permission_type: acl.permissionType,
       });
       fetchAcls();
-    } catch (err: any) {
-      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to delete ACL');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        || (err instanceof Error ? err.message : 'Failed to delete ACL');
+      setAlertMessage(msg);
     }
   };
 

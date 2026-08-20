@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
   Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import { TopicActionConfirmationModal, topicActionCopy, type TopicActionKind } from '../components/TopicActionConfirmationModal';
+import { TopicActionConfirmationModal } from '../components/TopicActionConfirmationModal';
+import { topicActionCopy, type TopicActionKind } from '../components/topicActionTypes';
 import './Topics.css';
 
 interface TopicSummary {
@@ -50,7 +50,7 @@ export function Topics() {
     return [5, 10, 15, 30, 60].includes(savedInterval) ? savedInterval : 15;
   });
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
-  const liveDropdownRef = useRef<HTMLDivElement>(null);
+  const [liveDropdownAnchor, setLiveDropdownAnchor] = useState<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -117,12 +117,6 @@ export function Topics() {
     const timer = window.setInterval(() => fetchTopics(true), refreshInterval * 1000);
     return () => window.clearInterval(timer);
   }, [autoRefresh, fetchTopics, refreshInterval]);
-
-  useEffect(() => {
-    const savedInterval = Number(window.localStorage.getItem(liveSettingsKey + ':interval'));
-    setAutoRefresh(window.localStorage.getItem(liveSettingsKey) === 'true');
-    setRefreshInterval([5, 10, 15, 30, 60].includes(savedInterval) ? savedInterval : 15);
-  }, [liveSettingsKey]);
 
   const updateLiveSettings = (enabled: boolean, interval = refreshInterval) => {
     window.localStorage.setItem(liveSettingsKey, String(enabled));
@@ -265,7 +259,7 @@ export function Topics() {
           <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
             <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
           </button>
-          <div ref={liveDropdownRef} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
+          <div ref={setLiveDropdownAnchor} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
             <div
               onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
               style={{
@@ -310,9 +304,9 @@ export function Topics() {
               </span>
             </div>
 
-            {showIntervalDropdown && liveDropdownRef.current && (
+            {showIntervalDropdown && liveDropdownAnchor && (
               <AnchoredMenu
-                anchor={liveDropdownRef.current}
+                anchor={liveDropdownAnchor}
                 className="live-dropdown-menu"
                 onClose={() => setShowIntervalDropdown(false)}
                 align="start"
