@@ -8,8 +8,8 @@ spring:
   
   datasource:
     url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
-    username: ${TANTOR_DB_USER:postgres}
-    password: ${TANTOR_DB_PASSWORD:postgres}
+    username: ${TANTOR_DB_USER}
+    password: ${TANTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   
   jpa:
@@ -33,7 +33,7 @@ server:
   port: 8443
   ssl:
     enabled: false
-    key-store-password: changeit
+    key-store-password: ${TANTOR_KEYSTORE_PASSWORD}
     key-store-type: PKCS12
     key-alias: tantor
     client-auth: want # Allow mTLS but not strictly enforce for all paths (UI uses JWT)
@@ -41,10 +41,10 @@ server:
 tantor:
   security:
     encryption:
-      key: ${TANTOR_ENCRYPTION_KEY:1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p}
+      key: ${TANTOR_ENCRYPTION_KEY}
     truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
     jwt:
-      secret: ${TANTOR_JWT_SECRET:v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E=}
+      secret: ${TANTOR_JWT_SECRET}
       expiration-ms: 86400000 # 24 hours
       issuer: ${TANTOR_JWT_ISSUER:tantor-server}
       audience: ${TANTOR_JWT_AUDIENCE:tantor-api}
