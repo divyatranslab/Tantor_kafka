@@ -206,7 +206,7 @@ class AlertControllerRecoveryTest {
     }
 
     @Test
-    void storedClusterAlertUsesAffectedNodeIpsWhenItHasNoSingleHost() {
+    void hidesLegacyAggregateAgentAlertFromCurrentAndResolvedViews() {
         AlertRepository alertRepository = mock(AlertRepository.class);
         ClusterRepository clusterRepository = mock(ClusterRepository.class);
         HostRepository hostRepository = mock(HostRepository.class);
@@ -230,9 +230,7 @@ class AlertControllerRecoveryTest {
                 alertRepository, clusterRepository, hostRepository, taskRepository,
                 mock(HostStatusService.class), hostParcelRepository, mock(ConsumerLagCacheService.class));
 
-        assertThat(controller.getActiveAlerts().getBody()).singleElement()
-                .satisfies(item -> assertThat(item.get("hostIp"))
-                        .isEqualTo("192.168.3.191, 192.168.3.229"));
+        assertThat(controller.getActiveAlerts().getBody()).isEmpty();
     }
 
     @Test

@@ -285,6 +285,11 @@ public class AlertController {
                 // Preserve port-check history in Audits, while keeping it out of
                 // alerts even for rows created before this policy existed.
                 .filter(alert -> !isPortCheckAlert(alert))
+                // Older builds persisted one cluster-level "2 of 3 agents"
+                // alert. Agent connectivity is now represented by one alert per
+                // affected agent, so the aggregate row must not reappear in
+                // either Current or Resolved alert views.
+                .filter(alert -> !isLegacyAggregateAgentAlert(alert))
                 .forEach(alert -> alertHistory.add(storedAlert(alert, clusterById, hostById)));
 
         List<Map<String, Object>> deduped = alertHistory.stream()
@@ -337,6 +342,13 @@ public class AlertController {
                 || title.contains("check ports")
                 || title.contains("broker port closed")
                 || description.contains("port check failed");
+    }
+
+    private boolean isLegacyAggregateAgentAlert(Alert alert) {
+        String key = alert.getAlertKey() == null ? "" : alert.getAlertKey().toLowerCase();
+        String title = alert.getTitle() == null ? "" : alert.getTitle().toLowerCase();
+        return key.startsWith("external-agent-partial-")
+                || title.equals("external agents partially connected");
     }
 
     private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {

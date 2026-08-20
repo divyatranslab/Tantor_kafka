@@ -146,6 +146,46 @@ class ActivityAlertServiceTest {
     }
 
     @Test
+    void createsOneAlertForEachOfflineAgentWithoutAggregateAlert() {
+        UUID clusterId = UUID.randomUUID();
+        AlertRepository repository = mock(AlertRepository.class);
+        ActivityAlertService service = new ActivityAlertService(
+                mock(ActivityLogRepository.class), repository);
+
+        when(repository.findByAlertKey(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(Optional.empty());
+        when(repository.findByClusterIdAndStatusAndTitleIn(
+                clusterId,
+                "ACTIVE",
+                List.of(ActivityAlertService.EXTERNAL_DEGRADED_TITLE, ActivityAlertService.EXTERNAL_FAILED_TITLE, ActivityAlertService.EXTERNAL_AGENT_PARTIAL_TITLE, ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE)))
+                .thenReturn(List.of());
+
+        service.synchronizeExternalClusterHealth(
+                clusterId,
+                "payments",
+                "DEGRADED",
+                1,
+                3,
+                List.of(
+                        new ActivityAlertService.OfflineAgentInfo("agent-1", "broker-1", List.of("192.168.3.191")),
+                        new ActivityAlertService.OfflineAgentInfo("agent-2", "broker-2", List.of("192.168.3.229"))));
+
+        ArgumentCaptor<Alert> saved = ArgumentCaptor.forClass(Alert.class);
+        verify(repository, org.mockito.Mockito.times(2)).save(saved.capture());
+        assertThat(saved.getAllValues())
+                .extracting(Alert::getAlertKey)
+                .containsExactlyInAnyOrder(
+                        ActivityAlertService.externalAgentOfflineKey(clusterId, "agent-1"),
+                        ActivityAlertService.externalAgentOfflineKey(clusterId, "agent-2"));
+        assertThat(saved.getAllValues())
+                .extracting(Alert::getAffectedIps)
+                .containsExactlyInAnyOrder("192.168.3.191", "192.168.3.229");
+        assertThat(saved.getAllValues())
+                .extracting(Alert::getTitle)
+                .containsOnly(ActivityAlertService.EXTERNAL_AGENT_OFFLINE_TITLE);
+    }
+
+    @Test
     void keepsAgentOfflineAlertsActive() {
         UUID clusterId = UUID.randomUUID();
         AlertRepository repository = mock(AlertRepository.class);

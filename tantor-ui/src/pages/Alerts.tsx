@@ -26,6 +26,7 @@ export function Alerts() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<'CURRENT' | 'RESOLVED'>('CURRENT');
 
   const fetchAlerts = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -58,6 +59,13 @@ export function Alerts() {
     () => alerts.filter(alert => alert.status?.toUpperCase() !== 'RESOLVED'),
     [alerts],
   );
+
+  const resolvedAlerts = useMemo(
+    () => alerts.filter(alert => alert.status?.toUpperCase() === 'RESOLVED'),
+    [alerts],
+  );
+
+  const visibleAlerts = viewMode === 'CURRENT' ? activeAlerts : resolvedAlerts;
 
   const summary = useMemo(() => {
     const critical = activeAlerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
@@ -142,7 +150,25 @@ export function Alerts() {
 
           {/* Frame 1000005212 (Details Panel) */}
           <section className="alerts-details-panel">
-            <h2>Details Activity</h2>
+            <div className="alerts-details-toolbar">
+              <div>
+                <h2>{viewMode === 'CURRENT' ? 'Current Alerts' : 'Resolved Alerts'}</h2>
+                <span className="alerts-details-count">
+                  {visibleAlerts.length} {visibleAlerts.length === 1 ? 'alert' : 'alerts'}
+                </span>
+              </div>
+              <label className="alerts-view-filter">
+                <span>View</span>
+                <select
+                  value={viewMode}
+                  onChange={event => setViewMode(event.target.value as 'CURRENT' | 'RESOLVED')}
+                  aria-label="Filter alerts by status"
+                >
+                  <option value="CURRENT">Current</option>
+                  <option value="RESOLVED">Resolved</option>
+                </select>
+              </label>
+            </div>
 
             {/* Frame 1000005221 */}
             <div className="alerts-details-list">
@@ -151,14 +177,18 @@ export function Alerts() {
                   <RefreshCw className="spin" size={24} />
                   <strong>Loading alerts...</strong>
                 </div>
-              ) : alerts.length === 0 ? (
+              ) : visibleAlerts.length === 0 ? (
                 <div className="alerts-empty-state healthy">
                   <CheckCircle size={44} />
-                  <strong>No alert history</strong>
-                  <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
+                  <strong>{viewMode === 'CURRENT' ? 'All systems are healthy' : 'No resolved alerts'}</strong>
+                  <span>
+                    {viewMode === 'CURRENT'
+                      ? 'There are no current alerts requiring attention.'
+                      : 'Resolved alert history will appear here.'}
+                  </span>
                 </div>
               ) : (
-                alerts.map(alert => (
+                visibleAlerts.map(alert => (
                   /* Frame 1000005219 / 1000005225 */
                   <article key={alert.id} className="alerts-detail-card">
                     {/* Frame 1000005354 */}
