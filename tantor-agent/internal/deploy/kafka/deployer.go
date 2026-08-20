@@ -506,9 +506,10 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 
 	// Report VALIDATING status
 	if err := d.client.ReportTaskResult(&api.TaskResult{
-		TaskID: t.TaskID,
-		HostID: d.cfg.Agent.HostID,
-		Status: "VALIDATING",
+		TaskID:     t.TaskID,
+		ClaimToken: t.ClaimToken,
+		HostID:     d.cfg.Agent.HostID,
+		Status:     "VALIDATING",
 	}); err != nil {
 		log("Warning: Failed to report VALIDATING status: %v", err)
 	}
@@ -617,9 +618,10 @@ func (d *Deployer) validateZooKeeperDeployment(ctx context.Context, t *api.Task,
 	}
 
 	if err := d.client.ReportTaskResult(&api.TaskResult{
-		TaskID: t.TaskID,
-		HostID: d.cfg.Agent.HostID,
-		Status: "VALIDATING",
+		TaskID:     t.TaskID,
+		ClaimToken: t.ClaimToken,
+		HostID:     d.cfg.Agent.HostID,
+		Status:     "VALIDATING",
 	}); err != nil {
 		log("Warning: Failed to report VALIDATING status: %v", err)
 	}
