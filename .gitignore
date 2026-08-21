@@ -952,3 +952,5 @@ temp-jdk/jdk-21.0.11+10/lib/security/cacerts
 temp-jdk/jdk-21.0.11+10/lib/security/default.policy
 temp-jdk/jdk-21.0.11+10/lib/security/public_suffix_list.dat
 
+
+output/

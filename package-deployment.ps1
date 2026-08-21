@@ -2,7 +2,7 @@
 param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
     [string]$Version = '1.0.0',
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'output'),
+    [string]$OutputDirectory = '',
     [Parameter(Mandatory = $true)]
     [string]$PublicOrigin,
     [Parameter(Mandatory = $true)]
@@ -33,6 +33,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $OutputDirectory = Join-Path $PSScriptRoot 'output'
+}
 
 $postgresReference = 'docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b'
 $gitleaksReference = 'ghcr.io/gitleaks/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a'
