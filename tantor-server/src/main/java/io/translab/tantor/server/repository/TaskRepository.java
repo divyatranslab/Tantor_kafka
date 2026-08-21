@@ -19,6 +19,8 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
     List<Task> findByClusterIdOrderByCreatedAtDesc(UUID clusterId);
     List<Task> findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(UUID clusterId, String hostId, String command);
 
+    long countByStatus(String status);
+
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update Task t set t.status = 'IN_PROGRESS', t.claimToken = :claimToken, t.claimedAt = :claimedAt, "
             + "t.leaseExpiresAt = :leaseExpiresAt, t.attemptCount = coalesce(t.attemptCount, 0) + 1 "

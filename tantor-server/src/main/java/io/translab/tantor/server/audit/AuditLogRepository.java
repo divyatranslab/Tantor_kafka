@@ -20,4 +20,6 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSp
 
     @org.springframework.data.jpa.repository.Query(value = "SELECT cluster_name, bootstrap_servers, kafka_cluster_id FROM kf_clusters WHERE id = CAST(:clusterId AS UUID) LIMIT 1", nativeQuery = true)
     java.util.List<Object[]> findClusterInfo(@org.springframework.data.repository.query.Param("clusterId") String clusterId);
+
+    java.util.List<AuditLog> findByCreatedTimeGreaterThanOrderByCreatedTimeAsc(java.time.Instant createdTime);
 }
