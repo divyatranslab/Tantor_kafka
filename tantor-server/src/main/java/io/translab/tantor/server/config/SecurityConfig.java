@@ -3,6 +3,7 @@ package io.translab.tantor.server.config;
 import io.translab.tantor.server.security.JwtAuthenticationFilter;
 import io.translab.tantor.server.security.JwtUtils;
 import jakarta.servlet.DispatcherType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -34,6 +35,12 @@ public class SecurityConfig {
 
     private final JwtUtils jwtUtils;
 
+    @Value("${tantor.environment:production}")
+    private String runtimeEnvironment;
+
+    @Value("${tantor.agent.legacy-unauthenticated-enabled:false}")
+    private boolean legacyUnauthenticatedAgentApiEnabled;
+
     public SecurityConfig(JwtUtils jwtUtils) {
         this.jwtUtils = jwtUtils;
     }
@@ -61,10 +68,13 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/v1/monitoring/health").permitAll()
                     .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 
-                    // There is currently no certificate-to-principal filter for agents.
-                    // Fail closed instead of allowing a user JWT (or no identity) to
-                    // cross the agent trust boundary. C-03 owns agent mTLS identity.
-                    .requestMatchers("/api/v1/agents/**").denyAll()
+                    // mTLS is the production agent trust boundary. A deliberately
+                    // opt-in development compatibility mode keeps an existing
+                    // unsecured control plane usable while it is migrated.
+                    .requestMatchers("/api/v1/agents/**")
+                    .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                            legacyUnauthenticatedAgentApiEnabled
+                                    && "development".equalsIgnoreCase(runtimeEnvironment)))
 
                     // Account/directory administration and API documentation are
                     // restricted before the general read/mutation rules below.

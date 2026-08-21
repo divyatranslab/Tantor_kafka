@@ -14,20 +14,29 @@ import (
 type Config struct {
 	Environment string `yaml:"environment"`
 	Agent       struct {
-		HostID       string `yaml:"host_id"`
-		AgentName    string `yaml:"agent_name"`
-		ServerURL    string `yaml:"server_url"`
-		CertFile     string `yaml:"cert_file"`
-		KeyFile      string `yaml:"key_file"`
-		CACert       string `yaml:"ca_cert"`
-		PollInterval int    `yaml:"poll_interval_seconds"`
-		LogLevel     string `yaml:"log_level"`
+		HostID             string `yaml:"host_id"`
+		AgentName          string `yaml:"agent_name"`
+		ServerURL          string `yaml:"server_url"`
+		CertFile           string `yaml:"cert_file"`
+		KeyFile            string `yaml:"key_file"`
+		CACert             string `yaml:"ca_cert"`
+		PollInterval       int    `yaml:"poll_interval_seconds"`
+		LogLevel           string `yaml:"log_level"`
+		AllowInsecureHTTP  bool   `yaml:"allow_insecure_http"`
+		InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+		HeartbeatInterval  int    `yaml:"heartbeat_interval_seconds"`
 	} `yaml:"agent"`
 	Paths struct {
 		DataDir      string `yaml:"data_dir"`
 		LogDir       string `yaml:"log_dir"`
 		ArtifactsDir string `yaml:"artifacts_dir"`
 	} `yaml:"paths"`
+	// Legacy sections are intentionally retained only so that supported older
+	// installations can be upgraded in place. They are not used for authentication
+	// or transport decisions by this agent version.
+	Auth      map[string]interface{} `yaml:"auth"`
+	HTTP      map[string]interface{} `yaml:"http"`
+	Privilege map[string]interface{} `yaml:"privilege"`
 }
 
 // Load reads the YAML configuration file
@@ -113,11 +122,20 @@ func (cfg *Config) SafeServerEndpoint() string {
 // ValidateTransport enforces the production agent's HTTPS and mTLS contract.
 func (cfg *Config) ValidateTransport() error {
 	serverURL, err := url.Parse(strings.TrimSpace(cfg.Agent.ServerURL))
-	if err != nil || serverURL.Scheme != "https" || serverURL.Host == "" {
-		return fmt.Errorf("agent.server_url must be an absolute https URL")
+	if err != nil || serverURL.Host == "" {
+		return fmt.Errorf("agent.server_url must be an absolute URL")
 	}
 	if serverURL.User != nil || serverURL.RawQuery != "" || serverURL.Fragment != "" {
 		return fmt.Errorf("agent.server_url must not contain credentials, query parameters, or fragments")
+	}
+	if cfg.AllowsInsecureHTTP() {
+		if serverURL.Scheme != "http" {
+			return fmt.Errorf("agent.allow_insecure_http is valid only with an http server URL")
+		}
+		return nil
+	}
+	if serverURL.Scheme != "https" {
+		return fmt.Errorf("agent.server_url must be an absolute https URL")
 	}
 	for name, value := range map[string]string{
 		"agent.cert_file": cfg.Agent.CertFile,
@@ -129,4 +147,11 @@ func (cfg *Config) ValidateTransport() error {
 		}
 	}
 	return nil
+}
+
+// AllowsInsecureHTTP exists solely for legacy development environments that do
+// not yet terminate TLS. It requires an explicit opt-in and can never be used
+// outside development; all SIT/UAT/production agents require HTTPS with mTLS.
+func (cfg *Config) AllowsInsecureHTTP() bool {
+	return strings.EqualFold(strings.TrimSpace(cfg.Environment), "development") && cfg.Agent.AllowInsecureHTTP
 }

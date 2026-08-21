@@ -27,6 +27,15 @@ func NewAPIClient(cfg *config.Config) (*APIClient, error) {
 	if err := cfg.ValidateTransport(); err != nil {
 		return nil, err
 	}
+	if cfg.AllowsInsecureHTTP() {
+		return &APIClient{
+			cfg: cfg,
+			httpClient: &http.Client{
+				Timeout:       10 * time.Minute,
+				CheckRedirect: rejectRedirects,
+			},
+		}, nil
+	}
 	cert, err := tls.LoadX509KeyPair(cfg.Agent.CertFile, cfg.Agent.KeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("load agent client certificate: %w", err)
@@ -146,14 +155,18 @@ func secureRedirectPolicy(request *http.Request, via []*http.Request) error {
 	return nil
 }
 
+func rejectRedirects(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
+}
+
 func requireSameHTTPSAuthority(serverURL, targetURL string) error {
 	server, err := url.Parse(serverURL)
 	if err != nil {
 		return fmt.Errorf("invalid configured server URL: %w", err)
 	}
 	target, err := url.Parse(targetURL)
-	if err != nil || target.Scheme != "https" || target.Host == "" {
-		return fmt.Errorf("artifact URL must be an absolute https URL")
+	if err != nil || target.Host == "" || target.Scheme != server.Scheme {
+		return fmt.Errorf("artifact URL must use the configured control-plane scheme and authority")
 	}
 	if !strings.EqualFold(server.Host, target.Host) {
 		return fmt.Errorf("artifact URL authority %q does not match control-plane authority %q", target.Host, server.Host)
