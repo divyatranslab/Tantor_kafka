@@ -50,12 +50,6 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Verify approved image digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker pull docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
-          echo "PostgreSQL 16.14 image digest verified successfully"
       - name: Run fresh migration and startup test
         shell: bash
         run: bash scripts/database/test-postgresql-16-compatibility.sh
@@ -71,12 +65,6 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Verify approved image digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker pull docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
-          echo "PostgreSQL 16.14 image digest verified successfully"
       - name: Run disposable dump and restore test
         shell: bash
         run: bash scripts/database/test-postgresql-13-to-16-restore.sh
