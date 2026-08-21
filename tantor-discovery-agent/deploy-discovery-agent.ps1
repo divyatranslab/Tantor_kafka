@@ -28,9 +28,15 @@ param (
     [string]$RestartCommand = "",
     [string]$MetricsUrl = "http://localhost:7071/metrics",
 
+    [Parameter(Mandatory = $true)]
+    [string]$TlsCaPath,
+    [Parameter(Mandatory = $true)]
+    [string]$TlsClientCertPath,
+    [Parameter(Mandatory = $true)]
+    [string]$TlsClientKeyPath,
+
     [switch]$DisableMetrics,
     [switch]$SkipPrecheck,
-    [switch]$TlsVerify,
     [switch]$SystemdUseSudo,
     [switch]$InstallSudoers,
     [switch]$SkipBuild,
@@ -119,6 +125,15 @@ try {
     Write-Host "Persistent Logs: $LogDir"
     Write-Host ""
 
+    if (-not $ServerUrl.StartsWith("https://", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "ServerUrl must use https://."
+    }
+    foreach ($tlsPath in @($TlsCaPath, $TlsClientCertPath, $TlsClientKeyPath)) {
+        if (-not (Test-Path -LiteralPath $tlsPath -PathType Leaf)) {
+            throw "Required TLS file not found: $tlsPath"
+        }
+    }
+
     if (-not $SkipBuild) {
         Write-Step "[1/5] Building static Linux binary locally..."
         $resolvedGo = Resolve-GoExe
@@ -182,7 +197,9 @@ $scanPathYaml
   metrics_url: $(Yaml-Quote $MetricsUrl)
   disable_metrics: $(Bool-Lower $DisableMetrics.IsPresent)
   skip_precheck: $(Bool-Lower $SkipPrecheck.IsPresent)
-  tls_insecure_skip_verify: $(Bool-Lower (-not $TlsVerify.IsPresent))
+  tls_ca_cert: $(Yaml-Quote "$AgentDir/certs/control-plane-ca.crt")
+  tls_client_cert: $(Yaml-Quote "$AgentDir/certs/discovery-agent.crt")
+  tls_client_key: $(Yaml-Quote "$AgentDir/certs/discovery-agent.key")
 "@
 
     $localConfig = Join-Path ([IO.Path]::GetTempPath()) ("tantor-discovery-" + [Guid]::NewGuid().ToString("N") + ".yaml")
@@ -201,6 +218,9 @@ mkdir -p $remoteTmpQ
     Write-Step "[4/5] Uploading binary and generated config..."
     Copy-ToRemote $BinaryPath "$remoteTmp/tantor-discovery-agent-linux"
     Copy-ToRemote $localConfig "$remoteTmp/discovery.yaml"
+    Copy-ToRemote $TlsCaPath "$remoteTmp/control-plane-ca.crt"
+    Copy-ToRemote $TlsClientCertPath "$remoteTmp/discovery-agent.crt"
+    Copy-ToRemote $TlsClientKeyPath "$remoteTmp/discovery-agent.key"
 
     $agentDirQ = Bash-Quote $AgentDir
     $runtimeUserQ = Bash-Quote $RuntimeUser
@@ -268,11 +288,14 @@ if [ "`$RUNTIME_USER" != "root" ] && ! id "`$RUNTIME_USER" >/dev/null 2>&1; then
   sudo useradd --system --home-dir "`$AGENT_DIR" --shell /sbin/nologin "`$RUNTIME_USER"
 fi
 
-sudo mkdir -p "`$AGENT_DIR/logs"
+sudo mkdir -p "`$AGENT_DIR/logs" "`$AGENT_DIR/certs"
 sudo mkdir -p "`$LOG_DIR"
 sudo touch "`$LOG_DIR/`$SERVICE_NAME.log"
 sudo install -m 0755 "`$REMOTE_TMP/tantor-discovery-agent-linux" "`$AGENT_DIR/tantor-discovery-agent-linux"
 sudo install -m 0640 "`$REMOTE_TMP/discovery.yaml" "`$AGENT_DIR/discovery.yaml"
+sudo install -m 0644 "`$REMOTE_TMP/control-plane-ca.crt" "`$AGENT_DIR/certs/control-plane-ca.crt"
+sudo install -m 0644 "`$REMOTE_TMP/discovery-agent.crt" "`$AGENT_DIR/certs/discovery-agent.crt"
+sudo install -m 0600 "`$REMOTE_TMP/discovery-agent.key" "`$AGENT_DIR/certs/discovery-agent.key"
 sudo chown -R "`$RUNTIME_USER:`$RUNTIME_USER" "`$AGENT_DIR" 2>/dev/null || sudo chown -R "`$RUNTIME_USER" "`$AGENT_DIR"
 sudo chown "`$RUNTIME_USER:`$RUNTIME_USER" "`$LOG_DIR" "`$LOG_DIR/`$SERVICE_NAME.log" 2>/dev/null || sudo chown "`$RUNTIME_USER" "`$LOG_DIR" "`$LOG_DIR/`$SERVICE_NAME.log"
 sudo chmod 0750 "`$LOG_DIR"

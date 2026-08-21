@@ -27,7 +27,9 @@ Options:
   --metrics-url URL        Local JMX/Prometheus URL. Default: http://localhost:7071/metrics
   --disable-metrics        Do not poll local metrics endpoint.
   --skip-precheck          Skip startup precheck output.
-  --tls-verify             Verify Tantor server TLS certificate.
+  --tls-ca PATH            Control-plane CA certificate. Required.
+  --tls-cert PATH          Discovery-agent client certificate. Required.
+  --tls-key PATH           Discovery-agent private key. Required.
   --foreground             Run once in foreground instead of installing systemd.
   -h, --help               Show this help.
 EOF
@@ -53,7 +55,9 @@ KAFKA_SERVICE="kafka.service"
 METRICS_URL="http://localhost:7071/metrics"
 DISABLE_METRICS="false"
 SKIP_PRECHECK="false"
-TLS_INSECURE_SKIP_VERIFY="true"
+TLS_CA=""
+TLS_CERT=""
+TLS_KEY=""
 FOREGROUND="false"
 
 while [[ $# -gt 0 ]]; do
@@ -78,7 +82,9 @@ while [[ $# -gt 0 ]]; do
     --metrics-url) METRICS_URL="${2:-}"; shift 2 ;;
     --disable-metrics) DISABLE_METRICS="true"; shift ;;
     --skip-precheck) SKIP_PRECHECK="true"; shift ;;
-    --tls-verify) TLS_INSECURE_SKIP_VERIFY="false"; shift ;;
+    --tls-ca) TLS_CA="${2:-}"; shift 2 ;;
+    --tls-cert) TLS_CERT="${2:-}"; shift 2 ;;
+    --tls-key) TLS_KEY="${2:-}"; shift 2 ;;
     --foreground) FOREGROUND="true"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
@@ -90,6 +96,16 @@ if [[ -z "$SERVER_URL" ]]; then
   usage
   exit 2
 fi
+if [[ "$SERVER_URL" != https://* ]]; then
+  echo "ERROR: --server-url must use https://." >&2
+  exit 2
+fi
+for tls_file in "$TLS_CA" "$TLS_CERT" "$TLS_KEY"; do
+  if [[ -z "$tls_file" || ! -s "$tls_file" ]]; then
+    echo "ERROR: --tls-ca, --tls-cert, and --tls-key must name non-empty pre-provisioned files." >&2
+    exit 2
+  fi
+done
 
 HOSTNAME_VALUE="$(hostname -f 2>/dev/null || hostname)"
 HOST_ID="${HOST_ID:-discovery-${HOSTNAME_VALUE//[^A-Za-z0-9_-]/-}}"
@@ -171,7 +187,9 @@ HTTP_CONFIG
   echo "  metrics_url: \"${METRICS_URL}\""
   echo "  disable_metrics: ${DISABLE_METRICS}"
   echo "  skip_precheck: ${SKIP_PRECHECK}"
-  echo "  tls_insecure_skip_verify: ${TLS_INSECURE_SKIP_VERIFY}"
+  echo "  tls_ca_cert: \"${TLS_CA}\""
+  echo "  tls_client_cert: \"${TLS_CERT}\""
+  echo "  tls_client_key: \"${TLS_KEY}\""
 } > "$AGENT_DIR/discovery.yaml"
 
 chmod 0640 "$AGENT_DIR/discovery.yaml"

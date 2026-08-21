@@ -21,10 +21,36 @@ application/data networks.
    administrator-only `0700` secrets directory. This permits the explicitly
    granted non-root containers to read their individual read-only mounts.
 4. Ensure the TLS certificate SAN contains the production Tantor hostname.
+   Provision `agent-ca.crt` separately and issue each agent a unique client
+   certificate and private key outside the release archive.
 5. Review the Keycloak and font origins in the UI Content Security Policy.
 6. Run `bash ./start.sh` from the extracted bundle directory.
 7. Confirm every service becomes healthy and only ports 80 and 443 are
-   published by the Tantor deployment.
+published by the Tantor deployment.
+
+## TLS trust boundary
+
+Nginx is the production TLS endpoint and supports TLS 1.2 and 1.3. Port 80 is
+redirect-only; the Spring management server and Artifact Repository are not
+published and use HTTP only on the Compose `app` network, which is marked
+internal. Nginx replaces forwarding headers before Spring consumes them, and
+the backend port has no host mapping, so an external client cannot spoof the
+original scheme or address. Agent API routes
+and discovery report/task routes require a client certificate issued by the
+mounted `agent-ca.crt`; normal browser routes retain application-level
+authentication.
+
+Agents must use the public HTTPS hostname and must be provisioned with the
+control-plane CA plus their unique certificate/key. Missing, invalid, expired,
+untrusted, or wrong-host certificates fail closed. Installer scripts do not
+generate mock credentials or permit unverified downloads.
+
+The dedicated Java monitoring client never changes JVM-wide HTTPS defaults,
+does not follow redirects, and validates hostnames using TLS 1.2/1.3. Public-CA
+Grafana endpoints use normal JVM trust. For a private CA, mount the CA file and
+the required `monitoring-ca.crt` is mounted only into that client process. The
+direct Prometheus default is intentionally HTTP only for the private monitoring service network;
+an externally routed Prometheus endpoint must use HTTPS.
 
 The database name and private service endpoint are fixed as `tantor` and
 `database:5432`. Supply the database username and password only through the

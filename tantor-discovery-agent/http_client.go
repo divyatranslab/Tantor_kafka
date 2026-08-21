@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,14 +42,34 @@ type circuitBreaker struct {
 	halfOpen  bool
 }
 
-func newAgentHTTPClients(settings HTTPSettings, insecureSkipVerify bool) *agentHTTPClients {
-	return &agentHTTPClients{
-		backend: newResilientHTTPClient(settings, insecureSkipVerify),
-		metrics: newResilientHTTPClient(settings, false),
+func newAgentHTTPClients(settings HTTPSettings, cfg DiscoveryConfig) (*agentHTTPClients, error) {
+	if err := cfg.ValidateTransport(); err != nil {
+		return nil, err
 	}
+	certificate, err := tls.LoadX509KeyPair(cfg.TLSClientCert, cfg.TLSClientKey)
+	if err != nil {
+		return nil, fmt.Errorf("load discovery client certificate: %w", err)
+	}
+	caPEM, err := os.ReadFile(cfg.TLSCACert)
+	if err != nil {
+		return nil, fmt.Errorf("read control-plane CA certificate: %w", err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("control-plane CA certificate contains no valid PEM certificates")
+	}
+	tlsConfig := &tls.Config{
+		MinVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{certificate},
+		RootCAs:      roots,
+	}
+	return &agentHTTPClients{
+		backend: newResilientHTTPClient(settings, tlsConfig),
+		metrics: newResilientHTTPClient(settings, nil),
+	}, nil
 }
 
-func newResilientHTTPClient(settings HTTPSettings, insecureSkipVerify bool) *resilientHTTPClient {
+func newResilientHTTPClient(settings HTTPSettings, tlsConfig *tls.Config) *resilientHTTPClient {
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -61,13 +83,22 @@ func newResilientHTTPClient(settings HTTPSettings, insecureSkipVerify bool) *res
 		TLSHandshakeTimeout:   settings.TLSHandshakeTimeout,
 		ResponseHeaderTimeout: settings.ResponseHeaderTimeout,
 		ExpectContinueTimeout: time.Second,
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: insecureSkipVerify, // Configured explicitly for private-CA deployments.
-		},
+		TLSClientConfig:       tlsConfig,
 	}
 	return &resilientHTTPClient{
-		client:   &http.Client{Transport: transport, Timeout: settings.RequestTimeout},
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   settings.RequestTimeout,
+			CheckRedirect: func(request *http.Request, via []*http.Request) error {
+				if len(via) > 0 && via[0].URL.Scheme == "https" && request.URL.Scheme != "https" {
+					return fmt.Errorf("refusing HTTPS downgrade redirect to %q", request.URL.String())
+				}
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				return nil
+			},
+		},
 		settings: settings,
 		breaker: &circuitBreaker{
 			threshold: settings.CircuitFailureThreshold,

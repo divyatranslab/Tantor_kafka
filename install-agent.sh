@@ -3,7 +3,7 @@
 # Target OS: RHEL/CentOS, Ubuntu/Debian
 # Run as root
 
-set -e
+set -Eeuo pipefail
 
 if [ "$EUID" -ne 0 ]; then
   echo "Please run as root"
@@ -12,8 +12,8 @@ fi
 
 TANTOR_USER="tantor"
 TANTOR_HOME="/srv/tantor"
-AGENT_BIN_URL=${AGENT_BIN_URL:-"http://192.168.3.68:8443/downloads/tantor-agent"}
-SERVER_URL=${SERVER_URL:-"http://192.168.3.68:8443"}
+AGENT_BIN_URL=${AGENT_BIN_URL:-}
+SERVER_URL=${SERVER_URL:?SERVER_URL must be an HTTPS URL}
 CERT_PATH="/etc/tantor/certs"
 AGENT_DATA_DIR="/var/lib/tantor/agent/data"
 AGENT_ARTIFACTS_DIR="/var/lib/tantor/agent/artifacts"
@@ -21,6 +21,19 @@ AGENT_LOG_DIR="/var/log/tantor-agent"
 AGENT_LOG_FILE="$AGENT_LOG_DIR/tantor-agent.log"
 
 echo "=== Tantor Agent Installer ==="
+
+case "$SERVER_URL" in https://*) ;; *) echo "SERVER_URL must use https://" >&2; exit 2 ;; esac
+if [ ! -f /srv/tantor-agent ]; then
+  case "$AGENT_BIN_URL" in https://*) ;; *) echo "AGENT_BIN_URL must use https:// when no binary is pre-staged" >&2; exit 2 ;; esac
+fi
+
+mkdir -p "$CERT_PATH"
+for certificate_file in "$CERT_PATH/agent.crt" "$CERT_PATH/agent.key" "$CERT_PATH/ca.crt"; do
+    if [ ! -s "$certificate_file" ]; then
+        echo "Required pre-provisioned mTLS file is missing or empty: $certificate_file" >&2
+        exit 1
+    fi
+done
 
 # 1. Create tantor user
 if id "$TANTOR_USER" &>/dev/null; then
@@ -44,7 +57,8 @@ if [ -f "/srv/tantor-agent" ]; then
     cp /srv/tantor-agent $TANTOR_HOME/bin/tantor-agent
 else
     echo "Downloading agent from $AGENT_BIN_URL..."
-    curl -k -s -o $TANTOR_HOME/bin/tantor-agent $AGENT_BIN_URL
+    curl --fail --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+      --cacert "$CERT_PATH/ca.crt" -o "$TANTOR_HOME/bin/tantor-agent" "$AGENT_BIN_URL"
 fi
 chmod +x $TANTOR_HOME/bin/tantor-agent
 chown -R $TANTOR_USER:$TANTOR_USER $TANTOR_HOME
@@ -60,11 +74,6 @@ chmod 0640 "$AGENT_LOG_FILE"
 echo "Setting up certificates and configs..."
 mkdir -p $CERT_PATH
 mkdir -p /etc/tantor/config
-
-# In a real air-gapped flow, certs would be injected here from an HSM or config management
-echo "[MOCK] Generating self-signed certs for mTLS..."
-openssl req -x509 -newkey rsa:4096 -keyout $CERT_PATH/agent.key -out $CERT_PATH/agent.crt -days 365 -nodes -subj "/CN=$(hostname)" 2>/dev/null
-cp $CERT_PATH/agent.crt $CERT_PATH/ca.crt # Mock CA
 
 HOST_ID="$(hostname)"
 

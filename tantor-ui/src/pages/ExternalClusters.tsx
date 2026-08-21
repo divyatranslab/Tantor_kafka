@@ -124,9 +124,9 @@ export function ExternalClusters() {
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
     if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://<tantor-server-ip-or-dns>:8443';
+      return 'https://<tantor-server-ip-or-dns>';
     }
-    return `${window.location.protocol}//${host}:8443`;
+    return `https://${host}`;
   }, []);
 
   const agentConfig = useMemo(() => (
@@ -148,7 +148,9 @@ export function ExternalClusters() {
   metrics_url: "http://localhost:7071/metrics"
   disable_metrics: false
   skip_precheck: false
-  tls_insecure_skip_verify: true`
+  tls_ca_cert: "/etc/tantor-discovery-agent/certs/control-plane-ca.crt"
+  tls_client_cert: "/etc/tantor-discovery-agent/certs/discovery-agent.crt"
+  tls_client_key: "/etc/tantor-discovery-agent/certs/discovery-agent.key"`
   ), [serverHint]);
 
   const loadAgents = useCallback(async () => {

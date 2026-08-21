@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,25 @@ import (
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/pkg/api"
 )
+
+func TestTransportFailsClosed(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Agent.ServerURL = "http://control-plane.example"
+	if _, err := NewAPIClient(cfg); err == nil {
+		t.Fatal("expected plaintext control-plane URL to be rejected")
+	}
+
+	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
+	if transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("certificate verification must remain enabled")
+	}
+	if err := requireSameHTTPSAuthority("https://tantor.example", "http://tantor.example/a"); err == nil {
+		t.Fatal("expected artifact HTTP downgrade to be rejected")
+	}
+	if err := requireSameHTTPSAuthority("https://tantor.example", "https://attacker.example/a"); err == nil {
+		t.Fatal("expected cross-authority artifact URL to be rejected")
+	}
+}
 
 func TestPollAndReportPreserveClaimToken(t *testing.T) {
 	var reported api.TaskResult

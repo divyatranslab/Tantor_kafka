@@ -11,6 +11,7 @@ import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
+import io.translab.tantor.server.config.MonitoringHttpClientConfiguration.MonitoringRestTemplate;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -50,7 +51,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, externalClusters, nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper());
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
         ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
         ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
@@ -86,7 +87,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, mock(ExternalClusterRepository.class), nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper());
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
         ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
         ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
@@ -136,7 +137,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, externalClusters, nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper());
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
 
         PrometheusMonitoringService.MonitoringClusterSummary summary = service.clusters("EXTERNAL").getFirst();
 
@@ -183,7 +184,7 @@ class PrometheusMonitoringServiceTest {
         when(nodes.findByClusterId(id)).thenReturn(List.of(first, controllerOnFirstHost, second));
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodes,
-                mock(HostRepository.class), mock(EncryptionService.class), new ObjectMapper());
+                mock(HostRepository.class), mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
 
         assertThat(service.computeHostMemoryPercent(mirror, null)).isEqualTo(25.0);
         assertThat(service.computeHostMemoryPercent(mirror, "2")).isEqualTo(30.0);
@@ -219,7 +220,7 @@ class PrometheusMonitoringServiceTest {
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 mock(ClusterRepository.class), mock(ExternalClusterRepository.class),
                 mock(ExternalClusterNodeRepository.class), hosts,
-                mock(EncryptionService.class), new ObjectMapper());
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
 
         assertThat(service.computeHostMemoryPercent(cluster, null)).isEqualTo(37.5);
         assertThat(service.computeHostMemoryAvailableMb(cluster, null)).isEqualTo(10240L);

@@ -17,7 +17,7 @@ func (function roundTripperFunc) RoundTrip(request *http.Request) (*http.Respons
 func TestTaskPollDoesNotRetryAndClosesErrorResponse(t *testing.T) {
 	body := &trackingBody{}
 	var attempts atomic.Int32
-	client := newResilientHTTPClient(testHTTPSettings(), false)
+	client := newResilientHTTPClient(testHTTPSettings(), nil)
 	client.client.Transport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		attempts.Add(1)
 		return &http.Response{

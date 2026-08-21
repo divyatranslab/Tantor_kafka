@@ -13,7 +13,7 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
-import jakarta.annotation.PostConstruct;
+import io.translab.tantor.server.config.MonitoringHttpClientConfiguration.MonitoringRestTemplate;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
@@ -35,7 +34,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -47,12 +45,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.security.cert.X509Certificate;
 
 @Service
 @RequiredArgsConstructor
@@ -68,7 +60,7 @@ public class PrometheusMonitoringService {
     private final HostRepository hostRepository;
     private final EncryptionService encryptionService;
     private final ObjectMapper objectMapper;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final MonitoringRestTemplate restTemplate;
 
     @Value("${tantor.monitoring.mode:direct}")
     private String monitoringMode;
@@ -88,9 +80,6 @@ public class PrometheusMonitoringService {
     @Value("${tantor.monitoring.grafana-password:}")
     private String grafanaPassword;
 
-    @Value("${tantor.monitoring.grafana-skip-tls-validation:false}")
-    private boolean grafanaSkipTlsValidation;
-
     @Value("${tantor.monitoring.exporter-host:}")
     private String defaultExporterHost;
 
@@ -102,41 +91,6 @@ public class PrometheusMonitoringService {
 
     @Value("${tantor.monitoring.controller-jmx-exporter-port:7072}")
     private int defaultControllerJmxExporterPort;
-
-    @PostConstruct
-    void configureGrafanaTls() {
-        if (!grafanaSkipTlsValidation) {
-            return;
-        }
-        try {
-            TrustManager[] trustAllManagers = new TrustManager[] {
-                    new X509TrustManager() {
-                        @Override
-                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
-                        }
-
-                        @Override
-                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
-                        }
-
-                        @Override
-                        public X509Certificate[] getAcceptedIssuers() {
-                            return new X509Certificate[0];
-                        }
-                    }
-            };
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, trustAllManagers, new SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-            HostnameVerifier trustAllHosts = (hostname, session) -> true;
-            HttpsURLConnection.setDefaultHostnameVerifier(trustAllHosts);
-            log.warn("Grafana TLS validation is disabled for monitoring proxy requests. Use only for test/self-signed environments.");
-        } catch (Exception e) {
-            log.warn("Could not disable Grafana TLS validation", e);
-        }
-    }
-
-
 
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {
@@ -1107,8 +1061,11 @@ public class PrometheusMonitoringService {
             args.add("--tls.enabled");
             String truststoreType = normalizeCertificateType(external.getTruststoreType());
             boolean hasPemCaFile = hasText(external.getTruststorePath()) && isPemCertificateType(truststoreType);
-            if (Boolean.TRUE.equals(external.getDisableHostnameVerification()) || !hasPemCaFile) {
-                args.add("--tls.insecure-skip-tls-verify");
+            if (Boolean.TRUE.equals(external.getDisableHostnameVerification())) {
+                throw new IllegalStateException("Kafka exporter hostname verification cannot be disabled");
+            }
+            if (!hasPemCaFile) {
+                throw new IllegalStateException("Kafka exporter TLS requires a PEM CA file");
             }
             if (hasPemCaFile) {
                 args.add("--tls.ca-file=" + systemdArg(external.getTruststorePath().trim()));

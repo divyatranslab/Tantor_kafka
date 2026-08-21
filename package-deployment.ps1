@@ -197,6 +197,8 @@ required_secrets=(
   TANTOR_JWT_SECRET
   tls.crt
   tls.key
+  agent-ca.crt
+  monitoring-ca.crt
 )
 for secret in "${required_secrets[@]}"; do
   test -s "./secrets/${secret}" || {

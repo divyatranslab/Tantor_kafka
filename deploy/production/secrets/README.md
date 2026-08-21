@@ -11,6 +11,8 @@ control, `.env.production`, command-line arguments or the release archive.
 | `TANTOR_JWT_SECRET` | Random JWT signing secret |
 | `tls.crt` | PEM certificate including the full required chain |
 | `tls.key` | PEM private key matching `tls.crt` |
+| `agent-ca.crt` | PEM CA certificate used only to verify agent and discovery-agent client certificates |
+| `monitoring-ca.crt` | PEM CA bundle trusted only by the dedicated Grafana/Prometheus HTTP client |
 
 The secrets directory should be owned by the deployment administrator with
 mode `0700`. Each file should use mode `0444`: the parent directory prevents

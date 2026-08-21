@@ -20,7 +20,10 @@ Copy `configs/discovery.yaml` and set:
 
 ```yaml
 discovery:
-  server_url: "http://<tantor-server-ip>:8443"
+  server_url: "https://tantor.example.com"
+  tls_ca_cert: "/etc/tantor-discovery-agent/certs/control-plane-ca.crt"
+  tls_client_cert: "/etc/tantor-discovery-agent/certs/discovery-agent.crt"
+  tls_client_key: "/etc/tantor-discovery-agent/certs/discovery-agent.key"
   scan_paths:
     - "/srv/apps"
     - "/data/apps"
@@ -79,6 +82,13 @@ sudo tail -F /var/log/tantor/discovery-agent/tantor-discovery-agent.log
 ```
 
 ## Network and shutdown behavior
+
+Control-plane traffic requires HTTPS and mutual TLS. The agent validates the
+server chain and hostname against `tls_ca_cert`, presents its unique client
+certificate, requires TLS 1.2 or newer, and rejects HTTPS-to-HTTP redirects.
+Missing or invalid CA/certificate/key files stop startup; there is no insecure
+TLS mode. The metrics URL may remain HTTP only when it is the loopback exporter
+on the same VM.
 
 All backend and local metrics requests use explicit connection, TLS, response,
 and overall request deadlines. Transient heartbeat, registration, completion,

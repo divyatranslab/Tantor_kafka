@@ -92,11 +92,14 @@ services:
       TANTOR_TRUSTSTORE_DIR: /srv/tantor/security/truststores
       TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
       TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
+      TANTOR_MONITORING_TLS_CA_FILE: /run/secrets/monitoring-ca.crt
     secrets:
       - TANTOR_DB_USER
       - TANTOR_DB_PASSWORD
       - TANTOR_ENCRYPTION_KEY
       - TANTOR_JWT_SECRET
+      - source: TANTOR_MONITORING_CA_CERTIFICATE
+        target: monitoring-ca.crt
     volumes:
       - tantor_security_data:/srv/tantor/security/truststores
     tmpfs:
@@ -123,6 +126,7 @@ services:
       - app
       - data
       - egress
+      - monitoring
 
   tantor-ui:
     image: ${TANTOR_UI_IMAGE:?TANTOR_UI_IMAGE must be an immutable digest reference}
@@ -136,6 +140,8 @@ services:
         target: tls.crt
       - source: TANTOR_TLS_PRIVATE_KEY
         target: tls.key
+      - source: TANTOR_AGENT_CA_CERTIFICATE
+        target: agent-ca.crt
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,mode=1777
     read_only: true
@@ -147,7 +153,7 @@ services:
     cpus: 1
     mem_limit: 256m
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/healthz | grep -q '^ok$'"]
+      test: ["CMD", "nginx", "-t"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -174,6 +180,8 @@ networks:
     internal: true
   data:
     internal: true
+  monitoring:
+    internal: true
 
 secrets:
   TANTOR_DB_USER:
@@ -188,3 +196,7 @@ secrets:
     file: ${TANTOR_SECRETS_DIR:-./secrets}/tls.crt
   TANTOR_TLS_PRIVATE_KEY:
     file: ${TANTOR_SECRETS_DIR:-./secrets}/tls.key
+  TANTOR_AGENT_CA_CERTIFICATE:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/agent-ca.crt
+  TANTOR_MONITORING_CA_CERTIFICATE:
+    file: ${TANTOR_SECRETS_DIR:-./secrets}/monitoring-ca.crt

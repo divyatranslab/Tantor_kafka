@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +12,69 @@ import (
 	"testing"
 	"time"
 )
+
+func trustedTestServerTLS(server *httptest.Server) *tls.Config {
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	serverName := server.Certificate().DNSNames[0]
+	return &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots, ServerName: serverName}
+}
+
+func TestTLSValidationAndHostnameVerificationFailClosed(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	trusted := newResilientHTTPClient(testHTTPSettings(), trustedTestServerTLS(server))
+	response, err := trusted.do(context.Background(), http.MethodGet, server.URL, "", nil, false)
+	if err != nil {
+		t.Fatalf("trusted TLS request failed: %v", err)
+	}
+	closeResponse(response)
+
+	untrusted := newResilientHTTPClient(testHTTPSettings(), &tls.Config{MinVersion: tls.VersionTLS12})
+	if response, err = untrusted.do(context.Background(), http.MethodGet, server.URL, "", nil, false); err == nil {
+		closeResponse(response)
+		t.Fatal("expected untrusted CA to fail")
+	}
+
+	wrongHostTLS := trustedTestServerTLS(server)
+	wrongHostTLS.ServerName = "wrong-host.example"
+	wrongHost := newResilientHTTPClient(testHTTPSettings(), wrongHostTLS)
+	if response, err = wrongHost.do(context.Background(), http.MethodGet, server.URL, "", nil, false); err == nil {
+		closeResponse(response)
+		t.Fatal("expected wrong hostname to fail")
+	}
+}
+
+func TestMTLSEndpointRejectsMissingClientCertificate(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, ClientAuth: tls.RequireAnyClientCert}
+	server.StartTLS()
+	defer server.Close()
+
+	client := newResilientHTTPClient(testHTTPSettings(), trustedTestServerTLS(server))
+	if response, err := client.do(context.Background(), http.MethodGet, server.URL, "", nil, false); err == nil {
+		closeResponse(response)
+		t.Fatal("expected mTLS endpoint to reject a missing client certificate")
+	}
+}
+
+func TestHTTPSDowngradeRedirectIsRejected(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Location", "http://attacker.example/")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer server.Close()
+	client := newResilientHTTPClient(testHTTPSettings(), trustedTestServerTLS(server))
+	if response, err := client.do(context.Background(), http.MethodGet, server.URL, "", nil, false); err == nil {
+		closeResponse(response)
+		t.Fatal("expected HTTPS downgrade redirect to fail")
+	}
+}
 
 func testHTTPSettings() HTTPSettings {
 	return HTTPSettings{
@@ -35,7 +100,7 @@ func TestHTTPClientTimesOutWhenServerNeverResponds(t *testing.T) {
 	settings := testHTTPSettings()
 	settings.ResponseHeaderTimeout = 40 * time.Millisecond
 	settings.RequestTimeout = 60 * time.Millisecond
-	client := newResilientHTTPClient(settings, false)
+	client := newResilientHTTPClient(settings, nil)
 
 	started := time.Now()
 	response, err := client.do(context.Background(), http.MethodGet, server.URL, "", nil, false)
@@ -61,7 +126,7 @@ func TestHTTPClientCancellationInterruptsActiveRequest(t *testing.T) {
 	settings := testHTTPSettings()
 	settings.ResponseHeaderTimeout = 5 * time.Second
 	settings.RequestTimeout = 5 * time.Second
-	client := newResilientHTTPClient(settings, false)
+	client := newResilientHTTPClient(settings, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan error, 1)
@@ -93,7 +158,7 @@ func TestHTTPClientRetriesTransientStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newResilientHTTPClient(testHTTPSettings(), false)
+	client := newResilientHTTPClient(testHTTPSettings(), nil)
 	response, err := client.do(context.Background(), http.MethodPost, server.URL, "application/json", []byte(`{}`), true)
 	if err != nil {
 		t.Fatalf("request failed after retry: %v", err)
@@ -119,7 +184,7 @@ func TestCircuitBreakerOpensAndRecovers(t *testing.T) {
 	defer server.Close()
 
 	settings := testHTTPSettings()
-	client := newResilientHTTPClient(settings, false)
+	client := newResilientHTTPClient(settings, nil)
 	for i := 0; i < settings.CircuitFailureThreshold; i++ {
 		response, err := client.do(context.Background(), http.MethodGet, server.URL, "", nil, false)
 		if err != nil {

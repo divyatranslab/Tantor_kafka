@@ -64,5 +64,8 @@ discovery:
   # Keep precheck enabled for fresh deployment safety.
   skip_precheck: false
 
-  # Set false only when the Tantor server certificate is trusted by the VM.
-  tls_insecure_skip_verify: true
+  # The control-plane CA and per-agent certificate/key are mandatory. Private
+  # keys are provisioned outside source control with mode 0600.
+  tls_ca_cert: "/etc/tantor-discovery-agent/certs/control-plane-ca.crt"
+  tls_client_cert: "/etc/tantor-discovery-agent/certs/discovery-agent.crt"
+  tls_client_key: "/etc/tantor-discovery-agent/certs/discovery-agent.key"

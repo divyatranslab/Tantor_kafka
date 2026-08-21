@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -35,7 +36,9 @@ func main() {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
 		os.Exit(1)
 	}
@@ -50,7 +53,11 @@ func main() {
 		fmt.Printf("Invalid command configuration: %v\n", err)
 		os.Exit(1)
 	}
-	clients := newAgentHTTPClients(httpSettings, cfg.Discovery.TLSInsecureSkipVerify)
+	clients, err := newAgentHTTPClients(httpSettings, cfg.Discovery)
+	if err != nil {
+		fmt.Printf("Invalid TLS configuration: %v\n", err)
+		os.Exit(1)
+	}
 
 	if !cfg.Discovery.SkipPrecheck {
 		runPrecheck(ctx, commandTimeout, false)
@@ -60,10 +67,6 @@ func main() {
 	}
 
 	serverURL := cfg.Discovery.ServerURL
-	if serverURL == "" {
-		fmt.Println("Error: server_url must be set in the YAML config.")
-		os.Exit(1)
-	}
 
 	scanPaths := cfg.Discovery.EffectiveScanPaths()
 	intervalStr := cfg.Discovery.Interval

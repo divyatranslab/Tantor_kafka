@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -14,25 +16,44 @@ type Config struct {
 }
 
 type DiscoveryConfig struct {
-	HostID                string     `yaml:"host_id"`
-	AgentName             string     `yaml:"agent_name"`
-	ServerURL             string     `yaml:"server_url"`
-	ScanPaths             []string   `yaml:"scan_paths"`
-	KafkaHome             string     `yaml:"kafka_home"`
-	KafkaConfigFiles      []string   `yaml:"kafka_config_files"`
-	KafkaDataDirs         string     `yaml:"kafka_data_dirs"`
-	KafkaLogDirs          string     `yaml:"kafka_log_dirs"`
-	Interval              string     `yaml:"interval"`
-	NodeName              string     `yaml:"node_name"`
-	RestartCommand        string     `yaml:"restart_command"`
-	TaskPollInterval      string     `yaml:"task_poll_interval"`
-	MetricsURL            string     `yaml:"metrics_url"`
-	DisableMetrics        bool       `yaml:"disable_metrics"`
-	SkipPrecheck          bool       `yaml:"skip_precheck"`
-	SystemdUseSudo        bool       `yaml:"systemd_use_sudo"`
-	TLSInsecureSkipVerify bool       `yaml:"tls_insecure_skip_verify"`
-	CommandTimeout        string     `yaml:"command_timeout"`
-	HTTP                  HTTPConfig `yaml:"http"`
+	HostID           string     `yaml:"host_id"`
+	AgentName        string     `yaml:"agent_name"`
+	ServerURL        string     `yaml:"server_url"`
+	ScanPaths        []string   `yaml:"scan_paths"`
+	KafkaHome        string     `yaml:"kafka_home"`
+	KafkaConfigFiles []string   `yaml:"kafka_config_files"`
+	KafkaDataDirs    string     `yaml:"kafka_data_dirs"`
+	KafkaLogDirs     string     `yaml:"kafka_log_dirs"`
+	Interval         string     `yaml:"interval"`
+	NodeName         string     `yaml:"node_name"`
+	RestartCommand   string     `yaml:"restart_command"`
+	TaskPollInterval string     `yaml:"task_poll_interval"`
+	MetricsURL       string     `yaml:"metrics_url"`
+	DisableMetrics   bool       `yaml:"disable_metrics"`
+	SkipPrecheck     bool       `yaml:"skip_precheck"`
+	SystemdUseSudo   bool       `yaml:"systemd_use_sudo"`
+	TLSCACert        string     `yaml:"tls_ca_cert"`
+	TLSClientCert    string     `yaml:"tls_client_cert"`
+	TLSClientKey     string     `yaml:"tls_client_key"`
+	CommandTimeout   string     `yaml:"command_timeout"`
+	HTTP             HTTPConfig `yaml:"http"`
+}
+
+func (d DiscoveryConfig) ValidateTransport() error {
+	serverURL, err := url.Parse(strings.TrimSpace(d.ServerURL))
+	if err != nil || serverURL.Scheme != "https" || serverURL.Host == "" {
+		return fmt.Errorf("discovery.server_url must be an absolute https URL")
+	}
+	for name, value := range map[string]string{
+		"discovery.tls_ca_cert":     d.TLSCACert,
+		"discovery.tls_client_cert": d.TLSClientCert,
+		"discovery.tls_client_key":  d.TLSClientKey,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return fmt.Errorf("%s is required for discovery-agent mTLS", name)
+		}
+	}
+	return nil
 }
 
 type HTTPConfig struct {
