@@ -76,7 +76,7 @@ export function ClusterActions() {
         const data = await res.json();
         if (data.jobId) navigate(`/jobs/${data.jobId}`);
       } else {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         notifyAction(data.error || "Failed to trigger rolling restart.");
       }
     } catch {
@@ -105,7 +105,7 @@ export function ClusterActions() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hostId: monitoringHostId, prometheusUrl, grafanaUrl }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
       if (res.ok && body.jobId) navigate(`/jobs/${body.jobId}`);
       else notifyAction(body.error || 'Failed to create monitoring enablement job.');
     } catch {
@@ -142,7 +142,7 @@ export function ClusterActions() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ targetVersion }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to schedule upgrade.');
       }

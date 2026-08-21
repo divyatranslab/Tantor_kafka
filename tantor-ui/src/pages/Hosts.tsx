@@ -49,7 +49,7 @@ export function Hosts() {
       if (res.ok) {
         fetchHosts();
       } else {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = await res.json();
         notifyAction(errorData.message || 'Failed to disconnect node.');
       }
     } catch (e) {

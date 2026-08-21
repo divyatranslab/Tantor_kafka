@@ -63,7 +63,7 @@ export function ClusterNodes() {
         const res = await fetch(`/api/v1/clusters/${id}/nodes`, {
           signal: abortController.signal,
         });
-        const data = await res.json().catch(() => null);
+        const data = await res.json();
         if (!res.ok) {
           throw new Error(data?.message || `Failed to fetch nodes (${res.status})`);
         }

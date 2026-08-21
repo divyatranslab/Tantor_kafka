@@ -182,14 +182,16 @@ func (e *Engine) installKafka(ctx context.Context, t *api.Task) (*api.TaskResult
 
 	reporter := func(step string, logs string) {
 		currentStep = step
-		e.client.ReportTaskResult(&api.TaskResult{
+		if err := e.client.ReportTaskResult(&api.TaskResult{
 			TaskID:      t.TaskID,
 			ClaimToken:  t.ClaimToken,
 			HostID:      e.cfg.Agent.HostID,
 			Status:      "IN_PROGRESS",
 			CurrentStep: step,
 			LogOutput:   logs,
-		})
+		}); err != nil {
+			slog.Warn("Failed to report task progress", "err", err)
+		}
 	}
 
 	logOutput, err := deployer.Deploy(ctx, t, reporter)

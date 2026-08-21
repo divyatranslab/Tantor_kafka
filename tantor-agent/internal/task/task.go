@@ -2,7 +2,10 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -130,7 +133,24 @@ func (e *Engine) executeTask(t api.Task) {
 
 	slog.Info("Task executed", "taskId", t.TaskID, "status", result.Status)
 
-	if err := e.client.ReportTaskResult(result); err != nil {
-		slog.Error("Failed to report task result", "err", err)
+	var reportErr error
+	for i := 0; i < 5; i++ {
+		reportErr = e.client.ReportTaskResult(result)
+		if reportErr == nil {
+			break
+		}
+		slog.Warn("Failed to report task result, retrying...", "attempt", i+1, "err", reportErr)
+		time.Sleep(time.Duration(2<<i) * time.Second) // 2s, 4s, 8s, 16s, 32s
+	}
+
+	if reportErr != nil {
+		slog.Error("CRITICAL: Failed to persist task result permanently. Saving to local state.", "err", reportErr)
+		
+		spoolDir := filepath.Join(e.cfg.Paths.DataDir, "failed_tasks")
+		if err := os.MkdirAll(spoolDir, 0755); err == nil {
+			if data, err := json.Marshal(result); err == nil {
+				os.WriteFile(filepath.Join(spoolDir, t.TaskID+".json"), data, 0644)
+			}
+		}
 	}
 }

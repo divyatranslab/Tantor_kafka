@@ -43,7 +43,7 @@ export function Partitions() {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = await res.json();
         throw new Error(errorData.message || `Partitions are not available yet (HTTP ${res.status})`);
       }
       const json = await res.json();

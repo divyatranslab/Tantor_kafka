@@ -128,7 +128,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
 ];
 
 async function responseError(response: Response) {
-  const body = await response.json().catch(() => null);
+  const body = await response.json();
   return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
 }
 

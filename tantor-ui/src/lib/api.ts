@@ -41,7 +41,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
+    const errorData = await res.json();
     throw { response: { data: errorData } };
   }
   const text = await res.text();

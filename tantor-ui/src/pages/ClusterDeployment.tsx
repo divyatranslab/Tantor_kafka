@@ -1009,7 +1009,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildDeploymentPayload(false)),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
       if (!res.ok) {
         notifyAction(body.error || body.message || 'KRaft topology validation failed.');
         return;
@@ -1241,7 +1241,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ required_ports: requiredPorts.join(',') }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
       if (!res.ok || !body.taskId) {
         throw new Error(body.message || 'Failed to queue port availability check.');
       }
@@ -1288,7 +1288,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             required_ports: prerequisitePortsForHost(host.id).join(','),
           }),
         });
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json();
         if (!res.ok) {
           setPrereqResults(prev => ({
             ...prev,
@@ -1375,7 +1375,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     await Promise.all(failedHosts.map(async host => {
       try {
         const res = await fetch(`/api/v1/ui/hosts/${host.id}/fix-prerequisites`, { method: 'POST' });
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json();
         if (!res.ok) throw new Error(body.message || 'Failed to queue prerequisite remediation.');
         setPrereqResults(prev => ({
           ...prev,
@@ -1401,7 +1401,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ confirmed: true }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
       if (!res.ok) throw new Error(body.message || 'Failed to schedule reboot.');
       setPrereqResults(prev => ({
         ...prev,
@@ -1431,7 +1431,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
       if (!res.ok) {
         notifyAction(body.error || body.message || 'Deployment failed to start.');
         return;

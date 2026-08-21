@@ -31,7 +31,7 @@ interface PaginatedResponse {
 type PendingTopicAction = { kind: TopicActionKind; names: string[] };
 
 async function apiError(response: Response) {
-  const body = await response.json().catch(() => null);
+  const body = await response.json();
   return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
 }
 

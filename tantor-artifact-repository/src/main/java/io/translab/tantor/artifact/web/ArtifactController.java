@@ -27,6 +27,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -282,5 +283,19 @@ public class ArtifactController {
 
     private String currentUser(String authorization) {
         return roleAuthenticationUtil.username(authorization);
+    }
+    @ExceptionHandler(io.translab.tantor.artifact.exception.ArtifactValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleArtifactValidationException(io.translab.tantor.artifact.exception.ArtifactValidationException e) {
+        log.warn("Artifact validation failed for artifact id {}: {}", 
+                e.getArtifact() != null ? e.getArtifact().getId() : "unknown", e.getMessage());
+        
+        Map<String, Object> error = new java.util.LinkedHashMap<>();
+        error.put("errorCode", "VALIDATION_FAILED");
+        error.put("message", e.getMessage());
+        error.put("timestamp", java.time.Instant.now().toString());
+        if (e.getArtifact() != null) {
+            error.put("artifactId", e.getArtifact().getId());
+        }
+        return ResponseEntity.status(422).body(error);
     }
 }

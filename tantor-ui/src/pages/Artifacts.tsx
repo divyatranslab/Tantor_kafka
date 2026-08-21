@@ -224,7 +224,7 @@ export function Artifacts() {
         setUploadDirectory('');
         await refreshAll();
       } else {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json();
         setUploadMsg({ text: err.detail || err.message || 'Upload failed.', ok: false });
       }
     } catch {
@@ -263,7 +263,7 @@ export function Artifacts() {
         }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json();
         throw new Error(err.message || err.error || `${action} failed`);
       }
       await fetchParcelState();
@@ -308,7 +308,7 @@ export function Artifacts() {
         }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json();
         throw new Error(body.message || body.error || 'Distribute all failed.');
       }
       setUploadMsg({ text: `Distribution scheduled on ${eligible.length} hosts.`, ok: true });
@@ -348,7 +348,7 @@ export function Artifacts() {
         }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = await res.json();
         throw new Error(body.message || body.error || 'Selected-host distribution failed.');
       }
       setUploadMsg({ text: `Distribution scheduled on ${targets.length} selected host${targets.length === 1 ? '' : 's'}.`, ok: true });
@@ -397,7 +397,7 @@ export function Artifacts() {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json();
         throw new Error(err.detail || err.message || err.error || 'Delete failed.');
       }
       if (expanded === ver.id) setExpanded(null);

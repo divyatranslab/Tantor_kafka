@@ -207,7 +207,7 @@ export function ExternalClusters() {
     setCheckingClusterName(true);
     try {
       const res = await fetch(`/api/v1/ui/external-clusters/name-availability?name=${encodeURIComponent(name)}`);
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Unable to validate the cluster name.');
       if (validationSequence !== clusterNameValidationSequence.current) return false;
       const available = data.available === true;
@@ -346,7 +346,7 @@ export function ExternalClusters() {
         },
         body: JSON.stringify(payload),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) {
         const message = data.message || data.error || 'Failed to register external cluster';
         if (res.status === 409) {

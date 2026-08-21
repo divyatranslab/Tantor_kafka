@@ -296,7 +296,7 @@ function ExternalConfigEditor() {
           rollingRestart: rollingRestart
         })
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
       if (response.ok && data.jobId) {
         navigate(`/jobs/${data.jobId}`);
       } else {

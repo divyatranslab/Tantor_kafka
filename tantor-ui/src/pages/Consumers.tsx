@@ -65,7 +65,7 @@ export function Consumers() {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
+        const errorData = await res.json();
         throw new Error(errorData.message || `Failed to load consumer groups (HTTP ${res.status})`);
       }
       const json = await res.json();

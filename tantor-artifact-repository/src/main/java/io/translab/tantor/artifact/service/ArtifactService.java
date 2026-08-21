@@ -66,7 +66,7 @@ public class ArtifactService {
             String createdBy
     ) {}
 
-    @Transactional
+    @Transactional(noRollbackFor = io.translab.tantor.artifact.exception.ArtifactValidationException.class)
     public Artifact upload(UploadCommand cmd, InputStream data) {
         StorageService.validateFileName(cmd.fileName());
         validateCoordinate(cmd.version(), "version");
@@ -144,8 +144,12 @@ public class ArtifactService {
         } catch (Exception e) {
             // Rejected bytes stay outside the downloadable artifact tree for
             // forensic review; only successfully validated files become AVAILABLE.
+            log.error("Artifact {} validation failed: {}", artifact.getId(), e.getMessage(), e);
             storageService.quarantine(tempFile, cmd.fileName());
             artifact.setStatus(ArtifactStatus.FAILED);
+            Artifact saved = repository.save(artifact);
+            throw new io.translab.tantor.artifact.exception.ArtifactValidationException(
+                saved, "Artifact validation failed: " + e.getMessage(), e);
         }
 
         Artifact saved = repository.save(artifact);

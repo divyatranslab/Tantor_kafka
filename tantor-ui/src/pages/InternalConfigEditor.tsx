@@ -191,7 +191,7 @@ export function InternalConfigEditor() {
       const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions/preview`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
       if (!response.ok) { showNotice(data.message || 'Unable to validate configuration.'); return; }
       const localDiff: ConfigDiff[] = Array.from(new Set([
         ...Object.keys(baselineProperties),
@@ -221,7 +221,7 @@ export function InternalConfigEditor() {
       const response = await fetch(`/api/v1/clusters/${id}/config/services/${selectedFile.serviceId}/versions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(versionRequest),
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
       if (!response.ok) { showNotice(data.message || 'Unable to save configuration version.'); return; }
       await fetchVersions(selectedFile.serviceId);
       showNotice(`Version v${data.configVersion} saved. The active production file has not been changed.`);
@@ -239,7 +239,7 @@ export function InternalConfigEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: action === 'apply' ? JSON.stringify({ restart }) : undefined,
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json();
       if (!response.ok) { showNotice(data.message || `${action} failed.`); return; }
       await fetchVersions(selectedFile?.serviceId);
       if (action === 'apply' && data.jobId) {

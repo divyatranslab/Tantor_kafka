@@ -420,7 +420,7 @@ export function SchemaRegistry() {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
       if (!res.ok) return;
-      const data: SavedConnection[] = await res.json().catch(() => []);
+      const data: SavedConnection[] = await res.json();
       setSavedConnections(data);
       if (data.length > 0) {
         const defaultConn = data.find(c => c.isDefault) ?? data[0];
@@ -482,7 +482,7 @@ export function SchemaRegistry() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to save connection.');
 
       setCertPassword('');
@@ -509,7 +509,7 @@ export function SchemaRegistry() {
         method: 'DELETE'
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         throw new Error(data.message || 'Failed to delete connection.');
       }
       setSelectedConnectionId(null);
@@ -527,7 +527,7 @@ export function SchemaRegistry() {
   ): Promise<string> => {
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId));
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       const compatibility = res.ok
         ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
         : 'BACKWARD';
@@ -559,7 +559,7 @@ export function SchemaRegistry() {
         url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
       }
       const res = await fetch(url);
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
       if (requestId !== loadRequestId.current) return false;
       setSummary(data);
@@ -626,7 +626,7 @@ export function SchemaRegistry() {
     setError(null);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/discover`);
-      const discovered: DiscoveredConnection = await response.json().catch(() => ({}));
+      const discovered: DiscoveredConnection = await response.json();
       if (!response.ok) throw new Error(discovered.message || 'Failed to detect Schema Registry.');
 
       if (!discovered.detected) {
@@ -655,7 +655,7 @@ export function SchemaRegistry() {
             isDefault: true
           })
         });
-        const saved = await saveResponse.json().catch(() => ({}));
+        const saved = await saveResponse.json();
         if (!saveResponse.ok) throw new Error(saved.message || 'Detected Schema Registry, but could not save the connection.');
         setSelectedConnectionId(saved.id);
         await loadConnections();
@@ -705,7 +705,7 @@ export function SchemaRegistry() {
 
     try {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
       setSubjectCompatibility(data.compatibility || globalCompatibility);
@@ -784,7 +784,7 @@ export function SchemaRegistry() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: createSchemaType, schema: createSchema })
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to create schema.');
       setShowCreate(false);
       setCreateSubject('');
@@ -809,7 +809,7 @@ export function SchemaRegistry() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ schemaType: editSchemaType, schema: newSchema })
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to update schema.');
       // Also save compatibility if changed
       if (editCompatibility !== subjectCompatibility) {
@@ -842,7 +842,7 @@ export function SchemaRegistry() {
       const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
         method: 'DELETE'
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to delete subject.');
       backToList();
       await load();
@@ -862,7 +862,7 @@ export function SchemaRegistry() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: val })
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to update global compatibility.');
     } catch (e: unknown) {
       setError(errorMessage(e, 'Failed to update global compatibility.'));
@@ -878,7 +878,7 @@ export function SchemaRegistry() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ compatibility: subjectCompatibility })
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to update subject compatibility.');
       setDetails(prev => prev ? { ...prev, compatibility: subjectCompatibility } : prev);
     } catch (e: unknown) {

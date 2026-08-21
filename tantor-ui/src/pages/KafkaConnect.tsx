@@ -201,7 +201,7 @@ export function KafkaConnect() {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
       if (!res.ok) return;
-      const data: SavedConnection[] = await res.json().catch(() => []);
+      const data: SavedConnection[] = await res.json();
       setSavedConnections(data);
       if (data.length > 0) {
         const defaultConn = data.find(c => c.isDefault) ?? data[0];
@@ -268,7 +268,7 @@ export function KafkaConnect() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to save connection.');
 
       setCertPassword('');
@@ -294,7 +294,7 @@ export function KafkaConnect() {
         method: 'DELETE'
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         throw new Error(data.message || 'Failed to delete connection.');
       }
       setSelectedConnectionId(null);
@@ -325,7 +325,7 @@ export function KafkaConnect() {
         url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
       }
       const res = await fetch(url);
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
       if (requestId !== loadRequestId.current) return false;
       setSummary(data);
@@ -387,7 +387,7 @@ export function KafkaConnect() {
     setError(null);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/discover`);
-      const discovered: DiscoveredConnection = await response.json().catch(() => ({}));
+      const discovered: DiscoveredConnection = await response.json();
       if (!response.ok) throw new Error(discovered.message || 'Failed to detect Kafka Connect.');
 
       if (!discovered.detected) {
@@ -416,7 +416,7 @@ export function KafkaConnect() {
             isDefault: true
           })
         });
-        const saved = await saveResponse.json().catch(() => ({}));
+        const saved = await saveResponse.json();
         if (!saveResponse.ok) throw new Error(saved.message || 'Detected Kafka Connect, but could not save the connection.');
         setSelectedConnectionId(saved.id);
         await loadConnections();
@@ -495,7 +495,7 @@ export function KafkaConnect() {
         const res = await fetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/connectors'), {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await res.json();
         if (!res.ok) throw new Error(data.message || ('Failed to deploy connector. ' + deployed + ' of ' + payloads.length + ' deployed.'));
         deployed++;
       }
@@ -516,7 +516,7 @@ export function KafkaConnect() {
       const res = await fetch(withConnId(baseUrl), {
         method: action === 'delete' ? 'DELETE' : 'PUT'
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
       await load();
     } catch (e: unknown) {
