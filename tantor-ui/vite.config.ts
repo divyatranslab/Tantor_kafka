@@ -14,27 +14,9 @@ export default defineConfig(({ mode }) => {
     build: {
       modulePreload: false,
       chunkSizeWarningLimit: 800,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-                return 'react-vendor';
-              }
-              if (id.includes('recharts')) {
-                return 'chart-vendor';
-              }
-              if (id.includes('keycloak-js')) {
-                return 'auth-vendor';
-              }
-              if (id.includes('lucide-react')) {
-                return 'ui-icons';
-              }
-              return 'vendor'; // all other dependencies
-            }
-          }
-        }
-      }
+      // Let Rollup derive chunks from the full dependency graph.  The previous
+      // hand-written vendor chunks split Recharts from some of its CommonJS
+      // dependencies, which can create an invalid runtime circular reference.
     },
     server: {
       proxy: {
