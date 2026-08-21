@@ -171,17 +171,17 @@ export function Hosts() {
         <div className="hosts-empty-state">
           <div className="empty-illustration">
             <svg width="102" height="74" viewBox="0 0 102 74" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
               <rect x="10" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
               <rect x="10" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
               <rect x="60" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
               <rect x="60" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
               <rect x="10" y="34" width="14" height="2" rx="1" fill="#8B5CF6"/>
               <rect x="10" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
               <rect x="60" y="34" width="14" height="2" rx="1" fill="#D1D5DB"/>
               <rect x="60" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="#E5E7EB"/>
+              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
               <rect x="10" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
               <rect x="10" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
               <rect x="60" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>

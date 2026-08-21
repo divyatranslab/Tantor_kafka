@@ -11,6 +11,31 @@ export default defineConfig(({ mode }) => {
   return {
     envDir,
     plugins: [react()],
+    build: {
+      modulePreload: false,
+      chunkSizeWarningLimit: 800,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+                return 'react-vendor';
+              }
+              if (id.includes('recharts')) {
+                return 'chart-vendor';
+              }
+              if (id.includes('keycloak-js')) {
+                return 'auth-vendor';
+              }
+              if (id.includes('lucide-react')) {
+                return 'ui-icons';
+              }
+              return 'vendor'; // all other dependencies
+            }
+          }
+        }
+      }
+    },
     server: {
       proxy: {
         '/api/v1/artifacts': {

@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #FFFFFF;
+  background: var(--bg-surface);
 }
 
 .wizard-layout {
@@ -29,7 +29,7 @@
 .wizard-steps-sidebar li {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
   color: #5E6470;
   font-size: 0.95rem;
   font-weight: 500;
@@ -68,7 +68,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #FFF;
+  background: var(--bg-surface);
   border: 2px solid #E8EAED;
   display: flex;
   align-items: center;
@@ -80,13 +80,13 @@
 li.active .step-circle {
   border-color: #1967D2;
   background: #1967D2;
-  color: #FFF;
+  color: var(--text-light);
 }
 
 li.completed .step-circle {
   border-color: #22C55E;
   background: #22C55E;
-  color: #FFF;
+  color: var(--text-light);
 }
 
 .wizard-content {
@@ -114,7 +114,7 @@ li.completed .step-circle {
 .table-header {
   display: grid;
   grid-template-columns: 50px 200px 1fr;
-  padding: 12px;
+  padding: var(--space-3);
   background: #F8F9FA;
   font-weight: 600;
   border-bottom: 1px solid #E8EAED;
@@ -125,7 +125,7 @@ li.completed .step-circle {
 .table-row {
   display: grid;
   grid-template-columns: 50px 200px 1fr;
-  padding: 16px 12px;
+  padding: var(--space-4) 12px;
   border-bottom: 1px solid #E8EAED;
   align-items: center;
   cursor: pointer;
@@ -168,7 +168,7 @@ li.completed .step-circle {
   background: #1967D2;
   color: white;
   border: none;
-  padding: 8px 24px;
+  padding: var(--space-2) 24px;
   border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
@@ -180,10 +180,10 @@ li.completed .step-circle {
 }
 
 .btn-secondary {
-  background: #FFF;
+  background: var(--bg-surface);
   color: #1967D2;
   border: 1px solid #1967D2;
-  padding: 8px 24px;
+  padding: var(--space-2) 24px;
   border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
@@ -196,7 +196,7 @@ li.completed .step-circle {
 }
 
 .role-header {
-  padding: 12px 16px;
+  padding: var(--space-3) 16px;
   background: #F8F9FA;
   border-bottom: 1px solid #E8EAED;
   display: flex;
@@ -205,7 +205,7 @@ li.completed .step-circle {
 }
 
 .role-body {
-  padding: 24px;
+  padding: var(--space-6);
   color: #5E6470;
   font-style: italic;
   text-align: center;
@@ -214,7 +214,7 @@ li.completed .step-circle {
 .btn-small {
   background: white;
   border: 1px solid #DADCE0;
-  padding: 4px 12px;
+  padding: var(--space-1) 12px;
   border-radius: 4px;
   cursor: pointer;
 }
@@ -229,7 +229,7 @@ li.completed .step-circle {
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .form-group label {
@@ -239,7 +239,7 @@ li.completed .step-circle {
 }
 
 .form-control {
-  padding: 8px 12px;
+  padding: var(--space-2) 12px;
   border: 1px solid #DADCE0;
   border-radius: 4px;
   font-size: 0.95rem;
@@ -253,12 +253,12 @@ li.completed .step-circle {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-header);
 }
 
 .cloudera-modal {
-  background: #FFF;
-  border-radius: 6px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-sm);
   width: 500px;
   max-width: 90vw;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -267,7 +267,7 @@ li.completed .step-circle {
 }
 
 .modal-header {
-  padding: 16px 20px;
+  padding: var(--space-4) 20px;
   border-bottom: 1px solid #E8EAED;
   display: flex;
   justify-content: space-between;
@@ -288,7 +288,7 @@ li.completed .step-circle {
 }
 
 .modal-body {
-  padding: 20px;
+  padding: var(--space-5);
   max-height: 400px;
   overflow-y: auto;
 }
@@ -296,14 +296,14 @@ li.completed .step-circle {
 .host-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .host-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid #E8EAED;
   border-radius: 4px;
   cursor: pointer;
@@ -329,9 +329,9 @@ li.completed .step-circle {
 }
 
 .modal-footer {
-  padding: 16px 20px;
+  padding: var(--space-4) 20px;
   border-top: 1px solid #E8EAED;
   display: flex;
   justify-content: flex-end;
-  gap: 12px;
+  gap: var(--space-3);
 }

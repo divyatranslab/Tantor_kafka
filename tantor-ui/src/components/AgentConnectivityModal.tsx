@@ -139,7 +139,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: '720px' }}>
         <div className="modal-header" style={{ padding: '24px 32px 16px 32px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 500, color: '#111827', margin: 0 }}>Agent Connectivity</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 'var(--font-medium)', color: '#111827', margin: 0 }}>Agent Connectivity</h2>
           <button className="modal-close" onClick={onClose} style={{ border: 'none', background: 'transparent', padding: 0, color: '#9CA3AF' }}>
             <X size={20} />
           </button>
@@ -157,30 +157,30 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
             <div>
               {/* Section label row */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'var(--font-semibold)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                   Discovered Nodes
                 </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={allPendingSelected}
                     onChange={toggleAllPendingHosts}
                     style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: '13px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
+                  <span style={{ fontSize: 'var(--text-sm)', color: '#1E293B', fontWeight: 'var(--font-medium)' }}>Select all</span>
                 </label>
               </div>
 
               {/* Node cards inside grey container */}
-              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
+              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '360px', overflowY: 'auto' }}>
                 {pendingHosts.map(host => (
                   <div
                     key={String(host.id)}
                     onClick={() => togglePendingHost(String(host.id))}
                     style={{
-                      background: '#FFFFFF',
-                      border: selectedPendingIds[String(host.id)] ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
-                      borderRadius: '8px',
+                      background: "var(--bg-surface)",
+                      border: selectedPendingIds[String(host.id)] ? '1.5px solid #8B5CF6' : '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
                       padding: '12px 14px',
                       display: 'flex',
                       alignItems: 'center',
@@ -198,8 +198,8 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                       />
                     </label>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
-                      <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;·&nbsp; {host.agentPath || 'Path unavailable'}</p>
+                      <p style={{ fontSize: 'var(--text-base)', color: '#1E293B', fontWeight: 'var(--font-medium)', margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
+                      <p style={{ fontSize: 'var(--text-xs)', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;Ã‚Â·&nbsp; {host.agentPath || 'Path unavailable'}</p>
                     </div>
                     <button
                       title="Reject & remove"
@@ -217,11 +217,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           )}
         </div>
 
-        <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#FFFFFF' }}>
+        <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: "var(--bg-surface)" }}>
           <button 
             className="btn" 
             onClick={onClose} 
-            style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#64748B', padding: '8px 24px', borderRadius: '8px', fontWeight: 500, fontSize: '14px' }}
+            style={{ background: "var(--bg-surface)", border: '1px solid #CBD5E1', color: 'var(--text-muted)', padding: '8px 24px', borderRadius: 'var(--radius-md)', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}
           >
             Cancel
           </button>
@@ -230,13 +230,13 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
             disabled={selectedCount === 0 || connectingAgents} 
             onClick={connectSelectedAgents} 
             style={{ 
-              background: '#FFFFFF', 
+              background: "var(--bg-surface)", 
               border: '1px solid #8B5CF6', 
               color: '#8B5CF6', 
               padding: '8px 24px', 
-              borderRadius: '8px', 
-              fontWeight: 500, 
-              fontSize: '14px',
+              borderRadius: 'var(--radius-md)', 
+              fontWeight: 'var(--font-medium)', 
+              fontSize: 'var(--text-base)',
               opacity: (selectedCount === 0 || connectingAgents) ? 0.5 : 1
             }}
           >

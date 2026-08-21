@@ -289,7 +289,7 @@ export function ClusterOverview() {
                   <tr key={broker.brokerId}>
                     <td>
                       <div className="overview-broker-id">
-                        <CheckCircle2 size={24} color="#FFFFFF" fill="#36AD8F" />
+                        <CheckCircle2 size={24} color="#FFFFFF" fill="var(--color-success)" />
                         <span>{broker.brokerId}</span>
                       </div>
                     </td>

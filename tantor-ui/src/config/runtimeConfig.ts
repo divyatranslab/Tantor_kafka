@@ -103,7 +103,9 @@ export const resolveRuntimeApiUrl = (input: string | URL): string => {
     }
     return false;
   };
-  rewrite('/api/v1/artifacts', config.artifactApiBasePath) || rewrite('/api', config.apiBasePath);
+  if (!rewrite('/api/v1/artifacts', config.artifactApiBasePath)) {
+    rewrite('/api', config.apiBasePath);
+  }
   return url.toString();
 };
 

@@ -1,27 +1,27 @@
 .brokers-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--space-6);
   min-height: 100%;
 }
 
 .brokers-overview-gradient {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  gap: var(--space-4);
   background: transparent;
   border-radius: 0;
   padding: 0;
 }
 
 .figma-card {
-  background: #ffffff;
-  border-radius: 8px;
-  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  border: 1px solid #e2e8f0;
+  gap: var(--space-3);
+  border: 1px solid var(--border-subtle);
   box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02);
 }
 
@@ -36,7 +36,7 @@
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 500;
-  color: #818181;
+  color: var(--text-tertiary);
 }
 
 .card-body {
@@ -49,7 +49,7 @@
   font-family: 'Satoshi', sans-serif;
   font-size: 24px;
   font-weight: 700;
-  color: #23252D;
+  color: var(--text-heading);
   line-height: 1;
 }
 
@@ -57,7 +57,7 @@
   font-family: 'Satoshi', sans-serif;
   font-size: 13px;
   font-weight: 500;
-  color: #23252D;
+  color: var(--text-heading);
 }
 
 .brokers-list-header {
@@ -71,12 +71,12 @@
   font-family: 'Satoshi', sans-serif;
   font-size: 16px;
   font-weight: 600;
-  color: #23252D;
+  color: var(--text-heading);
 }
 
 .figma-controls {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
 }
 
@@ -89,31 +89,31 @@
 .search-icon {
   position: absolute;
   left: 10px;
-  color: #818181;
+  color: var(--text-tertiary);
 }
 
 .search-wrapper .search-input {
   width: 240px;
-  background: #ffffff;
-  border: 1px solid #CCCCCC;
-  color: #23252D;
-  padding: 8px 12px 8px 34px;
-  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-heading);
+  padding: var(--space-2) 12px 8px 34px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-family: 'Satoshi', sans-serif;
   outline: none;
 }
 
 .search-input::placeholder {
-  color: #818181;
+  color: var(--text-tertiary);
 }
 
 .role-select {
-  background: #ffffff;
-  border: 1px solid #CCCCCC;
-  color: #23252D;
-  padding: 8px 12px;
-  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-heading);
+  padding: var(--space-2) 12px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-family: 'Satoshi', sans-serif;
   outline: none;
@@ -121,9 +121,9 @@
 
 .brokers-table-container {
   overflow: auto;
-  border: 1px solid #CCCCCC;
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .data-table {
@@ -133,10 +133,10 @@
 }
 
 .data-table th {
-  padding: 16px;
-  background: #F9F9F9;
-  border-bottom: 1px solid #CCCCCC;
-  color: #332849;
+  padding: var(--space-4);
+  background: var(--bg-neutral-light);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--button-primary-active);
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -150,9 +150,9 @@
 
 .data-table td {
   padding: 14px 16px;
-  border-bottom: 1px solid #CCCCCC;
-  background: #FFFFFF;
-  color: #23252D;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-heading);
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 400;
@@ -170,23 +170,23 @@
 
 .role-badge {
   display: inline-flex;
-  padding: 4px 8px;
+  padding: var(--space-1) 8px;
   background: #F2F2F2;
   border-radius: 100px;
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
 .figma-metric {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .metric-val {
   font-size: 12px;
   font-weight: 500;
-  color: #23252D;
+  color: var(--text-heading);
 }
 
 .progress-bar-container {
@@ -199,11 +199,11 @@
 
 .progress-bar-fill {
   height: 100%;
-  background: #3E1363;
+  background: var(--button-primary);
 }
 .broker-metric-level {
   display: block;
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 400;
   line-height: 15px;

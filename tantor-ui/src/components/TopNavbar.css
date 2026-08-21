@@ -2,9 +2,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: var(--space-4) 24px;
   height: 72px;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   border-bottom: 1px solid #F3F0F0;
   box-sizing: border-box;
 }
@@ -18,12 +18,12 @@
 
 
 .search-container .search-icon {
-  color: #818181;
+  color: var(--text-tertiary);
   width: 18px;
   height: 18px;
   flex-shrink: 0;
   display: block;
-  position: static !important;
+  position: static;
 }
 
 .search-input {
@@ -32,14 +32,14 @@
   outline: none;
   font-family: 'Satoshi';
   font-size: 14px;
-  color: #282F49;
+  color: var(--text-primary);
   width: 100%;
 }
 
 .navbar-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   flex: 1;
   justify-content: flex-end;
 }
@@ -47,39 +47,39 @@
 .search-container {
   display: flex;
   align-items: center;
-  background: #ffffff;
+  background: var(--bg-surface);
   border: 2px solid #E5E5E5;
-  border-radius: 8px;
-  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) 12px;
   width: 248px;
   height: 40px;
   box-sizing: border-box;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .nav-action-btn {
   background: transparent;
   border: none;
-  color: #818181;
+  color: var(--text-tertiary);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  padding: var(--space-1);
   border-radius: 4px;
   transition: color 0.12s ease;
 }
 
 .nav-action-btn:hover {
-  color: #DF678B;
+  color: var(--accent-primary);
 }
 
 .profile-badge {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #DF678B;
-  color: #FFFFFF;
+  background: var(--accent-primary);
+  color: var(--text-light);
   display: flex;
   align-items: center;
   justify-content: center;

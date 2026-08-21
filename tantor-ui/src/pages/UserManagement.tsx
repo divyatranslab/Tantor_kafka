@@ -101,7 +101,7 @@ export default function UserManagement() {
     <div className="user-management-page animate-fade-in">
       <header className="page-header flex-between">
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <Users size={20} /> User Management
           </h1>
           <p>Manage application users and their roles</p>

@@ -36,7 +36,7 @@ Two stores are kept in lockstep by `ArtifactService`:
 
 | Store        | Holds                              | Technology         |
 |--------------|------------------------------------|--------------------|
-| Index        | metadata, checksums, manifest, audit | PostgreSQL 16 (JSONB) |
+| Index        | metadata, checksums, manifest, audit | PostgreSQL 16.14 (JSONB) |
 | Object store | the actual `.tar.gz` binaries       | local FS / PVC     |
 
 Every mutating operation is transactional across both: a failed checksum or
@@ -126,7 +126,7 @@ value for HTTP cache validation.
 ## Build & run
 
 ```bash
-# Requires Java 21, a reachable PostgreSQL 16, Maven Central (or a mirror)
+# Requires Java 21, a reachable PostgreSQL 16.14, Maven Central (or a mirror)
 export TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
 export TANTOR_DB_USER=tantor_dev
 export TANTOR_DB_PASSWORD='<generated-local-only-password>'
@@ -149,7 +149,7 @@ contract; the Artifact Repository verifies it but never runs migrations.
 ### Tests
 
 - `ChecksumServiceTest`, `ArtifactServiceTest` — pure unit tests, no Docker.
-- `ArtifactControllerIT` — full upload/download round-trip against PostgreSQL 16
+- `ArtifactControllerIT` — full upload/download round-trip against PostgreSQL 16.14
   via Testcontainers (needs a Docker daemon; auto-skips otherwise).
 
 ### Container / Kubernetes

@@ -146,7 +146,7 @@ function formatBytes(value: number) {
 }
 
 function formatDate(value: number) {
-  return value > 0 ? new Date(value).toLocaleString() : '—';
+  return value > 0 ? new Date(value).toLocaleString() : 'Ã¢â‚¬â€';
 }
 
 export function TopicDetails() {
@@ -407,7 +407,7 @@ export function TopicDetails() {
     config.name.toLowerCase().includes(configSearch.toLowerCase())), [configSearch, configs]);
 
   if (loadingDetail && !detail) {
-    return <div className="topic-detail-state"><RefreshCw className="spin" /> Loading topic…</div>;
+    return <div className="topic-detail-state"><RefreshCw className="spin" /> Loading topicÃ¢â‚¬Â¦</div>;
   }
 
   if (!detail) {
@@ -508,7 +508,7 @@ export function TopicDetails() {
                         <td className="preview-cell">{message.value ?? <span className="null-value">null</span>}</td>
                       </tr>,
                       expanded && <tr className="message-expanded" key={rowId + '-expanded'}><td colSpan={5}>
-                        <div><section><h4>Key · {formatBytes(message.keySize)}</h4><pre>{message.key ?? 'null'}</pre></section><section><h4>Value · {formatBytes(message.valueSize)}</h4><pre>{message.value ?? 'null'}</pre></section></div>
+                        <div><section><h4>Key Ã‚Â· {formatBytes(message.keySize)}</h4><pre>{message.key ?? 'null'}</pre></section><section><h4>Value Ã‚Â· {formatBytes(message.valueSize)}</h4><pre>{message.value ?? 'null'}</pre></section></div>
                         {Object.keys(message.headers).length > 0 && <section><h4>Headers</h4><pre>{JSON.stringify(message.headers, null, 2)}</pre></section>}
                       </td></tr>
                     ];
@@ -523,7 +523,7 @@ export function TopicDetails() {
           <div>
             <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
-              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '—'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
+              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || 'Ã¢â‚¬â€'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -540,7 +540,7 @@ export function TopicDetails() {
               </button>
             </div>
             <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th><th /></tr></thead>
-              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '••••••' : config.value ?? '—'}</td><td>{config.defaultValue ?? '—'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
+              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? 'Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢' : config.value ?? 'Ã¢â‚¬â€'}</td><td>{config.defaultValue ?? 'Ã¢â‚¬â€'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -557,10 +557,10 @@ export function TopicDetails() {
               </button>
             </div>
             <div className="statistics-figma-heading">
-              <h3 style={{ margin: 0, color: '#5B327F', fontSize: '16px', fontWeight: 500, fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
+              <h3 style={{ margin: 0, color: 'var(--button-primary-hover)', fontSize: 'var(--text-md)', fontWeight: 'var(--font-medium)', fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
             </div>
             {statisticsLoading && !statistics ? (
-              <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messages…</div>
+              <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messagesÃ¢â‚¬Â¦</div>
             ) : (
               statistics && <StatisticsView statistics={statistics} />
             )}
@@ -571,7 +571,7 @@ export function TopicDetails() {
           <div>
             <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Principal</th><th>Host</th><th>Operation</th><th>Permission</th><th>Pattern</th></tr></thead>
-              <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} · {acl.resourceName}</td></tr>)}</tbody>
+              <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} Ã‚Â· {acl.resourceName}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -583,14 +583,14 @@ export function TopicDetails() {
             <header className="create-topic-header">
               <div className="modal-title-area">
                 <h2>Write to topic</h2>
-                <h3 style={{ textTransform: 'none', color: '#3E1363', fontSize: '15px' }}>Produce message</h3>
+                <h3 style={{ textTransform: 'none', color: 'var(--button-primary)', fontSize: '15px' }}>Produce message</h3>
               </div>
               <button className="create-topic-close" onClick={() => setShowProduce(false)} aria-label="Close modal">
                 <X size={20} />
               </button>
             </header>
             <form onSubmit={produceMessage}>
-              <div className="figma-topic-modal-body" style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="figma-topic-modal-body" style={{ padding: '24px 32px', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                 <label className="figma-form-field full-width">
                   <span>Partition</span>
                   <select value={produceForm.partition} onChange={event => setProduceForm(current => ({ ...current, partition: event.target.value }))}>
@@ -623,7 +623,7 @@ export function TopicDetails() {
                   Cancel
                 </button>
                 <button className="topic-button filled create-btn" disabled={producing}>
-                  {producing ? 'Producing…' : 'Produce message'}
+                  {producing ? 'ProducingÃ¢â‚¬Â¦' : 'Produce message'}
                 </button>
               </footer>
             </form>
@@ -646,7 +646,7 @@ export function TopicDetails() {
             <header className="create-topic-header">
               <div className="modal-title-area">
                 <h2>Topic setting</h2>
-                <h3 style={{ textTransform: 'none', color: '#3E1363', fontSize: '15px' }}>
+                <h3 style={{ textTransform: 'none', color: 'var(--button-primary)', fontSize: '15px' }}>
                   {editingConfig.name.charAt(0).toUpperCase() + editingConfig.name.slice(1)}
                 </h3>
               </div>
@@ -663,7 +663,7 @@ export function TopicDetails() {
                   onChange={event => setConfigValue(event.target.value)}
                 />
               </label>
-              <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>
+              <p style={{ margin: '8px 0 0 0', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', fontFamily: 'Satoshi, sans-serif' }}>
                 Default value {editingConfig.defaultValue ?? '-1'}
               </p>
             </div>
@@ -672,7 +672,7 @@ export function TopicDetails() {
                 Cancel
               </button>
               <button className="topic-button filled create-btn" onClick={saveConfig} disabled={savingConfig}>
-                {savingConfig ? 'Saving…' : 'Save setting'}
+                {savingConfig ? 'SavingÃ¢â‚¬Â¦' : 'Save setting'}
               </button>
             </footer>
           </div>
@@ -689,7 +689,7 @@ export function TopicDetails() {
             </div>
             <div className="confirm-modal-body">
               <div className="confirm-modal-title-row">
-                <AlertOctagon size={24} color="#FFFFFF" fill="#EF4D5F" style={{ marginRight: '8px' }} />
+                <AlertOctagon size={24} color="#FFFFFF" fill="var(--color-danger)" style={{ marginRight: '8px' }} />
                 <h2>Your details are not saved.</h2>
               </div>
               <p className="confirm-modal-desc">
@@ -727,9 +727,9 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
       <div className="topic-overview-container" style={{ marginBottom: '24px' }}>
         <div className="topic-metric-grid">
           {cards.map(([label, value], idx) => (
-            <article key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px' }}>
-              <span style={{ fontSize: '12px', color: '#818181', fontFamily: 'Satoshi, sans-serif' }}>{label}</span>
-              <strong style={{ fontSize: '18px', color: '#332849', fontFamily: 'Satoshi, sans-serif' }}>{value}</strong>
+            <article key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: 'var(--space-4)' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontFamily: 'Satoshi, sans-serif' }}>{label}</span>
+              <strong style={{ fontSize: '18px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif' }}>{value}</strong>
             </article>
           ))}
         </div>
@@ -755,7 +755,7 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
             {detail.partitions.map(partition => (
               <tr key={partition.partition}>
                 <td><strong>{partition.partition}</strong></td>
-                <td>{partition.leader ?? '—'}</td>
+                <td>{partition.leader ?? 'Ã¢â‚¬â€'}</td>
                 <td>{partition.replicas.join(', ')}</td>
                 <td className={partition.underReplicated ? 'replicas-warning' : 'replicas-ok'}>{partition.inSyncReplicas.join(', ')}</td>
                 <td>{partition.firstOffset.toLocaleString()}</td>
@@ -780,11 +780,11 @@ function StatisticsView({ statistics }: { statistics: TopicStatistics }) {
         </div>
         <div className="stat-card-white">
           <span className="stat-card-label">Offset range</span>
-          <strong className="stat-card-value">{statistics.minOffset + '—' + statistics.maxOffset}</strong>
+          <strong className="stat-card-value">{statistics.minOffset + 'Ã¢â‚¬â€' + statistics.maxOffset}</strong>
         </div>
         <div className="stat-card-white timestamp-card" style={{ flexGrow: 1, minWidth: '321px' }}>
           <span className="stat-card-label">Timestamp range</span>
-          <strong className="stat-card-value">{formatDate(statistics.minTimestamp) + ' – ' + formatDate(statistics.maxTimestamp)}</strong>
+          <strong className="stat-card-value">{formatDate(statistics.minTimestamp) + ' Ã¢â‚¬â€œ ' + formatDate(statistics.maxTimestamp)}</strong>
         </div>
         <div className="stat-card-white">
           <span className="stat-card-label">Null keys</span>
@@ -836,7 +836,7 @@ function StatisticsView({ statistics }: { statistics: TopicStatistics }) {
 function SizeStatSection({ title, stats }: { title: string; stats: SizeStatistics }) {
   return (
     <div className="size-stat-section">
-      <h3 style={{ margin: '16px 0 8px 0', color: '#5B327F', fontSize: '16px', fontWeight: 500, fontFamily: 'Satoshi, sans-serif' }}>{title}</h3>
+      <h3 style={{ margin: '16px 0 8px 0', color: 'var(--button-primary-hover)', fontSize: 'var(--text-md)', fontWeight: 'var(--font-medium)', fontFamily: 'Satoshi, sans-serif' }}>{title}</h3>
       <div className="statistics-banner-container">
         <div className="statistics-banner-row">
           <div className="stat-card-white">
@@ -884,7 +884,7 @@ function SizeStatSection({ title, stats }: { title: string; stats: SizeStatistic
 }
 
 function LoadingRow({ columns }: { columns: number }) {
-  return <tr><td colSpan={columns}><div className="table-state"><RefreshCw className="spin" size={18} /> Loading live Kafka data…</div></td></tr>;
+  return <tr><td colSpan={columns}><div className="table-state"><RefreshCw className="spin" size={18} /> Loading live Kafka dataÃ¢â‚¬Â¦</div></td></tr>;
 }
 
 function EmptyRow({ columns, text }: { columns: number; text: string }) {

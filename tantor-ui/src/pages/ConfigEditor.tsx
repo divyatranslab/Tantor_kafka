@@ -335,7 +335,7 @@ function ExternalConfigEditor() {
               value={selectedNodeId || ''} 
               onChange={e => selectNode(Number(e.target.value))}
               className="node-select"
-              style={{ padding: '8px', width: '100%', maxWidth: '400px', borderRadius: '4px', border: '1px solid #ccc' }}
+              style={{ padding: 'var(--space-2)', width: '100%', maxWidth: '400px', borderRadius: '4px', border: '1px solid #ccc' }}
             >
               <option value="" disabled>Select a node to edit...</option>
               {topology.map(node => (
@@ -387,7 +387,7 @@ function ExternalConfigEditor() {
                         <td><code>{key}</code></td>
                         <td><span className="current-val" title={String(baseValue)}>{String(baseValue) || <em>(Not set)</em>}</span></td>
                         <td>
-                          <div className="new-val-input-group" style={{ display: 'flex', gap: '8px' }}>
+                          <div className="new-val-input-group" style={{ display: 'flex', gap: 'var(--space-2)' }}>
                             <input
                               type="text"
                               value={String(value)}
@@ -434,7 +434,7 @@ function ExternalConfigEditor() {
                 {change.properties.map(p => (
                   <div className="config-diff-row modified" key={p.key}>
                     <div><span>MODIFIED</span><code>{p.key}</code></div>
-                    <pre>{p.oldValue || '∅'}</pre><b>→</b><pre>{p.newValue || '∅'}</pre>
+                    <pre>{p.oldValue || 'Ã¢Ë†â€¦'}</pre><b>Ã¢â€ â€™</b><pre>{p.newValue || 'Ã¢Ë†â€¦'}</pre>
                   </div>
                 ))}
               </div>
