@@ -78,6 +78,14 @@ type KafkaVersionInfo = {
   id?: string;
 };
 
+type SchemaArtifact = {
+  id: string;
+  version: string;
+  status?: string;
+  sha256?: string;
+  checksum?: string;
+};
+
 type DeploymentMode = 'kraft' | 'zookeeper';
 type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate' | 'broker_zookeeper' | 'zookeeper';
 type FlowStage = 'details' | 'preview';
@@ -400,6 +408,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [existingCluster, setExistingCluster] = useState<ExistingCluster | null>(null);
   const [loadingHosts, setLoadingHosts] = useState(true);
   const [loadingVersions, setLoadingVersions] = useState(true);
+  const [schemaArtifacts, setSchemaArtifacts] = useState<SchemaArtifact[]>([]);
   const [loadingCluster, setLoadingCluster] = useState(false);
 
   const [clusterName, setClusterName] = useState('');
@@ -420,6 +429,19 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
   const [hoveredPortCheckHostId, setHoveredPortCheckHostId] = useState<string | null>(null);
   const [numPartitions, setNumPartitions] = useState(1);
+  const [schemaEnabled, setSchemaEnabled] = useState(false);
+  const [schemaArtifactId, setSchemaArtifactId] = useState('');
+  const [schemaHostId, setSchemaHostId] = useState('');
+  const [schemaPort, setSchemaPort] = useState(8081);
+  const [schemaHeapSize, setSchemaHeapSize] = useState('1G');
+  const [schemaInstallDir, setSchemaInstallDir] = useState('/opt/tantor/schema-registry');
+  const [schemaConfigDir, setSchemaConfigDir] = useState('/opt/tantor/schema-registry/etc/schema-registry');
+  const [schemaLogDir, setSchemaLogDir] = useState('/var/log/tantor/schema-registry');
+  const [schemaWorkingDir, setSchemaWorkingDir] = useState('/var/lib/tantor/schema-registry');
+  const [schemaCompatibility, setSchemaCompatibility] = useState('BACKWARD');
+  const [schemaDirectoryCandidates, setSchemaDirectoryCandidates] = useState<string[]>([]);
+  const [schemaDiscovery, setSchemaDiscovery] = useState<PrereqResult>({ status: 'IDLE', logOutput: '', errorMsg: '' });
+  const [schemaCheck, setSchemaCheck] = useState<PrereqResult>({ status: 'IDLE', logOutput: '', errorMsg: '' });
 
   const [nodeSearch, setNodeSearch] = useState('');
   const [nodeDropdownOpen, setNodeDropdownOpen] = useState(false);
@@ -448,6 +470,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     loadHosts();
     loadVersions();
+    loadSchemaArtifacts();
   }, []);
 
   useEffect(() => {
@@ -534,12 +557,36 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const loadSchemaArtifacts = async () => {
+    try {
+      const res = await fetch('/api/v1/artifacts?serviceType=SCHEMA_REGISTRY&status=AVAILABLE&size=100');
+      if (!res.ok) return;
+      const data = await res.json();
+      const available = (data.content || []).filter((artifact: SchemaArtifact) => artifact.status === 'AVAILABLE');
+      setSchemaArtifacts(available);
+      if (available.length) setSchemaArtifactId(current => current || available[0].id);
+    } catch (error) {
+      console.error(error);
+      setSchemaArtifacts([]);
+    }
+  };
+
   const availableVersions = versions.filter(version => version.available);
   const zookeeperSupported = kafkaMajorVersion(kafkaVersion) > 0 && kafkaMajorVersion(kafkaVersion) < 4;
   const commonConfigKinds = commonConfigKindsForMode(deploymentMode);
   const selectedHosts = selectedNodeIds
     .map(id => hosts.find(host => host.id === id))
     .filter(Boolean) as Host[];
+
+  useEffect(() => {
+    if (schemaHostId && !selectedNodeIds.includes(schemaHostId)) {
+      setSchemaHostId('');
+      setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+    }
+    if (!schemaHostId && selectedNodeIds.length > 0) {
+      setSchemaHostId(selectedNodeIds[0]);
+    }
+  }, [schemaHostId, selectedNodeIds]);
 
   const filteredHosts = hosts.filter(host => {
     const needle = `${host.hostname} ${displayIp(host)} ${host.id}`.toLowerCase();
@@ -630,6 +677,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     validatePath(dataDir, 'Data directory'),
     validatePath(logDir, 'Log directory'),
     validatePath(artifactLoadDir, 'Artifacts/Load Directory'),
+    ...(schemaEnabled ? [
+      validatePath(schemaInstallDir, 'Schema Registry install directory'),
+      validatePath(schemaConfigDir, 'Schema Registry config directory'),
+      validatePath(schemaLogDir, 'Schema Registry log directory'),
+      validatePath(schemaWorkingDir, 'Schema Registry working directory'),
+    ] : []),
   ].filter(Boolean);
 
   const configModalHost = configModalHostId
@@ -638,6 +691,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const prerequisiteComplete = selectedHosts.length > 0
     && selectedHosts.every(host => prereqResults[host.id]?.status === 'SUCCESS');
+  const schemaPrecheckComplete = !schemaEnabled || schemaCheck.status === 'SUCCESS';
   const kraftDeploymentBlocked = deploymentMode === 'kraft'
     && !isAddNodeMode
     && (!kraftValidation
@@ -897,7 +951,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     && selectedHosts.length > 0
     && brokerCount > 0
     && (isAddNodeMode || (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0))
-    && selectedPortValidationErrors.length === 0;
+    && selectedPortValidationErrors.length === 0
+    && (!schemaEnabled || (Boolean(schemaHostId) && Boolean(schemaArtifactId)
+      && Number.isInteger(schemaPort) && schemaPort > 0 && schemaPort <= 65535));
 
   const serviceTemplate = (kind: ConfigKind, cfg: NodeConfigState) => {
     const commonRows = commonConfigs[kind] || [];
@@ -960,6 +1016,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
+    const selectedSchemaArtifact = schemaArtifacts.find(artifact => artifact.id === schemaArtifactId);
     const artifactRepoBaseUrl = runtimeConfig.artifactApiBasePath;
     return {
       name: clusterName.trim(),
@@ -969,6 +1026,23 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       environment: environment.trim(),
       acknowledge_kraft_risk: kraftRiskAcknowledged,
       artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/${selectedArtifact.id}/download` : '',
+      addons: schemaEnabled && !isAddNodeMode ? {
+        schema_registry: {
+          enabled: true,
+          host_id: schemaHostId,
+          artifact_id: schemaArtifactId,
+          artifact_url: `${artifactRepoBaseUrl}/${schemaArtifactId}/download`,
+          checksum: selectedSchemaArtifact?.sha256 || selectedSchemaArtifact?.checksum || '',
+          version: selectedSchemaArtifact?.version || '',
+          port: schemaPort,
+          install_dir: schemaInstallDir.trim(),
+          config_dir: schemaConfigDir.trim(),
+          log_dir: schemaLogDir.trim(),
+          working_dir: schemaWorkingDir.trim(),
+          heap_size: schemaHeapSize,
+          compatibility_level: schemaCompatibility,
+        },
+      } : undefined,
       config: {
         configuration_mode: clusterConfigMode,
         kafka_install_dir: installDir.trim(),
@@ -1186,7 +1260,79 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       ports.add(hp.zookeeperPeerPort);
       ports.add(hp.zookeeperElectionPort);
     }
+    if (schemaEnabled && schemaHostId === hostId) {
+      ports.add(schemaPort);
+    }
     return Array.from(ports);
+  };
+
+  const pollSchemaTask = async (hostId: string, taskId: string): Promise<PrereqResult> => {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      if (!res.ok) continue;
+      const body = await res.json();
+      const status = String(body.status || 'RUNNING').toUpperCase() as PrereqStatus;
+      const result = { status, taskId, logOutput: body.logOutput || '', errorMsg: body.errorMsg || '' };
+      if (status === 'SUCCESS' || status === 'FAILED') return result;
+    }
+    return { status: 'FAILED', taskId, logOutput: '', errorMsg: 'Timed out waiting for Schema Registry pre-check.' };
+  };
+
+  const discoverSchemaDirectories = async () => {
+    if (!schemaHostId) return;
+    setSchemaDiscovery({ status: 'RUNNING', logOutput: 'Discovering writable directories...', errorMsg: '' });
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${schemaHostId}/schema-directory-candidates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate_paths: '/opt,/opt_apb,/apache,/var/lib' }),
+      });
+      const queued = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(queued.message || 'Unable to discover directories.');
+      const result = await pollSchemaTask(schemaHostId, queued.taskId);
+      setSchemaDiscovery(result);
+      if (result.status === 'SUCCESS') {
+        const parsed = JSON.parse(result.logOutput || '{}');
+        setSchemaDirectoryCandidates((parsed.directories || [])
+          .filter((directory: { writable?: boolean }) => directory.writable)
+          .map((directory: { path: string }) => directory.path));
+      }
+    } catch (error) {
+      setSchemaDiscovery({ status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Directory discovery failed.' });
+    }
+  };
+
+  const runSchemaPrecheck = async () => {
+    if (!schemaHostId || !schemaArtifactId) return;
+    const artifact = schemaArtifacts.find(item => item.id === schemaArtifactId);
+    const kafkaArtifact = versions.find(item => item.version === kafkaVersion);
+    const kafkaVersionedInstallDir = `${installDir.replace(/\/$/, '')}/kafka_${kafkaArtifact?.scala_version || '2.13'}-${kafkaVersion}`;
+    setSchemaCheck({ status: 'RUNNING', logOutput: 'Running Schema Registry pre-check...', errorMsg: '' });
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${schemaHostId}/precheck-schema`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifact_url: `${runtimeConfig.artifactApiBasePath}/${schemaArtifactId}/download`,
+          checksum: artifact?.sha256 || artifact?.checksum || '',
+          schema_version: artifact?.version || '',
+          kafka_version: kafkaVersion,
+          rest_port: schemaPort,
+          install_dir: schemaInstallDir,
+          config_dir: schemaConfigDir,
+          log_dir: schemaLogDir,
+          working_dir: schemaWorkingDir,
+          kafka_install_dir: kafkaVersionedInstallDir,
+          allow_deferred_kafka: true,
+        }),
+      });
+      const queued = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(queued.message || 'Unable to start Schema Registry pre-check.');
+      setSchemaCheck(await pollSchemaTask(schemaHostId, queued.taskId));
+    } catch (error) {
+      setSchemaCheck({ status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Schema Registry pre-check failed.' });
+    }
   };
 
   const pollPortCheck = async (hostId: string, taskId: string) => {
@@ -1614,6 +1760,138 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </div>
             </div>
           </section>
+
+          {!isAddNodeMode && (
+            <section className="cd-panel">
+              <div className="cd-panel-title">
+                <div>
+                  <h2>Schema Registry</h2>
+                  <p>Deploy Schema Registry on one selected Kafka node and connect it to this cluster.</p>
+                </div>
+                <label className="cd-toggle-switch" title="Enable Schema Registry deployment">
+                  <input
+                    type="checkbox"
+                    checked={schemaEnabled}
+                    onChange={event => {
+                      setSchemaEnabled(event.target.checked);
+                      setSchemaDiscovery({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                    }}
+                  />
+                  <span className="cd-toggle-slider"></span>
+                </label>
+              </div>
+
+              {schemaEnabled && (
+                <>
+                  <div className="cd-grid-2">
+                    <label className="cd-field">
+                      <span>Schema Registry artifact</span>
+                      <select value={schemaArtifactId} onChange={event => {
+                        setSchemaArtifactId(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }}>
+                        <option value="">Select uploaded artifact</option>
+                        {schemaArtifacts.map(artifact => (
+                          <option value={artifact.id} key={artifact.id}>
+                            {artifact.version || artifact.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="cd-field">
+                      <span>Deployment host</span>
+                      <select value={schemaHostId} onChange={event => {
+                        setSchemaHostId(event.target.value);
+                        setSchemaDiscovery({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }}>
+                        <option value="">Select a Kafka node</option>
+                        {selectedHosts.map(host => (
+                          <option value={host.id} key={host.id}>{host.hostname} ({displayIp(host)})</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="cd-field">
+                      <span>REST API port</span>
+                      <input type="number" min={1} max={65535} value={schemaPort} onChange={event => {
+                        setSchemaPort(Number(event.target.value));
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} />
+                    </label>
+                    <label className="cd-field">
+                      <span>Heap size</span>
+                      <input value={schemaHeapSize} onChange={event => {
+                        setSchemaHeapSize(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} placeholder="1G" />
+                    </label>
+                    <label className="cd-field">
+                      <span>Compatibility level</span>
+                      <select value={schemaCompatibility} onChange={event => {
+                        setSchemaCompatibility(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }}>
+                        {['BACKWARD', 'BACKWARD_TRANSITIVE', 'FORWARD', 'FORWARD_TRANSITIVE', 'FULL', 'FULL_TRANSITIVE', 'NONE']
+                          .map(level => <option value={level} key={level}>{level}</option>)}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="cd-grid-2">
+                    <label className="cd-field">
+                      <span>Install directory</span>
+                      <input value={schemaInstallDir} onChange={event => {
+                        setSchemaInstallDir(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} />
+                    </label>
+                    <label className="cd-field">
+                      <span>Config directory</span>
+                      <input value={schemaConfigDir} onChange={event => {
+                        setSchemaConfigDir(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} />
+                    </label>
+                    <label className="cd-field">
+                      <span>Log directory</span>
+                      <input value={schemaLogDir} onChange={event => {
+                        setSchemaLogDir(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} />
+                    </label>
+                    <label className="cd-field">
+                      <span>Working directory</span>
+                      <input value={schemaWorkingDir} onChange={event => {
+                        setSchemaWorkingDir(event.target.value);
+                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
+                      }} />
+                    </label>
+                  </div>
+
+                  <div className="cd-custom-import-actions">
+                    <button type="button" className="cd-secondary-btn compact" disabled={!schemaHostId || schemaDiscovery.status === 'RUNNING' || schemaCheck.status === 'RUNNING'} onClick={discoverSchemaDirectories}>
+                      {schemaDiscovery.status === 'RUNNING' && <Loader2 size={14} className="spin" />}
+                      Check available directories
+                    </button>
+                    <button type="button" className="cd-secondary-btn compact" disabled={!schemaHostId || !schemaArtifactId || schemaDiscovery.status === 'RUNNING' || schemaCheck.status === 'RUNNING'} onClick={runSchemaPrecheck}>
+                      {schemaCheck.status === 'RUNNING' && <Loader2 size={14} className="spin" />}
+                      Run Schema Registry pre-check
+                    </button>
+                  </div>
+
+                  {schemaDirectoryCandidates.length > 0 && (
+                    <div className="cd-template-summary">
+                      <strong>Writable base directories:</strong>
+                      <span>{schemaDirectoryCandidates.join(', ')}</span>
+                    </div>
+                  )}
+                  {schemaDiscovery.status !== 'IDLE' && <PrerequisiteLog result={schemaDiscovery} />}
+                  {schemaCheck.status !== 'IDLE' && <PrerequisiteLog result={schemaCheck} />}
+                </>
+              )}
+            </section>
+          )}
 
           <section className="cd-panel">
             <div className="cd-panel-title">
@@ -2064,7 +2342,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Cancel</button>
-            <button className="cd-primary-btn" disabled={!prerequisiteComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
+            <button className="cd-primary-btn" disabled={!prerequisiteComplete || !schemaPrecheckComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
               {deploying && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>

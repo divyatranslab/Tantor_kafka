@@ -102,12 +102,22 @@ const artifactServiceOptions = [
     fileAccept: '.jar',
     helper: 'JMX exporter jars are stored for Kafka monitoring deployments.',
   },
+  {
+    value: 'SCHEMA_REGISTRY',
+    label: 'Schema Registry',
+    versionPlaceholder: 'e.g. 7.6.0',
+    directoryPlaceholder: 'custom/schema-registry (under configured repository root)',
+    fileLabel: 'Confluent Schema Registry binary (.tgz or .tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Schema Registry binaries can be selected during Kafka cluster deployment.',
+  },
 ];
 
 const artifactServiceLabels: Record<string, string> = {
   KAFKA: 'Kafka',
   KAFKA_EXPORTER: 'Kafka Exporter',
   JMX_EXPORTER: 'JMX Exporter',
+  SCHEMA_REGISTRY: 'Schema Registry',
 };
 
 const artifactServiceLabel = (serviceType: string) =>
@@ -767,7 +777,7 @@ export function Artifacts() {
             <div className="modal-header upload-parcel-header">
               <div className="upload-parcel-heading">
                 <h2>Upload Parcel Binary</h2>
-                <p className="modal-subtitle">Upload a Kafka binary, Kafka Exporter binary, or JMX Exporter jar to the internal artifact repository.</p>
+                <p className="modal-subtitle">Upload a Kafka, Schema Registry, Kafka Exporter, or JMX Exporter binary to the internal artifact repository.</p>
               </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
