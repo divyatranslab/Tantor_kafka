@@ -42,6 +42,12 @@ const config: RuntimeConfig = {
   artifactApiBasePath: value(deployed.artifactApiBasePath, '/api/v1/artifacts'),
 };
 
+// `import.meta.env.PROD` describes how Vite produced the static bundle, not
+// where the bundle is deployed. A release bundle is also used on development
+// VMs, whose runtime-config explicitly disables SSO. Security requirements
+// must therefore be based on the deployment environment supplied at runtime.
+const securedDeployment = ['sit', 'uat', 'production'].includes(config.environment);
+
 const requireRelativePath = (name: string, path: string) => {
   if (!path.startsWith('/') || path.startsWith('//') || path.includes('://')) {
     throw new Error(`${name} must be a same-origin absolute path`);
@@ -60,11 +66,11 @@ const validateRuntimeConfig = () => {
   if (publicOrigin.origin !== config.publicOrigin || publicOrigin.username || publicOrigin.password) {
     throw new Error('publicOrigin must be an origin without credentials, path, query, or fragment');
   }
-  if (productionBuild && (publicOrigin.protocol !== 'https:' || publicOrigin.origin !== window.location.origin)) {
+  if (securedDeployment && (publicOrigin.protocol !== 'https:' || publicOrigin.origin !== window.location.origin)) {
     throw new Error('Production publicOrigin must be HTTPS and exactly match the browser origin');
   }
   if (!config.authEnabled) {
-    if (productionBuild) throw new Error('Production runtime configuration must enable authentication');
+    if (securedDeployment) throw new Error('SIT, UAT, and production runtime configuration must enable authentication');
     return;
   }
   let keycloak: URL;
@@ -77,15 +83,12 @@ const validateRuntimeConfig = () => {
       || keycloak.origin !== config.keycloakUrl) {
     throw new Error('keycloakUrl must be an absolute HTTPS origin without credentials or a path');
   }
-  if (productionBuild && (keycloak.hostname === 'localhost' || keycloak.hostname.startsWith('127.')
+  if (securedDeployment && (keycloak.hostname === 'localhost' || keycloak.hostname.startsWith('127.')
       || /\.(example|invalid|test)$/.test(keycloak.hostname))) {
     throw new Error('Production keycloakUrl cannot use a local or placeholder host');
   }
   if (!config.keycloakRealm || !config.keycloakClientId) {
     throw new Error('keycloakRealm and keycloakClientId are required when authentication is enabled');
-  }
-  if (productionBuild && !['sit', 'uat', 'production'].includes(config.environment)) {
-    throw new Error('Production UI runtime environment must be sit, uat, or production');
   }
 };
 
