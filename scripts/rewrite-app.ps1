@@ -1,3 +1,4 @@
+$appContent = @"
 import React, { useState, useEffect, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
@@ -45,11 +46,11 @@ function DeploymentLogsGuard() {
 
   useEffect(() => {
     if (!id) { Promise.resolve().then(() => { setChecked(true); setAllowed(false); }); return; }
-    fetch(`/api/v1/ui/clusters/${id}`)
+    fetch(`/api/v1/ui/clusters/`+id)
       .then(res => res.json())
       .then(data => {
         if (data.mode === 'EXTERNAL') {
-          navigate(`/clusters/${id}/overview`, { replace: true });
+          navigate(`/clusters/`+id+`/overview`, { replace: true });
         } else {
           setAllowed(true);
         }
@@ -127,3 +128,5 @@ function App() {
 }
 
 export default App;
+"@;
+[System.IO.File]::WriteAllText("d:\AIRTEL PAYMENTS BANK - KAFKA - TANTOR\Tantor_kafka\tantor-ui\src\App.tsx", $appContent, [System.Text.UTF8Encoding]::new($false))
