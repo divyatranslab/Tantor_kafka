@@ -90,6 +90,10 @@ Do not commit real passwords or production secrets in `.env`. Containerized
 services connect privately through `database:5432`; production does not publish
 the database port on the host.
 
+See [Repository credential and history security](docs/repository-security.md)
+for rotation, secret scanning, prohibited artifacts, and coordinated history
+cleanup requirements.
+
 ### Podman composition
 
 Start the repository composition after setting the required values in `.env`:

@@ -9,6 +9,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $postgresReference = 'docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b'
+$gitleaksReference = 'ghcr.io/gitleaks/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a'
 $bundleDirectory = Join-Path $OutputDirectory "tantor-$Version"
 $archivePath = Join-Path $OutputDirectory "tantor-$Version.tar.gz"
 $imagesDirectory = Join-Path $bundleDirectory 'images'
@@ -57,6 +58,15 @@ $applicationImages = [ordered]@{
 }
 
 Write-Host "Running release quality gates..."
+Write-Host "Validating repository and release-source hygiene..."
+$workingTreeStatus = @(& git -C $PSScriptRoot status --porcelain --untracked-files=all)
+if ($LASTEXITCODE -ne 0 -or $workingTreeStatus.Count -ne 0) {
+    throw 'Release packaging requires a clean working tree so the scanned commit exactly matches the build input.'
+}
+& (Join-Path $PSScriptRoot 'scripts\test-c08-repository-hygiene.ps1') -SkipGitleaks -SkipHistory
+$repositoryMount = "$($PSScriptRoot):/repo:ro,Z"
+Invoke-Podman run --rm --network=none -v $repositoryMount -w /repo $gitleaksReference git --config=/repo/.gitleaks.toml --redact --exit-code=1 /repo
+
 Write-Host "Validating UI..."
 Invoke-Podman run --rm -v "$($PSScriptRoot):/app:Z" -w /app/tantor-ui docker.io/library/node:20-bookworm bash -c "npm ci && npm run lint:ci"
 
@@ -267,9 +277,14 @@ $checksumLines = foreach ($file in $checksummedFiles) {
 }
 Set-Content -LiteralPath (Join-Path $bundleDirectory 'SHA256SUMS') -Value $checksumLines -Encoding ascii
 
+$bundleMount = "$($bundleDirectory):/release:ro,Z"
+Invoke-Podman run --rm --network=none -v $repositoryMount -v $bundleMount $gitleaksReference dir --config=/repo/.gitleaks.toml --redact --max-archive-depth=2 --exit-code=1 /release
+
 tar -czf $archivePath -C $OutputDirectory (Split-Path -Leaf $bundleDirectory)
 if ($LASTEXITCODE -ne 0) {
     throw 'Unable to create the deployment archive.'
 }
+
+& (Join-Path $PSScriptRoot 'scripts\test-c08-repository-hygiene.ps1') -SkipGitleaks -SkipHistory -ReleaseArchive $archivePath
 
 Write-Host "Created immutable deployment bundle: $archivePath"

@@ -3,3 +3,13 @@ target
 .env.*
 *.log
 repository
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.bak
+*.orig
+*.rej
+*.patch

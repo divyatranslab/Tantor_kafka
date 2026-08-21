@@ -133,10 +133,11 @@ wait_for_schema_unready() {
 
 mkdir -p "$secrets_directory"
 chmod 700 "$secrets_directory"
+test_encryption_key='0123456789abcdef0123456789abcdef' # gitleaks:allow -- generated test environment only
 cat >"$development_environment" <<EOF
 TANTOR_DB_USER=tantor_h01
 TANTOR_DB_PASSWORD=$database_password
-TANTOR_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
+TANTOR_ENCRYPTION_KEY=$test_encryption_key
 TANTOR_JWT_SECRET=tantor-h01-validation-only-jwt-secret-not-for-production
 TANTOR_KEYSTORE_PASSWORD=tantor-h01-validation-only
 TANTOR_DB_CONNECTION_TIMEOUT_MS=500

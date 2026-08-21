@@ -96,7 +96,7 @@ export const installAuthenticatedFetch = () => {
       } else {
         // When auth is disabled locally, supply a mock administrative token header so backend RoleAuthenticationUtil can decode it
         // The mock token payload below corresponds to: {"preferred_username":"shaukat","roles":["admin"]}
-        const mockJwt = "eyJhbGciOiJIUzI1NiJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzaGF1a2F0Iiwicm9sZXMiOlsiYWRtaW4iXX0.mocksignature";
+        const mockJwt = "eyJhbGciOiJIUzI1NiJ9.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJzaGF1a2F0Iiwicm9sZXMiOlsiYWRtaW4iXX0.mocksignature"; // gitleaks:allow -- deterministic local-development fixture, not a credential
         headers.set('Authorization', `Bearer ${mockJwt}`);
       }
     }

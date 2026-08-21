@@ -5,3 +5,9 @@ dist
 *.log
 *.patch
 *.txt
+*.py
+lint_*.json
+last_call.json
+*.bak
+*.orig
+*.rej

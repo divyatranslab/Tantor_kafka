@@ -4,3 +4,15 @@ target
 *.log
 *.p12
 *.jks
+*.key
+*.pem
+*.pfx
+*.keystore
+last_call.json
+apply.py
+extract.py
+patch_json.py
+*.bak
+*.orig
+*.rej
+*.patch

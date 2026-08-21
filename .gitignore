@@ -9,6 +9,9 @@ node_modules/
 dist/
 build/
 .env
+.env.*
+!.env.example
+!**/.env.example
 deploy/production/secrets/*
 !deploy/production/secrets/README.md
 *.release.yaml
@@ -49,6 +52,27 @@ fake-bin/
 *.p12
 *.jks
 *.tgz
+*.key
+*.pem
+*.pfx
+*.keystore
+
+# Local recovery, model/transcript and source-rewrite artifacts
+**/last_call.json
+tantor-server/apply.py
+tantor-server/extract.py
+tantor-server/patch_json.py
+tantor-ui/analyze_lint*.py
+tantor-ui/patch_*.py
+tantor-ui/view_cd.py
+tantor-ui/lint_*.json
+/Test.java
+/TestDb.java
+tantor-server/InjectCluster.java
+*.bak
+*.orig
+*.rej
+*.patch
 
 # AI Scratch files and logs
 tantor-ui/*.txt

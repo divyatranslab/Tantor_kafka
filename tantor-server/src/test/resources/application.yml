@@ -11,6 +11,6 @@ server:
 tantor:
   security:
     encryption:
-      key: 1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p
+      key: 1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p # gitleaks:allow -- deterministic test fixture
     jwt:
-      secret: v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E=
+      secret: v2A7+S3L2Yg7d3vK7s2d1L/1mZ3v3k6/n1oP2K7bL2E= # gitleaks:allow -- deterministic test fixture
