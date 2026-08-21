@@ -225,6 +225,10 @@ Current monitoring flow:
 6. UI calls Tantor monitoring APIs.
 7. Tantor server queries Prometheus and returns metrics to the UI.
 
+The service-discovery endpoint accepts only loopback clients. Keep Prometheus on
+the Tantor server host; remote and proxied requests to `/internal/prometheus/**`
+are denied even when they carry a user JWT.
+
 Required monitoring components:
 
 - `kafka_exporter` installed on the Tantor server host at `/usr/local/bin/kafka_exporter`
