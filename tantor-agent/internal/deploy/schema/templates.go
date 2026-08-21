@@ -1,30 +1,38 @@
 package schema
 
 const SystemdTemplate = `[Unit]
-Description=Confluent Schema Registry
+Description=Tantor Schema Registry
 Documentation=http://docs.confluent.io/
-Requires=network.target
-After=network.target
+Wants=network-online.target
+After=network-online.target kafka.service broker.service controller.service
 
 [Service]
 Type=simple
 User={{.User}}
 Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
-Environment="SCHEMA_REGISTRY_HEAP_OPTS=-Xmx1G -Xms1G"
-ExecStart={{.InstallDir}}/bin/schema-registry-start {{.InstallDir}}/etc/schema-registry/schema-registry.properties
+Environment="LOG_DIR={{.LogDir}}"
+Environment="SCHEMA_REGISTRY_HEAP_OPTS=-Xms{{.HeapSize}} -Xmx{{.HeapSize}}"
+WorkingDirectory={{.WorkingDir}}
+ExecStart={{.InstallDir}}/bin/schema-registry-start {{.ConfigDir}}/schema-registry.properties
 ExecStop={{.InstallDir}}/bin/schema-registry-stop
 Restart=on-failure
+RestartSec=5
 LimitNOFILE=100000
+TimeoutStopSec=180
 
 [Install]
 WantedBy=multi-user.target
 `
 
 const SchemaRegistryPropertiesTemplate = `
-# Schema Registry Config
-listeners=http://0.0.0.0:8081
+# Managed by Tantor
+listeners=http://0.0.0.0:{{.RestPort}}
+host.name={{.HostName}}
 kafkastore.bootstrap.servers={{.BootstrapServers}}
-kafkastore.topic=_schemas
+kafkastore.topic={{.KafkaStoreTopic}}
+kafkastore.topic.replication.factor={{.ReplicationFactor}}
+schema.registry.group.id={{.GroupID}}
+compatibility.level={{.CompatibilityLevel}}
 debug=false
 `

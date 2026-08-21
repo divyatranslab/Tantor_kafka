@@ -52,6 +52,12 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.installConnect(ctx, t)
 	case "INSTALL_SCHEMA":
 		return e.installSchema(ctx, t)
+	case "SCHEMA_DIRECTORY_CANDIDATES":
+		return e.schemaDirectoryCandidates(ctx, t)
+	case "PRECHECK_SCHEMA":
+		return e.precheckSchema(ctx, t)
+	case "VERIFY_SCHEMA_REGISTRY":
+		return e.verifySchemaRegistry(ctx, t)
 	case "INSTALL_KSQLDB":
 		return e.installKsql(ctx, t)
 	case "INSTALL_MONITORING":
@@ -559,6 +565,9 @@ func (e *Engine) installConnect(ctx context.Context, t *api.Task) (*api.TaskResu
 }
 
 func (e *Engine) installSchema(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	if err := e.prepareJavaRuntime(ctx, t); err != nil {
+		return e.fail(t, fmt.Sprintf("Schema Registry deployment failed: %v", err)), nil
+	}
 	deployer := schema.NewDeployer(e.cfg, e.client, e.exec)
 	logOutput, err := deployer.Deploy(ctx, t)
 	if err != nil {
