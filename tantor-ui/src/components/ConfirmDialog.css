@@ -1,10 +1,10 @@
 .app-confirm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20000;
+  z-index: var(--z-toast);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--space-6);
   background: rgba(18, 18, 18, 0.58);
 }
 
@@ -14,7 +14,7 @@
   overflow: hidden;
   border: 1px solid rgba(204, 204, 204, 0.8);
   border-radius: 16px;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   box-shadow: 0 24px 64px rgba(18, 18, 18, 0.24);
 }
 
@@ -40,26 +40,26 @@
   height: 36px;
   place-items: center;
   border: 0;
-  border-radius: 8px;
-  color: #5F5E5A;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.64);
   cursor: pointer;
 }
 
 .app-confirm-content {
-  padding: 24px 28px 28px;
+  padding: var(--space-6) 28px 28px;
 }
 
 .app-confirm-content h2 {
   margin: 0;
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 24px;
   line-height: 32px;
 }
 
 .app-confirm-content p {
   margin: 6px 0 24px;
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 16px;
   line-height: 24px;
   white-space: pre-line;
@@ -74,29 +74,29 @@
   min-width: 95px;
   height: 44px;
   padding: 0 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font: 600 14px/1 var(--font-sans);
   cursor: pointer;
 }
 
 .app-confirm-cancel {
-  border: 1px solid #DF678B;
-  color: #DF678B;
-  background: #FFFFFF;
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+  background: var(--bg-surface);
 }
 
 .app-confirm-primary {
-  border: 1px solid #3E1363;
-  color: #FFFFFF;
-  background: #3E1363;
+  border: 1px solid var(--button-primary);
+  color: var(--text-light);
+  background: var(--button-primary);
 }
 
-.app-confirm-primary:hover { background: #5B327F; }
-.app-confirm-primary:active { background: #332849; }
+.app-confirm-primary:hover { background: var(--button-primary-hover); }
+.app-confirm-primary:active { background: var(--button-primary-active); }
 .app-confirm-actions button:focus-visible { outline: 3px solid rgba(142, 119, 187, 0.32); outline-offset: 2px; }
 
 @media (max-width: 520px) {
-  .app-confirm-content { padding: 20px; }
+  .app-confirm-content { padding: var(--space-5); }
   .app-confirm-actions { width: 100%; }
   .app-confirm-actions button { flex: 1; }
 }

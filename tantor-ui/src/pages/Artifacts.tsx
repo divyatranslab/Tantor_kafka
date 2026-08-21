@@ -555,7 +555,7 @@ export function Artifacts() {
           <div className="no-artifacts-illustration-container">
             <svg className="no-artifacts-illustration" width="130" height="100" viewBox="0 0 130 100" fill="none" xmlns="http://www.w3.org/2000/svg">
               {/* Card 1 */}
-              <rect x="15" y="10" width="100" height="20" rx="4" fill="white" stroke="#E2E8F0" strokeWidth="1" />
+              <rect x="15" y="10" width="100" height="20" rx="4" fill="white" stroke="var(--border-subtle)" strokeWidth="1" />
               <rect x="25" y="18" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               <rect x="55" y="18" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               {/* Card 2 */}
@@ -563,13 +563,13 @@ export function Artifacts() {
               <rect x="25" y="44" width="24" height="4" rx="1" fill="#8B5CF6" opacity="0.8" />
               <rect x="57" y="44" width="24" height="4" rx="1" fill="#8B5CF6" opacity="0.8" />
               {/* Card 3 */}
-              <rect x="15" y="62" width="100" height="20" rx="4" fill="white" stroke="#E2E8F0" strokeWidth="1" />
+              <rect x="15" y="62" width="100" height="20" rx="4" fill="white" stroke="var(--border-subtle)" strokeWidth="1" />
               <rect x="25" y="70" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               <rect x="55" y="70" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               {/* Reflection lines under cards */}
-              <line x1="25" y1="90" x2="45" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="55" y1="90" x2="75" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="85" y1="90" x2="105" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="25" y1="90" x2="45" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="55" y1="90" x2="75" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="85" y1="90" x2="105" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
           <h3>No Artifacts</h3>

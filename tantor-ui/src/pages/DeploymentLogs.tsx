@@ -223,17 +223,17 @@ export function DeploymentLogs() {
   };
 
   return (
-    <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch' }}>
+    <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', alignSelf: 'stretch' }}>
       
       {/* Title Row with Task output & refresh icon */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '16px', lineHeight: '22px', color: '#282F49', margin: 0 }}>Task output</h2>
-          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181' }}>
+          <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: 'var(--text-md)', lineHeight: '22px', color: 'var(--text-primary)', margin: 0 }}>Task output</h2>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', lineHeight: '19px', color: 'var(--text-tertiary)' }}>
             {tasks.length} task{tasks.length === 1 ? '' : 's'} recorded
           </span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <button 
             onClick={handleCopyLogs}
             style={{
@@ -241,17 +241,17 @@ export function DeploymentLogs() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '8px',
+              padding: 'var(--space-2)',
               width: '40px',
               height: '40px',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              background: '#FFFFFF',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              background: "var(--bg-surface)",
               cursor: 'pointer'
             }}
             title="Copy logs"
           >
-            <Copy size={16} style={{ color: '#818181' }} />
+            <Copy size={16} style={{ color: 'var(--text-tertiary)' }} />
           </button>
           <button 
             onClick={() => fetchTasks(true)}
@@ -261,17 +261,17 @@ export function DeploymentLogs() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              padding: '8px',
+              padding: 'var(--space-2)',
               width: '40px',
               height: '40px',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              background: '#FFFFFF',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              background: "var(--bg-surface)",
               cursor: 'pointer'
             }}
             title="Refresh"
           >
-            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} style={{ color: '#818181' }} />
+            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} style={{ color: 'var(--text-tertiary)' }} />
           </button>
         </div>
       </div>
@@ -284,8 +284,8 @@ export function DeploymentLogs() {
       )}
 
       {/* Task dropdown selector */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', width: '100%' }}>
-        <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '16px', lineHeight: '22px', color: '#282F49', width: '33px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', width: '100%' }}>
+        <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: 'var(--text-md)', lineHeight: '22px', color: 'var(--text-primary)', width: '33px' }}>
           Task
         </span>
         <div style={{ position: 'relative', flexGrow: 1 }}>
@@ -301,13 +301,13 @@ export function DeploymentLogs() {
               padding: '10px 16px',
               width: '100%',
               height: '40px',
-              background: '#FFFFFF',
-              border: '1px solid #8E77BB',
-              borderRadius: '8px',
+              background: "var(--bg-surface)",
+              border: '1px solid var(--border-focus)',
+              borderRadius: 'var(--radius-md)',
               fontFamily: 'Satoshi, sans-serif',
-              fontWeight: 400,
-              fontSize: '14px',
-              color: '#8E77BB',
+              fontWeight: 'var(--font-regular)',
+              fontSize: 'var(--text-base)',
+              color: 'var(--border-focus)',
               appearance: 'none',
               cursor: 'pointer'
             }}
@@ -318,7 +318,7 @@ export function DeploymentLogs() {
               </option>
             ))}
           </select>
-          <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: '#8E77BB' }}>
+          <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: 'var(--border-focus)' }}>
             <ChevronDown size={20} />
           </div>
         </div>
@@ -330,35 +330,35 @@ export function DeploymentLogs() {
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
-        border: '1px solid #CCCCCC',
-        borderRadius: '8px',
+        border: '1px solid var(--border-default)',
+        borderRadius: 'var(--radius-md)',
         overflow: 'hidden'
       }}>
         {/* Table Header */}
-        <div style={{ display: 'flex', background: '#F9F9F9', borderBottom: '1px solid #CCCCCC', height: '54px', alignItems: 'center' }}>
-          <div style={{ width: '56px', padding: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
-          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Status</div>
-          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Host</div>
-          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Started</div>
-          <div style={{ flex: 1, padding: '16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', color: '#332849' }}>Updated</div>
+        <div style={{ display: 'flex', background: 'var(--bg-neutral-light)', borderBottom: '1px solid var(--border-default)', height: '54px', alignItems: 'center' }}>
+          <div style={{ width: '56px', padding: 'var(--space-4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} />
+          <div style={{ flex: 1, padding: 'var(--space-4)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', color: 'var(--button-primary-active)' }}>Status</div>
+          <div style={{ flex: 1, padding: 'var(--space-4)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', color: 'var(--button-primary-active)' }}>Host</div>
+          <div style={{ flex: 1, padding: 'var(--space-4)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', color: 'var(--button-primary-active)' }}>Started</div>
+          <div style={{ flex: 1, padding: 'var(--space-4)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', color: 'var(--button-primary-active)' }}>Updated</div>
         </div>
         {/* Table Body Row */}
         <div 
-          style={{ display: 'flex', background: '#FFFFFF', height: '52px', alignItems: 'center', cursor: 'default' }}
+          style={{ display: 'flex', background: "var(--bg-surface)", height: '52px', alignItems: 'center', cursor: 'default' }}
         >
-          <div style={{ width: '56px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818181' }}>
+          <div style={{ width: '56px', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)' }}>
             {statusIcon(selectedTask.status)}
           </div>
-          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)' }}>
             {selectedTask.status}
           </div>
-          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selectedTask.hostId}>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selectedTask.hostId}>
             {selectedTask.hostId}
           </div>
-          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)' }}>
             {new Date(selectedTask.createdAt).toLocaleString()}
           </div>
-          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#23252D' }}>
+          <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)' }}>
             {new Date(selectedTask.updatedAt).toLocaleString()}
           </div>
         </div>
@@ -373,7 +373,7 @@ export function DeploymentLogs() {
           alignItems: 'center',
           padding: '10px 20px',
           height: '44px',
-          background: '#332849',
+          background: 'var(--button-primary-active)',
           borderRadius: '8px 8px 0px 0px'
         }}>
           <button 
@@ -382,7 +382,7 @@ export function DeploymentLogs() {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              color: '#FFFFFF',
+              color: "var(--text-light)",
               display: 'flex',
               alignItems: 'center',
               padding: 0
@@ -390,12 +390,12 @@ export function DeploymentLogs() {
             title={isConsoleMaximized ? "Collapse logs" : "Expand logs"}
           >
             {isConsoleMaximized ? (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#FFFFFF' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-light)" }}>
                 <path d="M13 7v4h4" />
                 <path d="M11 17v-4H7" />
               </svg>
             ) : (
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#FFFFFF' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--text-light)" }}>
                 <path d="M17 11V7H13" />
                 <path d="M13 15V11H9" />
               </svg>
@@ -420,9 +420,9 @@ export function DeploymentLogs() {
           <div className="logs-text" style={{
             width: '100%',
             fontFamily: 'Source Code Pro, monospace',
-            fontSize: '14px',
+            fontSize: 'var(--text-base)',
             lineHeight: '20px',
-            color: '#FFFFFF',
+            color: "var(--text-light)",
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-all'
           }}>

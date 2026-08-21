@@ -258,7 +258,7 @@ export function Dashboard() {
       <header className="db-hero">
         <div>
           <div>
-            <h1>👋 Welcome {username}!</h1>
+            <h1>Ã°Å¸â€˜â€¹ Welcome {username}!</h1>
             <p className="db-subtitle-wrap">
               Dashboard overview
               <span className="db-info-wrap">
@@ -296,7 +296,7 @@ export function Dashboard() {
         <div className="db-kpi-grid">
           {kpis.map(kpi => (
             <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                 <div className="db-kpi-icon"><kpi.icon size={18} /></div>
                 <span>{kpi.label}</span>
               </div>
@@ -363,9 +363,9 @@ export function Dashboard() {
               <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
                 <CartesianGrid stroke="#eeeae3" horizontal={false} />
                 <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
-                <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
+                <YAxis dataKey="name" type="category" width={132} stroke="var(--text-secondary)" fontSize={11} tickLine={false} />
                 <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#16ABC2" barSize={16} />
+                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="var(--color-info)" barSize={16} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -401,7 +401,7 @@ export function Dashboard() {
               <YAxis allowDecimals={false} stroke="#8b8982" fontSize={11} tickLine={false} />
               <Tooltip />
               <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
-              <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
+              <Line type="monotone" dataKey="failed" stroke="var(--accent-primary)" strokeWidth={2} dot={false} name="Failed" />
               <Line type="monotone" dataKey="running" stroke="#FFCF57" strokeWidth={2} dot={false} name="Running" />
               <Line type="monotone" dataKey="success" stroke="#098C60" strokeWidth={2} dot={false} name="Success" />
             </LineChart>

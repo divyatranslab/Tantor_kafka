@@ -1,13 +1,13 @@
-/* ══════════════════════════════════════════
-   Sidebar — Redesign to match Figma Specs
-   ══════════════════════════════════════════ */
+/* ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â
+   Sidebar ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Redesign to match Figma Specs
+   ÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚ÂÃƒÂ¢Ã¢â‚¬Â¢Ã‚Â */
 
 .sidebar {
   width: 224px;
   height: calc(100vh - 72px); /* Matches exact TopNavbar height */
   display: flex;
   flex-direction: column;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   border-right: 1px solid #F3F0F0;
   position: sticky;
   top: 72px; /* Offset sticky position by exact TopNavbar height */
@@ -17,12 +17,12 @@
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ── Logo ── */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Logo ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 .sidebar-header {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 16px 24px;
+  padding: var(--space-4) 24px;
   border-bottom: 1px solid #F3F0F0;
   flex-shrink: 0;
 }
@@ -33,22 +33,22 @@
   max-height: 48px;
   object-fit: contain;
   filter: brightness(0.2) contrast(1.2); /* Enhance the contrast of the white-only image to render in dark colors against white sidebar */
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 .sidebar-tagline {
   font-family: 'Satoshi';
   font-size: 10px;
-  color: #818181;
-  margin-top: 4px;
+  color: var(--text-tertiary);
+  margin-top: var(--space-1);
   letter-spacing: 0.02em;
 }
 
-/* ── Nav ── */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Nav ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 0;
+  padding: var(--space-4) 0;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -59,7 +59,7 @@
   display: flex;
   flex-direction: column;
   padding: 0;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .nav-section-label {
@@ -68,8 +68,8 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  color: #818181;
-  padding: 12px 24px 6px;
+  color: var(--text-tertiary);
+  padding: var(--space-3) 24px 6px;
   transition: opacity 0.15s ease, padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -77,15 +77,15 @@
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
+  gap: var(--space-2);
+  padding: var(--space-3) 24px;
   height: 48px;
   font-family: 'Satoshi';
   font-style: normal;
   font-weight: 500;
   font-size: 14px;
   line-height: 19px;
-  color: #282F49;
+  color: var(--text-primary);
   text-decoration: none;
   border-right: 4px solid transparent;
   transition: background 0.12s ease, color 0.12s ease, padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), gap 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -105,14 +105,14 @@
 }
 
 .nav-item:hover {
-  background: #FAF8FF;
-  color: #DF678B;
+  background: var(--bg-raised);
+  color: var(--accent-primary);
 }
 
 .nav-item.active {
-  color: #DF678B;
-  border-right: 4px solid #DF678B;
-  background: #FAF8FF;
+  color: var(--accent-primary);
+  border-right: 4px solid var(--accent-primary);
+  background: var(--bg-raised);
   font-weight: 500;
 }
 
@@ -120,20 +120,20 @@
   width: 24px;
   height: 24px;
   flex-shrink: 0;
-  color: #818181;
+  color: var(--text-tertiary);
 }
 
 .nav-item.active .nav-item-icon {
-  color: #DF678B;
+  color: var(--accent-primary);
 }
 
-/* ── Footer ── */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Footer ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 .sidebar-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 16px 24px;
+  gap: var(--space-2);
+  padding: var(--space-4) 24px;
   border-top: 1px solid #F3F0F0;
   flex-shrink: 0;
   transition: padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -142,13 +142,13 @@
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .sidebar-user-name {
   font-weight: 500;
-  color: #282F49;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -158,17 +158,17 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #36AD8F;
+  background: var(--color-success);
   flex-shrink: 0;
 }
 
 .sidebar-logout {
   width: 32px;
   height: 32px;
-  border: 1px solid #CCCCCC;
-  border-radius: 8px;
-  background: #FFFFFF;
-  color: #818181;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -177,15 +177,15 @@
 }
 
 .sidebar-logout:hover {
-  background: #FAF8FF;
-  color: #DF678B;
-  border-color: #DF678B;
+  background: var(--bg-raised);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
 }
 
-/* ── Scrollbar ── */
+/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Scrollbar ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
 .sidebar-nav::-webkit-scrollbar       { width: 4px; }
 .sidebar-nav::-webkit-scrollbar-track { background: transparent; }
-.sidebar-nav::-webkit-scrollbar-thumb { background: #CCCCCC; border-radius: 2px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
 .nav-item-group {
   display: flex;
   flex-direction: column;
@@ -195,7 +195,7 @@
   display: flex;
   flex-direction: column;
   margin-top: 2px;
-  margin-bottom: 4px;
+  margin-bottom: var(--space-1);
 }
 
 .nav-item-dot {
@@ -204,19 +204,19 @@
   border-radius: 50%;
   background-color: currentColor;
   opacity: 0.5;
-  margin-right: 8px;
+  margin-right: var(--space-2);
   flex-shrink: 0;
 }
 
 .nav-item.active-parent {
-  color: #DF678B;
-  background: #FAF8FF;
-  border-right-color: #DF678B;
+  color: var(--accent-primary);
+  background: var(--bg-raised);
+  border-right-color: var(--accent-primary);
   font-weight: 500;
 }
 
 .nav-item.active-parent .nav-item-icon {
-  color: #DF678B;
+  color: var(--accent-primary);
 }
 
 /* Collapsed Sidebar overrides */
@@ -225,7 +225,7 @@
 }
 
 .sidebar.collapsed .nav-item {
-  padding: 12px 22px;
+  padding: var(--space-3) 22px;
   gap: 0;
 }
 
@@ -237,12 +237,12 @@
 
 .sidebar.collapsed .nav-section-label {
   opacity: 0;
-  padding: 12px 0 6px;
+  padding: var(--space-3) 0 6px;
   pointer-events: none;
 }
 
 .sidebar.collapsed .sidebar-footer {
-  padding: 16px 22px;
+  padding: var(--space-4) 22px;
 }
 
 .sidebar-toggle-icon {

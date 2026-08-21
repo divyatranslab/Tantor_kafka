@@ -639,9 +639,9 @@ export function ExternalClusters() {
                   <div className="inspection-result-header">
                     <div className="status-icon-wrapper">
                       {(bootstrapResult.success ?? bootstrapResult.connected) ? (
-                        <span className="success-check-dot">✔</span>
+                        <span className="success-check-dot">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â</span>
                       ) : (
-                        <span className="error-warn-dot">⚠</span>
+                        <span className="error-warn-dot">ÃƒÂ¢Ã…Â¡Ã‚Â </span>
                       )}
                     </div>
                     <div className="status-info-col">
@@ -680,11 +680,11 @@ export function ExternalClusters() {
                   </div>
 
                   {bootstrapResult.brokers && bootstrapResult.brokers.length > 0 && (
-                    <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <h4 style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Discovered Nodes</h4>
-                      <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                    <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: 'var(--space-3)', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                      <h4 style={{ marginBottom: '8px', fontSize: 'var(--text-xs)', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Discovered Nodes</h4>
+                      <table style={{ width: '100%', fontSize: 'var(--text-sm)', borderCollapse: 'collapse' }}>
                         <thead>
-                          <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#64748b' }}>
+                          <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: 'var(--text-muted)' }}>
                             <th style={{ padding: '6px', width: '40px' }}></th>
                             <th style={{ padding: '6px' }}>Node ID</th>
                             <th style={{ padding: '6px' }}>Host</th>
@@ -697,7 +697,7 @@ export function ExternalClusters() {
                             const isSelected = !!selectedAgents[broker.host ?? ''];
                             const hasAgent = !!broker.hasActiveAgent;
                             return (
-                              <tr key={broker.node_id ?? broker.broker_id ?? broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                              <tr key={broker.node_id ?? broker.broker_id ?? broker.id} style={{ borderBottom: '1px solid var(--border-subtle)', background: isSelected ? '#f0fdf4' : 'transparent' }}>
                                 <td style={{ padding: '6px', textAlign: 'center' }}>
                                   <input
                                     type="checkbox"
@@ -725,13 +725,13 @@ export function ExternalClusters() {
                                 <td style={{ padding: '6px' }}>{broker.port}</td>
                                 <td style={{ padding: '6px' }}>
                                   {bootstrapIsZooKeeper ? (
-                                    <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                                    <span style={{ color: '#3b82f6', fontWeight: 'var(--font-medium)' }}>Broker</span>
                                   ) : broker.isController && broker.isBroker ? (
-                                    <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
+                                    <span style={{ color: '#059669', fontWeight: 'var(--font-medium)' }}>Controller + Broker</span>
                                   ) : broker.isController ? (
-                                    <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>
+                                    <span style={{ color: '#7c3aed', fontWeight: 'var(--font-medium)' }}>Controller</span>
                                   ) : (
-                                    <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                                    <span style={{ color: '#3b82f6', fontWeight: 'var(--font-medium)' }}>Broker</span>
                                   )}
                                 </td>
                               </tr>

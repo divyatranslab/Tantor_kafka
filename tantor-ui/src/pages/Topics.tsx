@@ -265,10 +265,10 @@ export function Topics() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: 'var(--space-2)',
                 background: '#F8FAFC',
-                border: `1px solid ${autoRefresh ? '#3E1363' : '#E2E8F0'}`,
-                borderRadius: '8px',
+                border: `1px solid ${autoRefresh ? 'var(--button-primary)' : 'var(--border-subtle)'}`,
+                borderRadius: 'var(--radius-md)',
                 padding: '8px 12px',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -284,7 +284,7 @@ export function Topics() {
                 display: 'inline-block',
                 flexShrink: 0
               }} />
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
+              <span style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-semibold)', color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
               <div style={{
                 width: '16px',
                 height: '16px',
@@ -299,7 +299,7 @@ export function Topics() {
               }}>
                 {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
               </div>
-              <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B', marginLeft: '2px', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginLeft: '2px', whiteSpace: 'nowrap' }}>
                 {refreshInterval}s
               </span>
             </div>
@@ -426,7 +426,7 @@ export function Topics() {
           </thead>
           <tbody>
             {loading && !data ? (
-              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
+              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topicsÃ¢â‚¬Â¦</div></td></tr>
             ) : !data?.content.length ? (
               <tr><td colSpan={5} className="empty-state-cell">
                 <div className="topic-empty">
@@ -472,7 +472,7 @@ export function Topics() {
         {data && data.totalElements > 0 && (
           <footer className="topics-pagination">
             <span>
-              {data.totalElements.toLocaleString()} topic{data.totalElements === 1 ? '' : 's'} · page {data.page + 1} of {Math.max(data.totalPages, 1)}
+              {data.totalElements.toLocaleString()} topic{data.totalElements === 1 ? '' : 's'} Ã‚Â· page {data.page + 1} of {Math.max(data.totalPages, 1)}
             </span>
             <div>
               <select value={size} onChange={event => { setSize(Number(event.target.value)); setPage(0); }} aria-label="Rows per page">
@@ -623,7 +623,7 @@ export function Topics() {
                   Cancel
                 </button>
                 <button className="topic-button filled create-btn" disabled={creating}>
-                  {creating ? 'Creating…' : 'Create topic'}
+                  {creating ? 'CreatingÃ¢â‚¬Â¦' : 'Create topic'}
                 </button>
               </footer>
             </form>

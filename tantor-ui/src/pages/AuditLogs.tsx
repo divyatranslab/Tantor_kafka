@@ -6,7 +6,7 @@ import {
 import './AuditLogs.css';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 
-const CustomRefreshIcon = ({ size = 24, color = "#818181", className = "" }: { size?: number, color?: string, className?: string }) => (
+const CustomRefreshIcon = ({ size = 24, color = "var(--text-tertiary)", className = "" }: { size?: number, color?: string, className?: string }) => (
   <svg 
     width={size} 
     height={size} 
@@ -141,7 +141,7 @@ function CustomDropdown({ value, options, onChange }: CustomDropdownProps) {
       >
         <span>{selectedOption ? selectedOption.label : value}</span>
         <span className="custom-select-arrow">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818181" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </span>
@@ -321,7 +321,7 @@ export function AuditLogs() {
       <h3 className="section-heading">Audit Log Filters</h3>
       <div className="audit-filters-row-1">
         <label className="audit-search">
-          <Search size={24} color="#818181" />
+          <Search size={24} color="var(--text-tertiary)" />
           <input placeholder="Search configs..." value={search} onChange={e => setSearch(e.target.value)} />
         </label>
         <label className="audit-resource-id">

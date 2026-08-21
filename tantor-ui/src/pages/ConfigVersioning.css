@@ -1,26 +1,26 @@
-.versioned-config-page { padding-bottom: 24px; }
-.config-flow-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 12px; border: 1px solid #b8d7ee; border-radius: 8px; background: #f0f7fc; color: #185fa5; font-size: 11px; white-space: nowrap; }
+.versioned-config-page { padding-bottom: var(--space-6); }
+.config-flow-strip { display: flex; align-items: center; gap: var(--space-2); overflow-x: auto; padding: 10px 12px; border: 1px solid #b8d7ee; border-radius: var(--radius-md); background: #f0f7fc; color: var(--color-info-dark); font-size: 11px; white-space: nowrap; }
 .config-flow-strip span { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; }
 .config-flow-strip b { color: #7eaac9; }
 .config-options { display: flex; align-items: center; gap: 14px; }
 .config-review { border-color: #9cc7e6; }
-.config-messages { padding: 9px 11px; border-radius: 6px; font-size: 11px; }
+.config-messages { padding: 9px 11px; border-radius: var(--radius-sm); font-size: 11px; }
 .config-messages p { margin: 2px 0; }
 .config-messages.error { border: 1px solid #e4a0a0; background: #fff0f0; color: #8f1d1d; }
 .config-messages.warning { border: 1px solid #e4ca87; background: #fff8df; color: #765b0b; }
 .config-diff-list { display: grid; gap: 6px; }
-.config-diff-row { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(180px, 1fr) auto minmax(180px, 1fr); align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--border-subtle); border-left: 3px solid #d29a38; border-radius: 6px; background: #fcfbf8; }
+.config-diff-row { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(180px, 1fr) auto minmax(180px, 1fr); align-items: center; gap: var(--space-2); padding: var(--space-2); border: 1px solid var(--border-subtle); border-left: 3px solid #d29a38; border-radius: var(--radius-sm); background: #fcfbf8; }
 .config-diff-row.added { border-left-color: #2f8b57; }
 .config-diff-row.removed { border-left-color: #b84d4d; }
 .config-diff-row > div { min-width: 0; display: grid; gap: 3px; }
 .config-diff-row span { width: max-content; padding: 2px 5px; border-radius: 4px; background: #eceae5; font-size: 8px; font-weight: 800; }
 .config-diff-row code { overflow-wrap: anywhere; font-size: 10px; }
 .config-diff-row pre { min-width: 0; overflow: auto; margin: 0; padding: 7px; border-radius: 4px; background: #f3f2ef; font: 10px Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
-.config-review-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 10px; }
-.config-review-footer button, .version-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 5px 9px; border: 1px solid var(--border-default); border-radius: 5px; background: #fff; color: var(--text-primary); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
-.config-review-footer button, .version-actions button.primary { border-color: #185fa5; background: #185fa5; color: #fff; }
+.config-review-footer { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); color: var(--text-secondary); font-size: 10px; }
+.config-review-footer button, .version-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 5px 9px; border: 1px solid var(--border-default); border-radius: 5px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.config-review-footer button, .version-actions button.primary { border-color: var(--color-info-dark); background: var(--color-info-dark); color: var(--text-light); }
 .version-list { display: grid; gap: 7px; }
-.version-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: #fbfaf8; }
+.version-list article { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: #fbfaf8; }
 .version-list article.active-version { border-color: #78b690; background: #f0faf4; }
 .version-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .version-main strong { font-size: 13px; }
@@ -35,44 +35,44 @@
 
 /* Internal configuration workflow */
 .versioned-config-page {
-  gap: 16px;
+  gap: var(--space-4);
   max-width: none;
 }
 
 .versioned-config-page .node-config-header h2 {
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 16px;
   font-weight: 500;
 }
 
 .versioned-config-page .node-config-header p {
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
 .versioned-config-page .config-flow-strip {
-  gap: 8px !important;
-  margin-bottom: 0 !important;
+  gap: var(--space-2);
+  margin-bottom: 0;
   overflow: visible;
 }
 
 .versioned-config-page .config-flow-strip button {
   height: 35px;
   min-height: 35px;
-  padding: 0 12px !important;
-  border-color: #5B126D !important;
-  border-radius: 8px !important;
-  color: #5B126D !important;
-  font-size: 13px !important;
-  font-weight: 500 !important;
+  padding: 0 12px;
+  border-color: #5B126D;
+  border-radius: var(--radius-md);
+  color: #5B126D;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .versioned-config-page .config-flow-strip button:disabled {
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 .versioned-config-page .config-selection-step {
-  gap: 8px;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   background: transparent;
@@ -82,37 +82,37 @@
   min-height: 72px;
   padding: 14px;
   box-sizing: border-box;
-  border: 1px solid #D2D2D7;
-  border-radius: 8px;
-  background: #FFFFFF;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .versioned-config-page .config-selection-step .node-config-section-title > span {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  color: #5B126D !important;
-  border-color: #5B126D !important;
+  color: #5B126D;
+  border-color: #5B126D;
 }
 
 .versioned-config-page .config-selection-step .node-config-hosts button,
 .versioned-config-page .config-selection-step .node-config-files button {
   min-height: 64px;
-  padding: 12px 16px;
-  border-color: #D2D2D7;
-  border-radius: 8px;
-  background: #FFFFFF;
+  padding: var(--space-3) 16px;
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .versioned-config-page .config-selection-step .node-config-hosts button.active,
 .versioned-config-page .config-selection-step .node-config-files button.active {
-  border-color: #D8C8E8 !important;
-  background: #F1E9FC !important;
-  color: #332849 !important;
+  border-color: #D8C8E8;
+  background: #F1E9FC;
+  color: var(--button-primary-active);
 }
 
 .versioned-config-page .config-selection-step strong {
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 14px;
   font-weight: 500;
 }
@@ -123,9 +123,9 @@
 }
 
 .versioned-config-page .node-config-section.editor {
-  padding: 16px;
-  border-color: #D2D2D7;
-  border-radius: 8px;
+  padding: var(--space-4);
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
 }
 
 .versioned-config-page .node-config-editor-head {
@@ -139,7 +139,7 @@
 }
 
 .versioned-config-page .node-config-table-wrap {
-  border-color: #D2D2D7;
+  border-color: var(--border-mid);
   border-radius: 0;
 }
 
@@ -147,7 +147,7 @@
   height: 44px;
   padding: 0 14px;
   background: #FAFAFA;
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 13px;
   font-weight: 500;
   text-transform: none;
@@ -176,7 +176,7 @@
 .versioned-config-page .node-config-table input,
 .versioned-config-page .node-config-add input {
   min-height: 40px;
-  color: #818181;
+  color: var(--text-tertiary);
   font-family: 'Satoshi', sans-serif;
   font-size: 13px;
 }
@@ -184,14 +184,14 @@
 .versioned-config-page .node-config-table td:last-child button {
   width: 36px;
   height: 36px;
-  border-color: #D2D2D7 !important;
-  border-radius: 8px;
-  color: #818181 !important;
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
+  color: var(--text-tertiary);
 }
 
 .versioned-config-page .node-config-add {
-  grid-template-columns: minmax(240px, 1.4fr) minmax(220px, 1fr) minmax(240px, .9fr) !important;
-  margin-top: 8px !important;
+  grid-template-columns: minmax(240px, 1.4fr) minmax(220px, 1fr) minmax(240px, .9fr);
+  margin-top: var(--space-2);
 }
 
 .versioned-config-page .node-config-add button,
@@ -200,7 +200,7 @@
 }
 
 .versioned-config-page .node-config-footer {
-  margin-top: 8px !important;
+  margin-top: var(--space-2);
 }
 
 .versioned-config-page .node-config-footer button {
@@ -208,30 +208,30 @@
 }
 
 .versioned-config-page .config-review {
-  border-color: #D2D2D7 !important;
-  border-radius: 8px;
-  margin-top: 0 !important;
-  padding: 16px;
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
+  margin-top: 0;
+  padding: var(--space-4);
 }
 
 .versioned-config-page .config-review .node-config-section-title > span {
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
-  color: #5B126D !important;
-  border-color: #5B126D !important;
-  background: #FFFFFF !important;
+  color: #5B126D;
+  border-color: #5B126D;
+  background: var(--bg-surface);
 }
 
 .versioned-config-page .config-review-placeholder {
-  margin: 4px 0 0;
-  color: #818181;
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
 .versioned-config-page .config-diff-list {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   margin-top: 0;
 }
 
@@ -239,23 +239,23 @@
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .versioned-config-page .config-diff-meta {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .versioned-config-page .config-diff-meta span {
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 12px;
   font-weight: 400;
 }
 
 .versioned-config-page .config-diff-meta strong {
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 13px;
   font-weight: 400;
 }
@@ -263,7 +263,7 @@
 .versioned-config-page .config-diff-values {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .versioned-config-page .config-diff-values > div {
@@ -272,33 +272,33 @@
   align-items: center;
   padding: 0 14px;
   box-sizing: border-box;
-  border: 1px solid #D2D2D7;
-  border-radius: 8px;
-  background: #FFFFFF;
-  color: #818181;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
   font-size: 13px;
 }
 
 .versioned-config-page .config-review-footer {
-  margin-top: 4px !important;
-  padding-top: 8px !important;
-  border-top: 0 !important;
+  margin-top: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 0;
 }
 
 .versioned-config-page .config-review-footer button {
   min-width: 300px;
   min-height: 40px;
   border-color: #4B126F;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: #4B126F;
   font-size: 13px;
   font-weight: 500;
 }
 
 .versioned-config-page .config-history {
-  padding: 16px;
-  border-color: #D2D2D7;
-  border-radius: 8px;
+  padding: var(--space-4);
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
 }
 
 .versioned-config-page .config-history .node-config-section-title > span {
@@ -307,20 +307,20 @@
   flex: 0 0 30px;
   color: #5B126D;
   border: 1px solid #5B126D;
-  background: #FFFFFF;
+  background: var(--bg-surface);
 }
 
 .versioned-config-page .version-list {
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .versioned-config-page .version-list article {
   min-height: 58px;
   padding: 10px 12px;
   box-sizing: border-box;
-  border-color: #D2D2D7;
-  border-radius: 8px;
-  background: #FFFFFF;
+  border-color: var(--border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .versioned-config-page .version-list article.active-version {
@@ -333,13 +333,13 @@
 }
 
 .versioned-config-page .version-main strong {
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 14px;
   font-weight: 600;
 }
 
 .versioned-config-page .version-main small {
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 11px;
 }
 
@@ -351,15 +351,15 @@
 
 .versioned-config-page .version-actions {
   flex-wrap: nowrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .versioned-config-page .version-actions button {
   min-height: 34px;
   padding: 0 12px;
-  border-color: #D2D2D7;
+  border-color: var(--border-mid);
   border-radius: 7px;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   color: #5B126D;
   font-size: 12px;
   font-weight: 500;
@@ -368,30 +368,30 @@
 .versioned-config-page .version-actions button.primary {
   border-color: #4B126F;
   background: #4B126F;
-  color: #FFFFFF;
+  color: var(--text-light);
 }
 
 .versioned-config-page .version-actions button.view-job {
-  border-color: #D2D2D7;
-  background: #FFFFFF;
+  border-color: var(--border-mid);
+  background: var(--bg-surface);
   color: #5B126D;
 }
 
 .versioned-config-page .version-actions button.view-job.highlighted {
   border-color: #4B126F;
   background: #4B126F;
-  color: #FFFFFF;
+  color: var(--text-light);
 }
 
 .versioned-config-page .version-history-empty {
   margin: 2px 0 0;
-  color: #818181;
+  color: var(--text-tertiary);
   font-size: 12px;
 }
 
 @media (max-width: 900px) {
   .versioned-config-page .node-config-add {
-    grid-template-columns: 1fr !important;
+    grid-template-columns: 1fr;
   }
 
   .versioned-config-page .config-diff-item {
@@ -410,7 +410,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--space-5);
   background: rgba(24, 24, 27, 0.58);
 }
 
@@ -418,7 +418,7 @@
   width: min(610px, calc(100vw - 40px));
   overflow: hidden;
   border-radius: 18px;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
 }
 
@@ -451,20 +451,20 @@
 }
 
 .config-dialog-body {
-  padding: 24px 28px 28px;
+  padding: var(--space-6) 28px 28px;
 }
 
 .config-dialog-body h3 {
   margin: 0;
-  color: #332849;
+  color: var(--button-primary-active);
   font-size: 27px;
   font-weight: 600;
   line-height: 1.25;
 }
 
 .config-dialog-body p {
-  margin: 8px 0 26px;
-  color: #818181;
+  margin: var(--space-2) 0 26px;
+  color: var(--text-tertiary);
   font-size: 17px;
   line-height: 1.45;
 }
@@ -488,12 +488,12 @@
 
 .config-dialog-actions .cancel {
   border: 1px solid #E85D8B;
-  background: #FFFFFF;
+  background: var(--bg-surface);
   color: #E85D8B;
 }
 
 .config-dialog-actions .confirm {
   border: 1px solid #4B126F;
   background: #4B126F;
-  color: #FFFFFF;
+  color: var(--text-light);
 }

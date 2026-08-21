@@ -380,7 +380,7 @@ function activeStatus(status: string): boolean {
   return ['PENDING', 'IN_PROGRESS', 'RUNNING', 'QUEUED'].includes(String(status || '').toUpperCase());
 }
 
-const CustomRefreshIcon = ({ size = 20, color = '#818181', className = '' }: { size?: number, color?: string, className?: string }) => (
+const CustomRefreshIcon = ({ size = 20, color = 'var(--text-tertiary)', className = '' }: { size?: number, color?: string, className?: string }) => (
   <svg width={size} height={size} viewBox='0 0 24 24' fill='none' stroke={color} strokeWidth='1.25' strokeLinecap='round' strokeLinejoin='round' className={className}>
     <path d='M 12 5 A 7 7 0 0 1 17 17' />
     <path d='M 18 13 L 17 17 L 21 16' />
@@ -1461,7 +1461,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         <header className="cd-header">
           <div>
             <h1>
-              <ChevronLeft size={24} color="#818181" className="cd-back-icon" onClick={() => {
+              <ChevronLeft size={24} color="var(--text-tertiary)" className="cd-back-icon" onClick={() => {
                 if (stage === 'preview') {
                   setStage('details');
                 } else {
@@ -1572,7 +1572,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                     style={{
                       appearance: 'none',
                       WebkitAppearance: 'none',
-                      color: '#818181',
+                      color: 'var(--text-tertiary)',
                       paddingRight: '40px'
                     }}
                   >
@@ -1583,7 +1583,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                     ))}
                     {availableVersions.length === 0 && <option>No available Kafka artifact</option>}
                   </select>
-                  <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: '#818181' }}>
+                  <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: 'var(--text-tertiary)' }}>
                     <ChevronDown size={20} />
                   </div>
                 </div>
@@ -1654,8 +1654,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </button>
             </div>
 
-            <div className="cd-node-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch', marginBottom: '16px' }}>
-              <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '14px', fontWeight: 500, color: '#332849' }}>Select node</span>
+            <div className="cd-node-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', alignSelf: 'stretch', marginBottom: '16px' }}>
+              <span style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Select node</span>
               <div className="cd-node-picker" ref={dropdownRef}>
                 <button className="cd-node-trigger" onClick={() => {
                   setNodeDropdownOpen(open => !open);
@@ -1718,13 +1718,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
             <div className="cd-selected-node-list">
               {selectedHosts.map(host => (
-                <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', border: 'none' }}>
+                <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: "var(--bg-surface)", borderRadius: 'var(--radius-md)', padding: '10px 16px', border: 'none' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                     <div className="cd-node-main" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-                      <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', lineHeight: '19px', color: '#332849', margin: 0 }}>{host.hostname}</strong>
-                      <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', lineHeight: '19px', color: '#818181', margin: 0 }}>{displayIp(host)} - /srv/tantor-agent/tantor-agent-linux</span>
+                      <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', lineHeight: '19px', color: 'var(--button-primary-active)', margin: 0 }}>{host.hostname}</strong>
+                      <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', lineHeight: '19px', color: 'var(--text-tertiary)', margin: 0 }}>{displayIp(host)} - /srv/tantor-agent/tantor-agent-linux</span>
                     </div>
-                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative' }}>
+                    <div className="cd-node-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', position: 'relative' }}>
                       <button
                         className="cd-figma-action-btn"
                         onClick={() => checkHostPorts(host.id)}
@@ -1748,13 +1748,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             : 'Check Ports'}
                         </span>
                         {portCheckResults[host.id]?.status === 'RUNNING' ? (
-                          <Loader2 size={12} className="spin" style={{ color: '#3E1363' }} />
+                          <Loader2 size={12} className="spin" style={{ color: 'var(--button-primary)' }} />
                         ) : portCheckResults[host.id]?.status === 'SUCCESS' ? (
-                          <CheckCircle2 size={14} style={{ color: '#069B68' }} />
+                          <CheckCircle2 size={14} style={{ color: 'var(--color-success-dark)' }} />
                         ) : portCheckResults[host.id]?.status === 'FAILED' ? (
                           <XCircle size={14} style={{ color: '#E15252' }} />
                         ) : (
-                          <Play size={10} fill="#3E1363" style={{ transform: 'none' }} />
+                          <Play size={10} fill="var(--button-primary)" style={{ transform: 'none' }} />
                         )}
                       </button>
 
@@ -1766,17 +1766,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             left: '0',
                             zIndex: 1000,
                             width: '240px',
-                            background: '#FAF8FF',
-                            border: '1px solid #CCCCCC',
-                            borderRadius: '8px',
-                            padding: '12px',
+                            background: 'var(--bg-raised)',
+                            border: '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-md)',
+                            padding: 'var(--space-3)',
                             boxShadow: '0px 4px 12px rgba(0, 0, 0, 0.08)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: '8px',
+                            gap: 'var(--space-2)',
                             fontFamily: 'Satoshi, sans-serif',
-                            fontSize: '13px',
-                            color: '#332849',
+                            fontSize: 'var(--text-sm)',
+                            color: 'var(--button-primary-active)',
                             pointerEvents: 'none',
                             textAlign: 'left',
                           }}
@@ -1803,10 +1803,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             if (result.status === 'SUCCESS') {
                               return (
                                 <>
-                                  <div style={{ fontWeight: 600, color: '#069B68' }}>All ports available</div>
+                                  <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--color-success-dark)' }}>All ports available</div>
                                   {available.map(p => (
                                     <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ color: '#069B68' }}>-</span>
+                                      <span style={{ color: 'var(--color-success-dark)' }}>-</span>
                                       <span>Port {p}</span>
                                     </div>
                                   ))}
@@ -1818,7 +1818,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                               <>
                                 {unavailable.length > 0 && (
                                   <div>
-                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Unavailable (in use):</div>
+                                    <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--button-primary-active)', marginBottom: '4px' }}>Unavailable (in use):</div>
                                     {unavailable.map(p => (
                                       <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
                                         <span style={{ color: '#E15252' }}>-</span>
@@ -1829,10 +1829,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                                 )}
                                 {available.length > 0 && (
                                   <div style={{ marginTop: '4px' }}>
-                                    <div style={{ fontWeight: 600, color: '#332849', marginBottom: '4px' }}>Available (free):</div>
+                                    <div style={{ fontWeight: 'var(--font-semibold)', color: 'var(--button-primary-active)', marginBottom: '4px' }}>Available (free):</div>
                                     {available.map(p => (
                                       <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingLeft: '4px' }}>
-                                        <span style={{ color: '#069B68' }}>-</span>
+                                        <span style={{ color: 'var(--color-success-dark)' }}>-</span>
                                         <span>Port {p}</span>
                                       </div>
                                     ))}
@@ -2097,8 +2097,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   <div className="cd-node-config-editor" key={kind}>
                     <div className="cd-node-config-top">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', margin: 0 }}>
-                        <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', color: '#332849', margin: 0 }}>{configFileName(kind)}</h3>
-                        <p style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#332849', margin: 0 }}>Fill the node-specific values for this service.</p>
+                        <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)', margin: 0 }}>{configFileName(kind)}</h3>
+                        <p style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)', margin: 0 }}>Fill the node-specific values for this service.</p>
                       </div>
                       <div className="cd-config-controls">
                         <label className="cd-heap-field">
@@ -2183,9 +2183,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 onChange={(key, value) => updateCommonConfigValue(commonConfigKind, key, value)}
               />
             </div>
-            <div className="cd-config-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: 'none', padding: '16px 24px', boxShadow: '0px -4px 9px rgba(0, 0, 0, 0.1)' }}>
-              <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)} style={{ border: '1px solid #8E77BB', color: '#8E77BB', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', fontSize: '14px', fontWeight: 500 }}>Cancel</button>
-              <button className="cd-primary-btn" onClick={() => setCommonConfigOpen(false)} style={{ background: '#CBC0E0', color: '#FFFFFF', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '14px', fontWeight: 500 }}>Save</button>
+            <div className="cd-config-modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-4)', borderTop: 'none', padding: '16px 24px', boxShadow: '0px -4px 9px rgba(0, 0, 0, 0.1)' }}>
+              <button className="cd-secondary-btn" onClick={() => setCommonConfigOpen(false)} style={{ border: '1px solid var(--border-focus)', color: 'var(--border-focus)', background: "var(--bg-surface)", borderRadius: 'var(--radius-md)', padding: '10px 16px', fontSize: 'var(--text-base)', fontWeight: 'var(--font-medium)' }}>Cancel</button>
+              <button className="cd-primary-btn" onClick={() => setCommonConfigOpen(false)} style={{ background: '#CBC0E0', color: "var(--text-light)", border: 'none', borderRadius: 'var(--radius-md)', padding: '10px 16px', fontSize: 'var(--text-base)', fontWeight: 'var(--font-medium)' }}>Save</button>
             </div>
           </div>
         </div>
@@ -2223,7 +2223,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   if (!onClose) {
     return (
-      <div className="cluster-deployment-page-wrapper" style={{ padding: '24px', backgroundColor: '#F5F6FA', flex: 1, minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', boxSizing: 'border-box' }}>
+      <div className="cluster-deployment-page-wrapper" style={{ padding: 'var(--space-6)', backgroundColor: '#F5F6FA', flex: 1, minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', boxSizing: 'border-box' }}>
         {mainContent}
       </div>
     );
@@ -2261,7 +2261,7 @@ function PropertyTable({
                 {row.required && <small><b>*</b> Required</small>}
               </td>
               <td>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-6)' }}>
                   <input
                     value={row.value}
                     onChange={e => onChange(row.key, e.target.value)}
@@ -2272,7 +2272,7 @@ function PropertyTable({
               </td>
               {hostIp && (
                 <td>
-                  <button type="button" onClick={onUseHostIp} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '40px', boxSizing: 'border-box', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '10px 16px', color: '#332849', fontSize: '14px', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, whiteSpace: 'nowrap' }}>
+                  <button type="button" onClick={onUseHostIp} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '40px', boxSizing: 'border-box', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '10px 16px', color: 'var(--button-primary-active)', fontSize: 'var(--text-base)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', whiteSpace: 'nowrap' }}>
                     Use {hostIp}
                   </button>
                 </td>

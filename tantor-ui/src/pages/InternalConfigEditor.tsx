@@ -288,10 +288,10 @@ export function InternalConfigEditor() {
     padding: '6px 12px',
     border: '1px solid #7C3AED',
     borderRadius: '6px',
-    background: '#fff',
+    background: "var(--bg-surface)",
     color: '#7C3AED',
     fontWeight: 650,
-    fontSize: '12px',
+    fontSize: 'var(--text-xs)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     transition: 'all 0.2s',
@@ -345,7 +345,7 @@ export function InternalConfigEditor() {
 
       <section className="node-config-section config-selection-step">
         <div className="node-config-section-title">
-          <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>1</span>
+          <span style={{ border: '1px solid #7C3AED', background: "var(--bg-surface)", color: '#7C3AED' }}>1</span>
           <div><h3>Select node</h3><p>Each VM may contain one or more Kafka services.</p></div>
         </div>
         <div className="node-config-hosts">
@@ -368,7 +368,7 @@ export function InternalConfigEditor() {
 
       <section className="node-config-section config-selection-step">
         <div className="node-config-section-title">
-          <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>2</span>
+          <span style={{ border: '1px solid #7C3AED', background: "var(--bg-surface)", color: '#7C3AED' }}>2</span>
           <div><h3>Select Configuration File</h3><p>Only files belonging to the selected node are shown.</p></div>
         </div>
         <div className="node-config-files">
@@ -405,8 +405,8 @@ export function InternalConfigEditor() {
                 {Object.entries(draftProperties).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
                   return <tr key={key}>
                     <td><code>{key}</code></td>
-                    <td><input value={value} disabled={!canManage} onChange={event => mutateDraft(current => ({ ...current, [key]: event.target.value }))} style={{ border: '1px solid #e2e8f0', borderRadius: '6px' }} /></td>
-                    <td>{canManage && <button title={`Remove ${key}`} onClick={() => mutateDraft(current => { const next = { ...current }; delete next[key]; return next; })} style={{ border: '1px solid #fee2e2', color: '#ef4444', background: '#fff' }}><Trash2 size={14} /></button>}</td>
+                    <td><input value={value} disabled={!canManage} onChange={event => mutateDraft(current => ({ ...current, [key]: event.target.value }))} style={{ border: '1px solid var(--border-subtle)', borderRadius: '6px' }} /></td>
+                    <td>{canManage && <button title={`Remove ${key}`} onClick={() => mutateDraft(current => { const next = { ...current }; delete next[key]; return next; })} style={{ border: '1px solid #fee2e2', color: '#ef4444', background: "var(--bg-surface)" }}><Trash2 size={14} /></button>}</td>
                   </tr>;
                 })}
               </tbody>
@@ -414,18 +414,18 @@ export function InternalConfigEditor() {
           </div>
 
           {canManage && (
-            <div className="node-config-add" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.8fr) minmax(220px, 1.2fr) auto', gap: '8px', marginTop: '1rem' }}>
+            <div className="node-config-add" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 0.8fr) minmax(220px, 1.2fr) auto', gap: 'var(--space-2)', marginTop: '1rem' }}>
               <input 
                 placeholder="property.key" 
                 value={newKey} 
                 onChange={event => setNewKey(event.target.value)} 
-                style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}
+                style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}
               />
               <input 
                 placeholder="value" 
                 value={newValue} 
                 onChange={event => setNewValue(event.target.value)} 
-                style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px' }}
+                style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '8px 12px' }}
               />
               <button 
                 onClick={addProperty}
@@ -434,12 +434,12 @@ export function InternalConfigEditor() {
                   alignItems: 'center',
                   gap: '6px',
                   padding: '8px 16px',
-                  borderRadius: '8px',
-                  border: '1px solid #3E1363',
-                  background: '#fff',
-                  color: '#3E1363',
-                  fontWeight: 500,
-                  fontSize: '13px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--button-primary)',
+                  background: "var(--bg-surface)",
+                  color: 'var(--button-primary)',
+                  fontWeight: 'var(--font-medium)',
+                  fontSize: 'var(--text-sm)',
                   cursor: 'pointer'
                 }}
               >
@@ -449,7 +449,7 @@ export function InternalConfigEditor() {
           )}
 
           <div className="node-config-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem' }}>
-            <span style={{ fontSize: '12px', color: '#64748b' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>
               Target: {selectedFile.hostId}Node: {selectedFile.nodeId}Service: {selectedFile.role}
             </span>
             {canManage && (
@@ -462,12 +462,12 @@ export function InternalConfigEditor() {
                   gap: '6px',
                   height: '38px',
                   padding: '0 20px',
-                  borderRadius: '8px',
-                  background: '#3E1363',
-                  color: '#fff',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--button-primary)',
+                  color: "var(--text-light)",
                   border: 'none',
-                  fontSize: '13px',
-                  fontWeight: 500,
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 'var(--font-medium)',
                   cursor: working ? 'not-allowed' : 'pointer'
                 }}
               >
@@ -478,9 +478,9 @@ export function InternalConfigEditor() {
           </div>
         </section>
 
-        <section className="node-config-section config-review" style={{ borderColor: '#e2e8f0', marginTop: '1.5rem' }}>
+        <section className="node-config-section config-review" style={{ borderColor: 'var(--border-subtle)', marginTop: '1.5rem' }}>
           <div className="node-config-section-title">
-            <span style={{ border: '1px solid #7C3AED', background: '#fff', color: '#7C3AED' }}>3</span>
+            <span style={{ border: '1px solid #7C3AED', background: "var(--bg-surface)", color: '#7C3AED' }}>3</span>
             <div><h3>Old vs New</h3><p>The server validates this exact snapshot again when the version is saved.</p></div>
           </div>
           {preview ? <>
@@ -501,7 +501,7 @@ export function InternalConfigEditor() {
             ))}
           </div>
           <div className="config-review-footer" style={{ marginTop: '20px', borderTop: '1px solid #f1f5f9', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', color: '#64748b' }}>{preview.valid ? 'Validation passed. Saving creates history only; it does not apply the file.' : 'Fix validation errors before saving.'}</span>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }}>{preview.valid ? 'Validation passed. Saving creates history only; it does not apply the file.' : 'Fix validation errors before saving.'}</span>
             {canManage && (
               <button 
                 onClick={saveVersion} 
@@ -512,12 +512,12 @@ export function InternalConfigEditor() {
                   gap: '6px',
                   height: '38px',
                   padding: '0 16px',
-                  borderRadius: '8px',
-                  background: '#3E1363',
-                  color: '#fff',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--button-primary)',
+                  color: "var(--text-light)",
                   border: 'none',
-                  fontSize: '13px',
-                  fontWeight: 500,
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 'var(--font-medium)',
                   cursor: !preview.valid || !!working ? 'not-allowed' : 'pointer',
                   opacity: !preview.valid || !!working ? 0.5 : 1
                 }}
@@ -543,7 +543,7 @@ export function InternalConfigEditor() {
                     <strong>v{version.configVersion}</strong>
                     <span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
                     {version.rollbackVersion != null && <span className="rollback-tag">Rollback of v{version.rollbackVersion}</span>}
-                    <small>created by {version.createdBy || 'Unknown'} · {new Date(version.createdAt).toLocaleString()}</small>
+                    <small>created by {version.createdBy || 'Unknown'} Ã‚Â· {new Date(version.createdAt).toLocaleString()}</small>
                   </div>
                   <div className="version-actions">
                     {version.status !== 'APPLIED' && canManage ? (

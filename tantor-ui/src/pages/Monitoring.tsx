@@ -103,7 +103,7 @@ const nodeLabel = (node: MonitoringNode) => {
   const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
   const host = node.hostIp || node.hostname;
   const role = node.role;
-  return [nodeName, role, host].filter(Boolean).join(' · ');
+  return [nodeName, role, host].filter(Boolean).join(' Ã‚Â· ');
 };
 
 export function Monitoring() {
@@ -328,7 +328,7 @@ export function Monitoring() {
 
             {/* CLUSTER NAME Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ fontSize: '11px', fontWeight: 'var(--font-bold)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Cluster Name
               </span>
               <CustomSelect
@@ -347,7 +347,7 @@ export function Monitoring() {
 
             {/* NODE NAME Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ fontSize: '11px', fontWeight: 'var(--font-bold)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Node Name
               </span>
               <CustomSelect
@@ -367,10 +367,10 @@ export function Monitoring() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: 'var(--space-2)',
                   background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
                   padding: '8px 12px',
                   cursor: 'pointer',
                   userSelect: 'none',
@@ -385,7 +385,7 @@ export function Monitoring() {
                   background: autoRefresh ? '#10B981' : '#94A3B8',
                   display: 'inline-block'
                 }}></span>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Live</span>
+                <span style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-semibold)', color: '#334155' }}>Live</span>
                 <div
                   style={{
                     width: '16px',
@@ -445,12 +445,12 @@ export function Monitoring() {
               display: 'flex',
               alignItems: 'center',
               background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
               padding: '8px 16px',
               height: '40px',
-              fontSize: '14px',
-              fontWeight: 600,
+              fontSize: 'var(--text-base)',
+              fontWeight: 'var(--font-semibold)',
               color: '#334155',
               boxSizing: 'border-box'
             }}>
@@ -474,9 +474,9 @@ export function Monitoring() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                background: '#fff',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                background: "var(--bg-surface)",
                 cursor: 'pointer'
               }}
             >
@@ -491,23 +491,23 @@ export function Monitoring() {
               <svg width="120" height="96" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
                 {/* Card 1 */}
                 <g filter="url(#shadow-1)">
-                  <rect x="10" y="2" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="12" width="16" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="46" y="12" width="40" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="2" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="12" width="16" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="46" y="12" width="40" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 {/* Card 2 */}
                 <g filter="url(#shadow-2)">
-                  <rect x="10" y="34" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="44" width="36" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="66" y="44" width="20" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="34" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="44" width="36" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="66" y="44" width="20" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 {/* Card 3 */}
                 <g filter="url(#shadow-3)">
-                  <rect x="10" y="66" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="76" width="12" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="42" y="76" width="30" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="66" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="76" width="12" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="42" y="76" width="30" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 <defs>
@@ -548,7 +548,7 @@ export function Monitoring() {
             {/* Broker Details Header Card */}
             <div className="broker-details-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                <Server size={28} color="#DF678B" style={{ flexShrink: 0 }} />
+                <Server size={28} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
                 <div className="broker-info">
                   <h2 style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {clusterTitle}

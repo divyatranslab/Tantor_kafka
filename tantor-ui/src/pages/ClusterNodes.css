@@ -1,7 +1,7 @@
 .cluster-nodes-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .cluster-node-identity-summary {
@@ -11,20 +11,20 @@
 }
 
 .cluster-nodes-error {
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   border: 1px solid #e8a19a;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: #fff4f2;
   color: #a5271a;
   font-size: 14px;
 }
 
-.cluster-nodes-page header button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); font: inherit; font-size: 12px; cursor: pointer; }
+.cluster-nodes-page header button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-surface); font: inherit; font-size: 12px; cursor: pointer; }
 .cluster-nodes-table-wrap {
   overflow: auto;
-  border: 1px solid #CCCCCC;
-  border-radius: 8px;
-  background: #FFFFFF;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
 }
 
 .cluster-nodes-table {
@@ -35,10 +35,10 @@
 }
 
 .cluster-nodes-table th {
-  padding: 16px;
-  background: #F9F9F9;
-  border-bottom: 1px solid #CCCCCC;
-  color: #332849;
+  padding: var(--space-4);
+  background: var(--bg-neutral-light);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--button-primary-active);
   font-family: 'Satoshi', sans-serif;
   font-size: 16px;
   font-weight: 500;
@@ -47,9 +47,9 @@
 
 .cluster-nodes-table td {
   padding: 14px 16px;
-  border-bottom: 1px solid #CCCCCC;
-  background: #FFFFFF;
-  color: #23252D;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-heading);
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 400;
@@ -68,7 +68,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #23252D;
+  color: var(--text-heading);
 }
 
 .cluster-node-role {
@@ -79,10 +79,10 @@
   display: inline-flex;
   justify-content: center;
   align-items: center;
-  padding: 4px 8px;
+  padding: var(--space-1) 8px;
   background: rgba(217, 217, 217, 0.5);
   border-radius: 100px;
-  color: #818181;
+  color: var(--text-tertiary);
   font-family: 'Satoshi', sans-serif;
   font-size: 12px;
   line-height: 16px;

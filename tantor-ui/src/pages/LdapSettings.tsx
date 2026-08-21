@@ -164,7 +164,7 @@ export function LdapSettings() {
 
       {error && (
         <div className="alert alert-error">
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
             <X size={18} /> {error}
           </div>
           <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }} onClick={() => setError('')}>
@@ -175,13 +175,13 @@ export function LdapSettings() {
 
       {success && (
         <div className="alert alert-success">
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
             <Check size={18} /> {success}
           </div>
         </div>
       )}
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
         
         {/* Enable / Disable */}
         <div className="settings-card">

@@ -257,13 +257,13 @@ export function JobStatusPage() {
     const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(status);
     const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(status);
     
-    let bgColor = '#CCCCCC'; // Pending / Default
+    let bgColor = 'var(--border-default)'; // Pending / Default
     if (isCompleted) bgColor = '#1F845A';
-    else if (isFailed) bgColor = '#EF4D5F';
-    else if (isRunning) bgColor = '#3E1363';
+    else if (isFailed) bgColor = 'var(--color-danger)';
+    else if (isRunning) bgColor = 'var(--button-primary)';
 
     if (isRunning) {
-      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#3E1363', flexShrink: 0 }} />;
+      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: 'var(--button-primary)', flexShrink: 0 }} />;
     }
 
     return (
@@ -312,7 +312,7 @@ export function JobStatusPage() {
     const host = hostsById[targetId];
     if (!host) return businessName;
     const hostLabel = host.ip ? `${host.name} (${host.ip})` : host.name;
-    return `${businessName} — ${hostLabel}`;
+    return `${businessName} Ã¢â‚¬â€ ${hostLabel}`;
   };
 
   const totalSteps = displaySteps.length;
@@ -381,14 +381,14 @@ export function JobStatusPage() {
 
       {!isLogsExpanded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: 'var(--button-primary)', fontSize: '18px', fontWeight: 'var(--font-semibold)' }}>Deployment Steps</h3>
           <div style={{ position: 'relative' }}>
             <button 
               onClick={() => setShowDropdown(!showDropdown)} 
               style={{ 
-                background: '#FFFFFF', 
-                border: '1px solid #CCCCCC', 
-                borderRadius: '8px', 
+                background: "var(--bg-surface)", 
+                border: '1px solid var(--border-default)', 
+                borderRadius: 'var(--radius-md)', 
                 width: '32px', 
                 height: '32px', 
                 display: 'flex', 
@@ -397,16 +397,16 @@ export function JobStatusPage() {
                 cursor: 'pointer' 
               }}
             >
-              <MoreVertical size={16} color="#818181" />
+              <MoreVertical size={16} color="var(--text-tertiary)" />
             </button>
             {showDropdown && (
               <div style={{ 
                 position: 'absolute', 
                 right: 0, 
                 top: '36px', 
-                background: '#FFFFFF', 
-                border: '1px solid #CCCCCC', 
-                borderRadius: '8px', 
+                background: "var(--bg-surface)", 
+                border: '1px solid var(--border-default)', 
+                borderRadius: 'var(--radius-md)', 
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)', 
                 zIndex: 10,
                 minWidth: '120px'
@@ -421,8 +421,8 @@ export function JobStatusPage() {
                     border: 'none', 
                     cursor: 'pointer',
                     fontFamily: 'Satoshi',
-                    fontSize: '14px',
-                    color: '#332849'
+                    fontSize: 'var(--text-base)',
+                    color: 'var(--button-primary-active)'
                   }}
                 >
                   {showLogs ? 'Hide logs' : 'View logs'}
@@ -436,22 +436,22 @@ export function JobStatusPage() {
         {!isLogsExpanded && (
           <div className="job-sidebar" style={{ marginLeft: !showLogs ? 0 : '16px', width: !showLogs ? '100%' : 'auto' }}>
             <div style={{
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              padding: '16px',
-              background: '#FFFFFF',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              padding: 'var(--space-4)',
+              background: "var(--bg-surface)",
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px',
+              gap: 'var(--space-4)',
               boxSizing: 'border-box',
               marginLeft: '16px'
             }}>
               {totalSteps > 0 && (
-                <div style={{ textAlign: 'left', fontSize: '12px', lineHeight: '16px', color: '#818181', fontFamily: 'Satoshi', fontWeight: 500 }}>
+                <div style={{ textAlign: 'left', fontSize: 'var(--text-xs)', lineHeight: '16px', color: 'var(--text-tertiary)', fontFamily: 'Satoshi', fontWeight: 'var(--font-medium)' }}>
                   {completedStepsCount} of {totalSteps} steps
                 </div>
               )}
-              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
                 {displaySteps.map((step) => {
                   const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
                   const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
@@ -460,33 +460,33 @@ export function JobStatusPage() {
                   const progress = isCompleted ? 100 : isRunning ? 50 : 0;
                   const stepDisplayName = getStepDisplayName(step);
                   
-                  let nameColor = '#818181'; // Unstarted default
-                  let statusColor = '#818181'; // Unstarted default
-                  let barColor = '#CCCCCC'; // Unstarted default track
+                  let nameColor = 'var(--text-tertiary)'; // Unstarted default
+                  let statusColor = 'var(--text-tertiary)'; // Unstarted default
+                  let barColor = 'var(--border-default)'; // Unstarted default track
                   
                   if (isCompleted) {
-                    nameColor = '#332849';
+                    nameColor = 'var(--button-primary-active)';
                     statusColor = '#1F845A';
                     barColor = '#098C60';
                   } else if (isFailed) {
-                    nameColor = '#332849';
-                    statusColor = '#EF4D5F';
-                    barColor = '#EF4D5F';
+                    nameColor = 'var(--button-primary-active)';
+                    statusColor = 'var(--color-danger)';
+                    barColor = 'var(--color-danger)';
                   } else if (isRunning) {
-                    nameColor = '#332849';
-                    statusColor = '#3E1363';
-                    barColor = '#3E1363';
+                    nameColor = 'var(--button-primary-active)';
+                    statusColor = 'var(--button-primary)';
+                    barColor = 'var(--button-primary)';
                   }
 
                   return (
-                    <div key={step.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
+                    <div key={step.id} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
                       {getStepIcon(step.status, 20)}
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{
                             fontFamily: 'Satoshi',
-                            fontSize: '12px',
-                            fontWeight: 500,
+                            fontSize: 'var(--text-xs)',
+                            fontWeight: 'var(--font-medium)',
                             lineHeight: '16px',
                             color: nameColor,
                             flex: '1 1 auto',
@@ -499,8 +499,8 @@ export function JobStatusPage() {
                           </span>
                           <span style={{
                             fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                            fontSize: 'var(--text-xs)', 
+                            fontWeight: 'var(--font-medium)', 
                             lineHeight: '16px',
                             color: statusColor,
                             width: '96px',
@@ -510,7 +510,7 @@ export function JobStatusPage() {
                             {progress}% Completed
                           </span>
                         </div>
-                        <div className="step-progress-track" style={{ height: '8px', background: '#CCCCCC', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
+                        <div className="step-progress-track" style={{ height: '8px', background: 'var(--border-default)', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
                           {isCompleted || isFailed || isRunning ? (
                             <>
                               <div 
@@ -524,14 +524,14 @@ export function JobStatusPage() {
                                 }} 
                               />
                               {progress < 100 && (
-                                <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
+                                <div style={{ flex: 1, background: 'var(--border-default)', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
                               )}
                             </>
                           ) : (
                             // Not Started / Pending step progress bar: partitioned rectangle 63 and rectangle 64
                             <>
-                              <div style={{ width: '3px', background: '#CCCCCC', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
-                              <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
+                              <div style={{ width: '3px', background: 'var(--border-default)', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
+                              <div style={{ flex: 1, background: 'var(--border-default)', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
                             </>
                           )}
                         </div>
@@ -539,7 +539,7 @@ export function JobStatusPage() {
                     </div>
                   );
                 })}
-                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: '#818181' }}>No steps recorded</div>}
+                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>No steps recorded</div>}
               </div>
             </div>
           </div>
