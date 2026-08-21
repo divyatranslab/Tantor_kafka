@@ -111,6 +111,33 @@ public class DeploymentService {
         return task.getId();
     }
 
+    @Transactional
+    public UUID dispatchSchemaTask(UUID clusterId, String hostId, String command,
+                                   String artifactUrl, String checksum, Map<String, Object> parameters) {
+        Task task = createTask(clusterId, hostId, command);
+        String agentArtifactUrl = normalizeArtifactRepoUrl(artifactUrl);
+        if (hasText(agentArtifactUrl)) {
+            task.setArtifactUrl(agentArtifactUrl);
+            String resolvedChecksum = firstNonBlank(checksum, resolveArtifactChecksum(agentArtifactUrl).orElse(""));
+            if (("INSTALL_SCHEMA".equals(command) || "PRECHECK_SCHEMA".equals(command)) && !hasText(resolvedChecksum)) {
+                throw new IllegalArgumentException("Schema Registry artifact checksum is required.");
+            }
+            task.setChecksum(resolvedChecksum);
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (parameters != null) {
+            params.putAll(parameters);
+        }
+        addHostIdentity(params, hostId);
+        try {
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Unable to serialize Schema Registry task parameters", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
     private void addHostIdentity(Map<String, Object> params, String hostId) {
         params.put("host_id", hostId);
         hostRepository.findById(hostId).ifPresent(host -> {

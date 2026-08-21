@@ -26,11 +26,13 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -569,6 +571,7 @@ public class ClusterController {
         Map<String, Object> deploymentConfig = buildDeploymentConfig(request, deploymentMode);
         String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
         String bootstrapServers = String.valueOf(deploymentConfig.getOrDefault("bootstrap_servers", ""));
+        SchemaRegistryAddonReq schemaAddon = schemaAddon(request);
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
@@ -617,6 +620,24 @@ public class ClusterController {
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
+        Map<String, Object> schemaRegistryPayload = null;
+        if (schemaAddon != null) {
+            schemaRegistryPayload = schemaAddonPayload(
+                    schemaAddon,
+                    cluster.getId(),
+                    bootstrapServers,
+                    activeKafkaInstallDir(deploymentConfig),
+                    (int) request.getServices().stream().filter(service -> isBrokerRole(service.getRole())).count()
+            );
+            ClusterServiceAssignment schemaAssignment = new ClusterServiceAssignment();
+            schemaAssignment.setCluster(cluster);
+            schemaAssignment.setHostId(schemaAddon.getHost_id());
+            schemaAssignment.setRole("schema_registry");
+            schemaAssignment.setStatus("PENDING");
+            schemaAssignment.setConfigJson(writeJson(schemaRegistryPayload));
+            cluster.getServices().add(schemaAssignment);
+            clusterRepository.save(cluster);
+        }
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {
@@ -649,18 +670,27 @@ public class ClusterController {
         jobPayload.put("finalArtifactUrl", finalArtifactUrl);
         jobPayload.put("quorumVoters", quorumVoters);
         jobPayload.put("kafkaVersion", request.getKafka_version());
+        jobPayload.put("requestedBy", username);
+        if (schemaRegistryPayload != null) {
+            jobPayload.put("schemaRegistry", schemaRegistryPayload);
+        }
 
         Job job = new Job();
         job.setType(JobType.DEPLOYMENT);
         job.setStatus(JobStatus.PENDING);
         job.setRollbackSupported(true);
         job.setResourceKey("cluster:" + cluster.getId());
+        job.setRequestedBy(username);
         try {
             job.setPayload(objectMapper.writeValueAsString(jobPayload));
         } catch (Exception e) {
             job.setPayload("{}");
         }
-        Job savedJob = jobService.createJob(job, deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode));
+        List<JobStep> deploymentSteps = deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode);
+        if (schemaAddon != null) {
+            appendSchemaRegistrySteps(deploymentSteps, schemaAddon.getHost_id());
+        }
+        Job savedJob = jobService.createJob(job, deploymentSteps);
         
         activityAlertService.logActivity("INFO", "Created deployment job for cluster: " + request.getName(), cluster.getId());
         
@@ -1096,6 +1126,105 @@ public class ClusterController {
         return steps;
     }
 
+    private void appendSchemaRegistrySteps(List<JobStep> steps, String hostId) {
+        for (Map.Entry<String, String> entry : List.of(
+                Map.entry("precheck_schema", "Pre-check Schema Registry"),
+                Map.entry("create_schema_topic", "Create or verify _schemas topic"),
+                Map.entry("install_schema", "Install Schema Registry"),
+                Map.entry("verify_schema", "Verify Schema Registry REST API"),
+                Map.entry("save_schema_connection", "Save Schema Registry connection"))) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("operation", entry.getKey());
+            payload.put("host_id", hostId);
+            steps.add(jobStep(steps.size() + 1, hostId, entry.getValue(), payload));
+        }
+    }
+
+    private SchemaRegistryAddonReq schemaAddon(DeployClusterRequest request) {
+        if (request.getAddons() == null || request.getAddons().getSchema_registry() == null
+                || !request.getAddons().getSchema_registry().isEnabled()) {
+            return null;
+        }
+        return request.getAddons().getSchema_registry();
+    }
+
+    private void validateSchemaAddon(SchemaRegistryAddonReq addon, List<ServiceAssignmentReq> services) {
+        if (addon == null) return;
+        if (addon.getHost_id() == null || addon.getHost_id().isBlank()) {
+            throw new IllegalArgumentException("Schema Registry host is required.");
+        }
+        if (services == null || services.stream().noneMatch(service -> addon.getHost_id().equals(service.getHost_id()))) {
+            throw new IllegalArgumentException("Schema Registry must be assigned to a selected Kafka node.");
+        }
+        if (addon.getArtifact_id() == null || addon.getArtifact_id().isBlank()) {
+            throw new IllegalArgumentException("Schema Registry artifact is required.");
+        }
+        int port = addon.getPort() == null ? 8081 : addon.getPort();
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Schema Registry port must be between 1 and 65535.");
+        }
+        Set<Integer> reservedPorts = services.stream()
+                .filter(service -> addon.getHost_id().equals(service.getHost_id()))
+                .flatMap(service -> java.util.stream.Stream.of(
+                        service.getListener_port(), service.getController_port(), service.getJmx_port(),
+                        service.getZookeeper_peer_port(), service.getZookeeper_election_port()))
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (reservedPorts.contains(port)) {
+            throw new IllegalArgumentException("Schema Registry port " + port
+                    + " conflicts with another service port on the selected host.");
+        }
+        for (String path : new String[]{addon.getInstall_dir(), addon.getConfig_dir(), addon.getLog_dir(), addon.getWorking_dir()}) {
+            if (path == null || !path.startsWith("/") || "/".equals(path) || path.contains("..")) {
+                throw new IllegalArgumentException("Schema Registry paths must be absolute, non-root paths without '..'.");
+            }
+        }
+        String compatibility = String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT);
+        if (!Set.of("BACKWARD", "BACKWARD_TRANSITIVE", "FORWARD", "FORWARD_TRANSITIVE",
+                "FULL", "FULL_TRANSITIVE", "NONE").contains(compatibility)) {
+            throw new IllegalArgumentException("Unsupported Schema Registry compatibility level.");
+        }
+    }
+
+    private Map<String, Object> schemaAddonPayload(SchemaRegistryAddonReq addon, UUID clusterId,
+                                                    String bootstrapServers, String kafkaInstallDir,
+                                                    int brokerCount) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("host_id", addon.getHost_id());
+        payload.put("host_name", hostRepository.findById(addon.getHost_id())
+                .map(host -> host.getHostIp() == null || host.getHostIp().isBlank()
+                        ? host.getHostname() : host.getHostIp())
+                .orElse(addon.getHost_id()));
+        payload.put("artifact_id", addon.getArtifact_id());
+        payload.put("artifact_url", addon.getArtifact_url() == null || addon.getArtifact_url().isBlank()
+                ? joinArtifactRepoBase("/api/v1/artifacts/" + addon.getArtifact_id() + "/download")
+                : resolveAgentArtifactUrl(addon.getArtifact_url()));
+        payload.put("checksum", addon.getChecksum() == null ? "" : addon.getChecksum());
+        payload.put("schema_version", addon.getVersion() == null ? "" : addon.getVersion());
+        payload.put("rest_port", addon.getPort() == null ? 8081 : addon.getPort());
+        payload.put("install_dir", addon.getInstall_dir());
+        payload.put("config_dir", addon.getConfig_dir());
+        payload.put("log_dir", addon.getLog_dir());
+        payload.put("working_dir", addon.getWorking_dir());
+        payload.put("kafka_install_dir", kafkaInstallDir);
+        payload.put("heap_size", addon.getHeap_size());
+        payload.put("compatibility_level", String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT));
+        payload.put("bootstrap_servers", schemaBootstrapServers(bootstrapServers));
+        payload.put("kafkastore_topic", "_schemas");
+        payload.put("replication_factor", Math.max(1, Math.min(3, brokerCount)));
+        payload.put("group_id", "tantor-sr-" + clusterId);
+        payload.put("service_user", "root");
+        return payload;
+    }
+
+    private String schemaBootstrapServers(String bootstrapServers) {
+        return Arrays.stream(String.valueOf(bootstrapServers).split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(value -> value.contains("://") ? value : "PLAINTEXT://" + value)
+                .collect(Collectors.joining(","));
+    }
+
     private JobStep deploymentStep(int order, Map<String, Object> service) {
         return jobStep(
                 order,
@@ -1167,6 +1296,29 @@ public class ClusterController {
         private String environment;
         private String artifactUrl;
         private boolean acknowledge_kraft_risk;
+        private AddonsReq addons;
+    }
+
+    @Data
+    static class AddonsReq {
+        private SchemaRegistryAddonReq schema_registry;
+    }
+
+    @Data
+    static class SchemaRegistryAddonReq {
+        private boolean enabled;
+        private String host_id;
+        private String artifact_id;
+        private String artifact_url;
+        private String checksum;
+        private String version;
+        private Integer port = 8081;
+        private String install_dir = "/opt/tantor/schema-registry";
+        private String config_dir = "/opt/tantor/schema-registry/etc/schema-registry";
+        private String log_dir = "/var/log/tantor/schema-registry";
+        private String working_dir = "/var/lib/tantor/schema-registry";
+        private String heap_size = "1G";
+        private String compatibility_level = "BACKWARD";
     }
 
     @Data
@@ -1370,6 +1522,11 @@ public class ClusterController {
                         "Acknowledge the KRaft availability warning before deployment: " + warnings.get(0)
                 ));
             }
+        }
+        try {
+            validateSchemaAddon(schemaAddon(request), request.getServices());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
         return null;
     }

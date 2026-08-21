@@ -2,8 +2,10 @@ package io.translab.tantor.server.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.translab.tantor.server.dto.SaveConnectionRequest;
 import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -14,6 +16,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.ConfigEntry;
+import org.apache.kafka.clients.admin.ListTopicsOptions;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.config.ConfigResource;
 
 @Component
 @RequiredArgsConstructor
@@ -26,6 +33,9 @@ public class DeploymentJobHandler implements JobHandler {
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
     private final PrometheusMonitoringService prometheusMonitoringService;
+    private final KafkaAdminService kafkaAdminService;
+    private final DataServiceConnectionService dataServiceConnectionService;
+    private final ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
 
     @Override
     public boolean supports(JobType type) {
@@ -69,6 +79,18 @@ public class DeploymentJobHandler implements JobHandler {
                 continue;
             }
             try {
+                if (isSchemaOperation(payload)) markSchemaService(clusterId, "DEPLOYING", null);
+                if (isBackendSchemaOperation(payload)) {
+                    jobService.startStep(step.getId());
+                    String output = executeBackendSchemaOperation(clusterId, jobPayload, payload);
+                    jobService.completeStep(step.getId(), output);
+                    if ("save_schema_connection".equals(operation(payload))) {
+                        markSchemaService(clusterId, "ONLINE", null);
+                    }
+                    jobService.appendLog(job.getId(), step.getName() + " completed.");
+                    i++;
+                    continue;
+                }
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
                     jobService.completeStep(step.getId(), taskOutput(completed));
@@ -83,13 +105,20 @@ public class DeploymentJobHandler implements JobHandler {
                 jobService.appendLog(job.getId(), step.getName() + " completed on " + step.getTargetId() + ".");
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
-                saveClusterStatus(cluster, "FAILED", job);
+                if (isSchemaOperation(payload)) {
+                    markSchemaService(clusterId, "FAILED", e.getMessage());
+                    saveClusterStatus(cluster, "DEGRADED", job);
+                } else {
+                    saveClusterStatus(cluster, "FAILED", job);
+                }
                 throw e;
             }
             i++;
         }
 
-        saveClusterStatus(cluster, "SUCCESS", job);
+        if (!"DEGRADED".equalsIgnoreCase(cluster.getStatus())) {
+            saveClusterStatus(cluster, "SUCCESS", job);
+        }
     }
 
     private void executeDeployBatch(
@@ -246,6 +275,9 @@ public class DeploymentJobHandler implements JobHandler {
                     required(payload, "zookeeper_connect"),
                     stringValue(payload, "serviceConfigJson")
             );
+            case "precheck_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "PRECHECK_SCHEMA");
+            case "install_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "INSTALL_SCHEMA");
+            case "verify_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "VERIFY_SCHEMA_REGISTRY");
             case "deploy" -> deploymentService.deployKafkaToHost(
                     clusterId,
                     required(payload, "host_id"),
@@ -259,6 +291,105 @@ public class DeploymentJobHandler implements JobHandler {
             );
             default -> throw new IllegalArgumentException("Unknown deployment job operation: " + operation(payload));
         };
+    }
+
+    @SuppressWarnings("unchecked")
+    private UUID dispatchSchemaAgentTask(UUID clusterId, Map<String, Object> jobPayload, String command) {
+        Object configuration = jobPayload.get("schemaRegistry");
+        if (!(configuration instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Schema Registry job configuration is missing.");
+        }
+        Map<String, Object> schema = new java.util.LinkedHashMap<>((Map<String, Object>) configuration);
+        schema.put("kafka_version", stringValue(jobPayload, "kafkaVersion"));
+        schema.put("schema_registry_url", "http://" + schema.get("host_name") + ":" + schema.get("rest_port"));
+        if ("PRECHECK_SCHEMA".equals(command)) {
+            try {
+                kafkaAdminService.getAdminClient(clusterId).describeCluster().nodes().get();
+                schema.put("admin_api_verified", "true");
+            } catch (Exception e) {
+                throw new RuntimeException("Kafka Admin API is not responding: " + e.getMessage(), e);
+            }
+        }
+        return deploymentService.dispatchSchemaTask(
+                clusterId,
+                String.valueOf(schema.get("host_id")),
+                command,
+                String.valueOf(schema.getOrDefault("artifact_url", "")),
+                String.valueOf(schema.getOrDefault("checksum", "")),
+                schema
+        );
+    }
+
+    private boolean isBackendSchemaOperation(Map<String, Object> payload) {
+        return "create_schema_topic".equals(operation(payload))
+                || "save_schema_connection".equals(operation(payload));
+    }
+
+    private void markSchemaService(UUID clusterId, String status, String error) {
+        clusterServiceAssignmentRepository.findByClusterIdAndRole(clusterId, "schema_registry").ifPresent(service -> {
+            service.setStatus(status);
+            service.setLastError(error);
+            clusterServiceAssignmentRepository.save(service);
+        });
+    }
+
+    private boolean isSchemaOperation(Map<String, Object> payload) {
+        return switch (operation(payload)) {
+            case "precheck_schema", "create_schema_topic", "install_schema", "verify_schema", "save_schema_connection" -> true;
+            default -> false;
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private String executeBackendSchemaOperation(UUID clusterId, Map<String, Object> jobPayload,
+                                                 Map<String, Object> payload) {
+        Object configuration = jobPayload.get("schemaRegistry");
+        if (!(configuration instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Schema Registry job configuration is missing.");
+        }
+        Map<String, Object> schema = (Map<String, Object>) configuration;
+        if ("create_schema_topic".equals(operation(payload))) {
+            int replicationFactor = Integer.parseInt(String.valueOf(schema.getOrDefault("replication_factor", 1)));
+            AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+            try {
+                boolean exists = admin.listTopics(new ListTopicsOptions().listInternal(true))
+                        .names().get().contains("_schemas");
+                if (!exists) {
+                    admin.createTopics(List.of(new NewTopic("_schemas", 1, (short) replicationFactor)
+                            .configs(Map.of("cleanup.policy", "compact")))).all().get();
+                    return "Created compacted _schemas topic with replication factor " + replicationFactor + ".";
+                }
+                var description = admin.describeTopics(List.of("_schemas"))
+                        .allTopicNames().get().get("_schemas");
+                if (description.partitions().size() != 1) {
+                    throw new IllegalStateException("Existing _schemas topic must have exactly one partition.");
+                }
+                int actualReplication = description.partitions().get(0).replicas().size();
+                if (actualReplication != replicationFactor) {
+                    throw new IllegalStateException("Existing _schemas replication factor is "
+                            + actualReplication + ", expected " + replicationFactor + ".");
+                }
+                ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, "_schemas");
+                ConfigEntry cleanup = admin.describeConfigs(List.of(resource)).all().get()
+                        .get(resource).get("cleanup.policy");
+                if (cleanup == null || !java.util.Arrays.asList(cleanup.value().split(",")).contains("compact")) {
+                    throw new IllegalStateException("Existing _schemas topic must use cleanup.policy=compact.");
+                }
+                return "Verified existing _schemas topic.";
+            } catch (Exception e) {
+                throw new RuntimeException("Unable to create or verify _schemas topic: " + e.getMessage(), e);
+            }
+        }
+
+        SaveConnectionRequest request = new SaveConnectionRequest();
+        request.setConnectionName("Deployed Schema Registry");
+        request.setProtocol("http");
+        request.setHost(String.valueOf(schema.get("host_name")));
+        request.setPort(Integer.parseInt(String.valueOf(schema.get("rest_port"))));
+        request.setIsDefault(true);
+        dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", request,
+                stringValue(jobPayload, "requestedBy"));
+        return "Saved the default Schema Registry connection.";
     }
 
     private String operation(Map<String, Object> payload) {

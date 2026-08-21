@@ -8,6 +8,7 @@ import io.translab.tantor.server.domain.JobStep;
 import io.translab.tantor.server.domain.JobStepStatus;
 import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -53,7 +54,10 @@ class DeploymentJobHandlerTest {
                 clusterRepository,
                 mock(HostRepository.class),
                 new ObjectMapper(),
-                mock(PrometheusMonitoringService.class)
+                mock(PrometheusMonitoringService.class),
+                mock(KafkaAdminService.class),
+                mock(DataServiceConnectionService.class),
+                mock(ClusterServiceAssignmentRepository.class)
         );
 
         handler.execute(job);

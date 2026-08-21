@@ -39,4 +39,10 @@ public class ClusterServiceAssignment {
 
     @Column(name = "config_json", columnDefinition = "TEXT")
     private String configJson;
+
+    @Column(name = "status")
+    private String status;
+
+    @Column(name = "last_error", columnDefinition = "TEXT")
+    private String lastError;
 }
