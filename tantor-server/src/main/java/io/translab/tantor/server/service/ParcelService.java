@@ -9,9 +9,9 @@ import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.config.ArtifactRepositoryProperties;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +29,7 @@ public class ParcelService {
     private final ObjectMapper objectMapper;
     private final HostStatusService hostStatusService;
     private final AuditService auditService;
-
-    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
-    private String artifactRepoUrl;
+    private final ArtifactRepositoryProperties artifactRepositoryProperties;
 
     public List<HostParcel> listStates() {
         return hostParcelRepository.findLatestStates();
@@ -326,9 +324,7 @@ public class ParcelService {
     }
 
     private String joinArtifactRepoBase(String pathAndQuery) {
-        String base = artifactRepoUrl == null || artifactRepoUrl.isBlank()
-                ? "http://localhost:8081"
-                : artifactRepoUrl.trim();
+        String base = artifactRepositoryProperties.getPublicUrl().toString();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }

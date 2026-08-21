@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
+import io.translab.tantor.server.config.ArtifactRepositoryProperties;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.domain.Job;
@@ -63,8 +64,7 @@ public class ClusterController {
     private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
 
-    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
-    private String artifactRepoUrl;
+    private final ArtifactRepositoryProperties artifactRepositoryProperties;
 
     @Value("${tantor.discovery-agent.heartbeat-timeout-seconds:45}")
     private long discoveryAgentHeartbeatTimeoutSeconds;
@@ -1449,13 +1449,13 @@ public class ClusterController {
         config.put("mode", deploymentMode);
         config.put("version", request.getKafka_version());
         config.putIfAbsent("kafka_install_dir", "/opt");
-        int listenerPort = parseIntConfig(config.get("listener_port"), 9092);
+        int listenerPort = requiredPort(config.get("listener_port"), "listener_port");
         config.put("listener_port", listenerPort);
         config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
         if ("zookeeper".equals(deploymentMode)) {
-            int zookeeperPort = parseIntConfig(config.get("zookeeper_port"), parseIntConfig(config.get("controller_port"), 2181));
-            int zookeeperPeerPort = parseIntConfig(config.get("zookeeper_peer_port"), 2888);
-            int zookeeperElectionPort = parseIntConfig(config.get("zookeeper_election_port"), 3888);
+            int zookeeperPort = requiredPort(config.get("zookeeper_port"), "zookeeper_port");
+            int zookeeperPeerPort = requiredPort(config.get("zookeeper_peer_port"), "zookeeper_peer_port");
+            int zookeeperElectionPort = requiredPort(config.get("zookeeper_election_port"), "zookeeper_election_port");
             config.put("zookeeper_port", zookeeperPort);
             config.put("controller_port", zookeeperPort);
             config.put("zookeeper_connect", buildZooKeeperConnect(request.getServices(), zookeeperPort));
@@ -1466,7 +1466,7 @@ public class ClusterController {
                 config.put("zookeeper_servers", zookeeperServers);
             }
         } else {
-            int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+            int controllerPort = requiredPort(config.get("controller_port"), "controller_port");
             config.put("controller_port", controllerPort);
             String quorumMode = normalizedKraftQuorumMode(request.getKafka_version(), config.get("kraft_quorum_mode"));
             String quorumVoters = buildQuorumVoters(request.getServices(), controllerPort);
@@ -1512,8 +1512,8 @@ public class ClusterController {
         List<Map<String, Object>> topology = new ArrayList<>();
         String installDir = activeKafkaInstallDir(config);
         String dataDir = defaultKafkaDataDir(config);
-        String listenerPort = String.valueOf(config.getOrDefault("listener_port", "9092"));
-        String controllerPort = String.valueOf(config.getOrDefault("controller_port", "9093"));
+        String listenerPort = String.valueOf(requiredPort(config.get("listener_port"), "listener_port"));
+        String controllerPort = String.valueOf(requiredPort(config.get("controller_port"), "controller_port"));
         for (ServiceAssignmentReq service : services) {
             String role = service.getRole();
             String hostAddress = resolveHostAddress(service.getHost_id());
@@ -1581,7 +1581,7 @@ public class ClusterController {
         Set<String> controllerEndpoints = new HashSet<>();
         int controllerCount = 0;
         int brokerCount = 0;
-        int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+        int controllerPort = requiredPort(config.get("controller_port"), "controller_port");
 
         for (ServiceAssignmentReq service : request.getServices()) {
             String role = service.getRole() == null ? "" : service.getRole();
@@ -2514,6 +2514,14 @@ public class ClusterController {
         return defaultValue;
     }
 
+    private int requiredPort(Object value, String name) {
+        int port = parseIntConfig(value, -1);
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException(name + " is required and must be between 1 and 65535");
+        }
+        return port;
+    }
+
     private String resolveAgentArtifactUrl(String artifactUrl) {
         if (artifactUrl == null || artifactUrl.isBlank()) {
             return artifactUrl;
@@ -2544,9 +2552,7 @@ public class ClusterController {
     }
 
     private String joinArtifactRepoBase(String pathAndQuery) {
-        String base = artifactRepoUrl == null || artifactRepoUrl.isBlank()
-                ? "http://localhost:8081"
-                : artifactRepoUrl.trim();
+        String base = artifactRepositoryProperties.getPublicUrl().toString();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }

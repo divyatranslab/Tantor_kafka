@@ -52,7 +52,6 @@ class JwtUtilsTest {
         ReflectionTestUtils.setField(jwtUtils, "jwtExpirationMs", 60_000);
         ReflectionTestUtils.setField(jwtUtils, "issuer", "tantor-server");
         ReflectionTestUtils.setField(jwtUtils, "audience", "tantor-api");
-        ReflectionTestUtils.setField(jwtUtils, "oidcIssuerUri", "");
         return jwtUtils;
     }
 

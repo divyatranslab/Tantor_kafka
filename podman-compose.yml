@@ -21,11 +21,13 @@ services:
     build:
       context: ./tantor-artifact-repository
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
       TANTOR_DB_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
       TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
       TANTOR_DB_CONNECTION_TIMEOUT_MS: ${TANTOR_DB_CONNECTION_TIMEOUT_MS:-5000}
       TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS: ${TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS:-60000}
+      TANTOR_CORS_ALLOWED_ORIGINS: ${TANTOR_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -47,12 +49,15 @@ services:
     build:
       context: ./tantor-server
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       TANTOR_DB_URL: jdbc:postgresql://database:5432/tantor
       TANTOR_DB_USER: ${TANTOR_DB_USER:?TANTOR_DB_USER is required}
       TANTOR_DB_PASSWORD: ${TANTOR_DB_PASSWORD:?TANTOR_DB_PASSWORD is required}
       TANTOR_ENCRYPTION_KEY: ${TANTOR_ENCRYPTION_KEY}
       TANTOR_JWT_SECRET: ${TANTOR_JWT_SECRET}
-      TANTOR_REPO_URL: http://tantor-artifact-repository:8081
+      TANTOR_REPO_INTERNAL_URL: http://tantor-artifact-repository:8081
+      TANTOR_REPO_PUBLIC_URL: ${TANTOR_REPO_PUBLIC_URL:-https://localhost:8443}
+      TANTOR_PUBLIC_ORIGIN: ${TANTOR_PUBLIC_ORIGIN:-https://localhost:8443}
       TANTOR_MONITORING_MODE: ${TANTOR_MONITORING_MODE:-direct}
       TANTOR_PROMETHEUS_URL: ${TANTOR_PROMETHEUS_URL:-http://prometheus:9090}
     ports:

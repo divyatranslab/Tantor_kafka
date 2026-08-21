@@ -1,7 +1,6 @@
 package io.translab.tantor.server.config;
 
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -23,36 +22,30 @@ import java.util.Collection;
 
 @Configuration
 public class MonitoringHttpClientConfiguration {
+    private final MonitoringProperties properties;
 
-    @Value("${tantor.monitoring.grafana-skip-tls-validation:false}")
-    private boolean insecureTlsRequested;
-
-    @Value("${tantor.monitoring.tls-ca-file:}")
-    private String tlsCaFile;
-
-    @Value("${tantor.monitoring.mode:direct}")
-    private String monitoringMode;
-
-    @Value("${tantor.monitoring.prometheus-url:}")
-    private String prometheusUrl;
-
-    @Value("${tantor.monitoring.grafana-url:}")
-    private String grafanaUrl;
+    public MonitoringHttpClientConfiguration(MonitoringProperties properties) {
+        this.properties = properties;
+    }
 
     @PostConstruct
     void rejectInsecureTls() {
-        if (insecureTlsRequested) {
+        if (properties.isGrafanaSkipTlsValidation()) {
             throw new IllegalStateException("TANTOR_GRAFANA_SKIP_TLS_VALIDATION is forbidden; configure TANTOR_MONITORING_TLS_CA_FILE instead");
         }
-        if ("grafana-proxy".equalsIgnoreCase(monitoringMode)) {
-            requireHttps("Grafana", grafanaUrl);
+        if ("grafana-proxy".equalsIgnoreCase(properties.getMode())) {
+            requireHttps("Grafana", value(properties.getGrafanaUrl()));
         } else {
-            URI prometheus = parseAbsolute("Prometheus", prometheusUrl);
+            URI prometheus = parseAbsolute("Prometheus", value(properties.getPrometheusUrl()));
             if ("http".equalsIgnoreCase(prometheus.getScheme())
                     && !isPrivateServiceName(prometheus.getHost())) {
                 throw new IllegalStateException("Plain HTTP Prometheus is allowed only for a loopback or single-label private service hostname");
             }
         }
+    }
+
+    private static String value(URI uri) {
+        return uri == null ? "" : uri.toString();
     }
 
     private static void requireHttps(String name, String value) {
@@ -90,8 +83,8 @@ public class MonitoringHttpClientConfiguration {
                 .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .sslParameters(parameters);
-        if (tlsCaFile != null && !tlsCaFile.isBlank()) {
-            builder.sslContext(sslContextForCa(Path.of(tlsCaFile.trim())));
+        if (properties.getTlsCaFile() != null && !properties.getTlsCaFile().isBlank()) {
+            builder.sslContext(sslContextForCa(Path.of(properties.getTlsCaFile().trim())));
         }
 
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(builder.build());

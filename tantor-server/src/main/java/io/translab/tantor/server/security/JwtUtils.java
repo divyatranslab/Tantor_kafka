@@ -4,6 +4,8 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.translab.tantor.server.config.OidcProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -36,10 +38,16 @@ public class JwtUtils {
     private String issuer;
     @Value("${tantor.security.jwt.audience:tantor-api}")
     private String audience;
-    @Value("${tantor.security.oidc.issuer-uri:}")
-    private String oidcIssuerUri;
-    @Value("${tantor.security.oidc.audience:}")
-    private String oidcAudience;
+    private final OidcProperties oidcProperties;
+
+    public JwtUtils() {
+        this(new OidcProperties());
+    }
+
+    @Autowired
+    public JwtUtils(OidcProperties oidcProperties) {
+        this.oidcProperties = oidcProperties;
+    }
 
     private volatile JwtDecoder externalDecoder;
     private volatile String decoderIssuer;
@@ -101,7 +109,7 @@ public class JwtUtils {
     public String getIdentityFromJwtToken(String token) { return getUserNameFromJwtToken(token); }
 
     private JwtDecoder externalDecoder() {
-        String configuredIssuer = oidcIssuerUri == null ? "" : oidcIssuerUri.trim();
+        String configuredIssuer = oidcProperties.getIssuerUri() == null ? "" : oidcProperties.getIssuerUri().toString();
         if (configuredIssuer.isBlank()) return null;
         if (configuredIssuer.equals(decoderIssuer) && externalDecoder != null) return externalDecoder;
         synchronized (this) {
@@ -109,7 +117,7 @@ public class JwtUtils {
                 JwtDecoder configuredDecoder = JwtDecoders.fromIssuerLocation(configuredIssuer);
                 if (configuredDecoder instanceof NimbusJwtDecoder nimbusDecoder) {
                     OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(configuredIssuer);
-                    String expectedAudience = oidcAudience == null ? "" : oidcAudience.trim();
+                    String expectedAudience = oidcProperties.getAudience() == null ? "" : oidcProperties.getAudience().trim();
                     if (!expectedAudience.isBlank()) {
                         OAuth2TokenValidator<Jwt> audienceValidator = jwt -> isAudienceAccepted(jwt, expectedAudience)
                                 ? OAuth2TokenValidatorResult.success()

@@ -94,8 +94,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir string) error {
 	bootstrap := t.Parameters["bootstrap_servers"]
-	if bootstrap == "" {
-		bootstrap = "PLAINTEXT://localhost:9092"
+	if strings.TrimSpace(bootstrap) == "" {
+		return fmt.Errorf("bootstrap_servers is required for Schema Registry deployment")
 	}
 
 	props := struct {

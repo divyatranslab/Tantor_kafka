@@ -18,7 +18,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	configPath := flag.String("config", "discovery.yaml", "Path to configuration YAML")
+	configPath := flag.String("config", "", "Path to deployment-supplied configuration YAML (required)")
 	jsonOutput := flag.Bool("json", false, "Output precheck results in JSON format")
 	flag.Parse()
 
@@ -26,6 +26,10 @@ func main() {
 		// If JSON was requested, exit after precheck to avoid mixing JSON with logs.
 		runPrecheck(ctx, 30*time.Second, true)
 		os.Exit(0)
+	}
+	if err := requireConfigPath(*configPath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
 
 	fmt.Printf("Loading configuration from: %s\n", *configPath)
@@ -40,6 +44,10 @@ func main() {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
 		fmt.Printf("Error parsing YAML: %v\n", err)
+		os.Exit(1)
+	}
+	if err := cfg.Discovery.Validate(); err != nil {
+		fmt.Printf("Invalid configuration: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -80,7 +88,9 @@ func main() {
 	fmt.Println("======================================================")
 	fmt.Println("       Tantor Discovery Agent - Multi-Cluster")
 	fmt.Println("======================================================")
-	fmt.Printf("  Server   : %s\n", serverURL)
+	fmt.Printf("  Server   : %s\n", cfg.Discovery.SafeServerEndpoint())
+	fmt.Printf("  Environment: %s\n", cfg.Discovery.Environment)
+	fmt.Printf("  mTLS configured: %t\n", cfg.Discovery.TLSCACert != "" && cfg.Discovery.TLSClientCert != "" && cfg.Discovery.TLSClientKey != "")
 	fmt.Printf("  Hostname : %s\n", hostname)
 	if cfg.Discovery.KafkaHome != "" {
 		fmt.Printf("  KafkaHome: %s\n", cfg.Discovery.KafkaHome)
@@ -154,4 +164,11 @@ func main() {
 	} else {
 		runDiscovery(ctx, clients, serverURL, hostname, environment, cfg.Discovery, commandTimeout)
 	}
+}
+
+func requireConfigPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("-config is required; example configuration is never used implicitly")
+	}
+	return nil
 }

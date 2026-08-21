@@ -63,6 +63,10 @@ Copy-Item .env.example .env
 
 Then edit `.env` for your machine.
 
+Configuration ownership, supported profiles, production requirements, and
+safe startup diagnostics are documented in
+[Runtime configuration](docs/configuration.md).
+
 Minimum local development values are shown below. Generate a random,
 development-only password rather than copying a shared or production secret.
 When Compose is used, PostgreSQL is reachable from the host only through
@@ -72,19 +76,18 @@ When Compose is used, PostgreSQL is reachable from the host only through
 TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
 TANTOR_DB_USER=tantor_dev
 TANTOR_DB_PASSWORD=<generated-local-only-password>
-TANTOR_REPO_URL=http://localhost:8081
+TANTOR_REPO_INTERNAL_URL=http://localhost:8081
+TANTOR_REPO_PUBLIC_URL=https://localhost:8443
+TANTOR_PUBLIC_ORIGIN=https://localhost:8443
 TANTOR_REPO_PATH=./.runtime/repository
 TANTOR_MONITORING_MODE=direct
 TANTOR_PROMETHEUS_URL=http://127.0.0.1:9090
 TANTOR_MONITORING_EXPORTER_HOST=127.0.0.1
 ```
 
-For a VM/server deployment, set `TANTOR_REPO_URL` and `TANTOR_MONITORING_EXPORTER_HOST` to the Tantor server IP, for example:
-
-```properties
-TANTOR_REPO_URL=http://192.168.3.191:8081
-TANTOR_MONITORING_EXPORTER_HOST=192.168.3.191
-```
+For SIT, UAT, and production, supply the internal repository service URL,
+public HTTPS origin, monitoring endpoint, and agent endpoints through the
+deployment environment. Do not copy local addresses into a production profile.
 
 Do not commit real passwords or production secrets in `.env`. Containerized
 services connect privately through `database:5432`; production does not publish
@@ -184,14 +187,19 @@ Open the URL printed by Vite, usually:
 http://localhost:5173
 ```
 
-Authentication is disabled by default. Enable Keycloak only when you have a valid Keycloak setup:
+Authentication is disabled by default. For local Vite development only, enable
+Keycloak with development environment values:
 
 ```properties
 VITE_AUTH_ENABLED=true
-VITE_KEYCLOAK_URL=https://your-keycloak-host
+VITE_KEYCLOAK_URL=https://identity.development.internal
 VITE_KEYCLOAK_REALM=Gatekeeper
 VITE_KEYCLOAK_CLIENT_ID=apb-kafka
 ```
+
+Production does not consume compiled `VITE_*` identity settings. Release
+packaging generates `ui-runtime-config.js` and validates its public origin,
+OIDC values, API routes, Nginx routes, CORS, and CSP together.
 
 ## 7. First Data Setup In UI
 

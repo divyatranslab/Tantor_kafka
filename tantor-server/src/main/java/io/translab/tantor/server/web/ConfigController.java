@@ -381,8 +381,8 @@ public class ConfigController {
             item.put("serviceName", serviceNameForRole(service.getRole()) + ".service");
             item.put("systemdUnit", serviceNameForRole(service.getRole()) + ".service");
             item.put("configPath", serviceConfigPath(service.getRole(), cluster.getMode(), cluster.getKafkaVersion(), serviceInstallDir));
-            item.put("listenerPort", isBrokerRole(service.getRole()) ? stringConfig(serviceConfig, "listener_port", "9092") : "");
-            item.put("controllerPort", isControllerRole(service.getRole()) ? stringConfig(serviceConfig, "controller_port", "9093") : "");
+            item.put("listenerPort", isBrokerRole(service.getRole()) ? requiredPort(serviceConfig, "listener_port") : "");
+            item.put("controllerPort", isControllerRole(service.getRole()) ? requiredPort(serviceConfig, "controller_port") : "");
             item.put("logDirs", isBrokerRole(service.getRole()) ? brokerLogDirs(serviceConfig, defaultKafkaDataDir(serviceConfig)) : "");
             item.put("metadataLogDir", metadataLogDirForRole(service.getRole(), serviceConfig, defaultKafkaDataDir(serviceConfig)));
             
@@ -442,10 +442,10 @@ public class ConfigController {
         String role = service.getRole();
         String host = hostAddressForService(service);
         String nodeId = service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId());
-        String listenerPort = stringConfig(config, "listener_port", "9092");
-        String controllerPort = stringConfig(config, "controller_port", "9093");
+        String listenerPort = isBrokerRole(role) ? requiredPort(config, "listener_port") : "";
+        String controllerPort = isControllerRole(role) ? requiredPort(config, "controller_port") : "";
         String dataDir = defaultKafkaDataDir(config);
-        String quorumVoters = stringConfig(config, "quorum_voters", nodeId + "@" + host + ":" + controllerPort);
+        String quorumVoters = requiredConfig(config, "quorum_voters");
 
         props.put("process.roles", processRoles(role));
         props.put("node.id", nodeId);
@@ -485,12 +485,12 @@ public class ConfigController {
         Map<String, Object> props = new LinkedHashMap<>();
         String host = hostAddressForService(service);
         String nodeId = service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId());
-        String listenerPort = stringConfig(config, "listener_port", "9092");
+        String listenerPort = requiredPort(config, "listener_port");
         String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
         props.put("broker.id", nodeId);
         props.put("listeners", "PLAINTEXT://" + host + ":" + listenerPort);
         props.put("advertised.listeners", "PLAINTEXT://" + host + ":" + listenerPort);
-        props.put("zookeeper.connect", stringConfig(config, "zookeeper_connect", "localhost:2181"));
+        props.put("zookeeper.connect", requiredConfig(config, "zookeeper_connect"));
         props.put("zookeeper.connection.timeout.ms", "18000");
         props.put("log.dirs", brokerLogDirs(config, dataDir));
         props.put("num.partitions", stringConfig(config, "num_partitions", "1"));
@@ -505,7 +505,7 @@ public class ConfigController {
 
     private String hostAddressForService(ClusterServiceAssignment service) {
         if (service == null || service.getHostId() == null || service.getHostId().isBlank()) {
-            return "localhost";
+            throw new IllegalArgumentException("A concrete host assignment is required for service configuration");
         }
         String ip = hostRepository.findById(service.getHostId())
                 .map(host -> firstAddressFromJson(host.getIpAddresses()))
@@ -590,12 +590,12 @@ public class ConfigController {
         Map<String, Object> props = new LinkedHashMap<>();
         String host = firstBrokerHost(cluster, config);
         String nodeId = firstNodeId(cluster, config);
-        String listenerPort = stringConfig(config, "listener_port", firstBootstrapPort(cluster, "9092"));
-        String controllerPort = stringConfig(config, "controller_port", "9093");
+        String listenerPort = requiredPort(config, "listener_port");
+        String controllerPort = requiredPort(config, "controller_port");
         String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
         String logDirs = stringConfig(config, "log_dirs", dataDir + "/kafka-logs");
         String role = processRoles(stringConfig(config, "role", firstServiceRole(cluster)));
-        String quorumVoters = stringConfig(config, "quorum_voters", nodeId + "@" + host + ":" + controllerPort);
+        String quorumVoters = requiredConfig(config, "quorum_voters");
         String listeners = stringConfig(config, "listeners", "PLAINTEXT://" + host + ":" + listenerPort + ",CONTROLLER://" + host + ":" + controllerPort);
         String advertisedListeners = stringConfig(config, "advertised_listeners",
                 stringConfig(config, "advertised.listeners", "PLAINTEXT://" + host + ":" + listenerPort));
@@ -621,10 +621,10 @@ public class ConfigController {
         Map<String, Object> props = new LinkedHashMap<>();
         String host = firstBrokerHost(cluster, config);
         String nodeId = firstNodeId(cluster, config);
-        String listenerPort = stringConfig(config, "listener_port", firstBootstrapPort(cluster, "9092"));
+        String listenerPort = requiredPort(config, "listener_port");
         String dataDir = stringConfig(config, "kafka_data_dir", defaultKafkaDataDir(config));
         String logDirs = stringConfig(config, "log_dirs", dataDir + "/kafka-logs");
-        String zookeeperConnect = stringConfig(config, "zookeeper_connect", host + ":" + stringConfig(config, "zookeeper_port", "2181"));
+        String zookeeperConnect = requiredConfig(config, "zookeeper_connect");
 
         props.put("broker.id", nodeId);
         props.put("listeners", "PLAINTEXT://" + host + ":" + listenerPort);
@@ -647,7 +647,7 @@ public class ConfigController {
         props.put("initLimit", "10");
         props.put("syncLimit", "5");
         props.put("dataDir", dataDir);
-        props.put("clientPort", stringConfig(config, "zookeeper_port", "2181"));
+        props.put("clientPort", requiredPort(config, "zookeeper_port"));
         props.put("maxClientCnxns", "0");
         props.put("admin.enableServer", "false");
         Object servers = config.get("zookeeper_servers");
@@ -705,7 +705,24 @@ public class ConfigController {
         }
         String assignedHost = assignedHostAddress(cluster);
         if (!assignedHost.isBlank()) return assignedHost;
-        return "localhost";
+        throw new IllegalArgumentException("A broker host is required; localhost fallback is forbidden");
+    }
+
+    private String requiredConfig(Map<String, Object> config, String key) {
+        String value = stringConfig(config, key, "");
+        if (value.isBlank()) throw new IllegalArgumentException(key + " is required");
+        return value;
+    }
+
+    private String requiredPort(Map<String, Object> config, String key) {
+        String value = requiredConfig(config, key);
+        try {
+            int port = Integer.parseInt(value);
+            if (port < 1 || port > 65535) throw new NumberFormatException();
+            return String.valueOf(port);
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException(key + " must be between 1 and 65535", error);
+        }
     }
 
     private String assignedHostAddress(Cluster cluster) {
@@ -749,17 +766,6 @@ public class ConfigController {
             }
         }
         return "";
-    }
-
-    private String firstBootstrapPort(Cluster cluster, String fallback) {
-        if (cluster.getBootstrapServers() != null && !cluster.getBootstrapServers().isBlank()) {
-            String endpoint = cluster.getBootstrapServers().split(",")[0];
-            int idx = endpoint.lastIndexOf(':');
-            if (idx > -1 && idx < endpoint.length() - 1) {
-                return endpoint.substring(idx + 1).replaceAll("[^0-9]", "");
-            }
-        }
-        return fallback;
     }
 
     private String hostFromEndpoint(String endpoint) {

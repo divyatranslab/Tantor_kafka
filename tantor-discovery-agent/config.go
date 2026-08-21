@@ -16,6 +16,7 @@ type Config struct {
 }
 
 type DiscoveryConfig struct {
+	Environment      string     `yaml:"environment"`
 	HostID           string     `yaml:"host_id"`
 	AgentName        string     `yaml:"agent_name"`
 	ServerURL        string     `yaml:"server_url"`
@@ -39,10 +40,67 @@ type DiscoveryConfig struct {
 	HTTP             HTTPConfig `yaml:"http"`
 }
 
+func (d DiscoveryConfig) Validate() error {
+	environment := strings.ToLower(strings.TrimSpace(d.Environment))
+	if environment != "development" && environment != "sit" && environment != "uat" && environment != "production" {
+		return fmt.Errorf("discovery.environment must be development, sit, uat, or production")
+	}
+	if strings.TrimSpace(d.HostID) == "" || strings.TrimSpace(d.AgentName) == "" {
+		return fmt.Errorf("discovery.host_id and discovery.agent_name are required")
+	}
+	if err := d.ValidateTransport(); err != nil {
+		return err
+	}
+	serverURL, _ := url.Parse(strings.TrimSpace(d.ServerURL))
+	if environment != "development" && isDiscoveryLoopback(serverURL.Hostname()) {
+		return fmt.Errorf("discovery.server_url cannot use a loopback host outside development")
+	}
+	if environment != "development" && isDiscoveryPlaceholder(serverURL.Hostname()) {
+		return fmt.Errorf("discovery.server_url cannot use an example or placeholder host outside development")
+	}
+	if d.Interval != "" {
+		if _, err := positiveDuration("interval", d.Interval, 0); err != nil {
+			return err
+		}
+	}
+	if _, err := positiveDuration("task_poll_interval", d.EffectiveTaskPollInterval(), 0); err != nil {
+		return err
+	}
+	if !d.DisableMetrics {
+		metrics, err := url.Parse(strings.TrimSpace(d.EffectiveMetricsURL()))
+		if err != nil || metrics.Host == "" || (metrics.Scheme != "http" && metrics.Scheme != "https") {
+			return fmt.Errorf("discovery.metrics_url must be an absolute HTTP(S) URL when metrics are enabled")
+		}
+	}
+	return nil
+}
+
+func isDiscoveryLoopback(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost" || host == "::1" || strings.HasPrefix(host, "127.")
+}
+
+func isDiscoveryPlaceholder(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return strings.HasSuffix(host, ".example") || strings.HasSuffix(host, ".invalid") ||
+		strings.HasSuffix(host, ".test") || strings.ContainsAny(host, "<>")
+}
+
+func (d DiscoveryConfig) SafeServerEndpoint() string {
+	parsed, err := url.Parse(strings.TrimSpace(d.ServerURL))
+	if err != nil || parsed.Host == "" {
+		return "<invalid>"
+	}
+	return parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
+}
+
 func (d DiscoveryConfig) ValidateTransport() error {
 	serverURL, err := url.Parse(strings.TrimSpace(d.ServerURL))
 	if err != nil || serverURL.Scheme != "https" || serverURL.Host == "" {
 		return fmt.Errorf("discovery.server_url must be an absolute https URL")
+	}
+	if serverURL.User != nil || serverURL.RawQuery != "" || serverURL.Fragment != "" {
+		return fmt.Errorf("discovery.server_url must not contain credentials, query parameters, or fragments")
 	}
 	for name, value := range map[string]string{
 		"discovery.tls_ca_cert":     d.TLSCACert,

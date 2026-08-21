@@ -31,7 +31,11 @@ class ParcelServiceTest {
 
         assertThat(scheduled).hasSize(1);
         assertThat(scheduled.get(0).getStatus()).isEqualTo("DISTRIBUTING");
-        verify(fixture.taskRepository).save(any(Task.class));
+        var taskCaptor = org.mockito.ArgumentCaptor.forClass(Task.class);
+        verify(fixture.taskRepository).save(taskCaptor.capture());
+        assertThat(taskCaptor.getValue().getArtifactUrl())
+                .contains("https://artifacts.example/api/v1/artifacts/")
+                .doesNotContain("artifact-repository:8081");
     }
 
     @Test
@@ -78,7 +82,14 @@ class ParcelServiceTest {
             when(auditService.currentActor()).thenReturn("admin");
 
             service = new ParcelService(hostParcelRepository, hostRepository, taskRepository,
-                    new ObjectMapper(), hostStatusService, auditService);
+                    new ObjectMapper(), hostStatusService, auditService, artifactRepositoryProperties());
+        }
+
+        private io.translab.tantor.server.config.ArtifactRepositoryProperties artifactRepositoryProperties() {
+            var properties = new io.translab.tantor.server.config.ArtifactRepositoryProperties();
+            properties.setInternalUrl(java.net.URI.create("http://artifact-repository:8081"));
+            properties.setPublicUrl(java.net.URI.create("https://artifacts.example"));
+            return properties;
         }
 
         private ParcelService.ParcelActionRequest request() {

@@ -3,13 +3,15 @@ package io.translab.tantor.server.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.config.ArtifactRepositoryProperties;
+import io.translab.tantor.server.config.KafkaDeploymentProperties;
+import jakarta.annotation.PostConstruct;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.repository.HostParcelRepository;
 import io.translab.tantor.server.repository.TaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,30 +34,30 @@ public class DeploymentService {
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final ArtifactRepositoryProperties artifactRepositoryProperties;
+    private final KafkaDeploymentProperties kafkaDeploymentProperties;
 
-    @Value("${tantor.artifact-repo.jmx-exporter-artifact-id:}")
-    private String jmxExporterArtifactId;
-
-    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
-    private String artifactRepoUrl;
-
-    @Value("${tantor.kafka-deployment.runtime-user:}")
     private String defaultRuntimeUser;
 
-    @Value("${tantor.kafka-deployment.runtime-group:}")
     private String defaultRuntimeGroup;
 
-    @Value("${tantor.kafka-deployment.java-home:}")
     private String defaultJavaHome;
 
-    @Value("${tantor.kafka-deployment.limit-nofile:100000}")
     private String defaultLimitNoFile;
 
-    @Value("${tantor.kafka-deployment.security-mode:PLAINTEXT}")
     private String defaultSecurityMode;
 
-    @Value("${tantor.kafka-deployment.service-prefix:tantor-kafka-}")
     private String defaultServicePrefix;
+
+    @PostConstruct
+    void bindTypedConfiguration() {
+        defaultRuntimeUser = kafkaDeploymentProperties.getRuntimeUser();
+        defaultRuntimeGroup = kafkaDeploymentProperties.getRuntimeGroup();
+        defaultJavaHome = kafkaDeploymentProperties.getJavaHome();
+        defaultLimitNoFile = Integer.toString(kafkaDeploymentProperties.getLimitNofile());
+        defaultSecurityMode = kafkaDeploymentProperties.getSecurityMode();
+        defaultServicePrefix = kafkaDeploymentProperties.getServicePrefix();
+    }
 
     private static final Pattern ARTIFACT_DOWNLOAD_PATTERN = Pattern.compile("/api/v1/artifacts/([^/]+)/download");
 
@@ -77,7 +79,7 @@ public class DeploymentService {
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("version", version);
             params.put("node_id", nodeId != null ? nodeId : "1");
-            params.put("quorum_voters", quorumVoters != null ? quorumVoters : "1@localhost:9093");
+            params.put("quorum_voters", required(quorumVoters, "quorum_voters"));
             String normalizedRole = role != null && !role.isBlank() ? role : "broker_controller";
             params.put("role", normalizedRole);
             params.put("service_role", normalizedRole);
@@ -131,6 +133,13 @@ public class DeploymentService {
         return value != null && !value.isBlank();
     }
 
+    private String required(String value, String name) {
+        if (!hasText(value)) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value.trim();
+    }
+
     private String normalizeArtifactRepoUrl(String artifactUrl) {
         if (!hasText(artifactUrl) || !artifactUrl.contains("/api/v1/artifacts/")) {
             return artifactUrl;
@@ -140,7 +149,7 @@ public class DeploymentService {
     }
 
     private String joinArtifactRepoBase(String pathAndQuery) {
-        String base = hasText(artifactRepoUrl) ? artifactRepoUrl.trim() : "http://localhost:8081";
+        String base = artifactRepositoryProperties.getPublicUrl().toString();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
@@ -206,8 +215,8 @@ public class DeploymentService {
     }
 
     private Optional<Map<String, String>> resolveJmxExporterArtifact() {
-        if (hasText(jmxExporterArtifactId)) {
-            String id = jmxExporterArtifactId.trim();
+        if (hasText(artifactRepositoryProperties.getJmxExporterArtifactId())) {
+            String id = artifactRepositoryProperties.getJmxExporterArtifactId().trim();
             return Optional.of(Map.of(
                     "id", id,
                     "checksum", resolveArtifactChecksumById(id).orElse("")

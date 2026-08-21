@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -18,8 +19,12 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "configs/agent.yaml", "Path to config file")
+	configPath := flag.String("config", "", "Path to deployment-supplied config file (required)")
 	flag.Parse()
+	if err := requireConfigPath(*configPath); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	// 1. Load config
 	cfg, err := config.Load(*configPath)
@@ -29,7 +34,10 @@ func main() {
 
 	// 2. Init logger
 	logger.InitLogger(cfg.Agent.LogLevel)
-	slog.Info("Starting Tantor Agent", "hostId", cfg.Agent.HostID, "serverUrl", cfg.Agent.ServerURL)
+	slog.Info("Effective non-secret configuration", "environment", cfg.Environment,
+		"hostId", cfg.Agent.HostID, "serverUrl", cfg.SafeServerEndpoint(),
+		"pollIntervalSeconds", cfg.Agent.PollInterval, "dataDir", cfg.Paths.DataDir,
+		"mtlsConfigured", cfg.Agent.CertFile != "" && cfg.Agent.KeyFile != "" && cfg.Agent.CACert != "")
 
 	// 3. Init components
 	apiClient, err := client.NewAPIClient(cfg)
@@ -60,4 +68,11 @@ func main() {
 	taskEngine.Start(ctx)
 
 	slog.Info("Tantor Agent stopped cleanly")
+}
+
+func requireConfigPath(path string) error {
+	if path == "" {
+		return fmt.Errorf("-config is required; example configuration is never used implicitly")
+	}
+	return nil
 }

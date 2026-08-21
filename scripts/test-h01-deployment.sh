@@ -12,6 +12,8 @@ work_directory="$(mktemp -d "${TMPDIR:-/tmp}/tantor-h01.XXXXXX")"
 development_environment="$work_directory/development.env"
 production_environment="$work_directory/production.env"
 secrets_directory="$work_directory/secrets"
+ui_runtime_config="$work_directory/ui-runtime-config.js"
+ui_nginx_config="$work_directory/nginx.conf"
 database_password="$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')"
 
 if command -v podman-compose >/dev/null 2>&1; then
@@ -190,12 +192,37 @@ printf '%s\n' 'test-certificate-not-used' >"$secrets_directory/tls.crt"
 printf '%s\n' 'test-private-key-not-used' >"$secrets_directory/tls.key"
 chmod 444 "$secrets_directory"/*
 
+cat >"$ui_runtime_config" <<'EOF'
+window.__TANTOR_CONFIG__ = Object.freeze({
+  environment: 'production',
+  publicOrigin: 'https://tantor.h01.internal',
+  authEnabled: true,
+  keycloakUrl: 'https://keycloak.h01.internal',
+  keycloakRealm: 'tantor',
+  keycloakClientId: 'tantor-ui',
+  apiBasePath: '/api',
+  artifactApiBasePath: '/api/v1/artifacts'
+});
+EOF
+printf '%s\n' 'server { listen 8080; location / { return 204; } }' >"$ui_nginx_config"
+chmod 444 "$ui_runtime_config" "$ui_nginx_config"
+
 cat >"$production_environment" <<EOF
 POSTGRES_IMAGE=$POSTGRES_IMAGE
 TANTOR_SERVER_IMAGE=$server_image
 TANTOR_ARTIFACT_REPOSITORY_IMAGE=$artifact_image
 TANTOR_UI_IMAGE=$artifact_image
 TANTOR_SECRETS_DIR=$secrets_directory
+TANTOR_UI_RUNTIME_CONFIG_FILE=$ui_runtime_config
+TANTOR_UI_NGINX_CONFIG_FILE=$ui_nginx_config
+TANTOR_CORS_ALLOWED_ORIGINS=https://tantor.h01.internal
+TANTOR_OIDC_ISSUER_URI=https://keycloak.h01.internal/realms/tantor
+TANTOR_OIDC_AUDIENCE=tantor-ui
+TANTOR_PUBLIC_ORIGIN=https://tantor.h01.internal
+TANTOR_REPO_PUBLIC_URL=https://tantor.h01.internal
+TANTOR_MONITORING_MODE=direct
+TANTOR_PROMETHEUS_URL=http://prometheus:9090
+TANTOR_KAFKA_SECURITY_MODE=PLAINTEXT
 TANTOR_DB_CONNECTION_TIMEOUT_MS=500
 TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS=2000
 EOF

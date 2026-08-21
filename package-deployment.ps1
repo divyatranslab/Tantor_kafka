@@ -2,7 +2,33 @@
 param(
     [ValidatePattern('^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$')]
     [string]$Version = '1.0.0',
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'output')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'output'),
+    [Parameter(Mandatory = $true)]
+    [string]$PublicOrigin,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^https://[^\s/]+(?:/.*)?$')]
+    [string]$OidcIssuerUri,
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$OidcAudience,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^https://')]
+    [string]$CorsAllowedOrigins,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^https://[^/\s]+$')]
+    [string]$KeycloakUrl,
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[A-Za-z0-9._-]+$')]
+    [string]$KeycloakRealm,
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('PLAINTEXT', 'SSL', 'SASL_SSL')]
+    [string]$KafkaSecurityMode,
+    [Parameter(Mandatory = $true)]
+    [ValidateSet('direct', 'grafana-proxy')]
+    [string]$MonitoringMode,
+    [string]$PrometheusUrl,
+    [string]$GrafanaUrl,
+    [string]$GrafanaDatasourceUid
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +41,15 @@ $archivePath = Join-Path $OutputDirectory "tantor-$Version.tar.gz"
 $imagesDirectory = Join-Path $bundleDirectory 'images'
 $scanDirectory = Join-Path $bundleDirectory 'security-scans'
 $sbomDirectory = Join-Path $bundleDirectory 'sbom'
+
+. (Join-Path $PSScriptRoot 'scripts\M01PackagingConfiguration.ps1')
+$deploymentConfiguration = Get-M01DeploymentConfiguration `
+    -PublicOrigin $PublicOrigin -CorsAllowedOrigins $CorsAllowedOrigins `
+    -OidcIssuerUri $OidcIssuerUri -OidcAudience $OidcAudience `
+    -KeycloakUrl $KeycloakUrl -KeycloakRealm $KeycloakRealm `
+    -MonitoringMode $MonitoringMode -PrometheusUrl $PrometheusUrl `
+    -GrafanaUrl $GrafanaUrl -GrafanaDatasourceUid $GrafanaDatasourceUid `
+    -NginxTemplatePath (Join-Path $PSScriptRoot 'tantor-ui\nginx.production.conf')
 
 if (-not (Get-Command podman -ErrorAction SilentlyContinue)) {
     throw 'Podman is required to build the deployment bundle.'
@@ -125,14 +160,29 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'podman-compose.production.yml')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'deploy\production\README.md') -Destination (Join-Path $bundleDirectory 'README.md')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'deploy\production\secrets\README.md') -Destination (Join-Path $bundleDirectory 'SECRETS.md')
 
+Set-Content -LiteralPath (Join-Path $bundleDirectory 'ui-runtime-config.js') `
+    -Value $deploymentConfiguration.RuntimeJavaScript -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $bundleDirectory 'nginx.conf') `
+    -Value $deploymentConfiguration.NginxConfiguration -Encoding utf8NoBOM
+
 $productionEnvironment = @(
     "TANTOR_UI_IMAGE=$($lockedImages['tantor-ui'])"
     "TANTOR_SERVER_IMAGE=$($lockedImages['tantor-server'])"
     "TANTOR_ARTIFACT_REPOSITORY_IMAGE=$($lockedImages['tantor-artifact-repository'])"
     "POSTGRES_IMAGE=$($lockedImages['postgres'])"
     'TANTOR_SECRETS_DIR=./secrets'
-    'TANTOR_MONITORING_MODE=direct'
-    'TANTOR_PROMETHEUS_URL=http://prometheus:9090'
+    'TANTOR_UI_RUNTIME_CONFIG_FILE=./ui-runtime-config.js'
+    'TANTOR_UI_NGINX_CONFIG_FILE=./nginx.conf'
+    "TANTOR_PUBLIC_ORIGIN=$($deploymentConfiguration.PublicOrigin)"
+    "TANTOR_REPO_PUBLIC_URL=$($deploymentConfiguration.PublicOrigin)"
+    "TANTOR_MONITORING_MODE=$MonitoringMode"
+    "TANTOR_PROMETHEUS_URL=$($deploymentConfiguration.PrometheusUrl)"
+    "TANTOR_GRAFANA_URL=$($deploymentConfiguration.GrafanaUrl)"
+    "TANTOR_GRAFANA_DATASOURCE_UID=$GrafanaDatasourceUid"
+    "TANTOR_OIDC_ISSUER_URI=$OidcIssuerUri"
+    "TANTOR_OIDC_AUDIENCE=$OidcAudience"
+    "TANTOR_CORS_ALLOWED_ORIGINS=$CorsAllowedOrigins"
+    "TANTOR_KAFKA_SECURITY_MODE=$KafkaSecurityMode"
 )
 Set-Content -LiteralPath (Join-Path $bundleDirectory '.env.production') -Value $productionEnvironment -Encoding utf8NoBOM
 

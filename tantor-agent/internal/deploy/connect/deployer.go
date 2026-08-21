@@ -94,8 +94,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 
 func (d *Deployer) generateConfigs(ctx context.Context, t *api.Task, installDir string) error {
 	bootstrap := t.Parameters["bootstrap_servers"]
-	if bootstrap == "" {
-		bootstrap = "localhost:9092"
+	if strings.TrimSpace(bootstrap) == "" {
+		return fmt.Errorf("bootstrap_servers is required for Kafka Connect deployment")
 	}
 	
 	groupId := t.Parameters["group_id"]

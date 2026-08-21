@@ -8,6 +8,7 @@ Usage:
 
 Options:
   --server-url URL          Tantor backend URL. Required.
+  --environment NAME       development, sit, uat, or production. Required.
   --binary PATH            Path to uploaded agent binary. Default: /srv/tantor-discovery-agent-linux
   --agent-dir PATH         Install directory. Default: /srv/tantor-discovery-agent
   --service-name NAME      systemd service name. Default: tantor-discovery-agent
@@ -36,6 +37,7 @@ EOF
 }
 
 SERVER_URL=""
+ENVIRONMENT=""
 BINARY="/srv/tantor-discovery-agent-linux"
 AGENT_DIR="/srv/tantor-discovery-agent"
 SERVICE_NAME="tantor-discovery-agent"
@@ -63,6 +65,7 @@ FOREGROUND="false"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-url) SERVER_URL="${2:-}"; shift 2 ;;
+    --environment) ENVIRONMENT="${2:-}"; shift 2 ;;
     --binary) BINARY="${2:-}"; shift 2 ;;
     --agent-dir) AGENT_DIR="${2:-}"; shift 2 ;;
     --service-name) SERVICE_NAME="${2:-}"; shift 2 ;;
@@ -100,6 +103,7 @@ if [[ "$SERVER_URL" != https://* ]]; then
   echo "ERROR: --server-url must use https://." >&2
   exit 2
 fi
+case "$ENVIRONMENT" in development|sit|uat|production) ;; *) echo "ERROR: --environment must be development, sit, uat, or production." >&2; exit 2 ;; esac
 for tls_file in "$TLS_CA" "$TLS_CERT" "$TLS_KEY"; do
   if [[ -z "$tls_file" || ! -s "$tls_file" ]]; then
     echo "ERROR: --tls-ca, --tls-cert, and --tls-key must name non-empty pre-provisioned files." >&2
@@ -149,6 +153,7 @@ install -m 0755 "$BINARY" "$AGENT_DIR/tantor-discovery-agent-linux"
 
 {
   echo "discovery:"
+  echo "  environment: \"${ENVIRONMENT}\""
   echo "  host_id: \"${HOST_ID}\""
   echo "  agent_name: \"${AGENT_NAME}\""
   echo "  server_url: \"${SERVER_URL}\""

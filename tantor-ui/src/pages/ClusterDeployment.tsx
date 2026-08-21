@@ -22,6 +22,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { AgentConnectivityModal } from '../components/AgentConnectivityModal';
+import { runtimeConfig } from '../config/runtimeConfig';
 import './ClusterDeployment.css';
 
 type Host = {
@@ -959,7 +960,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-    const artifactRepoBaseUrl = import.meta.env.VITE_ARTIFACT_REPO_URL || `http://${window.location.hostname || 'localhost'}:8081`;
+    const artifactRepoBaseUrl = runtimeConfig.artifactApiBasePath;
     return {
       name: clusterName.trim(),
       kafka_version: kafkaVersion,
@@ -967,7 +968,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       services: buildServices(),
       environment: environment.trim(),
       acknowledge_kraft_risk: kraftRiskAcknowledged,
-      artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/api/v1/artifacts/${selectedArtifact.id}/download` : '',
+      artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/${selectedArtifact.id}/download` : '',
       config: {
         configuration_mode: clusterConfigMode,
         kafka_install_dir: installDir.trim(),

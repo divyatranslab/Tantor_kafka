@@ -1,18 +1,23 @@
 import Keycloak from 'keycloak-js';
+import { runtimeConfig } from '../config/runtimeConfig';
 
 const keycloak = new Keycloak({
-  url: import.meta.env.VITE_KEYCLOAK_URL || 'https://keycloak.tantor.io',
-  realm: import.meta.env.VITE_KEYCLOAK_REALM || 'Gatekeeper',
-  clientId: import.meta.env.VITE_KEYCLOAK_CLIENT_ID || 'apb-kafka',
+  url: runtimeConfig.keycloakUrl,
+  realm: runtimeConfig.keycloakRealm,
+  clientId: runtimeConfig.keycloakClientId,
 });
 
-export const isAuthEnabled = () => import.meta.env.PROD || import.meta.env.VITE_AUTH_ENABLED === 'true';
+export const isAuthEnabled = () => runtimeConfig.authEnabled;
 
 let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
 const currentRedirectUri = () => window.location.href;
+const pathMatches = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
+const isRuntimeApiPath = (path: string) => pathMatches(path, '/api')
+  || pathMatches(path, runtimeConfig.apiBasePath)
+  || pathMatches(path, runtimeConfig.artifactApiBasePath);
 
 export const initKeycloak = (): Promise<boolean> => {
   if (!isAuthEnabled()) {
@@ -87,7 +92,7 @@ export const installAuthenticatedFetch = () => {
     const url = new URL(request?.url || input.toString(), window.location.origin);
     const headers = new Headers(init?.headers || request?.headers);
 
-    if (url.origin === window.location.origin && url.pathname.startsWith('/api/')) {
+    if (url.origin === window.location.origin && isRuntimeApiPath(url.pathname)) {
       if (isAuthEnabled()) {
         const token = await getValidToken();
         if (token) {

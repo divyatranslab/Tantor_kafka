@@ -49,6 +49,7 @@ class ArtifactControllerIT {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         Path repo = Files.createTempDirectory("tantor-it-repo-");
         registry.add("tantor.repository.base-path", repo::toString);
+        registry.add("tantor.cors.allowed-origins", () -> "http://localhost:5173");
     }
 
     @Autowired

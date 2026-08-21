@@ -14,11 +14,12 @@ import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
 import io.translab.tantor.server.config.MonitoringHttpClientConfiguration.MonitoringRestTemplate;
+import io.translab.tantor.server.config.MonitoringProperties;
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -61,36 +62,41 @@ public class PrometheusMonitoringService {
     private final EncryptionService encryptionService;
     private final ObjectMapper objectMapper;
     private final MonitoringRestTemplate restTemplate;
+    private final MonitoringProperties monitoringProperties;
 
-    @Value("${tantor.monitoring.mode:direct}")
     private String monitoringMode;
 
-    @Value("${tantor.monitoring.prometheus-url:}")
     private String prometheusUrl;
 
-    @Value("${tantor.monitoring.grafana-url:}")
     private String grafanaUrl;
 
-    @Value("${tantor.monitoring.grafana-datasource-uid:}")
     private String grafanaDatasourceUid;
 
-    @Value("${tantor.monitoring.grafana-username:}")
     private String grafanaUsername;
 
-    @Value("${tantor.monitoring.grafana-password:}")
     private String grafanaPassword;
 
-    @Value("${tantor.monitoring.exporter-host:}")
     private String defaultExporterHost;
 
-    @Value("${tantor.monitoring.kafka-exporter-port-base:9308}")
     private int kafkaExporterPortBase;
 
-    @Value("${tantor.monitoring.jmx-exporter-port:7071}")
     private int defaultJmxExporterPort;
 
-    @Value("${tantor.monitoring.controller-jmx-exporter-port:7072}")
     private int defaultControllerJmxExporterPort;
+
+    @PostConstruct
+    void bindTypedConfiguration() {
+        monitoringMode = monitoringProperties.getMode();
+        prometheusUrl = monitoringProperties.getPrometheusUrl() == null ? "" : monitoringProperties.getPrometheusUrl().toString();
+        grafanaUrl = monitoringProperties.getGrafanaUrl() == null ? "" : monitoringProperties.getGrafanaUrl().toString();
+        grafanaDatasourceUid = monitoringProperties.getGrafanaDatasourceUid();
+        grafanaUsername = monitoringProperties.getGrafanaUsername();
+        grafanaPassword = monitoringProperties.getGrafanaPassword();
+        defaultExporterHost = monitoringProperties.getExporterHost();
+        kafkaExporterPortBase = monitoringProperties.getKafkaExporterPortBase();
+        defaultJmxExporterPort = monitoringProperties.getJmxExporterPort();
+        defaultControllerJmxExporterPort = monitoringProperties.getControllerJmxExporterPort();
+    }
 
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {

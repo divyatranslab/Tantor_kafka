@@ -24,6 +24,13 @@ import static org.mockito.Mockito.*;
 
 class PrometheusMonitoringServiceTest {
 
+    private static io.translab.tantor.server.config.MonitoringProperties monitoringProperties() {
+        var properties = new io.translab.tantor.server.config.MonitoringProperties();
+        properties.setMode("direct");
+        properties.setPrometheusUrl(java.net.URI.create("http://prometheus:9090"));
+        return properties;
+    }
+
     @Test
     void createsSeparateBrokerAndControllerJmxTargetsWithoutDuplicatingKafkaExporter() {
         UUID id = UUID.randomUUID();
@@ -51,7 +58,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, externalClusters, nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class), monitoringProperties());
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
         ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
         ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
@@ -87,7 +94,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, mock(ExternalClusterRepository.class), nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class), monitoringProperties());
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
         ReflectionTestUtils.setField(service, "defaultJmxExporterPort", 7071);
         ReflectionTestUtils.setField(service, "defaultControllerJmxExporterPort", 7072);
@@ -137,7 +144,7 @@ class PrometheusMonitoringServiceTest {
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 clusters, externalClusters, nodes, mock(HostRepository.class),
-                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class), monitoringProperties());
 
         PrometheusMonitoringService.MonitoringClusterSummary summary = service.clusters("EXTERNAL").getFirst();
 
@@ -184,7 +191,7 @@ class PrometheusMonitoringServiceTest {
         when(nodes.findByClusterId(id)).thenReturn(List.of(first, controllerOnFirstHost, second));
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodes,
-                mock(HostRepository.class), mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
+                mock(HostRepository.class), mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class), monitoringProperties());
 
         assertThat(service.computeHostMemoryPercent(mirror, null)).isEqualTo(25.0);
         assertThat(service.computeHostMemoryPercent(mirror, "2")).isEqualTo(30.0);
@@ -220,7 +227,7 @@ class PrometheusMonitoringServiceTest {
         PrometheusMonitoringService service = new PrometheusMonitoringService(
                 mock(ClusterRepository.class), mock(ExternalClusterRepository.class),
                 mock(ExternalClusterNodeRepository.class), hosts,
-                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class));
+                mock(EncryptionService.class), new ObjectMapper(), mock(MonitoringRestTemplate.class), monitoringProperties());
 
         assertThat(service.computeHostMemoryPercent(cluster, null)).isEqualTo(37.5);
         assertThat(service.computeHostMemoryAvailableMb(cluster, null)).isEqualTo(10240L);

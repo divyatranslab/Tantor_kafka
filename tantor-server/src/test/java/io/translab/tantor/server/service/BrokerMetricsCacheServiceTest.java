@@ -38,7 +38,7 @@ class BrokerMetricsCacheServiceTest {
 
         BrokerMetricsCacheService service = new BrokerMetricsCacheService(
                 hosts, mock(KafkaAdminService.class), mock(ExternalClusterService.class),
-                status, new ObjectMapper());
+                status, new ObjectMapper(), monitoringProperties());
 
         var rows = service.getBrokerSummaries(cluster);
 
@@ -49,6 +49,13 @@ class BrokerMetricsCacheServiceTest {
             assertThat(row.getDiskUsedGb()).isNull();
             assertThat(row.getDiskTotalGb()).isNull();
         });
+    }
+
+    private static io.translab.tantor.server.config.MonitoringProperties monitoringProperties() {
+        var properties = new io.translab.tantor.server.config.MonitoringProperties();
+        properties.setMode("direct");
+        properties.setPrometheusUrl(java.net.URI.create("http://prometheus:9090"));
+        return properties;
     }
 
     private static ClusterServiceAssignment assignment(Cluster cluster, String hostId, String role, int nodeId) {

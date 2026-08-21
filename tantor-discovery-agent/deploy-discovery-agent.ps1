@@ -5,6 +5,10 @@ param (
     [Parameter(Mandatory = $true)]
     [string]$ServerUrl,
 
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("development", "sit", "uat", "production")]
+    [string]$Environment,
+
     [string]$SshUser = "root",
     [int]$SshPort = 22,
     [string]$SshKeyPath = "",
@@ -167,6 +171,7 @@ try {
     $kafkaConfigYaml = ($KafkaConfigFiles | ForEach-Object { "    - " + (Yaml-Quote $_) }) -join "`n"
     $configContent = @"
 discovery:
+  environment: $(Yaml-Quote $Environment)
   host_id: $(Yaml-Quote $HostId)
   agent_name: $(Yaml-Quote $AgentName)
   server_url: $(Yaml-Quote $ServerUrl)

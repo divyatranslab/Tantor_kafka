@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.HostRepository;
+import io.translab.tantor.server.config.MonitoringProperties;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +28,7 @@ public class MetricsController {
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
     private final ObjectMapper objectMapper;
+    private final MonitoringProperties monitoringProperties;
     private final RestTemplate restTemplate = new RestTemplate();
 
     @GetMapping("/{id}/metrics")
@@ -91,13 +93,13 @@ public class MetricsController {
 
         if (targetIp != null) {
             try {
-                String url = "http://" + targetIp + ":7071/metrics";
+                String url = metricsEndpoint(targetIp);
                 String metricsText = restTemplate.getForObject(url, String.class);
                 if (metricsText != null) {
                     parsePrometheusText(metricsText, kfk);
                 }
             } catch (Exception e) {
-                log.warn("Failed to fetch JMX metrics from {}:7071: {}", targetIp, e.getMessage());
+                log.warn("Failed to fetch configured JMX metrics endpoint for {}: {}", targetIp, e.getMessage());
                 simulateMetrics(kfk);
             }
         } else {
@@ -105,6 +107,10 @@ public class MetricsController {
         }
 
         return nm;
+    }
+
+    String metricsEndpoint(String host) {
+        return "http://" + host + ":" + monitoringProperties.getJmxExporterPort() + "/metrics";
     }
 
     private void simulateMetrics(KafkaMetrics kfk) {

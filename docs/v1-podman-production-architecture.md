@@ -351,8 +351,11 @@ an exporter is starting or failed, so `up=0` remains visible.
 - `/api` proxies to `tantor-server:8443` on the private network.
 - `/api/v1/artifacts` proxies to `tantor-artifact-repository:8081`.
 - Security headers, request-size limits and timeouts are explicit.
-- `TANTOR_REPO_URL` uses the public management URL so agent tasks never contain
-  `localhost` or container DNS names.
+- `TANTOR_REPO_INTERNAL_URL` owns private backend-to-repository traffic and may
+  name the repository container on the internal network.
+- `TANTOR_REPO_PUBLIC_URL` and `TANTOR_PUBLIC_ORIGIN` use the same public HTTPS
+  authority; every artifact URL placed in an agent task uses this public value
+  and never a loopback or container-only hostname.
 
 ### Backend
 

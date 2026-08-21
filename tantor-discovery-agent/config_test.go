@@ -18,6 +18,58 @@ func TestEffectiveHTTPSettingsDefaults(t *testing.T) {
 	}
 }
 
+func validDiscoveryConfiguration() DiscoveryConfig {
+	return DiscoveryConfig{
+		Environment: "production", HostID: "discovery-1", AgentName: "discovery-node",
+		ServerURL: "https://control-plane.corp.internal", MetricsURL: "http://localhost:7071/metrics",
+		TLSCACert: "/certs/ca.crt", TLSClientCert: "/certs/agent.crt", TLSClientKey: "/certs/agent.key",
+	}
+}
+
+func TestValidateRejectsMissingMalformedAndProductionLoopbackEndpoint(t *testing.T) {
+	cfg := validDiscoveryConfiguration()
+	cfg.ServerURL = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("missing endpoint must fail")
+	}
+	cfg = validDiscoveryConfiguration()
+	cfg.ServerURL = "invalid"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("malformed endpoint must fail")
+	}
+	cfg = validDiscoveryConfiguration()
+	cfg.ServerURL = "https://127.0.0.1:8443"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("production loopback endpoint must fail")
+	}
+}
+
+func TestValidateAcceptsExplicitRuntimeConfiguration(t *testing.T) {
+	cfg := validDiscoveryConfiguration()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid configuration rejected: %v", err)
+	}
+}
+
+func TestValidateRejectsCredentialQueryAndPlaceholderURLs(t *testing.T) {
+	for _, endpoint := range []string{
+		"https://user:password@control.example.net",
+		"https://control.example.net/api?token=secret",
+		"https://control.invalid",
+	} {
+		cfg := validDiscoveryConfiguration()
+		cfg.ServerURL = endpoint
+		if err := cfg.Validate(); err == nil {
+			t.Fatalf("unsafe endpoint accepted: %s", endpoint)
+		}
+	}
+	cfg := validDiscoveryConfiguration()
+	cfg.ServerURL = "https://control.example.net/api"
+	if got := cfg.SafeServerEndpoint(); got != "https://control.example.net/api" {
+		t.Fatalf("unsafe diagnostic summary: %s", got)
+	}
+}
+
 func TestSampleConfigurationIsValid(t *testing.T) {
 	content, err := os.ReadFile("configs/discovery.yaml")
 	if err != nil {

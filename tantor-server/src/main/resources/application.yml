@@ -7,7 +7,7 @@ spring:
     name: tantor-server
   
   datasource:
-    url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
+    url: ${TANTOR_DB_URL}
     username: ${TANTOR_DB_USER}
     password: ${TANTOR_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
@@ -37,6 +37,8 @@ server:
   forward-headers-strategy: framework
 
 tantor:
+  runtime:
+    environment: ${TANTOR_ENVIRONMENT}
   security:
     encryption:
       key: ${TANTOR_ENCRYPTION_KEY}
@@ -50,7 +52,7 @@ tantor:
       # Configure this in production to verify Keycloak/OIDC signatures through its issuer metadata/JWKS.
       # TANTOR_KEYCLOAK_* names are retained as deployment-compatible aliases.
       issuer-uri: ${TANTOR_OIDC_ISSUER_URI:${TANTOR_KEYCLOAK_ISSUER_URI:}}
-      audience: ${TANTOR_OIDC_AUDIENCE:${TANTOR_KEYCLOAK_CLIENT_ID:apb-kafka}}
+      audience: ${TANTOR_OIDC_AUDIENCE:${TANTOR_KEYCLOAK_CLIENT_ID:}}
     local-break-glass:
       enabled: ${TANTOR_BREAK_GLASS_ENABLED:false}
       username: ${TANTOR_BREAK_GLASS_USERNAME:}
@@ -58,8 +60,18 @@ tantor:
     claim-lease-seconds: ${TANTOR_TASK_CLAIM_LEASE_SECONDS:300}
     max-claim-attempts: ${TANTOR_TASK_MAX_CLAIM_ATTEMPTS:3}
   artifact-repo:
-    url: ${TANTOR_REPO_URL:http://localhost:8081}
+    internal-url: ${TANTOR_REPO_INTERNAL_URL}
+    public-url: ${TANTOR_REPO_PUBLIC_URL}
     jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
+  control-plane:
+    public-url: ${TANTOR_PUBLIC_ORIGIN}
+  kafka-deployment:
+    runtime-user: ${TANTOR_KAFKA_RUNTIME_USER:}
+    runtime-group: ${TANTOR_KAFKA_RUNTIME_GROUP:}
+    java-home: ${TANTOR_KAFKA_JAVA_HOME:}
+    limit-nofile: ${TANTOR_KAFKA_LIMIT_NOFILE:100000}
+    security-mode: ${TANTOR_KAFKA_SECURITY_MODE}
+    service-prefix: ${TANTOR_KAFKA_SERVICE_PREFIX:tantor-kafka-}
   hosts:
     heartbeat-timeout-seconds: ${TANTOR_HOST_HEARTBEAT_TIMEOUT_SECONDS:90}
   discovery-agent:
@@ -73,10 +85,10 @@ tantor:
     health-poll-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_POLL_SECONDS:10}
     stable-samples: ${TANTOR_ROLLING_RESTART_STABLE_SAMPLES:2}
   monitoring:
-    mode: ${TANTOR_MONITORING_MODE:direct}
-    prometheus-url: ${TANTOR_PROMETHEUS_URL:http://loki-prometheus-server:80}
-    grafana-url: ${TANTOR_GRAFANA_URL:https://monitoring.tantor.io}
-    grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:PBFA97CFB590B2093}
+    mode: ${TANTOR_MONITORING_MODE}
+    prometheus-url: ${TANTOR_PROMETHEUS_URL:}
+    grafana-url: ${TANTOR_GRAFANA_URL:}
+    grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:}
     grafana-username: ${TANTOR_GRAFANA_USERNAME:}
     grafana-password: ${TANTOR_GRAFANA_PASSWORD:}
     grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:false}

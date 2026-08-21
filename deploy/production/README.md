@@ -23,7 +23,9 @@ application/data networks.
 4. Ensure the TLS certificate SAN contains the production Tantor hostname.
    Provision `agent-ca.crt` separately and issue each agent a unique client
    certificate and private key outside the release archive.
-5. Review the Keycloak and font origins in the UI Content Security Policy.
+5. Package the release with the production OIDC issuer/audience and Keycloak
+   origin/realm parameters. Packaging generates checksummed `ui-runtime-config.js`
+   and `nginx.conf` files and rejects UI/backend identity-provider drift.
 6. Run `bash ./start.sh` from the extracted bundle directory.
 7. Confirm every service becomes healthy and only ports 80 and 443 are
 published by the Tantor deployment.
@@ -81,3 +83,23 @@ bash scripts/test-h01-deployment.sh
 used by the release. Production updates must generate a new bundle; do not edit
 the locked image references on the target host. Per-image Trivy reports and
 SPDX SBOMs are included in `security-scans` and `sbom` for release review.
+
+Example non-secret release configuration:
+
+```powershell
+.\package-deployment.ps1 `
+  -Version 1.0.0 `
+  -PublicOrigin https://tantor.corp.internal `
+  -OidcIssuerUri https://identity.corp.internal/realms/tantor `
+  -OidcAudience tantor-ui `
+  -CorsAllowedOrigins https://tantor.corp.internal `
+  -KeycloakUrl https://identity.corp.internal `
+  -KeycloakRealm tantor `
+  -KafkaSecurityMode SSL `
+  -MonitoringMode direct `
+  -PrometheusUrl http://monitoring:9090
+```
+
+The issuer must exactly equal `KeycloakUrl + /realms/ + KeycloakRealm`; a
+mismatch fails packaging before any image is built. These values are public
+configuration, not credentials. Client secrets remain outside the bundle.

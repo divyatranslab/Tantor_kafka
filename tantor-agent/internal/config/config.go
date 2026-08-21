@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,7 +12,8 @@ import (
 
 // Config represents the agent configuration
 type Config struct {
-	Agent struct {
+	Environment string `yaml:"environment"`
+	Agent       struct {
 		HostID       string `yaml:"host_id"`
 		AgentName    string `yaml:"agent_name"`
 		ServerURL    string `yaml:"server_url"`
@@ -36,7 +38,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -53,11 +57,57 @@ func Load(path string) (*Config, error) {
 	if cfg.Paths.ArtifactsDir == "" {
 		cfg.Paths.ArtifactsDir = "/var/lib/tantor-agent/artifacts"
 	}
-	if err := cfg.ValidateTransport(); err != nil {
+	if cfg.Paths.LogDir == "" {
+		cfg.Paths.LogDir = "/var/log/tantor-agent"
+	}
+	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
 	return &cfg, nil
+}
+
+func (cfg *Config) Validate() error {
+	environment := strings.ToLower(strings.TrimSpace(cfg.Environment))
+	if environment != "development" && environment != "sit" && environment != "uat" && environment != "production" {
+		return fmt.Errorf("environment must be development, sit, uat, or production")
+	}
+	if strings.TrimSpace(cfg.Agent.HostID) == "" {
+		return fmt.Errorf("agent.host_id is required")
+	}
+	if cfg.Agent.PollInterval < 1 || cfg.Agent.PollInterval > 300 {
+		return fmt.Errorf("agent.poll_interval_seconds must be between 1 and 300")
+	}
+	if err := cfg.ValidateTransport(); err != nil {
+		return err
+	}
+	serverURL, _ := url.Parse(strings.TrimSpace(cfg.Agent.ServerURL))
+	if environment != "development" && isLoopbackHost(serverURL.Hostname()) {
+		return fmt.Errorf("agent.server_url cannot use a loopback host outside development")
+	}
+	if environment != "development" && isPlaceholderHost(serverURL.Hostname()) {
+		return fmt.Errorf("agent.server_url cannot use an example or placeholder host outside development")
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost" || host == "::1" || strings.HasPrefix(host, "127.")
+}
+
+func isPlaceholderHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return strings.HasSuffix(host, ".example") || strings.HasSuffix(host, ".invalid") ||
+		strings.HasSuffix(host, ".test") || strings.ContainsAny(host, "<>")
+}
+
+func (cfg *Config) SafeServerEndpoint() string {
+	parsed, err := url.Parse(strings.TrimSpace(cfg.Agent.ServerURL))
+	if err != nil || parsed.Host == "" {
+		return "<invalid>"
+	}
+	return parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
 }
 
 // ValidateTransport enforces the production agent's HTTPS and mTLS contract.
@@ -65,6 +115,9 @@ func (cfg *Config) ValidateTransport() error {
 	serverURL, err := url.Parse(strings.TrimSpace(cfg.Agent.ServerURL))
 	if err != nil || serverURL.Scheme != "https" || serverURL.Host == "" {
 		return fmt.Errorf("agent.server_url must be an absolute https URL")
+	}
+	if serverURL.User != nil || serverURL.RawQuery != "" || serverURL.Fragment != "" {
+		return fmt.Errorf("agent.server_url must not contain credentials, query parameters, or fragments")
 	}
 	for name, value := range map[string]string{
 		"agent.cert_file": cfg.Agent.CertFile,

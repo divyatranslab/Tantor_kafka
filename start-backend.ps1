@@ -112,6 +112,9 @@ function Stop-ServiceIfRunning {
 }
 
 Import-DotEnv -Path (Join-Path $RootDir ".env")
+if ([string]::IsNullOrWhiteSpace($env:SPRING_PROFILES_ACTIVE)) {
+    $env:SPRING_PROFILES_ACTIVE = 'dev'
+}
 Normalize-PathEnvironment
 $JavaExe = Resolve-Java
 

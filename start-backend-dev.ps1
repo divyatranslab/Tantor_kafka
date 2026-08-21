@@ -21,6 +21,9 @@ if (Test-Path $envFile) {
         if (![string]::IsNullOrWhiteSpace($name)) { Set-Item -Path "env:$name" -Value $value }
     }
 }
+if ([string]::IsNullOrWhiteSpace($env:SPRING_PROFILES_ACTIVE)) {
+    $env:SPRING_PROFILES_ACTIVE = 'dev'
+}
 
 # ── Resolve Java ─────────────────────────────────────────────────────────────
 $candidateJavaHome1 = "C:\Program Files\Java\jdk-21"

@@ -48,6 +48,8 @@ spring:
 
 # Tantor artifact repository specific settings
 tantor:
+  cors:
+    allowed-origins: ${TANTOR_CORS_ALLOWED_ORIGINS}
   repository:
     # Root of the on-disk artifact store. In k8s this is a mounted PVC.
     base-path: ${TANTOR_REPO_PATH:/var/lib/tantor/repository}
@@ -69,8 +71,8 @@ tantor:
     malware-scan:
       enabled: ${TANTOR_MALWARE_SCAN_ENABLED:false}
       required: ${TANTOR_MALWARE_SCAN_REQUIRED:false}
-      host: ${TANTOR_MALWARE_SCAN_HOST:clamav}
-      port: ${TANTOR_MALWARE_SCAN_PORT:3310}
+      host: ${TANTOR_MALWARE_SCAN_HOST:}
+      port: ${TANTOR_MALWARE_SCAN_PORT:0}
       timeout-ms: ${TANTOR_MALWARE_SCAN_TIMEOUT_MS:30000}
 
 management:

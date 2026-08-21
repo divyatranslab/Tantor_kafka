@@ -1,11 +1,12 @@
 discovery:
+  environment: "development"
   # Unique ID/name for this VM-side discovery agent. The deploy script can
   # generate these automatically from the target VM IP.
   host_id: "discovery-example-node"
   agent_name: "tantor-discovery-example-node"
 
   # Tantor backend URL for the current client environment.
-  server_url: "https://<tantor-server-ip-or-dns>:<port>"
+  server_url: "https://localhost:8443"
 
   interval: "15s"
   task_poll_interval: "5s"

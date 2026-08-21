@@ -7,10 +7,10 @@ import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.dto.BrokerSummaryDto;
+import io.translab.tantor.server.config.MonitoringProperties;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -32,6 +32,7 @@ public class BrokerMetricsCacheService {
     private final ExternalClusterService externalClusterService;
     private final HostStatusService hostStatusService;
     private final ObjectMapper objectMapper;
+    private final MonitoringProperties monitoringProperties;
     private final RestTemplate restTemplate = new RestTemplateBuilder()
             .setConnectTimeout(Duration.ofSeconds(2))
             .setReadTimeout(Duration.ofSeconds(2))
@@ -39,9 +40,6 @@ public class BrokerMetricsCacheService {
 
     private final Map<UUID, CachedBrokers> cache = new ConcurrentHashMap<>();
     private static final long CACHE_TTL_MS = 10000;
-
-    @Value("${tantor.monitoring.jmx-exporter-port:7071}")
-    private int jmxExporterPort;
 
     public List<BrokerSummaryDto> getBrokerSummaries(Cluster cluster) {
         CachedBrokers cached = cache.get(cluster.getId());
@@ -128,14 +126,14 @@ public class BrokerMetricsCacheService {
 
         if (targetIp != null) {
             try {
-                String url = "http://" + targetIp + ":" + jmxExporterPort + "/metrics";
+                String url = "http://" + targetIp + ":" + monitoringProperties.getJmxExporterPort() + "/metrics";
                 String metricsText = restTemplate.getForObject(url, String.class);
                 if (metricsText != null) {
                     jmxReachable = true;
                     parsePrometheusText(metricsText, builder);
                 }
             } catch (Exception e) {
-                log.warn("Failed to fetch JMX metrics from {}:{}: {}", targetIp, jmxExporterPort, e.getMessage());
+                log.warn("Failed to fetch JMX metrics from {}:{}: {}", targetIp, monitoringProperties.getJmxExporterPort(), e.getMessage());
             }
         }
 

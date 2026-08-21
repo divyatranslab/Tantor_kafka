@@ -1,7 +1,6 @@
 package io.translab.tantor.server.config;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.net.ssl.HttpsURLConnection;
 import java.nio.file.Path;
@@ -16,7 +15,7 @@ class MonitoringHttpClientConfigurationTest {
         var socketFactory = HttpsURLConnection.getDefaultSSLSocketFactory();
         var hostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier();
         MonitoringHttpClientConfiguration configuration = configured("direct", "http://prometheus:9090", "https://grafana.example");
-        ReflectionTestUtils.setField(configuration, "insecureTlsRequested", true);
+        configurationProperties(configuration).setGrafanaSkipTlsValidation(true);
 
         assertThatThrownBy(configuration::rejectInsecureTls)
                 .isInstanceOf(IllegalStateException.class)
@@ -49,12 +48,14 @@ class MonitoringHttpClientConfigurationTest {
     }
 
     private static MonitoringHttpClientConfiguration configured(String mode, String prometheus, String grafana) {
-        MonitoringHttpClientConfiguration configuration = new MonitoringHttpClientConfiguration();
-        ReflectionTestUtils.setField(configuration, "insecureTlsRequested", false);
-        ReflectionTestUtils.setField(configuration, "monitoringMode", mode);
-        ReflectionTestUtils.setField(configuration, "prometheusUrl", prometheus);
-        ReflectionTestUtils.setField(configuration, "grafanaUrl", grafana);
-        ReflectionTestUtils.setField(configuration, "tlsCaFile", "");
-        return configuration;
+        MonitoringProperties properties = new MonitoringProperties();
+        properties.setMode(mode);
+        properties.setPrometheusUrl(java.net.URI.create(prometheus));
+        properties.setGrafanaUrl(java.net.URI.create(grafana));
+        return new MonitoringHttpClientConfiguration(properties);
+    }
+
+    private static MonitoringProperties configurationProperties(MonitoringHttpClientConfiguration configuration) {
+        return (MonitoringProperties) org.springframework.test.util.ReflectionTestUtils.getField(configuration, "properties");
     }
 }

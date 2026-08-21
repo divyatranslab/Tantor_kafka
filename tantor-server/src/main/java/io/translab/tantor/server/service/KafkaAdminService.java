@@ -90,7 +90,7 @@ public class KafkaAdminService {
                     if (host != null) {
                         try {
                             String configJson = cluster.getConfigJson();
-                            int port = 9092;
+                            Integer port = null;
                             if (configJson != null && !configJson.isEmpty()) {
                                 Map<String, Object> config = objectMapper.readValue(configJson, Map.class);
                                 if (config.containsKey("listeners")) {
@@ -106,18 +106,15 @@ public class KafkaAdminService {
                                     }
                                 }
                             }
+                            if (port == null || port < 1 || port > 65535) {
+                                throw new IllegalArgumentException("listener_port is required and must be between 1 and 65535");
+                            }
                             List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
                             if (!ips.isEmpty()) {
                                 bootstrapServers.add(ips.get(0) + ":" + port);
                             }
                         } catch (Exception e) {
-                            log.error("Error generating bootstrap servers for cluster {}: {}", clusterId, e.getMessage(), e);
-                            try {
-                                List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
-                                if (!ips.isEmpty()) bootstrapServers.add(ips.get(0) + ":9092");
-                            } catch (Exception ex) {
-                                log.warn("Failed to parse IPs for host {}", host.getId());
-                            }
+                            throw new IllegalStateException("Invalid Kafka bootstrap configuration for cluster " + clusterId, e);
                         }
                     }
                 }
