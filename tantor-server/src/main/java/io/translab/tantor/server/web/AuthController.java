@@ -22,6 +22,9 @@ import org.springframework.beans.factory.annotation.Value;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -41,9 +44,61 @@ public class AuthController {
     @Value("${tantor.security.local-break-glass.username:}")
     private String breakGlassUsername;
 
+    // Basic in-memory fallback rate limiter for direct-access protection.
+    // Nginx provides the primary distributed rate limiting in production.
+    private static class BoundedRateLimiter {
+        private final int maxEntries;
+        private final int maxAttempts;
+        private final long timeWindowMs;
+        
+        private static class Attempt {
+            int count = 0;
+            long firstAttempt = System.currentTimeMillis();
+        }
+
+        private final Map<String, Attempt> store;
+
+        public BoundedRateLimiter(int maxEntries, int maxAttempts, long timeWindowMs) {
+            this.maxEntries = maxEntries;
+            this.maxAttempts = maxAttempts;
+            this.timeWindowMs = timeWindowMs;
+            this.store = new java.util.LinkedHashMap<>(maxEntries, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Attempt> eldest) {
+                    return size() > maxEntries;
+                }
+            };
+        }
+
+        public synchronized boolean tryAcquire(String key) {
+            long now = System.currentTimeMillis();
+            Attempt attempt = store.computeIfAbsent(key, k -> new Attempt());
+            if (now - attempt.firstAttempt > timeWindowMs) {
+                attempt.count = 1;
+                attempt.firstAttempt = now;
+                return true;
+            }
+            return ++attempt.count <= maxAttempts;
+        }
+    }
+
+    private final BoundedRateLimiter ipLimiter = new BoundedRateLimiter(1000, 10, 60000);
+    private final BoundedRateLimiter userLimiter = new BoundedRateLimiter(1000, 5, 60000);
+
     @PostMapping("/login")
-    public ResponseEntity<JwtResponse> authenticateUser(@RequestBody LoginRequest loginRequest) {
+    public ResponseEntity<JwtResponse> authenticateUser(@RequestBody LoginRequest loginRequest, HttpServletRequest request) {
+        String clientIp = request.getRemoteAddr();
         String username = loginRequest.getUsername();
+        
+        boolean ipAllowed = ipLimiter.tryAcquire(clientIp != null ? clientIp : "unknown");
+        boolean userAllowed = username != null && !username.isBlank() ? userLimiter.tryAcquire(username) : true;
+
+        if (!ipAllowed || !userAllowed) {
+            auditService.recordAs("system", "RATE_LIMIT", null, "AUTHENTICATION", "LOGIN_REJECTED", 
+                                  "IP", clientIp, null, "FAILED", null, null, null, Map.of("reason", "Too many attempts"));
+            return ResponseEntity.status(429).build();
+        }
+
         String password = loginRequest.getPassword();
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             return ResponseEntity.status(401).build();

@@ -45,7 +45,7 @@ tantor:
     truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
     jwt:
       secret: ${TANTOR_JWT_SECRET}
-      expiration-ms: 86400000 # 24 hours
+      expiration-ms: 900000 # 15 minutes
       issuer: ${TANTOR_JWT_ISSUER:tantor-server}
       audience: ${TANTOR_JWT_AUDIENCE:tantor-api}
     oidc:

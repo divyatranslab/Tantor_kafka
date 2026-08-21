@@ -20,6 +20,13 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import java.util.Arrays;
+import java.util.Collections;
+import org.springframework.beans.factory.annotation.Value;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -48,9 +55,33 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    @Value("${tantor.security.cors.allowed-origins:}")
+    private String allowedOrigins;
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        if (allowedOrigins != null && !allowedOrigins.isBlank()) {
+            String[] origins = allowedOrigins.split(",");
+            for (String origin : origins) {
+                if ("*".equals(origin.trim())) {
+                    throw new IllegalArgumentException("Wildcard CORS origin '*' is not allowed when credentials are true");
+                }
+            }
+            configuration.setAllowedOrigins(Arrays.asList(origins));
+        }
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        configuration.setAllowedHeaders(Collections.singletonList("*"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", configuration);
+        return source;
+    }
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf(AbstractHttpConfigurer::disable)
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .exceptionHandling(exceptions -> exceptions
                     .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))

@@ -33,6 +33,19 @@ class JwtUtilsTest {
     }
 
     @Test
+    void rejectsExpiredJwt() throws InterruptedException {
+        JwtUtils jwtUtils = configuredJwtUtils();
+        ReflectionTestUtils.setField(jwtUtils, "jwtExpirationMs", 1); // 1 ms expiration
+        
+        String token = jwtUtils.generateToken("jayesh", "admin", "local");
+        
+        // Wait for expiration
+        Thread.sleep(10);
+        
+        assertThat(jwtUtils.verify(token)).isNull();
+    }
+
+    @Test
     void acceptsKeycloakAuthorizedPartyWhenAudienceMapperIsNotConfigured() {
         JwtUtils jwtUtils = configuredJwtUtils();
         Jwt token = Jwt.withTokenValue("test-token")
