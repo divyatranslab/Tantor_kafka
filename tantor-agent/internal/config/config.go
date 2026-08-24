@@ -119,7 +119,7 @@ func (cfg *Config) SafeServerEndpoint() string {
 	return parsed.Scheme + "://" + parsed.Host + parsed.EscapedPath()
 }
 
-// ValidateTransport enforces the production agent's HTTPS and mTLS contract.
+// ValidateTransport enforces the production agent's HTTPS transport contract.
 func (cfg *Config) ValidateTransport() error {
 	serverURL, err := url.Parse(strings.TrimSpace(cfg.Agent.ServerURL))
 	if err != nil || serverURL.Host == "" {
@@ -137,21 +137,21 @@ func (cfg *Config) ValidateTransport() error {
 	if serverURL.Scheme != "https" {
 		return fmt.Errorf("agent.server_url must be an absolute https URL")
 	}
-	for name, value := range map[string]string{
-		"agent.cert_file": cfg.Agent.CertFile,
-		"agent.key_file":  cfg.Agent.KeyFile,
-		"agent.ca_cert":   cfg.Agent.CACert,
-	} {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("%s is required for agent mTLS", name)
-		}
+	if strings.TrimSpace(cfg.Agent.CACert) == "" {
+		return fmt.Errorf("agent.ca_cert is required for HTTPS server verification")
+	}
+	certConfigured := strings.TrimSpace(cfg.Agent.CertFile) != ""
+	keyConfigured := strings.TrimSpace(cfg.Agent.KeyFile) != ""
+	if certConfigured != keyConfigured {
+		return fmt.Errorf("agent.cert_file and agent.key_file must be configured together for agent mTLS")
 	}
 	return nil
 }
 
 // AllowsInsecureHTTP exists solely for legacy development environments that do
 // not yet terminate TLS. It requires an explicit opt-in and can never be used
-// outside development; all SIT/UAT/production agents require HTTPS with mTLS.
+// outside development; all SIT/UAT/production agents require HTTPS. mTLS is
+// enabled only when both a client certificate and key are configured.
 func (cfg *Config) AllowsInsecureHTTP() bool {
 	return strings.EqualFold(strings.TrimSpace(cfg.Environment), "development") && cfg.Agent.AllowInsecureHTTP
 }

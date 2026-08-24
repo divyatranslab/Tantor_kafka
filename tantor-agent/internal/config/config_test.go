@@ -21,6 +21,23 @@ func TestValidateAcceptsExplicitProductionConfiguration(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsHTTPSWithServerTrustOnly(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.CertFile = ""
+	cfg.Agent.KeyFile = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("HTTPS configuration without mTLS rejected: %v", err)
+	}
+}
+
+func TestValidateRejectsPartialMTLSConfiguration(t *testing.T) {
+	cfg := validConfig()
+	cfg.Agent.KeyFile = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("partial mTLS configuration must fail")
+	}
+}
+
 func TestValidateRejectsMissingAndMalformedEndpoints(t *testing.T) {
 	cfg := validConfig()
 	cfg.Agent.ServerURL = ""

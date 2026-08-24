@@ -36,11 +36,6 @@ func NewAPIClient(cfg *config.Config) (*APIClient, error) {
 			},
 		}, nil
 	}
-	cert, err := tls.LoadX509KeyPair(cfg.Agent.CertFile, cfg.Agent.KeyFile)
-	if err != nil {
-		return nil, fmt.Errorf("load agent client certificate: %w", err)
-	}
-
 	// Load CA cert
 	caCert, err := os.ReadFile(cfg.Agent.CACert)
 	if err != nil {
@@ -51,10 +46,13 @@ func NewAPIClient(cfg *config.Config) (*APIClient, error) {
 		return nil, fmt.Errorf("control-plane CA certificate contains no valid PEM certificates")
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      caCertPool,
-		MinVersion:   tls.VersionTLS12,
+	tlsConfig := &tls.Config{RootCAs: caCertPool, MinVersion: tls.VersionTLS12}
+	if strings.TrimSpace(cfg.Agent.CertFile) != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.Agent.CertFile, cfg.Agent.KeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load agent client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
 	transport := &http.Transport{TLSClientConfig: tlsConfig}
