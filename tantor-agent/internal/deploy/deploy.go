@@ -86,6 +86,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.removeParcel(ctx, t)
 	case "CHECK_PREREQUISITES":
 		return e.checkPrerequisites(ctx, t)
+	case "CHECK_PORTS":
+		return e.checkPorts(ctx, t)
 	case "APPLY_PREREQUISITES":
 		return e.applyPrerequisites(ctx, t)
 	case "REBOOT_HOST":
@@ -405,6 +407,38 @@ func prerequisitePorts(raw string) []string {
 		return []string{"9092", "9093", "7071", "7072"}
 	}
 	return ports
+}
+
+// checkPorts verifies that the requested local TCP ports can be bound before a
+// deployment starts. This is intentionally performed by the agent on the
+// target host; a connection attempt from the management server cannot tell
+// whether a port is free for Kafka to claim locally.
+func (e *Engine) checkPorts(_ context.Context, t *api.Task) (*api.TaskResult, error) {
+	ports := prerequisitePorts(t.Parameters["required_ports"])
+	var logs strings.Builder
+	failed := 0
+
+	logs.WriteString("\n===== Kafka Port Check =====\n")
+	for _, port := range ports {
+		listener, err := net.Listen("tcp", ":"+port)
+		if err != nil {
+			failed++
+			logs.WriteString(fmt.Sprintf("[FAIL] TCP port %s is not available: %v\n", port, err))
+			continue
+		}
+		_ = listener.Close()
+		logs.WriteString(fmt.Sprintf("[PASS] TCP port %s is available\n", port))
+	}
+	logs.WriteString("===== Port Check Completed =====\n")
+
+	if failed > 0 {
+		message := fmt.Sprintf("Port check failed: %d of %d port(s) are not available", failed, len(ports))
+		logs.WriteString(message + "\n")
+		return e.fail(t, message+"\n"+logs.String()), nil
+	}
+
+	logs.WriteString("Port check passed\n")
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
 }
 
 func (e *Engine) checkKRaftConnectivity(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
