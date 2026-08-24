@@ -312,7 +312,7 @@ export function JobStatusPage() {
     const host = hostsById[targetId];
     if (!host) return businessName;
     const hostLabel = host.ip ? `${host.name} (${host.ip})` : host.name;
-    return `${businessName} Ã¢â‚¬â€ ${hostLabel}`;
+    return `${businessName} - ${hostLabel}`;
   };
 
   const totalSteps = displaySteps.length;
