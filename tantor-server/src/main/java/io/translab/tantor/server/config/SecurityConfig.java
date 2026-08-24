@@ -41,6 +41,13 @@ public class SecurityConfig {
     @Value("${tantor.agent.legacy-unauthenticated-enabled:false}")
     private boolean legacyUnauthenticatedAgentApiEnabled;
 
+    /**
+     * Transitional switch for the unsecured development VM only. Production
+     * deployments must use Keycloak-issued JWTs for UI calls.
+     */
+    @Value("${tantor.ui.legacy-unauthenticated-enabled:false}")
+    private boolean legacyUnauthenticatedUiApiEnabled;
+
     public SecurityConfig(JwtUtils jwtUtils) {
         this.jwtUtils = jwtUtils;
     }
@@ -74,6 +81,14 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1/agents/**")
                     .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
                             legacyUnauthenticatedAgentApiEnabled
+                                    && "development".equalsIgnoreCase(runtimeEnvironment)))
+
+                    // The current 194 development VM deliberately runs without
+                    // Keycloak. Keep that compatibility explicitly scoped to its
+                    // UI namespace; SIT/UAT/production still require JWT roles.
+                    .requestMatchers("/api/v1/ui/**")
+                    .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                            legacyUnauthenticatedUiApiEnabled
                                     && "development".equalsIgnoreCase(runtimeEnvironment)))
 
                     // Account/directory administration and API documentation are

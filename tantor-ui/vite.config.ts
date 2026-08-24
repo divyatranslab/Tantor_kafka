@@ -13,6 +13,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     build: {
       modulePreload: false,
+      // Vite 8/Rolldown minification generated an invalid CommonJS reference
+      // for the Recharts lazy chunk ("t is not a function"). Keep the
+      // deployment bundle readable and correct until that upstream issue is
+      // resolved; cache-busted asset names still apply.
+      minify: false,
       chunkSizeWarningLimit: 800,
       // Let Rollup derive chunks from the full dependency graph.  The previous
       // hand-written vendor chunks split Recharts from some of its CommonJS
