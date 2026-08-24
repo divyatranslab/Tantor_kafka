@@ -265,7 +265,14 @@ export function Monitoring() {
     overview?.kafkaExporterTotalTargets
   );
   const jmxStatus = targetHealthStatus(overview?.jmxUpTargets, overview?.jmxTotalTargets);
-  const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
+  // Kafka Exporter reports broker/partition metrics, but it is not the Kafka
+  // process itself. A live JMX target is also authoritative evidence that the
+  // selected Kafka JVM is running, even while exporter deployment is degraded.
+  const kafkaRunning = Boolean(overview) && (
+    kafkaExporterHealthy
+    || jmxStatus.state === 'up'
+    || (overview?.brokerCount || 0) > 0
+  );
   const warningMessages = [
     selectedCluster?.warning,
     ...(overview?.warnings || []),
