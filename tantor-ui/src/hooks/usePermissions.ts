@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAuth } from '../contexts/useAuth';
+import { runtimeConfig } from '../config/runtimeConfig';
 
 type TokenLike = {
   role?: string;
@@ -33,9 +34,7 @@ export function usePermissions() {
     addRole(roles, token?.role);
     token?.roles?.forEach(role => addRole(roles, role));
     token?.realm_access?.roles?.forEach(role => addRole(roles, role));
-    Object.values(token?.resource_access || {}).forEach(resource => {
-      resource.roles?.forEach(role => addRole(roles, role));
-    });
+    token?.resource_access?.[runtimeConfig.keycloakClientId]?.roles?.forEach(role => addRole(roles, role));
     token?.groups?.forEach(group => addRole(roles, group));
 
     const isAdmin = roles.has('admin');

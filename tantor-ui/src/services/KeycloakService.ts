@@ -54,7 +54,7 @@ export const logout = () => {
   initializationPromise = undefined;
 
   return keycloak.logout({
-    redirectUri: window.location.origin,
+    redirectUri: `${window.location.origin}/`,
   });
 };
 

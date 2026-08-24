@@ -258,7 +258,7 @@ export function Dashboard() {
       <header className="db-hero">
         <div>
           <div>
-            <h1>Ã°Å¸â€˜â€¹ Welcome {username}!</h1>
+            <h1><span aria-hidden="true">{'\u{1F44B}'}</span> Welcome {username}!</h1>
             <p className="db-subtitle-wrap">
               Dashboard overview
               <span className="db-info-wrap">

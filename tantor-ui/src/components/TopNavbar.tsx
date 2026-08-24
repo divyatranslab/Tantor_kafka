@@ -3,12 +3,14 @@ import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/useAuth';
 import { usePermissions } from '../hooks/usePermissions';
 import { useNavigate } from 'react-router-dom';
+import { isAuthEnabled } from '../services/KeycloakService';
 import './TopNavbar.css';
 import tantorLogo from '../assets/Tantor-pink-logo.png';
 
 export function TopNavbar() {
   const { decodedToken, logout } = useAuth();
   const { isAdmin } = usePermissions();
+  const authEnabled = isAuthEnabled();
   const navigate = useNavigate();
 
   // State
@@ -23,7 +25,7 @@ export function TopNavbar() {
     return rawName.charAt(0).toUpperCase();
   }, [decodedToken]);
 
-  const applicationRole = isAdmin ? 'Admin' : 'Monitoring';
+  const applicationRole = isAdmin ? 'Admin' : 'Monitor';
 
   // Fetch alerts count
   useEffect(() => {
@@ -60,12 +62,17 @@ export function TopNavbar() {
   }, []);
 
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    setIsProfileOpen(false);
     // keycloak.logout() triggers a full-page redirect to the Keycloak
     // end-session endpoint, which then 302-redirects back to the app.
-    // Do NOT set window.location.href here Ã¢â‚¬â€ it races with the Keycloak
+    // Do not set window.location.href here; it races with the Keycloak
     // redirect and can prevent proper session termination.
-    logout().catch(e => console.error('Logout failed', e));
+    try {
+      await logout();
+    } catch (e) {
+      console.error('Logout failed', e);
+    }
   };
 
   return (
@@ -147,7 +154,7 @@ export function TopNavbar() {
                 </div>
               </div>
 
-              {/* Application role: the UI exposes only Admin and Monitoring. */}
+              {/* Application role: the UI exposes only Admin and Monitor. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: '20px' }}>
                 <span style={{
                   display: 'inline-flex',
@@ -169,8 +176,9 @@ export function TopNavbar() {
 
 
               {/* Sign Out Row */}
-              <div 
-                onClick={handleSignOut} 
+              {authEnabled && <button
+                type="button"
+                onClick={() => void handleSignOut()}
                 style={{ 
                   display: 'flex', 
                   alignItems: 'center', 
@@ -179,12 +187,14 @@ export function TopNavbar() {
                   fontSize: 'var(--text-base)', 
                   fontWeight: 'var(--font-semibold)', 
                   cursor: 'pointer',
-                  padding: '4px 0'
+                  padding: '4px 0',
+                  border: 'none',
+                  background: 'transparent'
                 }}
               >
                 <LogOut size={16} />
                 Sign Out
-              </div>
+              </button>}
             </div>
           )}
         </div>

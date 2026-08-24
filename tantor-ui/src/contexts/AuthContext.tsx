@@ -66,23 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    clearAuthState();
     try {
       await keycloakLogout();
     } catch (e) {
       console.error('Logout failed', e);
-      // Fallback: force navigation to origin
-      window.location.href = window.location.origin;
+      // Return to SSO instead of restoring an unauthenticated application shell.
+      await login();
     }
-  }, [authEnabled]);
+  }, [authEnabled, clearAuthState]);
   useEffect(() => {
     if (!authEnabled) {
       installAuthenticatedFetch();
       Promise.resolve().then(() => {
-        setDecodedToken({
-          preferred_username: 'shaukat',
-          roles: ['admin'],
-          realm_access: { roles: ['admin'] }
-        });
+        // Authentication-disabled development mode has no Keycloak identity.
+        // Never fabricate a named administrator because it misrepresents both
+        // the signed-in user and the permissions available to that user.
+        setDecodedToken(undefined);
         setIsInitializing(false);
         setIsAuthenticated(true);
       });

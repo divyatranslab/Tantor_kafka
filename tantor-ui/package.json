@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/generate-runtime-config.mjs",
     "lint": "eslint src",
     "lint:ci": "eslint src --max-warnings=0",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
