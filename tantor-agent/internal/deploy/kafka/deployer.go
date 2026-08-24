@@ -1636,6 +1636,10 @@ func kafkaBrokerPort(t *api.Task) string {
 	return firstNonEmpty(t.Parameters["listener_port"], t.Parameters["broker_port"], "9092")
 }
 
+func kafkaExporterBrokerHost(t *api.Task) string {
+	return firstNonEmpty(t.Parameters["host_ip"], t.Parameters["advertised_host"], getLocalIP())
+}
+
 func (d *Deployer) installKafkaExporter(
 	ctx context.Context,
 	t *api.Task,
@@ -1754,10 +1758,12 @@ func (d *Deployer) createKafkaExporterSystemdService(ctx context.Context, instal
 	props := struct {
 		InstallDir   string
 		ExporterPort string
+		KafkaHost    string
 		KafkaPort    string
 	}{
 		InstallDir:   installDir,
 		ExporterPort: kafkaExporterPort(t),
+		KafkaHost:    kafkaExporterBrokerHost(t),
 		KafkaPort:    kafkaBrokerPort(t),
 	}
 	return d.writeTemplateToSudoFile(ctx, KafkaExporterSystemdTemplate, props, "/etc/systemd/system/kafka-exporter.service")

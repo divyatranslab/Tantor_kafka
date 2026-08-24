@@ -55,7 +55,7 @@ After=network-online.target broker.service kafka.service
 Type=simple
 User=root
 Group=root
-ExecStart={{.InstallDir}}/bin/kafka_exporter --web.listen-address=:{{.ExporterPort}} --kafka.server=127.0.0.1:{{.KafkaPort}}
+ExecStart={{.InstallDir}}/bin/kafka_exporter --web.listen-address=:{{.ExporterPort}} --kafka.server={{.KafkaHost}}:{{.KafkaPort}}
 Restart=on-failure
 RestartSec=15
 NoNewPrivileges=true

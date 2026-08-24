@@ -41,6 +41,25 @@ func TestKafkaExporterIsBrokerScoped(t *testing.T) {
 	}
 }
 
+func TestKafkaExporterUsesTaskHostIPInsteadOfLoopback(t *testing.T) {
+	task := &api.Task{Parameters: map[string]string{
+		"host_ip":         "192.168.3.194",
+		"advertised_host": "broker5",
+	}}
+	if got := kafkaExporterBrokerHost(task); got != "192.168.3.194" {
+		t.Fatalf("kafkaExporterBrokerHost = %q, want task host IP", got)
+	}
+}
+
+func TestKafkaExporterBrokerHostFallsBackToAdvertisedHost(t *testing.T) {
+	task := &api.Task{Parameters: map[string]string{
+		"advertised_host": "broker5.translab.io",
+	}}
+	if got := kafkaExporterBrokerHost(task); got != "broker5.translab.io" {
+		t.Fatalf("kafkaExporterBrokerHost = %q, want advertised host", got)
+	}
+}
+
 func TestExtractKafkaExporterBinarySupportsNestedArchive(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "kafka-exporter.tgz")
 	archive, err := os.Create(archivePath)
