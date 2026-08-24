@@ -327,16 +327,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
 		// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 		if deploymentModeForTask(t) == "kraft" {
-			metaPropsDirs := []string{
-				paths.MetadataLogDir,
-				paths.LogDirs,
-				"/data/kafka/controller-data/metadata",
-				"/data/kafka/controller-data/logs",
-				"/data/kafka/broker-metadata",
-				"/data/kafka/broker-data",
-				"/data/kafka/data",
-				"/tmp/kafka-logs",
-			}
+			metaPropsDirs := metaPropertiesDirsForRole(paths)
 			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
 			nodeID := strings.TrimSpace(t.Parameters["node_id"])
 			if clusterUUID == "" || nodeID == "" {
@@ -1262,6 +1253,14 @@ func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, exp
 		}
 	}
 	return nil
+}
+
+// metaPropertiesDirsForRole limits storage identity validation to the
+// directories owned by the role being deployed. A broker and a controller can
+// legitimately use different node IDs on the same host, so validating the
+// other role's meta.properties would produce a false identity mismatch.
+func metaPropertiesDirsForRole(paths kafkaRolePaths) []string {
+	return []string{paths.MetadataLogDir, paths.LogDirs}
 }
 
 func orderedKafkaOverrideKeys() []string {

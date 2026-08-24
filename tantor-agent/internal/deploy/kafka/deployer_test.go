@@ -173,3 +173,29 @@ func TestValidateMetaPropertiesRequiresMatchingIdentity(t *testing.T) {
 		t.Fatal("node identity mismatch was accepted")
 	}
 }
+
+func TestMetaPropertiesValidationDirsAreScopedToCurrentRole(t *testing.T) {
+	dataDir := t.TempDir()
+
+	brokerPaths := resolveKafkaRolePaths(&api.Task{Parameters: map[string]string{
+		"role": "broker",
+	}}, "/opt/kafka", dataDir)
+	brokerDirs := metaPropertiesDirsForRole(brokerPaths)
+	if len(brokerDirs) != 2 {
+		t.Fatalf("broker validation directories = %v, want metadata and log directories", brokerDirs)
+	}
+	if brokerDirs[0] != filepath.Join(dataDir, "broker-metadata") || brokerDirs[1] != filepath.Join(dataDir, "broker-data") {
+		t.Fatalf("broker validation escaped its role directories: %v", brokerDirs)
+	}
+
+	controllerPaths := resolveKafkaRolePaths(&api.Task{Parameters: map[string]string{
+		"role": "controller",
+	}}, "/opt/kafka", dataDir)
+	controllerDirs := metaPropertiesDirsForRole(controllerPaths)
+	if len(controllerDirs) != 2 {
+		t.Fatalf("controller validation directories = %v, want metadata and log directories", controllerDirs)
+	}
+	if controllerDirs[0] != filepath.Join(dataDir, "controller-data", "metadata") || controllerDirs[1] != filepath.Join(dataDir, "controller-data", "logs") {
+		t.Fatalf("controller validation escaped its role directories: %v", controllerDirs)
+	}
+}
