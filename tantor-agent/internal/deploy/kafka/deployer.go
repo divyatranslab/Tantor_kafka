@@ -1,13 +1,16 @@
 package kafka
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -307,6 +310,14 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 	log("JMX exporter config written for role %s at %s", t.Parameters["role"], jmxConfigPath)
 
+	// Kafka Exporter is a broker-level service. Controller-only nodes do not
+	// expose broker metadata, so installing an exporter there would be both
+	// misleading and unable to provide useful samples.
+	kafkaExporterInstalled, err := d.installKafkaExporter(ctx, t, installDir, artifactWorkDir, log)
+	if err != nil {
+		return logs.String(), err
+	}
+
 	setStep("Backup old config if exists")
 	configPath := configPathForTask(activeInstallDir, t)
 	if _, err := os.Stat(configPath); err == nil {
@@ -391,6 +402,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if err := d.createSystemdService(ctx, "root", activeInstallDir, t); err != nil {
 		return logs.String(), err
 	}
+	if kafkaExporterInstalled {
+		if err := d.createKafkaExporterSystemdService(ctx, activeInstallDir, t); err != nil {
+			return logs.String(), fmt.Errorf("failed to create Kafka Exporter service: %w", err)
+		}
+	}
 	log("Systemd service created")
 
 	setStep("Start service")
@@ -422,6 +438,16 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 			return logs.String(), fmt.Errorf("failed to start service: %w", err)
 		}
 		log("Kafka service %s started successfully", serviceName)
+		if kafkaExporterInstalled {
+			if _, errOut, exporterErr := d.exec.RunSudo(ctx, "systemctl", "enable", "--now", "kafka-exporter"); exporterErr != nil {
+				return logs.String(), fmt.Errorf("failed to start Kafka Exporter: %w (%s)", exporterErr, strings.TrimSpace(errOut))
+			}
+			if exporterErr := d.waitForKafkaExporter(ctx, kafkaExporterPort(t)); exporterErr != nil {
+				journalOut, _, _ := d.exec.RunSudo(ctx, "journalctl", "-u", "kafka-exporter", "-n", "50", "--no-pager")
+				return logs.String(), fmt.Errorf("Kafka Exporter did not become ready: %w\n%s", exporterErr, journalOut)
+			}
+			log("Kafka Exporter started successfully on port %s", kafkaExporterPort(t))
+		}
 	} else {
 		log("Skipping step (resume mode)")
 	}
@@ -1588,6 +1614,172 @@ func jmxRequiredForTask(t *api.Task, isBroker, isController bool) bool {
 	return isBroker || isController
 }
 
+func kafkaExporterEnabledForTask(t *api.Task) bool {
+	if strings.EqualFold(strings.TrimSpace(t.Parameters["kafka_exporter_enabled"]), "false") {
+		return false
+	}
+	role := firstNonEmpty(t.Parameters["service_role"], t.Parameters["role"])
+	_, isBroker, _ := normalizeKRaftRole(role)
+	return isBroker
+}
+
+func kafkaExporterPort(t *api.Task) string {
+	port := firstNonEmpty(t.Parameters["kafka_exporter_port"], t.Parameters["exporter_port"], "9308")
+	parsed, err := strconv.Atoi(port)
+	if err != nil || parsed < 1 || parsed > 65535 {
+		return "9308"
+	}
+	return port
+}
+
+func kafkaBrokerPort(t *api.Task) string {
+	return firstNonEmpty(t.Parameters["listener_port"], t.Parameters["broker_port"], "9092")
+}
+
+func (d *Deployer) installKafkaExporter(
+	ctx context.Context,
+	t *api.Task,
+	installDir string,
+	artifactWorkDir string,
+	log func(string, ...interface{}),
+) (bool, error) {
+	if !kafkaExporterEnabledForTask(t) {
+		log("Kafka Exporter is not applicable to role %s", firstNonEmpty(t.Parameters["service_role"], t.Parameters["role"], "unknown"))
+		return false, nil
+	}
+
+	finalBinary := filepath.Join(installDir, "bin", "kafka_exporter")
+	artifactURL := firstNonEmpty(
+		t.Parameters["kafka_exporter_download_url"],
+		t.Parameters["kafka_exporter_artifact_url"],
+		t.Parameters["kafkaExporterArtifactUrl"],
+	)
+	artifactID := firstNonEmpty(t.Parameters["kafka_exporter_artifact_id"], t.Parameters["kafkaExporterArtifactId"])
+	if artifactURL == "" && artifactID != "" {
+		artifactURL = strings.TrimRight(d.cfg.Agent.ServerURL, "/") + "/api/v1/artifacts/" + url.PathEscape(artifactID) + "/download"
+	}
+
+	if artifactURL == "" {
+		if _, _, err := d.exec.RunSudo(ctx, "test", "-x", finalBinary); err == nil {
+			log("Using existing Kafka Exporter binary at %s", finalBinary)
+			return true, nil
+		}
+		log("Kafka Exporter artifact was not supplied; broker deployment will continue without Kafka Exporter")
+		return false, nil
+	}
+
+	archivePath := filepath.Join(artifactWorkDir, fmt.Sprintf("kafka_exporter_%s.tgz", t.TaskID))
+	downloadedChecksum, err := d.client.DownloadArtifact(artifactURL, archivePath)
+	if err != nil {
+		return false, fmt.Errorf("failed to download Kafka Exporter artifact: %w", err)
+	}
+	defer os.Remove(archivePath)
+
+	expectedChecksum := firstNonEmpty(
+		t.Parameters["kafka_exporter_checksum"],
+		t.Parameters["kafka_exporter_sha256"],
+		t.Parameters["kafkaExporterChecksum"],
+		downloadedChecksum,
+	)
+	if expectedChecksum != "" {
+		if err := checksum.VerifySHA256(archivePath, expectedChecksum); err != nil {
+			return false, fmt.Errorf("Kafka Exporter checksum verification failed: %w", err)
+		}
+	}
+
+	tmpBinary := filepath.Join(artifactWorkDir, fmt.Sprintf("kafka_exporter_%s.bin", t.TaskID))
+	defer os.Remove(tmpBinary)
+	if err := extractKafkaExporterBinary(archivePath, tmpBinary); err != nil {
+		return false, fmt.Errorf("failed to extract Kafka Exporter artifact: %w", err)
+	}
+	if _, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", filepath.Dir(finalBinary)); err != nil {
+		return false, fmt.Errorf("failed to create Kafka Exporter binary directory: %w (%s)", err, strings.TrimSpace(errOut))
+	}
+	if _, errOut, err := d.exec.RunSudo(ctx, "mv", tmpBinary, finalBinary); err != nil {
+		return false, fmt.Errorf("failed to install Kafka Exporter binary: %w (%s)", err, strings.TrimSpace(errOut))
+	}
+	if _, errOut, err := d.exec.RunSudo(ctx, "chmod", "755", finalBinary); err != nil {
+		return false, fmt.Errorf("failed to make Kafka Exporter executable: %w (%s)", err, strings.TrimSpace(errOut))
+	}
+	log("Kafka Exporter binary installed at %s", finalBinary)
+	return true, nil
+}
+
+func extractKafkaExporterBinary(archivePath, destination string) error {
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer archive.Close()
+
+	gzipReader, err := gzip.NewReader(archive)
+	if err != nil {
+		return fmt.Errorf("open gzip stream: %w", err)
+	}
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar stream: %w", err)
+		}
+		if header.Typeflag != tar.TypeReg || filepath.Base(filepath.Clean(header.Name)) != "kafka_exporter" {
+			continue
+		}
+		if header.Size <= 0 || header.Size > 256*1024*1024 {
+			return fmt.Errorf("invalid Kafka Exporter binary size %d", header.Size)
+		}
+		out, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.CopyN(out, tarReader, header.Size)
+		closeErr := out.Close()
+		if copyErr != nil {
+			return fmt.Errorf("extract Kafka Exporter binary: %w", copyErr)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return nil
+	}
+	return fmt.Errorf("archive does not contain a kafka_exporter binary")
+}
+
+func (d *Deployer) createKafkaExporterSystemdService(ctx context.Context, installDir string, t *api.Task) error {
+	props := struct {
+		InstallDir   string
+		ExporterPort string
+		KafkaPort    string
+	}{
+		InstallDir:   installDir,
+		ExporterPort: kafkaExporterPort(t),
+		KafkaPort:    kafkaBrokerPort(t),
+	}
+	return d.writeTemplateToSudoFile(ctx, KafkaExporterSystemdTemplate, props, "/etc/systemd/system/kafka-exporter.service")
+}
+
+func (d *Deployer) waitForKafkaExporter(ctx context.Context, port string) error {
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		connection, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", port), time.Second)
+		if err == nil {
+			connection.Close()
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return fmt.Errorf("port %s did not start listening within 30 seconds", port)
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	// Find Java Home
 	javaHome := strings.TrimSpace(t.Parameters["java_home"])
@@ -1735,19 +1927,19 @@ func (d *Deployer) Rollback(ctx context.Context, t *api.Task) (string, error) {
 	log("Starting Kafka rollback process...")
 
 	log("Stopping Kafka systemd services...")
-	for _, service := range []string{"broker", "controller", "kafka", "zookeeper"} {
+	for _, service := range []string{"broker", "controller", "kafka", "zookeeper", "kafka-exporter"} {
 		d.exec.RunSudo(ctx, "systemctl", "stop", service)
 		d.exec.RunSudo(ctx, "systemctl", "disable", service)
 	}
 
 	log("Removing systemd unit files...")
-	for _, unit := range []string{"broker.service", "controller.service", "kafka.service", "zookeeper.service"} {
+	for _, unit := range []string{"broker.service", "controller.service", "kafka.service", "zookeeper.service", "kafka-exporter.service"} {
 		d.exec.RunSudo(ctx, "rm", "-f", filepath.Join("/etc/systemd/system", unit))
 	}
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 
 	log("Terminating processes on Kafka and ZooKeeper ports...")
-	for _, port := range []string{"9092/tcp", "9093/tcp", "9095/tcp", "7071/tcp", "7072/tcp", "2181/tcp", "2888/tcp", "3888/tcp"} {
+	for _, port := range []string{"9092/tcp", "9093/tcp", "9095/tcp", "7071/tcp", "7072/tcp", "9308/tcp", "2181/tcp", "2888/tcp", "3888/tcp"} {
 		d.exec.RunSudo(ctx, "fuser", "-k", port)
 	}
 
@@ -1773,13 +1965,13 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	// 1. Stop and disable systemd services
 	log("Stopping Kafka systemd services...")
-	for _, service := range []string{"broker", "controller", "kafka", "zookeeper"} {
+	for _, service := range []string{"broker", "controller", "kafka", "zookeeper", "kafka-exporter"} {
 		d.exec.RunSudo(ctx, "systemctl", "stop", service)
 		d.exec.RunSudo(ctx, "systemctl", "disable", service)
 	}
 
 	log("Removing systemd unit files...")
-	for _, unit := range []string{"broker.service", "controller.service", "kafka.service", "zookeeper.service"} {
+	for _, unit := range []string{"broker.service", "controller.service", "kafka.service", "zookeeper.service", "kafka-exporter.service"} {
 		d.exec.RunSudo(ctx, "rm", "-f", filepath.Join("/etc/systemd/system", unit))
 	}
 	d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
@@ -1790,6 +1982,7 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	d.exec.RunSudo(ctx, "fuser", "-k", "9095/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "7071/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "7072/tcp")
+	d.exec.RunSudo(ctx, "fuser", "-k", "9308/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "2181/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "2888/tcp")
 	d.exec.RunSudo(ctx, "fuser", "-k", "3888/tcp")
@@ -1806,7 +1999,7 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	// 4. Validate ports are free
 	log("Validating ports are free...")
 	out, _, _ := d.exec.RunSudo(ctx, "ss", "-tlnp")
-	if strings.Contains(out, ":9092 ") || strings.Contains(out, ":9093 ") || strings.Contains(out, ":9095 ") || strings.Contains(out, ":7071 ") || strings.Contains(out, ":7072 ") ||
+	if strings.Contains(out, ":9092 ") || strings.Contains(out, ":9093 ") || strings.Contains(out, ":9095 ") || strings.Contains(out, ":7071 ") || strings.Contains(out, ":7072 ") || strings.Contains(out, ":9308 ") ||
 		strings.Contains(out, ":2181 ") || strings.Contains(out, ":2888 ") || strings.Contains(out, ":3888 ") {
 		return logs.String(), fmt.Errorf("Ports are still in use after cleanup")
 	}

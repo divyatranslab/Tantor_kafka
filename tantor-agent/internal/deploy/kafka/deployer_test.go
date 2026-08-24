@@ -1,6 +1,9 @@
 package kafka
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"os"
 	"path/filepath"
@@ -9,6 +12,76 @@ import (
 
 	"io.translab/tantor-agent/pkg/api"
 )
+
+func TestKafkaExporterIsBrokerScoped(t *testing.T) {
+	tests := []struct {
+		role    string
+		enabled bool
+	}{
+		{role: "broker", enabled: true},
+		{role: "broker_controller", enabled: true},
+		{role: "controller", enabled: false},
+		{role: "zookeeper", enabled: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.role, func(t *testing.T) {
+			task := &api.Task{Parameters: map[string]string{"service_role": tc.role}}
+			if got := kafkaExporterEnabledForTask(task); got != tc.enabled {
+				t.Fatalf("kafkaExporterEnabledForTask(%q) = %v, want %v", tc.role, got, tc.enabled)
+			}
+		})
+	}
+
+	disabled := &api.Task{Parameters: map[string]string{
+		"service_role":           "broker",
+		"kafka_exporter_enabled": "false",
+	}}
+	if kafkaExporterEnabledForTask(disabled) {
+		t.Fatal("explicit kafka_exporter_enabled=false must disable Kafka Exporter")
+	}
+}
+
+func TestExtractKafkaExporterBinarySupportsNestedArchive(t *testing.T) {
+	archivePath := filepath.Join(t.TempDir(), "kafka-exporter.tgz")
+	archive, err := os.Create(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gzipWriter := gzip.NewWriter(archive)
+	tarWriter := tar.NewWriter(gzipWriter)
+	payload := []byte("exporter-binary")
+	if err := tarWriter.WriteHeader(&tar.Header{
+		Name: "kafka_exporter-1.9.0.linux-amd64/kafka_exporter",
+		Mode: 0755,
+		Size: int64(len(payload)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tarWriter.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	destination := filepath.Join(t.TempDir(), "kafka_exporter")
+	if err := extractKafkaExporterBinary(archivePath, destination); err != nil {
+		t.Fatalf("extractKafkaExporterBinary returned error: %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("extracted payload = %q, want %q", got, payload)
+	}
+}
 
 func TestGenerateZooKeeperBrokerConfig(t *testing.T) {
 	installDir := t.TempDir()

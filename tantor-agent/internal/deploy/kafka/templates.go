@@ -46,6 +46,24 @@ LimitNOFILE=100000
 WantedBy=multi-user.target
 `
 
+const KafkaExporterSystemdTemplate = `[Unit]
+Description=Kafka Exporter for Apache Kafka
+Wants=network-online.target
+After=network-online.target broker.service kafka.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart={{.InstallDir}}/bin/kafka_exporter --web.listen-address=:{{.ExporterPort}} --kafka.server=127.0.0.1:{{.KafkaPort}}
+Restart=on-failure
+RestartSec=15
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+`
+
 const JmxConfigTemplate = `rules:
   - pattern: "kafka.server<type=(.+), name=(.+)><>(\\w+)"
     name: "kafka_server_$1_$2_$3"
