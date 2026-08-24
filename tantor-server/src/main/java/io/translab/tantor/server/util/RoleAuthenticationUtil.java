@@ -3,8 +3,10 @@ package io.translab.tantor.server.util;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import io.translab.tantor.server.security.JwtUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,6 +51,12 @@ public class RoleAuthenticationUtil {
     private final JwtUtils jwtUtils;
     private final Map<String, Set<String>> allowedRolesByAction;
 
+    @Value("${tantor.environment:production}")
+    private String runtimeEnvironment;
+
+    @Value("${tantor.ui.legacy-unauthenticated-enabled:false}")
+    private boolean legacyUnauthenticatedUiApiEnabled;
+
     public RoleAuthenticationUtil(ObjectMapper objectMapper, JwtUtils jwtUtils) {
         this.objectMapper = objectMapper;
         this.jwtUtils = jwtUtils;
@@ -59,6 +67,16 @@ public class RoleAuthenticationUtil {
         Set<String> allowedRoles = allowedRolesByAction.get(normalizeAction(action));
         if (allowedRoles == null || allowedRoles.isEmpty()) {
             return false;
+        }
+
+        // A development VM can deliberately run without Keycloak while being
+        // migrated. This switch is also required by SecurityConfig and only
+        // applies when no credential was supplied; an invalid bearer token is
+        // never treated as authenticated.
+        if (legacyUnauthenticatedUiApiEnabled
+                && "development".equalsIgnoreCase(runtimeEnvironment)
+                && !StringUtils.hasText(authorizationHeader)) {
+            return true;
         }
 
         String token = bearerToken(authorizationHeader);
