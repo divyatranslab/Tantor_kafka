@@ -60,6 +60,26 @@ func TestKafkaExporterBrokerHostFallsBackToAdvertisedHost(t *testing.T) {
 	}
 }
 
+func TestKafkaAdminBootstrapServerUsesTaskHostAndListenerPort(t *testing.T) {
+	task := &api.Task{Parameters: map[string]string{
+		"host_ip":       "192.168.3.194",
+		"listener_port": "19092",
+	}}
+	if got := kafkaAdminBootstrapServer(task); got != "192.168.3.194:19092" {
+		t.Fatalf("kafkaAdminBootstrapServer = %q, want task host and listener port", got)
+	}
+}
+
+func TestKafkaAdminBootstrapServerSupportsIPv6AdvertisedHost(t *testing.T) {
+	task := &api.Task{Parameters: map[string]string{
+		"advertised_host": "2001:db8::10",
+		"broker_port":     "9094",
+	}}
+	if got := kafkaAdminBootstrapServer(task); got != "[2001:db8::10]:9094" {
+		t.Fatalf("kafkaAdminBootstrapServer = %q, want bracketed IPv6 bootstrap address", got)
+	}
+}
+
 func TestExtractKafkaExporterBinarySupportsNestedArchive(t *testing.T) {
 	archivePath := filepath.Join(t.TempDir(), "kafka-exporter.tgz")
 	archive, err := os.Create(archivePath)

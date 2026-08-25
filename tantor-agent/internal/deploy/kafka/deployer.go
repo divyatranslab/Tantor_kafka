@@ -457,16 +457,13 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 
 	setStep("Validate Kafka AdminClient connection")
 	if deploymentModeForTask(t) != "zookeeper" && serviceNameForTask(t) != "controller" {
-		log("Validating AdminClient connection...")
-		listenerPort := t.Parameters["listener_port"]
-		if listenerPort == "" {
-			listenerPort = "9092"
-		}
+		bootstrapServer := kafkaAdminBootstrapServer(t)
+		log("Validating AdminClient connection through %s...", bootstrapServer)
 		// Try to wait a bit before connecting
 		time.Sleep(5 * time.Second)
 		topicScript := filepath.Join(activeInstallDir, "bin", "kafka-topics.sh")
 		envSetup := `source /etc/profile 2>/dev/null; source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; JAVA_CMD=""; for p in java /usr/bin/java /usr/lib/jvm/jre/bin/java /usr/lib/jvm/default-java/bin/java /usr/java/latest/bin/java /usr/java/default/bin/java $JAVA_HOME/bin/java; do if command -v $p >/dev/null 2>&1; then JAVA_CMD=$p; break; fi; done; if [ -n "$JAVA_CMD" ]; then export JAVA_HOME=$(dirname $(dirname $(readlink -f $(command -v $JAVA_CMD)))); export PATH=$JAVA_HOME/bin:$PATH; fi; `
-		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", "localhost:" + listenerPort}, " "))
+		bashCmd := fmt.Sprintf("%s %s %s", envSetup, topicScript, strings.Join([]string{"--list", "--bootstrap-server", bootstrapServer}, " "))
 		out, errOut, err := d.exec.Run(ctx, "bash", "-c", bashCmd)
 		if err != nil {
 			log("Warning: AdminClient validation failed (non-fatal): %v, out: %s, errOut: %s", err, out, errOut)
@@ -1636,8 +1633,16 @@ func kafkaBrokerPort(t *api.Task) string {
 	return firstNonEmpty(t.Parameters["listener_port"], t.Parameters["broker_port"], "9092")
 }
 
-func kafkaExporterBrokerHost(t *api.Task) string {
+func kafkaBrokerHost(t *api.Task) string {
 	return firstNonEmpty(t.Parameters["host_ip"], t.Parameters["advertised_host"], getLocalIP())
+}
+
+func kafkaAdminBootstrapServer(t *api.Task) string {
+	return net.JoinHostPort(kafkaBrokerHost(t), kafkaBrokerPort(t))
+}
+
+func kafkaExporterBrokerHost(t *api.Task) string {
+	return kafkaBrokerHost(t)
 }
 
 func (d *Deployer) installKafkaExporter(
