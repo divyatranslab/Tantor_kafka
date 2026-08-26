@@ -725,6 +725,201 @@ body :is(.app-confirm-banner,
 .audit-ledger {
   flex: 0 0 auto;
   width: 100%;
+  border: 0;
+  border-radius: 7px !important;
+  color: #494747;
+  background: transparent;
+  font: 500 13px/20px var(--font-sans);
+  text-align: left;
+}
+
+:where(.artifact-action-menu, .host-action-menu, .cluster-action-menu, .topic-menu, .detail-action-menu, .cd-role-menu) button:hover {
+  color: #3E1363;
+  background: #FAF8FF !important;
+}
+
+:where(.artifact-menu-anchor, .menu-anchor, .detail-menu-wrap, .cd-role-menu-wrap, .cluster-tabs-dropdown-container) {
+  position: relative;
+  z-index: 20;
+}
+
+/* Every confirmation-dialog banner uses the shared orange artwork. */
+body :is(.app-confirm-banner,
+  .confirm-modal-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner,
+  .config-dialog-banner) {
+  background-color: #FFE1A0 !important;
+  background-image: url('./assets/orange.png') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: cover !important;
+}
+
+body :is(.app-confirm-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner)>img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Consistent hierarchy for white content placed on the grey application canvas. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-wrapper,
+  .white-container,
+  .db-panel,
+  .table-container,
+  .table-card,
+  .settings-card,
+  .alerts-details-panel,
+  .deployment-steps-panel,
+  .summary-bar-card,
+  .job-logs-container,
+  .ds-panel,
+  .ds-kc-panel,
+  .external-panel,
+  .performance-section-card,
+  .system-resources-section-card,
+  .broker-details-card) {
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: var(--surface-elevation);
+}
+
+:where(.table-container,
+  .clusters-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .audit-table-container,
+  .ds-table-wrapper,
+  .job-logs-container,
+  .artifacts-list-container,
+  .versions-list,
+  .alerts-details-list,
+  .audit-table-wrap,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .config-diff-list,
+  .version-list,
+  .ds-sr-subjects-panel,
+  .ds-sr-versions-panel,
+  .detail-table-wrap,
+  .topics-table-card,
+  .figma-table-body,
+  .steps-list) {
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+:where(.modal, .modal-content, .topic-modal, .ds-modal, .cd-config-modal, .cd-deployment-modal-container) {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgba(40, 47, 73, 0.2);
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding-bottom: 16px;
+  }
+}
+
+/*
+ * Page containment
+ *
+ * White page surfaces grow with their controls and collection area. Only long
+ * tables, ledgers, logs, and lists scroll, so content remains visibly enclosed
+ * without compressing the page to the viewport.
+ */
+.main-content {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Every routed screen participates in normal document height calculation. */
+.main-content>* {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page) {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+/* Keep every section in the white surface's height calculation. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page)>* {
+  flex-shrink: 0;
+}
+
+:where(.audit-table-wrap,
+  .table-container,
+  .clusters-table-wrap,
+  .external-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .topics-table-card,
+  .ds-table-wrapper,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .detail-table-wrap,
+  .artifacts-list-container > .versions-list,
+  .alerts-details-list,
+  .job-logs-container,
+  .deployment-log-stream,
+  .steps-list) {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.audit-ledger {
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
   height: auto;
   overflow: visible;
@@ -734,4 +929,25 @@ body :is(.app-confirm-banner,
   position: sticky;
   bottom: 0;
   z-index: 2;
+}
+
+/* =============================================================
+   Global modal overlay
+   Ensures every modal (Upload Binary, Agent Connectivity, etc.)
+   covers the FULL viewport with a blurred backdrop, regardless
+   of which page-level CSS file defines it.
+   ============================================================= */
+.modal-overlay,
+.cd-modal-overlay,
+.add-cluster-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(15, 15, 30, 0.48) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+  z-index: 10000 !important;
+  padding: 1rem;
 }
