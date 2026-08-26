@@ -39,6 +39,7 @@ class SecurityConfigAgentCompatibilityTest {
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/report")).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/heartbeat")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/ui/external-clusters/discovery/test/tasks")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/ui/clusters/external/test/tasks")).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/test/tasks/complete"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/test/metrics"))
@@ -66,6 +67,7 @@ class SecurityConfigAgentCompatibilityTest {
         @GetMapping({
                 "/api/v1/agents/{id}/tasks",
                 "/api/v1/ui/external-clusters/discovery/{name}/tasks",
+                "/api/v1/ui/clusters/external/{name}/tasks",
                 "/api/v1/ui/dashboard"
         })
         ResponseEntity<Void> getEndpoint() {

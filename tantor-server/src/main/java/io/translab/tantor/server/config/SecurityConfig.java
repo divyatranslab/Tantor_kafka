@@ -94,7 +94,8 @@ public class SecurityConfig {
                     .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
                             legacyUnauthenticatedAgentApiEnabled))
                     .requestMatchers(HttpMethod.GET,
-                            "/api/v1/ui/external-clusters/discovery/*/tasks")
+                            "/api/v1/ui/external-clusters/discovery/*/tasks",
+                            "/api/v1/ui/clusters/external/*/tasks")
                     .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
                             legacyUnauthenticatedAgentApiEnabled))
 
