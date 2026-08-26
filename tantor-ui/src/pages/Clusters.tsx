@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Network, RefreshCw, Trash2, ExternalLink, Plus } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
@@ -450,8 +451,8 @@ export function Clusters() {
         )}
       </div>
 
-      {showDeploymentModal && (
-        <div className="cd-modal-backdrop" onClick={() => setShowDeploymentModal(false)}>
+      {showDeploymentModal && createPortal(
+        <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
           <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>
             <div className="cd-deployment-modal-header">
               <div className="cd-deployment-modal-header-content">
@@ -492,7 +493,8 @@ export function Clusters() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
