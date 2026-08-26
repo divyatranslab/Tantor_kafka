@@ -1,6 +1,6 @@
 .deployment-log-view {
   display: grid;
-  gap: var(--space-3);
+  gap: 12px;
 }
 .deployment-copy-toast {
   position: fixed;
@@ -9,10 +9,10 @@
   z-index: 26000;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   padding: 10px 14px;
   border: 1px solid #A7F3D0;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   background: #ECFDF5;
   color: #047857;
   box-shadow: 0 12px 30px rgba(40, 47, 73, 0.16);
@@ -32,8 +32,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) 14px;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 .deployment-log-toolbar > div:first-child {
@@ -62,7 +62,7 @@
   min-height: 32px;
   padding: 5px 10px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   background: var(--bg-surface);
   color: var(--text-primary);
   font: inherit;
@@ -90,7 +90,7 @@
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   background: var(--bg-surface);
   padding: 5px 9px;
   color: var(--text-primary);
@@ -130,11 +130,11 @@
 .log-status.pending,
 .log-status.running,
 .log-status.validating,
-.log-status.in_progress { color: var(--color-info-dark); }
+.log-status.in_progress { color: #185fa5; }
 
 .deployment-task-error {
   display: grid;
-  gap: var(--space-1);
+  gap: 4px;
   padding: 10px 13px;
   border: 1px solid #efb7b0;
   border-radius: 7px;
@@ -215,7 +215,7 @@
 
 .deployment-action-bar {
   display: flex;
-  gap: var(--space-3);
+  gap: 12px;
   padding: 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
@@ -225,10 +225,10 @@
 .deployment-action-bar button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   min-height: 36px;
   padding: 0 16px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -236,9 +236,15 @@
   border: none;
 }
 
+.btn-primary {
+  background: var(--btn-primary-bg, #0969da);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--btn-primary-hover, #0353b3); }
+
 .btn-danger {
   background: #da3633;
-  color: var(--text-light);
+  color: #fff;
 }
 .btn-danger:hover { background: #b32624; }
 
@@ -249,7 +255,7 @@
 
 .deployment-layout-split {
   display: flex;
-  gap: var(--space-4);
+  gap: 16px;
   align-items: stretch;
 }
 
@@ -259,7 +265,7 @@
   border: 1px solid var(--border-default);
   border-radius: 7px;
   background: var(--bg-surface);
-  padding: var(--space-4);
+  padding: 16px;
 }
 
 .deployment-steps-panel h3 {
@@ -271,13 +277,13 @@
 .steps-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .step-item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   font-size: 13px;
   color: var(--text-secondary);
 }

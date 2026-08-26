@@ -1,106 +1,44 @@
 @import url('https://fonts.cdnfonts.com/css/satoshi');
 
 :root {
-  /* Colors - Background & Surface */
   --bg-base:    #FFFFFF;
   --bg-surface: #FFFFFF;
   --bg-raised:  #FAF8FF;
-  --bg-neutral: #E5E7EB;
-  --bg-neutral-light: #F9F9F9;
-  --bg-neutral-2: #ECECF1;
-  --page-grey: #F5F6F8;
-  
-  /* Colors - Text */
+
   --text-primary:   #282F49;
   --text-secondary: #5F5E5A;
   --text-tertiary:  #818181;
-  --text-heading:   #23252D;
-  --text-muted:     #64748B;
-  --text-neutral:   #71717A;
-  --text-light:     #FFFFFF;
 
-  /* Colors - Semantic */
   --accent-primary: #DF678B;
   --accent-light:   #FAE1E8;
   --accent-border:  #DF678B;
   --accent-dark:    #3E1363;
 
   --color-success:       #36AD8F;
-  --color-success-dark:  #069B68;
   --color-success-light: #DEF0D6;
-  
   --color-warning:       #854F0B;
   --color-warning-light: #FAEEDA;
-  
   --color-danger:        #EF4D5F;
   --color-danger-light:  #FECBE8;
-  
   --color-info:          #16ABC2;
-  --color-info-dark:     #185FA5;
   --color-info-light:    #C5EAF0;
-  
-  /* Colors - Borders */
+
   --border-subtle:  #F3F0F0;
   --border-default: #CCCCCC;
   --border-strong:  #818181;
-  --border-mid:     #D2D2D7;
-  --border-focus:   #8E77BB;
-  
-  /* Colors - Controls */
-  --button-primary: #3E1363;
-  --button-primary-hover: #5B327F;
-  --button-primary-active: #332849;
-  --control-focus: rgba(142, 119, 187, 0.24);
 
-  /* Typography */
   --font-sans:    'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
   --font-display: 'Satoshi', 'DM Sans', system-ui, sans-serif;
-  --text-xs:  12px;
-  --text-sm:  13px;
-  --text-base: 14px;
-  --text-md:  16px;
-  --text-lg:  18px;
-  --text-xl:  20px;
-  --text-2xl: 24px;
-  --font-regular: 400;
-  --font-medium: 500;
-  --font-semibold: 600;
-  --font-bold: 700;
 
-  /* Spacing */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-  --space-12: 48px;
-
-  /* Radius & Elevation */
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 20px;
-  
+
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0,0,0,0.06);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0,0,0,0.06);
-  --shadow-lg: 0 12px 32px rgba(40, 47, 73, 0.14);
-  --shadow-xl: 0 20px 56px rgba(40, 47, 73, 0.2);
-  --surface-elevation: 0 2px 10px rgba(40, 47, 73, 0.06);
 
-  /* Z-Index Layering */
-  --z-base: 1;
-  --z-sticky: 10;
-  --z-header: 100;
-  --z-dropdown: 12000;
-  --z-modal: 13000;
-  --z-popover: 15000;
-  --z-toast: 20000;
-
-  /* Transitions */
   --transition-fast:   120ms ease;
   --transition-normal: 200ms ease;
 }
@@ -195,7 +133,15 @@ option {
   padding: 12px;
 }
 
-/* Global interaction and surface system styles (Tokens moved to main root) */
+/* Global interaction and surface system */
+:root {
+  --button-primary: #3E1363;
+  --button-primary-hover: #5B327F;
+  --button-primary-active: #332849;
+  --control-focus: rgba(142, 119, 187, 0.24);
+  --page-grey: #F5F6F8;
+  --surface-elevation: 0 2px 10px rgba(40, 47, 73, 0.06);
+}
 
 .main-content {
   padding-bottom: 24px;
@@ -227,9 +173,9 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
   .cluster-source-tag,
   .kafka-running-badge
 ).state-positive {
-  border-color: rgba(42, 199, 146, 0.35);
-  color: #069B68;
-  background: rgba(42, 199, 146, 0.25);
+  border-color: rgba(42, 199, 146, 0.35) !important;
+  color: #069B68 !important;
+  background: rgba(42, 199, 146, 0.25) !important;
 }
 
 :is(
@@ -240,52 +186,52 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
   .cluster-source-tag,
   .kafka-running-badge
 ).state-negative {
-  border-color: rgba(239, 77, 95, 0.35);
-  color: #EF4D5F;
-  background: rgba(239, 77, 95, 0.15);
+  border-color: rgba(239, 77, 95, 0.35) !important;
+  color: #EF4D5F !important;
+  background: rgba(239, 77, 95, 0.15) !important;
 }
 
 :is(.cd-status-badge, .cluster-source-tag, .kafka-running-badge).state-positive .status-dot {
-  background: #36AD8F;
+  background: #36AD8F !important;
 }
 
 :is(.cd-status-badge, .cluster-source-tag, .kafka-running-badge).state-negative .status-dot {
-  background: #EF4D5F;
+  background: #EF4D5F !important;
 }
 
 :where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger, .live-pill-container) {
-  border-color: var(--border-default);
-  border-radius: 8px;
+  border-color: var(--border-default) !important;
+  border-radius: 8px !important;
   background: #FFFFFF;
   font-family: var(--font-sans);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
 }
 
 :where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger, .live-pill-container):hover {
-  border-color: #979797;
+  border-color: #979797 !important;
 }
 
 :where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger):focus-visible {
-  border-color: #8E77BB;
-  box-shadow: 0 0 0 3px var(--control-focus);
+  border-color: #8E77BB !important;
+  box-shadow: 0 0 0 3px var(--control-focus) !important;
   outline: 0;
 }
 
 :where(.custom-select-options-wrapper, .ds-custom-select-dropdown, .cluster-tabs-dropdown-menu, .live-dropdown-menu, .cd-node-menu) {
-  z-index: 12000;
+  z-index: 12000 !important;
   max-height: min(280px, calc(100vh - 32px));
   overflow-y: auto;
   padding: 8px;
-  border: 1px solid #E1E7EC;
-  border-radius: 12px;
+  border: 1px solid #E1E7EC !important;
+  border-radius: 12px !important;
   background: #FFFFFF;
-  box-shadow: 0 12px 32px rgba(40, 47, 73, 0.14);
+  box-shadow: 0 12px 32px rgba(40, 47, 73, 0.14) !important;
 }
 
 :where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option) {
   min-height: 36px;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
   color: #5F5E5A;
   font: 500 14px/20px var(--font-sans);
 }
@@ -293,8 +239,8 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
 :where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option):hover,
 :where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option).selected,
 :where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option).active {
-  color: #3E1363;
-  background: #FAF8FF;
+  color: #3E1363 !important;
+  background: #FAF8FF !important;
 }
 
 /* Primary and call-to-action buttons */
@@ -314,9 +260,9 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
   button.btn-apply,
   .config-dialog-actions button.confirm
 ) {
-  border-color: var(--button-primary);
-  color: #FFFFFF;
-  background: var(--button-primary);
+  border-color: var(--button-primary) !important;
+  color: #FFFFFF !important;
+  background: var(--button-primary) !important;
 }
 
 :where(
@@ -335,8 +281,8 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
   button.btn-apply,
   .config-dialog-actions button.confirm
 ):hover:not(:disabled) {
-  border-color: var(--button-primary-hover);
-  background: var(--button-primary-hover);
+  border-color: var(--button-primary-hover) !important;
+  background: var(--button-primary-hover) !important;
 }
 
 :where(
@@ -355,8 +301,8 @@ select option:checked { color: #3E1363; background: #FAF8FF; font-weight: 600; }
   button.btn-apply,
   .config-dialog-actions button.confirm
 ):active:not(:disabled) {
-  border-color: var(--button-primary-active);
-  background: var(--button-primary-active);
+  border-color: var(--button-primary-active) !important;
+  background: var(--button-primary-active) !important;
 }
 
 button:focus-visible {
@@ -382,10 +328,10 @@ button:focus-visible {
   color: #3E1363;
 }
 
-/* Keep the choice modal header and body visually continuousâ€”no divider seam. */
+/* Keep the choice modal header and body visually continuous—no divider seam. */
 .cd-deployment-modal > .cd-deployment-modal-header {
-  border-bottom: 0;
-  box-shadow: none;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
 }
 
 /* Icon-only refresh controls */
@@ -401,21 +347,21 @@ button:focus-visible {
   button[aria-label="Refresh"],
   button[aria-label^="Refresh "]
 ) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   flex: 0 0 40px;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
   gap: 10px;
-  padding: 8px;
-  border: 0;
-  border-radius: 8px;
-  color: #818181;
-  background: #FFFFFF;
-  box-shadow: none;
+  padding: 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  color: #818181 !important;
+  background: #FFFFFF !important;
+  box-shadow: none !important;
   opacity: 1;
   cursor: pointer;
   transition: background-color var(--transition-fast), opacity var(--transition-fast);
@@ -434,10 +380,10 @@ button:focus-visible {
   button[aria-label^="Refresh "]
 ) > svg {
   flex: 0 0 14px;
-  width: 14px;
-  height: 14px;
-  color: #818181;
-  stroke: currentColor;
+  width: 14px !important;
+  height: 14px !important;
+  color: #818181 !important;
+  stroke: currentColor !important;
 }
 
 :where(
@@ -452,8 +398,8 @@ button:focus-visible {
   button[aria-label="Refresh"],
   button[aria-label^="Refresh "]
 ):hover:not(:disabled) {
-  color: #818181;
-  background: rgba(255, 255, 255, 0.8);
+  color: #818181 !important;
+  background: rgba(255, 255, 255, 0.8) !important;
 }
 
 :where(
@@ -468,7 +414,7 @@ button:focus-visible {
   button[aria-label="Refresh"],
   button[aria-label^="Refresh "]
 ):active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.68) !important;
 }
 
 :where(
@@ -498,16 +444,16 @@ button:focus-visible {
   .cluster-tabs-dropdown-menu,
   .live-dropdown-menu
 ) {
-  z-index: 15000;
+  z-index: 15000 !important;
   min-width: 168px;
   max-width: min(320px, calc(100vw - 32px));
   max-height: min(360px, calc(100vh - 32px));
   overflow-y: auto;
-  padding: 8px;
-  border: 1px solid #E1E7EC;
-  border-radius: 10px;
-  background: #FFFFFF;
-  box-shadow: 0 14px 36px rgba(40, 47, 73, 0.16);
+  padding: 8px !important;
+  border: 1px solid #E1E7EC !important;
+  border-radius: 10px !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 14px 36px rgba(40, 47, 73, 0.16) !important;
 }
 
 :where(
@@ -523,9 +469,9 @@ button:focus-visible {
   width: 100%;
   min-height: 36px;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px !important;
   border: 0;
-  border-radius: 7px;
+  border-radius: 7px !important;
   color: #494747;
   background: transparent;
   font: 500 13px/20px var(--font-sans);
@@ -534,7 +480,7 @@ button:focus-visible {
 
 :where(.artifact-action-menu, .host-action-menu, .cluster-action-menu, .topic-menu, .detail-action-menu, .cd-role-menu) button:hover {
   color: #3E1363;
-  background: #FAF8FF;
+  background: #FAF8FF !important;
 }
 
 :where(.artifact-menu-anchor, .menu-anchor, .detail-menu-wrap, .cd-role-menu-wrap, .cluster-tabs-dropdown-container) {
@@ -550,11 +496,11 @@ body :is(
   .ds-delete-modal-banner,
   .config-dialog-banner
 ) {
-  background-color: #FFE1A0;
-  background-image: url('./assets/orange.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
+  background-color: #FFE1A0 !important;
+  background-image: url('./assets/orange.png') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: cover !important;
 }
 
 body :is(
@@ -562,9 +508,9 @@ body :is(
   .delete-modal-banner,
   .ds-delete-modal-banner
 ) > img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
 }
 
 /* Consistent hierarchy for white content placed on the grey application canvas. */
@@ -655,11 +601,11 @@ body :is(
 
 /* Every routed screen participates in normal document height calculation. */
 .main-content > * {
-  flex: 0 0 auto;
+  flex: 0 0 auto !important;
   align-self: stretch;
   min-width: 0;
   max-width: 100%;
-  height: max-content;
+  height: max-content !important;
   overflow: visible;
 }
 
@@ -676,11 +622,11 @@ body :is(
   .external-wrapper,
   .cluster-deploy-page
 ) {
-  flex: 0 0 auto;
+  flex: 0 0 auto !important;
   align-self: stretch;
   min-width: 0;
   max-width: 100%;
-  height: max-content;
+  height: max-content !important;
   overflow: visible;
 }
 
@@ -740,36 +686,5 @@ body :is(
   position: sticky;
   bottom: 0;
   z-index: 2;
-}
-
-/* Figma Table Primitives */
-.figma-table {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-}
-.figma-table-header {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  width: 100%;
-  height: 54px;
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  box-sizing: border-box;
-}
-.figma-table-body {
-  display: flex;
-  flex-direction: column;
-}
-.figma-table-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  width: 100%;
-  height: 52px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
-  box-sizing: border-box;
 }
 

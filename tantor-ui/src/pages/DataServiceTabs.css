@@ -1,48 +1,48 @@
 .ds-compare-modal {
   width: min(980px, 100vw - 32px);
   height: auto;
-  padding: var(--space-6);
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
+  background: #ffffff;
   border-radius: 16px;
-  border: 1px solid var(--bg-neutral-2);
+  border: 1px solid #ECECF1;
   box-shadow: 0px 10px 40px rgba(0, 0, 0, 0.05);
 }
 
 .ds-compare-selectors {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-6);
+  gap: 24px;
   margin-bottom: 20px;
 }
 
 .ds-compare-selectors label {
-  color: var(--text-primary);
+  color: #282F49;
   font-size: 13px;
   font-weight: 600;
 }
 
 .ds-compare-selectors .ds-custom-select-trigger {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  box-sizing: border-box;
+  background: #ffffff !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
 }
 
 .ds-compare-selectors .ds-custom-select-trigger span {
-  color: var(--text-tertiary);
+  color: #818181 !important;
 }
 
 .ds-compare-alert {
-  margin-bottom: var(--space-6);
-  padding: var(--space-3) 16px;
-  border-radius: var(--radius-md);
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   font-family: 'Satoshi', sans-serif;
@@ -64,23 +64,23 @@
 .ds-compare-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-6);
+  gap: 24px;
 }
 
 .ds-compare-card {
   display: flex;
   flex-direction: column;
   background: #000000;
-  border: 1px solid var(--bg-neutral-2);
-  border-radius: var(--radius-lg);
+  border: 1px solid #ECECF1;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 .ds-compare-code {
   margin: 0;
-  padding: var(--space-6);
+  padding: 24px;
   background: #000000;
-  color: var(--text-light);
+  color: #FFFFFF;
   font-family: monospace;
   font-size: 13px;
   line-height: 1.65;
@@ -114,7 +114,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-header h2 {
@@ -130,7 +130,7 @@
 .ds-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -138,12 +138,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: 8px;
   min-height: 38px;
   padding: 0 14px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   border: 1px solid #dedbd4;
-  background: var(--bg-surface);
+  background: #ffffff;
   color: #242421;
   font-size: 13px;
   font-weight: 500;
@@ -164,7 +164,7 @@
 .ds-button.primary {
   border-color: #5747c9;
   background: #5747c9;
-  color: var(--text-light);
+  color: #ffffff;
 }
 
 .ds-button.primary:hover:not(:disabled) {
@@ -183,10 +183,10 @@
 
 .ds-metric-card {
   min-height: 92px;
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid #e8e6e1;
-  border-radius: var(--radius-md);
-  padding: var(--space-4) 18px;
+  border-radius: 8px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -224,9 +224,9 @@
 }
 
 .ds-panel {
-  background: var(--bg-surface);
+  background: #ffffff;
   border: 1px solid #e8e6e1;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -236,7 +236,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-3);
+  gap: 12px;
   text-align: center;
   background: transparent;
   border: none;
@@ -260,19 +260,19 @@
 }
 
 .ds-fetch-prompt .ds-fetch-link:hover {
-  color: var(--button-primary);
+  color: #3E1363;
 }
 
 .ds-kafka-connect-fetch-prompt {
   width: 100%;
   min-height: calc(100vh - 390px);
-  padding: var(--space-6) 20px;
+  padding: 24px 20px;
   box-sizing: border-box;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-kafka-connect-fetch-prompt p {
-  color: var(--text-primary);
+  color: #282F49;
   font-size: 14px;
   font-weight: 500;
 }
@@ -290,7 +290,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-1);
+  gap: 4px;
   margin-bottom: 10px;
 }
 
@@ -303,7 +303,7 @@
   padding: 0 10px;
   box-sizing: border-box;
   border: 1px solid #D9DDE7;
-  background: var(--bg-surface);
+  background: #FFFFFF;
   box-shadow: 0 2px 5px rgba(40, 47, 73, 0.04);
 }
 
@@ -320,7 +320,7 @@
 
 .ds-kafka-connect-illustration-feet {
   display: flex;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-kafka-connect-illustration-feet i {
@@ -330,57 +330,57 @@
 }
 
 .ds-kc-metrics {
-  padding: var(--space-3);
-  gap: var(--space-2);
-  margin-bottom: 0;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: #FAFAFA;
+  padding: 12px !important;
+  gap: 8px !important;
+  margin-bottom: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: #FAFAFA !important;
 }
 
 .ds-kc-metrics .ds-kc-metric-card {
   min-height: 56px;
-  padding: 10px 12px;
-  gap: var(--space-1);
-  border: 0;
-  border-radius: var(--radius-sm);
+  padding: 10px 12px !important;
+  gap: 4px !important;
+  border: 0 !important;
+  border-radius: 6px !important;
 }
 
 .ds-kc-metrics .ds-kc-metric-card span {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 400;
+  color: #818181 !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
 }
 
 .ds-kc-metrics .ds-kc-metric-card strong {
-  color: var(--button-primary-active);
-  font-size: 16px;
-  font-weight: 500;
+  color: #332849 !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
   line-height: 18px;
 }
 
 .ds-kc-tabs {
-  margin-bottom: 0;
-  gap: var(--space-6);
-  border-bottom-color: var(--border-mid);
+  margin-bottom: 0 !important;
+  gap: 24px !important;
+  border-bottom-color: #D2D2D7 !important;
 }
 
 .ds-kc-tabs button {
   min-height: 36px;
-  padding: 6px 12px 8px;
-  color: var(--text-tertiary);
-  font-size: 13px;
+  padding: 6px 12px 8px !important;
+  color: #818181 !important;
+  font-size: 13px !important;
   outline: none;
 }
 
 .ds-kc-tabs button.active {
-  color: #5B126D;
-  border-bottom-color: #E85D8B;
+  color: #5B126D !important;
+  border-bottom-color: #E85D8B !important;
 }
 
 .ds-kc-panel {
-  border-color: var(--border-mid);
-  border-radius: var(--radius-md);
+  border-color: #D2D2D7;
+  border-radius: 8px;
 }
 
 .ds-kc-table {
@@ -388,28 +388,28 @@
 }
 
 .ds-kc-table thead {
-  background: #FAFAFA;
+  background: #FAFAFA !important;
 }
 
 .ds-kc-table th,
 .ds-kc-table td {
   box-sizing: border-box;
-  height: 44px;
-  padding: 0 16px;
-  border-bottom-color: var(--border-mid);
+  height: 44px !important;
+  padding: 0 16px !important;
+  border-bottom-color: #D2D2D7 !important;
 }
 
 .ds-kc-table th {
-  color: var(--button-primary-active);
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
+  color: #332849 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
 }
 
 .ds-kc-table td {
-  color: var(--button-primary-active);
-  font-size: 12px;
+  color: #332849 !important;
+  font-size: 12px !important;
 }
 
 .ds-kc-connectors-table th:nth-child(1) { width: 25%; }
@@ -429,7 +429,7 @@
   min-height: 20px;
   padding: 0 8px;
   background: #CCF6E8;
-  color: var(--color-success);
+  color: #36AD8F;
   font-size: 11px;
   font-weight: 400;
 }
@@ -446,7 +446,7 @@
 
 .ds-kc-connectors-table .ds-inline-actions {
   flex-wrap: nowrap;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-kc-connectors-table .ds-inline-actions .ds-button {
@@ -455,10 +455,10 @@
   height: 30px;
   min-height: 30px;
   padding: 0;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  color: var(--text-tertiary);
+  border: 1px solid #D2D2D7;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #818181;
 }
 
 .ds-kc-connectors-table .ds-inline-actions .ds-button svg {
@@ -476,7 +476,7 @@
 .ds-tab {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   min-height: 44px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -527,7 +527,7 @@
 .ds-inline-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -554,7 +554,7 @@
 }
 
 .ds-alert {
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   padding: 13px 16px;
   background: #fef2f2;
   color: #9f1c1c;
@@ -564,7 +564,7 @@
 .ds-upload-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   flex-wrap: wrap;
 }
 
@@ -588,16 +588,16 @@
 }
 
 .ds-success-modal h3 {
-  margin: var(--space-3) 0 0;
+  margin: 12px 0 0;
 }
 
 .ds-success-modal p {
-  margin: var(--space-1) 0 20px;
+  margin: 4px 0 20px;
   color: #5f5b53;
 }
 
 .ds-empty {
-  padding: var(--space-8) 20px;
+  padding: 32px 20px;
   text-align: center;
   color: #5f5b53;
 }
@@ -630,13 +630,13 @@
 
 /* Label row supports an inline toggle button (e.g. "Paste text / Upload file") */
 .ds-field>label:first-child {
-  color: var(--text-primary);
+  color: #282F49;
   font-size: 13px;
   font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-2);
+  gap: 8px;
   flex-wrap: nowrap;
   cursor: default;
 }
@@ -647,7 +647,7 @@
   width: 100%;
   border: 1px solid #dedbd4;
   border-radius: 7px;
-  background-color: var(--text-light);
+  background-color: #ffffff;
   color: #1f1f1d;
   font: inherit;
   font-size: 13px;
@@ -687,7 +687,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-6);
+  padding: 24px;
 }
 
 .ds-modal {
@@ -695,9 +695,9 @@
   height: 554px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-surface);
+  background: #ffffff;
   border-radius: 16px;
-  border: 1px solid var(--bg-neutral-2);
+  border: 1px solid #ECECF1;
   box-shadow: 0px 10px 40px rgba(0, 0, 0, 0.05);
 }
 
@@ -710,7 +710,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--space-6) 24px 16px 24px;
+  padding: 24px 24px 16px 24px;
   border-bottom: none;
 }
 
@@ -718,53 +718,53 @@
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #282F49;
 }
 
 .ds-close-btn {
   background: transparent;
   border: none;
-  color: var(--text-tertiary);
+  color: #818181;
   cursor: pointer;
   transition: color 0.15s, background-color 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-1);
+  padding: 4px;
   border-radius: 4px;
 }
 
 .ds-close-btn:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-neutral-2);
+  color: #282F49;
+  background-color: #ECECF1;
 }
 
 .ds-modal-inner-card {
   background: #F8F9FA;
-  border-radius: var(--radius-md);
-  padding: var(--space-6);
+  border-radius: 8px;
+  padding: 24px;
   margin: 0 24px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-modal-footer {
   display: flex;
   justify-content: flex-end;
-  gap: var(--space-3);
+  gap: 12px;
   padding: 0 24px 24px 24px;
   border-top: none;
 }
 
 .ds-modal-footer .ds-button {
-  border: 1px solid var(--button-primary);
-  color: var(--button-primary);
-  background: var(--bg-surface);
+  border: 1px solid #3E1363;
+  color: #3E1363;
+  background: #ffffff;
   font-weight: 500;
   height: 38px;
   padding: 0 20px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
 }
 
 .ds-modal-footer .ds-button:hover {
@@ -773,13 +773,13 @@
 }
 
 .ds-modal-footer .ds-button.primary {
-  background: var(--button-primary);
+  background: #3E1363;
   border: none;
-  color: var(--text-light);
+  color: #ffffff;
   font-weight: 600;
   height: 38px;
   padding: 0 20px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
 }
 
 .ds-modal-footer .ds-button.primary:hover {
@@ -822,10 +822,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-tertiary);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #818181;
   cursor: pointer;
 }
 
@@ -860,7 +860,7 @@
 .ds-compat-control {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   background: transparent;
   border: none;
   padding: 0;
@@ -872,14 +872,14 @@
   font-weight: 400;
   font-size: 15px;
   line-height: 20px;
-  color: var(--button-primary-active);
+  color: #332849;
 }
 
 .ds-compat-control select {
   min-height: 38px;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius-md);
-  background-color: var(--text-light);
+  border: 1px solid #D2D2D7;
+  border-radius: 8px;
+  background-color: #FFFFFF;
   padding: 0 32px 0 12px;
   font-size: 13px;
   color: #1D1D1F;
@@ -890,14 +890,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-2) 12px;
-  gap: var(--space-3);
+  padding: 8px 12px;
+  gap: 12px;
   width: 172px;
   height: 35px;
-  background: var(--bg-surface);
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-md);
-  color: var(--button-primary);
+  background: #FFFFFF;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  color: #3E1363;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -909,11 +909,11 @@
 .ds-button.ds-kafka-connect-action-button {
   height: 35px;
   min-height: 35px;
-  padding: var(--space-2) 16px;
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--button-primary);
+  padding: 8px 16px;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #3E1363;
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -922,12 +922,12 @@
 
 .ds-button.ds-kafka-connect-action-button:hover:not(:disabled) {
   background: #F8F5FA;
-  border-color: var(--button-primary);
+  border-color: #3E1363;
 }
 
 .ds-button.add-connection:hover {
   background: #F8F5FA;
-  border-color: var(--button-primary);
+  border-color: #3E1363;
 }
 
 .ds-button.create-schema {
@@ -935,14 +935,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-2) 12px;
-  gap: var(--space-2);
+  padding: 8px 12px;
+  gap: 8px;
   width: 155px;
   height: 35px;
-  background: var(--button-primary);
+  background: #3E1363;
   border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-light);
+  border-radius: 8px;
+  color: #FFFFFF;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -957,10 +957,10 @@
 }
 
 .ds-icon-button.icon-gray {
-  color: var(--text-neutral);
-  border: 1px solid var(--border-mid);
-  background: var(--bg-surface);
-  border-radius: var(--radius-md);
+  color: #71717A;
+  border: 1px solid #D2D2D7;
+  background: #FFFFFF;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -974,7 +974,7 @@
 .ds-icon-button.no-border {
   border: none;
   background: transparent;
-  color: var(--text-neutral);
+  color: #71717A;
 }
 
 .ds-icon-button.no-border:hover {
@@ -987,7 +987,7 @@
 }
 
 .ds-compact-form {
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-form-grid {
@@ -1006,7 +1006,7 @@
 .ds-file-upload-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
   flex-wrap: wrap;
   margin-top: 6px;
 }
@@ -1014,11 +1014,11 @@
 .ds-upload-btn-label {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--button-primary);
+  gap: 8px;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3E1363;
   font-weight: 600;
   font-size: 13px;
   height: 38px;
@@ -1035,11 +1035,11 @@
 .ds-uploaded-file-pill {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   border: 1px solid #E2E0FD;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   background: #F4F2FF;
-  color: var(--button-primary);
+  color: #3E1363;
   font-size: 13px;
   height: 38px;
   padding: 0 12px;
@@ -1048,7 +1048,7 @@
 .ds-clear-file-btn {
   background: transparent;
   border: none;
-  color: var(--button-primary);
+  color: #3E1363;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1064,8 +1064,8 @@
 .ds-subject-detail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  margin-top: var(--space-1);
+  gap: 16px;
+  margin-top: 4px;
 }
 
 .ds-subject-toolbar {
@@ -1076,7 +1076,7 @@
 }
 
 .ds-subject-toolbar h3 {
-  margin: var(--space-1) 0 0;
+  margin: 4px 0 0;
   font-size: 20px;
   font-weight: 700;
   color: #1f1f1d;
@@ -1085,15 +1085,15 @@
 .ds-schema-shell {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.8fr);
-  border: 1px solid var(--bg-neutral-2);
+  border: 1px solid #ECECF1;
   background: #000000;
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   overflow: visible;
 }
 
 .ds-schema-code-card {
   background: #000000;
-  color: var(--text-light);
+  color: #FFFFFF;
   display: flex;
   flex-direction: column;
   border-right: 1px solid #FFFFFF;
@@ -1103,7 +1103,7 @@
 
 .ds-schema-meta-card {
   background: #000000;
-  color: var(--text-light);
+  color: #FFFFFF;
   display: flex;
   flex-direction: column;
   border-top-right-radius: 12px;
@@ -1119,8 +1119,8 @@
 }
 
 .ds-schema-card-header {
-  background: var(--button-primary-active);
-  padding: var(--space-3) 20px;
+  background: #332849;
+  padding: 12px 20px;
   height: 44px;
   box-sizing: border-box;
   display: flex;
@@ -1137,8 +1137,8 @@
   overflow: auto;
   border: none;
   background: #000000;
-  color: var(--text-light);
-  padding: var(--space-6);
+  color: #FFFFFF;
+  padding: 24px;
   font-family: monospace;
   font-size: 13px;
   line-height: 1.65;
@@ -1147,10 +1147,10 @@
 }
 
 .ds-meta-content {
-  padding: var(--space-6);
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-meta-row {
@@ -1160,12 +1160,12 @@
 }
 
 .ds-meta-row span {
-  color: var(--text-light);
+  color: #FFFFFF;
   font-size: 13px;
 }
 
 .ds-meta-row strong {
-  color: var(--text-light);
+  color: #FFFFFF;
   font-size: 13px;
   font-weight: 500;
 }
@@ -1173,46 +1173,46 @@
 .ds-meta-row.ds-compat-row-block {
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: 8px;
   width: 100%;
 }
 
 .ds-compat-inline-custom {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   width: 100%;
 }
 
 .ds-compat-inline-custom .ds-custom-select-container {
   flex-grow: 1;
-  width: auto;
+  width: auto !important;
 }
 
 .ds-compat-inline-custom .ds-custom-select-trigger {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  box-sizing: border-box;
+  background: #ffffff !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
 }
 
 .ds-compat-inline-custom .ds-custom-select-trigger span {
-  color: var(--text-tertiary);
+  color: #818181 !important;
 }
 
 .ds-compat-save-btn {
   width: 40px;
   min-width: 40px;
   height: 40px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--text-tertiary);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #818181;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1228,7 +1228,7 @@
 .ds-compat-inline {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-section-title {
@@ -1237,7 +1237,7 @@
   color: #1f1f1d;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Drawer (slide-in subject detail panel) ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ───── Drawer (slide-in subject detail panel) ───── */
 
 .ds-drawer-backdrop {
   position: fixed;
@@ -1287,8 +1287,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: var(--space-4) 20px;
-  background: var(--bg-surface);
+  padding: 16px 20px;
+  background: #ffffff;
   border-bottom: 1px solid #e5e2db;
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -1314,7 +1314,7 @@
 .ds-drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-5);
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -1339,7 +1339,7 @@
 }
 
 
-/* Inline toggle button shown inside a label row (e.g. "ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹ Paste text" / "ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â½ Upload file") */
+/* Inline toggle button shown inside a label row (e.g. "📋 Paste text" / "📎 Upload file") */
 .ds-mini-button {
   display: inline-flex;
   align-items: center;
@@ -1347,7 +1347,7 @@
   height: 26px;
   padding: 0 10px;
   border: 1px solid #c0bbb1;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   background: #f4f2ed;
   color: #3b3830;
   font: inherit;
@@ -1364,7 +1364,7 @@
   border-color: #a9a49a;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Breadcrumb page bar ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ───── Breadcrumb page bar ───── */
 
 .ds-page-bar {
   display: flex;
@@ -1409,7 +1409,7 @@
   color: #1f1f1d;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Edit view ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ───── Edit view ───── */
 
 .ds-edit-controls {
   display: flex;
@@ -1434,36 +1434,36 @@
 }
 
 .ds-edit-controls .ds-custom-select-trigger {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  height: 36px;
+  background: #ffffff !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  height: 36px !important;
   min-height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  box-sizing: border-box;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 16px !important;
+  box-sizing: border-box !important;
 }
 
 .ds-edit-controls .ds-custom-select-trigger span {
-  color: var(--text-tertiary);
+  color: #818181 !important;
 }
 
 .ds-edit-submit {
   min-height: 36px;
   height: 36px;
   padding: 0 12px;
-  border-color: var(--button-primary);
-  background: var(--button-primary);
-  color: var(--text-light);
+  border-color: #3E1363;
+  background: #3E1363;
+  color: #FFFFFF;
   font-size: 12px;
 }
 
 .ds-edit-shell {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-2);
+  gap: 8px;
   height: 260px;
   min-height: 260px;
 }
@@ -1472,17 +1472,17 @@
   display: flex;
   flex-direction: column;
   background: #000000;
-  border: 1px solid var(--bg-neutral-2);
-  border-radius: var(--radius-lg);
+  border: 1px solid #ECECF1;
+  border-radius: 12px;
   overflow: hidden;
 }
 
 .ds-edit-pane-header {
-  background: var(--button-primary-active);
-  color: var(--text-light);
+  background: #332849;
+  color: #FFFFFF;
   font-size: 14px;
   font-weight: 500;
-  padding: var(--space-2) 12px;
+  padding: 8px 12px;
   height: 40px;
   box-sizing: border-box;
   border-bottom: 1px solid #2E2938;
@@ -1496,7 +1496,7 @@
   margin: 0;
   padding: 18px;
   background: #000000;
-  color: var(--text-light);
+  color: #FFFFFF;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -1516,14 +1516,14 @@
   resize: none;
   width: 100%;
   box-sizing: border-box;
-  caret-color: var(--text-light);
+  caret-color: #FFFFFF;
 }
 
 .ds-edit-editable:focus {
   box-shadow: none;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Old version inline expand ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ───── Old version inline expand ───── */
 
 .ds-expand-btn {
   min-width: 26px;
@@ -1533,21 +1533,21 @@
 }
 
 .ds-version-expand-row td {
-  background: var(--bg-surface);
+  background: #ffffff;
 }
 
 .ds-expanded-schema-container {
   border: 1px solid #2E2938;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   overflow: hidden;
   background: #121016;
 }
 
 .ds-version-schema-code {
   margin: 0;
-  padding: var(--space-6);
+  padding: 24px;
   background: #000000;
-  color: var(--text-light);
+  color: #ffffff;
   font-family: monospace;
   font-size: 13px;
   line-height: 1.65;
@@ -1570,7 +1570,7 @@
 
 .ds-version-schema-code::-webkit-scrollbar-thumb {
   border: 2px solid #17131d;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   background: #77688a;
 }
 
@@ -1614,15 +1614,15 @@
   }
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Multi-instance switcher ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ── Multi-instance switcher ─────────────────────────────────── */
 .ds-instance-switcher {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid #dedad3;
-  border-radius: var(--radius-md);
-  padding: var(--space-1) 10px 4px 8px;
+  border-radius: 8px;
+  padding: 4px 10px 4px 8px;
 }
 
 .ds-instance-label {
@@ -1652,13 +1652,13 @@
   transition: background 0.3s ease;
 }
 
-/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Toggle Switch ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */
+/* ── Toggle Switch ───────────────────────────────────────────── */
 .ds-default-toggle-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid #eee;
 }
 
@@ -1684,7 +1684,7 @@
   right: 0;
   bottom: 0;
   background-color: #d1d5db;
-  border-radius: var(--radius-xl);
+  border-radius: 20px;
   transition: .3s;
 }
 
@@ -1701,7 +1701,7 @@
 }
 
 .ds-toggle-switch input:checked+.ds-toggle-track {
-  background-color: var(--button-primary);
+  background-color: #3E1363;
 }
 
 .ds-toggle-switch input:checked+.ds-toggle-track .ds-toggle-thumb {
@@ -1725,8 +1725,8 @@
 .ds-custom-select-trigger {
   width: 100%;
   border: 1px solid #dedbd4;
-  border-radius: var(--radius-md);
-  background-color: var(--text-light);
+  border-radius: 8px;
+  background-color: #ffffff;
   color: #1f1f1d;
   font-size: 13px;
   padding: 10px 12px;
@@ -1770,9 +1770,9 @@
   top: calc(100% + 4px);
   left: 0;
   right: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-neutral-2);
-  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border: 1px solid #ECECF1;
+  border-radius: 12px;
   box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.08);
   z-index: 100;
   max-height: 200px;
@@ -1783,20 +1783,20 @@
 .ds-custom-select-option {
   padding: 10px 12px;
   font-size: 13px;
-  color: var(--text-secondary);
-  border-radius: var(--radius-md);
+  color: #5F5E5A;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .ds-custom-select-option:hover {
   background-color: #F4F2FF;
-  color: var(--button-primary);
+  color: #3E1363;
 }
 
 .ds-custom-select-option.selected {
   background-color: #F4F2FF;
-  color: var(--button-primary);
+  color: #3E1363;
   font-weight: 600;
 }
 
@@ -1804,10 +1804,10 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius-sm);
-  background-color: var(--text-light);
-  color: var(--text-neutral);
+  border: 1px solid #D2D2D7;
+  border-radius: 6px;
+  background-color: #FFFFFF;
+  color: #71717A;
   font-size: 13px;
   font-weight: 500;
   height: 32px;
@@ -1827,11 +1827,11 @@
 }
 
 .ds-instance-select {
-  width: 185px;
+  width: 185px !important;
 }
 
 .ds-compat-select {
-  width: 185px;
+  width: 185px !important;
 }
 
 /* Schema Registry page-specific header layout */
@@ -1840,7 +1840,7 @@
   box-sizing: border-box;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-sr-header .ds-actions {
@@ -1869,7 +1869,7 @@
 
 .ds-sr-header .ds-selectors-group .ds-compat-control > div,
 .ds-sr-header .ds-selectors-group .ds-custom-select-container {
-  width: 100%;
+  width: 100% !important;
 }
 
 .ds-sr-header .ds-instance-select {
@@ -1880,20 +1880,20 @@
 .ds-buttons-group {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   flex: 0 0 auto;
   flex-wrap: nowrap;
 }
 
 .ds-sr-header .ds-custom-select-container.disabled .ds-custom-select-trigger {
-  background: var(--bg-surface);
-  border-color: var(--border-mid);
+  background: #FFFFFF;
+  border-color: #D2D2D7;
   color: #A1A1AA;
 }
 
 .ds-sr-header .ds-custom-select-trigger {
   min-height: 35px;
-  padding: var(--space-2) 12px;
+  padding: 8px 12px;
 }
 
 .ds-sr-header .ds-custom-select-trigger > span {
@@ -1905,7 +1905,7 @@
 
 .ds-sr-header .ds-custom-select-arrow {
   flex: 0 0 auto;
-  margin-left: var(--space-2);
+  margin-left: 8px;
 }
 
 .ds-sr-header .ds-button.add-connection,
@@ -1914,7 +1914,7 @@
   height: 32px;
   min-height: 32px;
   padding: 0 8px;
-  gap: var(--space-2);
+  gap: 8px;
   font-size: 13px;
   white-space: nowrap;
 }
@@ -1925,9 +1925,9 @@
 }
 
 .ds-sr-header .ds-icon-button {
-  width: 32px;
+  width: 32px !important;
   min-width: 32px;
-  height: 32px;
+  height: 32px !important;
 }
 
 .ds-sr-header .ds-buttons-group svg,
@@ -1938,41 +1938,41 @@
 
 .ds-sr-fetch-prompt {
   min-height: calc(100vh - 390px);
-  padding: var(--space-6) 20px;
-  gap: var(--space-3);
+  padding: 24px 20px;
+  gap: 12px;
 }
 
 .ds-sr-fetch-prompt p {
   margin: 0;
-  color: var(--text-tertiary);
+  color: #818181;
   font-size: 15px;
   font-weight: 400;
 }
 
 .ds-sr-fetch-button {
-  gap: var(--space-2);
+  gap: 8px !important;
   height: 36px;
-  padding: 0 16px;
-  font-size: 14px;
+  padding: 0 16px !important;
+  font-size: 14px !important;
 }
 
 .ds-sr-metrics {
-  gap: var(--space-2);
+  gap: 8px;
   padding: 14px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   background: #FAFAFA;
 }
 
 .ds-sr-metrics .ds-metric-card {
   min-height: 56px;
   padding: 10px 12px;
-  gap: var(--space-1);
+  gap: 4px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
 }
 
 .ds-sr-metrics .ds-metric-card span {
-  color: var(--text-tertiary);
+  color: #818181;
   font-size: 11px;
   font-weight: 400;
   letter-spacing: 0;
@@ -1981,20 +1981,20 @@
 
 .ds-sr-metrics .ds-metric-card strong,
 .ds-sr-metrics .ds-sr-endpoint-value {
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 14px;
   font-weight: 500;
   line-height: 18px;
 }
 
 .ds-sr-metrics .ds-sr-endpoint-value a {
-  color: var(--button-primary-active);
+  color: #332849;
   text-decoration: none;
 }
 
 .ds-sr-subjects-panel {
-  border-color: var(--border-mid);
-  border-radius: var(--radius-md);
+  border-color: #D2D2D7;
+  border-radius: 8px;
 }
 
 .ds-sr-subjects-table {
@@ -2010,14 +2010,14 @@
   box-sizing: border-box;
   height: 44px;
   padding: 0 16px;
-  border-bottom-color: var(--border-mid);
+  border-bottom-color: #D2D2D7;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ds-sr-subjects-table th {
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
@@ -2025,7 +2025,7 @@
 }
 
 .ds-sr-subjects-table td {
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 12px;
 }
 
@@ -2033,7 +2033,7 @@
   display: block;
   max-width: 100%;
   overflow: hidden;
-  color: var(--button-primary-active);
+  color: #332849;
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2044,17 +2044,17 @@
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 12px;
   font-weight: 400;
 }
 
 .ds-sr-subjects-table .ds-table-delete-btn {
   height: auto;
-  padding: var(--space-1);
+  padding: 4px;
   border: 0;
   background: transparent;
-  color: var(--text-neutral);
+  color: #71717A;
   font-size: 12px;
   font-weight: 400;
 }
@@ -2065,7 +2065,7 @@
 }
 
 .ds-sr-detail-bar .ds-breadcrumb-nav {
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-detail-back-button {
@@ -2075,12 +2075,12 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-tertiary);
+  color: #818181;
   cursor: pointer;
 }
 
 .ds-sr-detail-bar .ds-breadcrumb-current {
-  color: var(--button-primary-hover);
+  color: #5B327F;
   font-size: 13px;
   font-weight: 500;
 }
@@ -2102,13 +2102,13 @@
   grid-template-columns: minmax(0, 7fr) minmax(260px, 3fr);
   height: 260px;
   overflow: hidden;
-  border-color: var(--border-mid);
-  border-radius: var(--radius-lg);
+  border-color: #D2D2D7;
+  border-radius: 12px;
 }
 
 .ds-sr-detail-shell .ds-schema-card-header {
   height: 40px;
-  padding: var(--space-2) 12px;
+  padding: 8px 12px;
 }
 
 .ds-sr-detail-shell .ds-schema-code {
@@ -2122,8 +2122,8 @@
 }
 
 .ds-sr-detail-shell .ds-meta-content {
-  padding: var(--space-4);
-  gap: var(--space-2);
+  padding: 16px;
+  gap: 8px;
 }
 
 .ds-sr-detail-shell .ds-meta-row {
@@ -2145,9 +2145,9 @@
 }
 
 .ds-sr-detail-shell .ds-compat-inline-custom .ds-custom-select-trigger {
-  height: 36px;
+  height: 36px !important;
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 12px !important;
 }
 
 .ds-sr-detail-shell .ds-compat-inline-custom .ds-custom-select-trigger span {
@@ -2164,14 +2164,14 @@
 
 .ds-section-title {
   margin: 0 0 -12px;
-  color: var(--button-primary-hover);
+  color: #5B327F;
   font-size: 14px;
   font-weight: 500;
 }
 
 .ds-sr-versions-panel {
-  border-color: var(--border-mid);
-  border-radius: var(--radius-md);
+  border-color: #D2D2D7;
+  border-radius: 8px;
 }
 
 .ds-sr-versions-table {
@@ -2187,11 +2187,11 @@
   box-sizing: border-box;
   height: 44px;
   padding: 0 16px;
-  border-bottom-color: var(--border-mid);
+  border-bottom-color: #D2D2D7;
 }
 
 .ds-sr-versions-table th {
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0;
@@ -2199,7 +2199,7 @@
 }
 
 .ds-sr-versions-table td {
-  color: var(--button-primary-active);
+  color: #332849;
   font-size: 12px;
 }
 
@@ -2209,7 +2209,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-tertiary);
+  color: #818181;
   font-size: 12px;
   font-weight: 400;
 }
@@ -2229,8 +2229,8 @@
 /* Custom Delete Connection Confirmation Modal */
 .ds-delete-confirm-modal {
   width: 640px;
-  background: var(--bg-surface);
-  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: 0px 10px 30px rgba(0, 0, 0, 0.08);
   display: flex;
@@ -2255,30 +2255,30 @@
   right: 16px;
   border: none;
   background: transparent;
-  color: var(--text-light);
+  color: #ffffff;
   font-size: 24px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-1);
+  padding: 4px;
 }
 
 .ds-delete-confirm-content {
-  padding: var(--space-6);
+  padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 .ds-delete-confirm-title-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 12px;
 }
 
 .ds-delete-alert-icon {
-  color: #EF4444;
+  color: #EF4444 !important;
 }
 
 .ds-delete-confirm-title-row h2 {
@@ -2293,15 +2293,15 @@
   margin: 0;
   font-family: 'Satoshi', sans-serif;
   font-size: 14px;
-  color: var(--text-tertiary);
+  color: #818181;
 }
 
 .ds-delete-btn-cancel {
   padding: 10px 24px;
-  border: 1px solid var(--accent-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  color: var(--accent-primary);
+  border: 1px solid #DF678B;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #DF678B;
   font-family: 'Satoshi', sans-serif;
   font-weight: 500;
   cursor: pointer;
@@ -2310,15 +2310,15 @@
 
 .ds-delete-btn-cancel:hover {
   background: #FFF0F3;
-  border-color: var(--accent-primary);
+  border-color: #DF678B;
 }
 
 .ds-delete-btn-ok {
   padding: 10px 24px;
   border: none;
-  border-radius: var(--radius-md);
-  background: var(--button-primary);
-  color: var(--text-light);
+  border-radius: 8px;
+  background: #3E1363;
+  color: #ffffff;
   font-family: 'Satoshi', sans-serif;
   font-weight: 500;
   cursor: pointer;
@@ -2331,7 +2331,7 @@
 
 /* Fix text overlay inside compare box headers */
 .ds-compare-card .ds-schema-card-header {
-  justify-content: space-between;
+  justify-content: space-between !important;
 }
 
 /* Detail view inline actions buttons */
@@ -2340,12 +2340,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-2) 12px;
-  gap: var(--space-2);
-  background: var(--bg-surface);
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-md);
-  color: var(--button-primary);
+  padding: 8px 12px;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #3E1363;
+  border-radius: 8px;
+  color: #3E1363;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -2364,12 +2364,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-2) 12px;
-  gap: var(--space-2);
-  background: var(--button-primary);
+  padding: 8px 12px;
+  gap: 8px;
+  background: #3E1363;
   border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-light);
+  border-radius: 8px;
+  color: #ffffff;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -2389,7 +2389,7 @@
   border: none;
   color: #A1A1AA;
   cursor: pointer;
-  padding: var(--space-1);
+  padding: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2398,7 +2398,7 @@
 }
 
 .ds-schema-copy-btn:hover {
-  color: var(--text-light);
+  color: #FFFFFF;
 }
 
 .ds-copied-text {
@@ -2410,11 +2410,11 @@
 }
 
 .ds-instance-select {
-  width: 340px;
+  width: 340px !important;
 }
 
 .ds-compat-select {
-  width: 250px;
+  width: 250px !important;
 }
 
 /* Compare Versions dialog: keep generic modal rules from overriding this layout. */
@@ -2426,7 +2426,7 @@
   width: min(980px, calc(100vw - 48px));
   height: min(680px, calc(100vh - 48px));
   max-height: calc(100vh - 48px);
-  padding: var(--space-5);
+  padding: 20px;
   overflow: hidden;
 }
 
@@ -2437,20 +2437,20 @@
 
 .ds-compare-modal .ds-compare-selectors {
   flex: 0 0 auto;
-  gap: var(--space-4);
-  margin-bottom: var(--space-3);
+  gap: 16px;
+  margin-bottom: 12px;
 }
 
 .ds-compare-modal .ds-compare-selectors .ds-custom-select-trigger {
-  height: 36px;
+  height: 36px !important;
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 12px !important;
 }
 
 .ds-compare-modal .ds-compare-alert {
   flex: 0 0 auto;
-  margin-bottom: var(--space-3);
-  padding: var(--space-2) 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
   border-width: 0;
   font-size: 12px;
   font-weight: 400;
@@ -2459,18 +2459,18 @@
 .ds-compare-modal .ds-compare-grid {
   flex: 1 1 auto;
   min-height: 0;
-  gap: var(--space-2);
+  gap: 8px;
 }
 
 .ds-compare-modal .ds-compare-card {
   min-height: 0;
-  border-color: var(--border-mid);
-  border-radius: var(--radius-lg);
+  border-color: #D2D2D7;
+  border-radius: 12px;
 }
 
 .ds-compare-modal .ds-compare-card .ds-schema-card-header {
   height: 40px;
-  padding: var(--space-2) 12px;
+  padding: 8px 12px;
   font-size: 12px;
   font-weight: 400;
 }

@@ -1,6 +1,6 @@
-/* Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-   ClusterOverview Ã¢â‚¬â€ Redesign to match Figma Specs
-   Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â */
+/* ══════════════════════════════════════════
+   ClusterOverview — Redesign to match Figma Specs
+   ══════════════════════════════════════════ */
 
 .overview-dashboard {
   display: flex;
@@ -14,7 +14,7 @@
 .overview-section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 16px;
 }
 
 /* Light-grey background container for card sections to contrast on white details card */
@@ -22,10 +22,10 @@
 .overview-band {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 16px;
   background: #F9F9FB;
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: 8px;
+  padding: 16px;
   border: 1px solid #E1E7EC;
   box-shadow: 0 1px 3px rgba(40, 47, 73, 0.06);
 }
@@ -39,7 +39,7 @@
 
 .overview-section h2 {
   margin: 0;
-  color: var(--button-primary); /* Primary/Purple */
+  color: #3E1363; /* Primary/Purple */
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -57,20 +57,20 @@
   padding: 6px 8px;
   gap: 6px;
   height: 28px;
-  background: var(--bg-surface);
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+  border: 1px solid #3E1363;
+  border-radius: 6px;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
   font-size: 12px;
   line-height: 16px;
-  color: var(--button-primary);
+  color: #3E1363;
   cursor: pointer;
 }
 
 .overview-export:hover {
-  background: var(--bg-raised);
+  background: #FAF8FF;
 }
 
 .overview-export svg {
@@ -84,7 +84,7 @@
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   align-items: flex-start;
   padding: 0;
-  gap: var(--space-3);
+  gap: 12px;
   width: 100%;
 }
 
@@ -102,8 +102,8 @@
   align-items: flex-start;
   padding: 14px 16px;
   gap: 10px;
-  background: var(--bg-surface);
-  border-radius: var(--radius-md);
+  background: #FFFFFF;
+  border-radius: 8px;
   min-height: 81px;
   border: 1px solid #E1E7EC;
   box-shadow: 0 1px 2px rgba(40, 47, 73, 0.04);
@@ -113,13 +113,13 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--space-1);
+  gap: 4px;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 400;
   font-size: 14px;
   line-height: 19px;
-  color: var(--text-tertiary);
+  color: #818181;
 }
 
 .overview-value {
@@ -128,7 +128,7 @@
   font-weight: 500;
   font-size: 14px;
   line-height: 19px;
-  color: var(--button-primary-active);
+  color: #332849;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -146,11 +146,11 @@
   width: 100%;
   overflow-x: auto;
   box-sizing: border-box;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #FFFFFF;
   box-shadow: none;
-  margin-top: var(--space-2);
+  margin-top: 8px;
 }
 
 .overview-table {
@@ -162,11 +162,11 @@
 
 .overview-table th {
   height: 54px;
-  padding: var(--space-4);
+  padding: 16px;
   box-sizing: border-box;
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  color: var(--button-primary-active);
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  color: #332849;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
@@ -178,7 +178,7 @@
 
 .overview-metric-level {
   display: block;
-  color: var(--text-tertiary);
+  color: #818181;
   font-size: 11px;
   font-weight: 400;
   line-height: 15px;
@@ -207,8 +207,8 @@
   height: 52px;
   padding: 14px 16px;
   box-sizing: border-box;
-  border-bottom: 1px solid var(--border-default);
-  color: var(--text-heading);
+  border-bottom: 1px solid #CCCCCC;
+  color: #23252D;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 400;
@@ -224,13 +224,13 @@
 .overview-broker-id {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 400;
   font-size: 14px;
   line-height: 19px;
-  color: var(--text-heading);
+  color: #23252D;
 }
 
 .role-badge {
@@ -241,21 +241,21 @@
   font-size: 11px;
   font-weight: 600;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 6px;
   text-transform: capitalize;
 }
 
 .overview-alert {
-  padding: var(--space-3) 16px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
   gap: 10px;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   font-family: 'Satoshi', 'Inter', sans-serif;
   font-size: 13px;
   font-weight: 500;
   line-height: 1.4;
-  margin-bottom: var(--space-2);
+  margin-bottom: 8px;
 }
 
 .overview-alert.error {
@@ -267,7 +267,7 @@
 .overview-alert.warning {
   border: 1px solid #FDE047;
   background: #FEFCE8;
-  color: var(--color-warning);
+  color: #854F0B;
 }
 
 /* Responsiveness */

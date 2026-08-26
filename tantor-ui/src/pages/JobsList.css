@@ -2,11 +2,11 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-6);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: var(--space-6);
+  gap: 24px;
+  background: #FFFFFF;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
   min-height: calc(100vh - 120px);
   margin: 20px;
   box-sizing: border-box;
@@ -36,7 +36,7 @@
   font-weight: 700;
   font-size: 24px;
   line-height: 32px;
-  color: var(--text-primary);
+  color: #282F49;
 }
 
 .header-titles p {
@@ -46,7 +46,7 @@
   font-weight: 400;
   font-size: 14px;
   line-height: 19px;
-  color: var(--text-tertiary);
+  color: #818181;
 }
 
 .refresh-btn {
@@ -56,17 +56,17 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  background: var(--bg-surface);
-  border: 1px solid var(--bg-neutral);
-  border-radius: var(--radius-md);
-  color: var(--text-tertiary);
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  color: #818181;
   cursor: pointer;
   padding: 0;
   transition: all 0.2s;
 }
 
 .refresh-btn:hover {
-  background: var(--bg-neutral-light);
+  background: #F9F9F9;
 }
 
 .table-container {
@@ -76,8 +76,8 @@
   align-items: flex-start;
   width: 100%;
   max-height: calc(100vh - 230px);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
   overflow-x: auto;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -95,34 +95,34 @@
   box-sizing: border-box;
   width: 161.29px;
   height: 54px;
-  padding: var(--space-4);
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
+  padding: 16px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 400;
   font-size: 14px;
   line-height: 19px;
-  color: var(--button-primary-active);
+  color: #332849;
   text-align: left;
   white-space: nowrap;
 }
 
-.jobs-table th:first-child { border-radius: var(--radius-md) 0 0 0; }
+.jobs-table th:first-child { border-radius: 8px 0 0 0; }
 .jobs-table th:last-child { border-radius: 0 8px 0 0; }
 
 .jobs-table td {
   box-sizing: border-box;
   height: 52px;
   padding: 14px 16px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
+  background: #FFFFFF;
+  border-bottom: 1px solid #CCCCCC;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 400;
   font-size: 14px;
   line-height: 19px;
-  color: var(--text-tertiary);
+  color: #818181;
   vertical-align: middle;
   white-space: nowrap;
 }
@@ -141,7 +141,7 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: var(--space-1) 8px;
+  padding: 4px 8px;
   gap: 10px;
   height: 24px;
   width: fit-content;
@@ -157,17 +157,17 @@
 
 .badge-success {
   background: rgba(42, 199, 146, 0.25);
-  color: var(--color-success-dark);
+  color: #069B68;
 }
 
 .badge-failed {
   background: rgba(242, 118, 167, 0.3);
-  color: var(--color-danger);
+  color: #EF4D5F;
 }
 
 .badge-in-progress {
   background: rgba(217, 217, 217, 0.5);
-  color: var(--text-tertiary);
+  color: #818181;
 }
 
 .badge-warning {
@@ -177,12 +177,12 @@
 
 .badge-rolled-back {
   background: rgba(22, 171, 194, 0.25);
-  color: var(--color-info);
+  color: #16ABC2;
 }
 
 .badge-pending {
   background: rgba(217, 217, 217, 0.5);
-  color: var(--text-tertiary);
+  color: #818181;
 }
 
 .btn-outline-primary {
@@ -194,15 +194,15 @@
   padding: 6px 8px;
   gap: 6px;
   height: 28px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-focus);
-  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+  border: 1px solid #8E77BB;
+  border-radius: 6px;
   font-family: 'Satoshi', sans-serif;
   font-style: normal;
   font-weight: 500;
   font-size: 12px;
   line-height: 16px;
-  color: var(--border-focus);
+  color: #8E77BB;
   cursor: pointer;
 }
 
@@ -212,8 +212,8 @@
 
 .empty-state {
   text-align: center;
-  padding: 40px;
-  color: var(--text-tertiary);
+  padding: 40px !important;
+  color: #818181;
   font-size: 14px;
 }
 

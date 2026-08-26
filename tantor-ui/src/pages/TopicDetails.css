@@ -287,14 +287,14 @@
 
 .detail-table tr:last-child td { border-bottom: 0; }
 .detail-table strong { color: var(--text-primary); font-weight: 600; }
-.replicas-ok { color: var(--color-success); }
-.replicas-warning { color: var(--color-danger); }
+.replicas-ok { color: var(--color-success) !important; }
+.replicas-warning { color: var(--color-danger) !important; }
 
 .message-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  gap: 12px;
+  margin-bottom: 16px;
   width: 100%;
 }
 
@@ -303,10 +303,10 @@
 .message-toolbar label,
 .tab-toolbar label {
   height: 40px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  background: var(--bg-surface);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  color: #282F49;
+  background: #FFFFFF;
   font: inherit;
   font-size: 14px;
 }
@@ -327,7 +327,7 @@
 .message-toolbar label {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
   flex-grow: 1;
   padding: 0 16px;
   box-sizing: border-box;
@@ -355,10 +355,10 @@
 .message-fetch-meta span { gap: 0.3rem; }
 
 .messages-table tbody > tr:not(.message-expanded) { cursor: pointer; }
-.messages-table tbody > tr:not(.message-expanded):hover { background: var(--bg-neutral-light); }
+.messages-table tbody > tr:not(.message-expanded):hover { background: #F9F9F9; }
 .messages-table th:first-child,
 .messages-table td:first-child { width: 38px; padding-right: 0; }
-.preview-cell { max-width: 310px; overflow: hidden; color: var(--text-primary); text-overflow: ellipsis; }
+.preview-cell { max-width: 310px; overflow: hidden; color: var(--text-primary) !important; text-overflow: ellipsis; }
 .null-value { color: var(--text-tertiary); font-style: italic; }
 
 .expand-button {
@@ -373,7 +373,7 @@
   cursor: pointer;
 }
 
-.message-expanded td { padding: 0; background: #fbfaf7; }
+.message-expanded td { padding: 0 !important; background: #fbfaf7; }
 .message-expanded td > div {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -611,662 +611,662 @@
 /* -- Figma Topic Details Styles Overrides -- */
 .overview-tab .topic-metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  overflow: visible;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
 }
 
 .overview-tab .topic-metric-grid article {
-  background: var(--bg-surface);
-  border: 1px solid #EAEAEA;
-  border-radius: var(--radius-lg);
-  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.03);
-  padding: var(--space-4) 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: flex-start;
-  gap: var(--space-1);
-  min-height: auto;
+  background: #FFFFFF !important;
+  border: 1px solid #EAEAEA !important;
+  border-radius: 12px !important;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.03) !important;
+  padding: 16px 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: flex-start !important;
+  gap: 4px !important;
+  min-height: auto !important;
 }
 
 .overview-tab .topic-metric-grid article span {
-  font-size: 13px;
-  color: var(--text-tertiary);
-  margin-bottom: 0;
+  font-size: 13px !important;
+  color: #818181 !important;
+  margin-bottom: 0 !important;
 }
 
 .overview-tab .topic-metric-grid article strong {
-  font-size: 20px;
-  color: var(--button-primary-active);
-  font-weight: 600;
+  font-size: 20px !important;
+  color: #332849 !important;
+  font-weight: 600 !important;
 }
 
 /* -- Peach Info Banner -- */
 .overview-tab .overview-note {
-  background: #FFF8EE;
-  border: 1px solid #FFE7C4;
-  border-radius: var(--radius-md);
-  color: #B25E00;
-  font-size: 13px;
-  padding: var(--space-3) 16px;
-  margin: var(--space-4) 0 24px 0;
+  background: #FFF8EE !important;
+  border: 1px solid #FFE7C4 !important;
+  border-radius: 8px !important;
+  color: #B25E00 !important;
+  font-size: 13px !important;
+  padding: 12px 16px !important;
+  margin: 16px 0 24px 0 !important;
 }
 
 .overview-tab .overview-note svg {
-  color: #FF9F1C;
+  color: #FF9F1C !important;
   margin-top: 1px;
 }
 
 /* -- Table Header Formatting -- */
 .overview-tab .detail-table-wrap {
-  border: 1px solid #EAEAEA;
-  border-radius: var(--radius-lg);
-  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02);
+  border: 1px solid #EAEAEA !important;
+  border-radius: 12px !important;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02) !important;
 }
 
 .overview-tab .detail-table th {
-  background: var(--bg-surface);
-  text-transform: none;
-  font-weight: 500;
-  color: var(--text-tertiary);
-  font-size: 13px;
-  border-bottom: 1px solid #EAEAEA;
-  letter-spacing: normal;
-  padding: var(--space-3) 16px;
+  background: #FFFFFF !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
+  color: #818181 !important;
+  font-size: 13px !important;
+  border-bottom: 1px solid #EAEAEA !important;
+  letter-spacing: normal !important;
+  padding: 12px 16px !important;
 }
 
 .overview-tab .detail-table td {
-  padding: var(--space-3) 16px;
-  font-size: 13px;
-  color: var(--button-primary-active);
-  border-bottom: 1px solid #F4F4F4;
+  padding: 12px 16px !important;
+  font-size: 13px !important;
+  color: #332849 !important;
+  border-bottom: 1px solid #F4F4F4 !important;
 }
 
 /* -- Figma Header Button Override -- */
 .topic-detail-button.primary {
-  background: var(--button-primary);
-  border-color: var(--button-primary);
-  color: var(--text-light);
-  border-radius: var(--radius-md);
-  font-weight: 500;
+  background: #3E1363 !important;
+  border-color: #3E1363 !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
 }
 
 .topic-detail-button.primary:hover {
-  background: #2e0e4b;
-  border-color: #2e0e4b;
+  background: #2e0e4b !important;
+  border-color: #2e0e4b !important;
 }
 
 /* -- Figma Segmented Tab Navigation -- */
 .topic-detail-tabs {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0px;
-  padding: 0px;
-  width: 613px;
-  height: 35px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
-  margin: var(--space-4) 0 0 0;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0px !important;
+  padding: 0px !important;
+  width: 613px !important;
+  height: 35px !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  margin: 16px 0 0 0 !important;
 }
 
 .topic-detail-tabs button {
-  flex: 1;
-  height: 35px;
-  min-height: 35px;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-2) 8px;
-  border: none;
-  border-right: 1px solid var(--border-default);
-  background: var(--bg-surface);
-  color: var(--text-tertiary);
-  font-family: 'Satoshi', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  border-radius: 0;
-  cursor: pointer;
-  transition: all 0.15s;
+  flex: 1 !important;
+  height: 35px !important;
+  min-height: 35px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px 8px !important;
+  border: none !important;
+  border-right: 1px solid #CCCCCC !important;
+  background: #FFFFFF !important;
+  color: #818181 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  border-radius: 0 !important;
+  cursor: pointer !important;
+  transition: all 0.15s !important;
 }
 
 .topic-detail-tabs button:last-child {
-  border-right: none;
+  border-right: none !important;
 }
 
 .topic-detail-tabs button::after {
-  display: none; /* Remove bottom active line indicator */
+  display: none !important; /* Remove bottom active line indicator */
 }
 
 /* Active tab style */
 .topic-detail-tabs button.active {
-  background: #FCF0F3; /* light pink background */
-  color: var(--button-primary); /* purple text */
-  font-weight: 500;
+  background: #FCF0F3 !important; /* light pink background */
+  color: #3E1363 !important; /* purple text */
+  font-weight: 500 !important;
 }
 
 .topic-detail-tabs button:hover:not(.active) {
-  background: var(--bg-neutral-light);
-  color: var(--button-primary-active);
+  background: #F9F9F9 !important;
+  color: #332849 !important;
 }
 
 /* -- Figma Expanded Message Detail Row Overrides -- */
 .message-expanded td {
-  background: #FCF0F3;
-  border-bottom: 1px solid var(--border-default);
-  padding: 0;
+  background: #FCF0F3 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 0 !important;
 }
 
 .message-expanded td > div {
-  background: #FCF0F3;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0px; /* No vertical divider line */
-  height: 82px;
-  align-items: center;
+  background: #FCF0F3 !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 0px !important; /* No vertical divider line */
+  height: 82px !important;
+  align-items: center !important;
 }
 
 .message-expanded section {
-  background: #FCF0F3;
-  padding: 14px 16px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-1);
+  background: #FCF0F3 !important;
+  padding: 14px 16px !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 4px !important;
 }
 
 .message-expanded h4 {
-  margin: 0;
-  text-transform: none; /* Title Case */
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
-  color: var(--text-heading);
+  margin: 0 !important;
+  text-transform: none !important; /* Title Case */
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
 }
 
 .message-expanded pre {
-  margin: 0;
-  background: transparent;
-  padding: 0;
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
-  color: var(--text-heading);
-  overflow: visible;
-  max-height: none;
+  margin: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
+  overflow: visible !important;
+  max-height: none !important;
 }
 
 /* -- Figma Messages Table Header Overrides -- */
 .messages-table thead tr {
-  height: 52px;
+  height: 52px !important;
 }
 
 .messages-table th {
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  padding: 14px 16px;
-  color: var(--text-heading);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 16px;
-  line-height: 22px;
-  text-transform: none; /* Remove uppercase */
-  letter-spacing: normal;
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important; /* Remove uppercase */
+  letter-spacing: normal !important;
 }
 
 /* Make sure the first empty th for expand button also matches background */
 .messages-table th:first-child {
-  background: var(--bg-neutral-light);
-  width: 48px;
+  background: #F9F9F9 !important;
+  width: 48px !important;
 }
 
 /* -- Inline Offset Expand Chevron Styles -- */
 .offset-cell-wrapper {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
 }
 
 .expand-chevron-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-  user-select: none;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #818181 !important;
+  cursor: pointer !important;
+  width: 16px !important;
+  height: 16px !important;
+  user-select: none !important;
 }
 
 .messages-table th:first-child,
 .messages-table td:first-child {
-  width: auto;
-  padding-right: var(--space-4);
+  width: auto !important;
+  padding-right: 16px !important;
 }
 
 /* -- Figma Consumers Table Overrides -- */
 .consumers-table thead tr {
-  height: 54px;
+  height: 54px !important;
 }
 
 .consumers-table th {
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  padding: var(--space-4);
-  color: var(--button-primary-active);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 16px;
-  line-height: 22px;
-  text-transform: none;
-  letter-spacing: normal;
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
 }
 
 .consumers-table tbody tr {
-  height: 52px;
+  height: 52px !important;
 }
 
 .consumers-table td {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
-  padding: 14px 16px;
-  color: var(--text-heading);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
 }
 
 /* -- Figma Settings Table Overrides -- */
 .settings-table thead tr {
-  height: 54px;
+  height: 54px !important;
 }
 
 .settings-table th {
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  padding: var(--space-4);
-  color: var(--button-primary-active);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 16px;
-  line-height: 22px;
-  text-transform: none;
-  letter-spacing: normal;
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
 }
 
 .settings-table tbody tr {
-  height: 52px;
+  height: 52px !important;
 }
 
 .settings-table td {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
-  padding: 14px 16px;
-  color: var(--text-heading);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
 }
 
 /* Edit action column width */
 .settings-table th:last-child,
 .settings-table td:last-child {
-  width: 64px;
-  text-align: center;
+  width: 64px !important;
+  text-align: center !important;
 }
 
 .settings-table .setting-actions button {
-  background: transparent;
-  border: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
+  background: transparent !important;
+  border: none !important;
+  color: #818181 !important;
+  cursor: pointer !important;
 }
 
 .settings-table .setting-actions button:hover {
-  color: var(--button-primary);
+  color: #3E1363 !important;
 }
 
 /* Settings tab toolbar layout alignment */
 .tab-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-bottom: 16px !important;
 }
 
 .tab-toolbar label {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  flex: 1;
-  gap: var(--space-2);
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 12px !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  background: #FFFFFF !important;
+  flex: 1 !important;
+  gap: 8px !important;
 }
 
 .tab-toolbar label input {
-  border: none;
-  outline: none;
-  font-size: 14px;
-  font-family: 'Satoshi', sans-serif;
+  border: none !important;
+  outline: none !important;
+  font-size: 14px !important;
+  font-family: 'Satoshi', sans-serif !important;
 }
 
 .tab-toolbar button {
-  height: 40px;
-  width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-  cursor: pointer;
-  color: var(--text-tertiary);
+  height: 40px !important;
+  width: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  background: #FFFFFF !important;
+  cursor: pointer !important;
+  color: #818181 !important;
 }
 
 .tab-toolbar button:hover {
-  background: var(--bg-neutral-light);
-  color: var(--button-primary);
+  background: #F9F9F9 !important;
+  color: #3E1363 !important;
 }
 
 /* -- Figma Statistics Tab Overrides -- */
 .statistics-figma-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-2);
-  width: 100%;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  margin-bottom: 8px !important;
+  width: 100% !important;
 }
 
 .restart-analysis-btn {
-  background: var(--bg-surface);
-  border: 1px solid var(--button-primary);
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-  color: var(--button-primary);
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  background: #FFFFFF !important;
+  border: 1px solid #3E1363 !important;
+  border-radius: 6px !important;
+  padding: 6px 8px !important;
+  color: #3E1363 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
 }
 
 .restart-analysis-btn:hover {
-  background: #FCF0F3;
+  background: #FCF0F3 !important;
 }
 
 .statistics-banner-container {
-  background: #FAFAFA;
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  margin-bottom: var(--space-6);
-  width: 100%;
-  box-sizing: border-box;
+  background: #FAFAFA !important;
+  border-radius: 8px !important;
+  padding: 16px !important;
+  margin-bottom: 24px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 .statistics-banner-row {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
 }
 
 .stat-card-white {
-  background: var(--bg-surface);
-  border-radius: var(--radius-md);
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  flex-grow: 1;
-  box-sizing: border-box;
+  background: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  flex-grow: 1 !important;
+  box-sizing: border-box !important;
 }
 
 .stat-card-label {
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
-  color: var(--text-tertiary);
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #818181 !important;
 }
 
 .stat-card-value {
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-  line-height: 19px;
-  color: var(--button-primary-active);
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #332849 !important;
 }
 
 .statistics-table thead tr {
-  height: 54px;
+  height: 54px !important;
 }
 
 .statistics-table th {
-  background: var(--bg-neutral-light);
-  border-bottom: 1px solid var(--border-default);
-  padding: var(--space-4);
-  color: var(--button-primary-active);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 16px;
-  line-height: 22px;
-  text-transform: none;
-  letter-spacing: normal;
+  background: #F9F9F9 !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 16px !important;
+  color: #332849 !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
 }
 
 .statistics-table tbody tr {
-  height: 52px;
+  height: 52px !important;
 }
 
 .statistics-table td {
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
-  padding: 14px 16px;
-  color: var(--text-heading);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
+  background: #FFFFFF !important;
+  border-bottom: 1px solid #CCCCCC !important;
+  padding: 14px 16px !important;
+  color: #23252D !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
 }
 
 /* -- Figma Toolbar Search Bar & Refresh Button -- */
 .message-toolbar label {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  padding: 6px 8px;
-  gap: var(--space-2);
-  width: 612px;
-  height: 36px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 6px 8px !important;
+  gap: 8px !important;
+  width: 612px !important;
+  height: 36px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
 }
 
 .message-toolbar label svg {
-  color: var(--text-tertiary);
-  width: 18px;
-  height: 18px;
+  color: #818181 !important;
+  width: 18px !important;
+  height: 18px !important;
 }
 
 .message-toolbar label input {
-  border: none;
-  outline: none;
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 14px;
-  line-height: 19px;
-  color: var(--text-heading);
-  width: 100%;
+  border: none !important;
+  outline: none !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  line-height: 19px !important;
+  color: #23252D !important;
+  width: 100% !important;
 }
 
 .message-toolbar label input::placeholder {
-  color: var(--text-tertiary);
+  color: #818181 !important;
 }
 
 .message-toolbar button.message-refresh-btn {
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-2);
-  width: 40px;
-  height: 40px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  color: var(--text-tertiary);
-  transition: all 0.2s ease;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 8px !important;
+  width: 40px !important;
+  height: 40px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #CCCCCC !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  color: #818181 !important;
+  transition: all 0.2s ease !important;
 }
 
 .message-toolbar button.message-refresh-btn:hover {
-  background: var(--bg-neutral-light);
-  color: var(--button-primary);
+  background: #F9F9F9 !important;
+  color: #3E1363 !important;
 }
 
 /* -- Figma Confirm Modal Overrides -- */
 .figma-confirm-modal {
-  overflow: hidden;
-  border-radius: 16px;
-  border: none;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.15);
-  background: var(--bg-surface);
+  overflow: hidden !important;
+  border-radius: 16px !important;
+  border: none !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.15) !important;
+  background: #FFFFFF !important;
 }
 
 .confirm-modal-banner {
-  height: 72px;
-  background: radial-gradient(circle at 90% -20%, #FFB64D 0%, transparent 55%), radial-gradient(circle at 60% -40%, #FFE59E 0%, transparent 60%), rgba(223, 126, 57, 0.15);
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  padding: 0 24px;
-  box-sizing: border-box;
-  border-radius: 16px 16px 0px 0px;
+  height: 72px !important;
+  background: radial-gradient(circle at 90% -20%, #FFB64D 0%, transparent 55%), radial-gradient(circle at 60% -40%, #FFE59E 0%, transparent 60%), rgba(223, 126, 57, 0.15) !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: center !important;
+  padding: 0 24px !important;
+  box-sizing: border-box !important;
+  border-radius: 16px 16px 0px 0px !important;
 }
 
 .confirm-modal-close-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--text-tertiary);
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: #818181 !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
 }
 
 .confirm-modal-body {
-  padding: var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  box-sizing: border-box;
+  padding: 24px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  box-sizing: border-box !important;
 }
 
 .confirm-modal-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
 }
 
 .confirm-modal-title-row h2 {
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 700;
-  font-size: 24px;
-  line-height: 32px;
-  color: var(--button-primary-active);
-  margin: 0;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 24px !important;
+  line-height: 32px !important;
+  color: #332849 !important;
+  margin: 0 !important;
 }
 
 .confirm-modal-desc {
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 400;
-  font-size: 16px;
-  line-height: 22px;
-  color: var(--text-tertiary);
-  margin: 0;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 400 !important;
+  font-size: 16px !important;
+  line-height: 22px !important;
+  color: #818181 !important;
+  margin: 0 !important;
 }
 
 .confirm-modal-topic-name {
-  font-family: 'Satoshi', sans-serif;
-  color: var(--button-primary-active);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 19px;
+  font-family: 'Satoshi', sans-serif !important;
+  color: #332849 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: 19px !important;
 }
 
 .confirm-modal-footer {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-top: 8px !important;
 }
 
 .confirm-btn-outline {
-  box-sizing: border-box;
-  height: 49px;
-  padding: 0 32px;
-  background: var(--bg-surface);
-  border: 1px solid var(--accent-primary);
-  border-radius: var(--radius-md);
-  color: var(--accent-primary);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  box-sizing: border-box !important;
+  height: 49px !important;
+  padding: 0 32px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #DF678B !important;
+  border-radius: 8px !important;
+  color: #DF678B !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .confirm-btn-outline:hover {
-  background: #FFF3E6;
+  background: #FFF3E6 !important;
 }
 
 .confirm-btn-filled {
-  height: 49px;
-  padding: 0 32px;
-  background: var(--button-primary);
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-light);
-  font-family: 'Satoshi', sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 49px !important;
+  padding: 0 32px !important;
+  background: #3E1363 !important;
+  border: none !important;
+  border-radius: 8px !important;
+  color: #FFFFFF !important;
+  font-family: 'Satoshi', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .confirm-btn-filled:hover {
-  background: #2D0D4B;
+  background: #2D0D4B !important;
 }
