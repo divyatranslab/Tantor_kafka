@@ -1016,14 +1016,18 @@ public class DataServicesController {
 
     private static class DataServiceException extends RuntimeException {
         private final int statusCode;
-        private final String body;
 
-        DataServiceException(int statusCode, String body) { super(body); this.statusCode = statusCode; this.body = body; }
+        DataServiceException(int statusCode, String body) {
+            // Upstream REST responses can contain connector passwords, tokens,
+            // JAAS configuration, or other secrets. Keep the raw response out
+            // of exception messages, API responses, and application logs.
+            super("The native REST API returned HTTP " + statusCode + ".");
+            this.statusCode = statusCode;
+        }
 
         int statusCode() { return statusCode; }
         String message() {
-            if (body == null || body.isBlank()) return "The native REST API returned HTTP " + statusCode + ".";
-            return "The native REST API returned HTTP " + statusCode + ": " + body;
+            return getMessage();
         }
     }
 }

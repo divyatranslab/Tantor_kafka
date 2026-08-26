@@ -19,6 +19,7 @@ import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +38,7 @@ import io.translab.tantor.server.domain.JobStepStatus;
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/config")
 @RequiredArgsConstructor
+@Slf4j
 public class ConfigController {
 
     private final ClusterRepository clusterRepository;
@@ -434,7 +436,10 @@ public class ConfigController {
     private int kafkaMajorVersion(String version) {
         if (version == null) return 0;
         try { return Integer.parseInt(version.trim().replaceFirst("^[vV]", "").split("\\.")[0]); }
-        catch (Exception ignored) { return 0; }
+        catch (Exception e) {
+            log.warn("Failed to parse Kafka major version from '{}'", version, e);
+            return 0;
+        }
     }
 
     private Map<String, Object> buildKraftServiceProperties(Cluster cluster, Map<String, Object> config, String installDir, ClusterServiceAssignment service) {

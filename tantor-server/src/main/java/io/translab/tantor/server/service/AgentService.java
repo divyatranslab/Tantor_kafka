@@ -296,7 +296,9 @@ public class AgentService {
                             stepLogsMap.put(dto.getCurrentStep(), existingLog + resultOutput);
                             task.setStepLogs(objectMapper.writeValueAsString(stepLogsMap));
                         }
-                    } catch (Exception e) {}
+                    } catch (Exception e) {
+                        log.error("Failed to parse or write step logs for task {}", taskId, e);
+                    }
                     
                     taskRepository.save(task);
                     log.info("Task {} completed with status: {}", taskId, dto.getStatus());
