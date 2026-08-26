@@ -962,7 +962,7 @@ export function KafkaConnect() {
               </button>
             </div>
             
-            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', background: 'var(--bg-neutral-light)', borderRadius: 'var(--radius-md)', padding: 'var(--space-6)', marginBottom: '24px' }}>
+            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', background: '#F8F9FA', border: '1px solid #ECECF1', borderRadius: 'var(--radius-md)', padding: 'var(--space-6)', marginBottom: '24px' }}>
               {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
               {selectedConn?.status && editingConnectionId && (
                 <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
@@ -1077,18 +1077,13 @@ export function KafkaConnect() {
               {certType === 'PKCS12' && (
                 <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                   <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
-                  <div style={{ position: 'relative' }}>
-                    <input 
-                      type="password" 
-                      value={certPassword} 
-                      onChange={e => setCertPassword(e.target.value)} 
-                      placeholder="Password" 
-                      style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
-                    />
-                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
-                      <ChevronDown size={16} style={{ color: 'var(--text-tertiary)' }} />
-                    </span>
-                  </div>
+                  <input 
+                    type="password" 
+                    value={certPassword} 
+                    onChange={e => setCertPassword(e.target.value)} 
+                    placeholder="Password" 
+                    style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
+                  />
                 </div>
               )}
 

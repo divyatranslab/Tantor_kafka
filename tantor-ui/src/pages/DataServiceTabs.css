@@ -819,6 +819,22 @@
   border-radius: 8px;
 }
 
+/* Keep inline actions such as "Paste text" within their grid column. */
+.ds-upload-style-modal .ds-field {
+  min-width: 0;
+}
+
+.ds-upload-style-modal .ds-field>label:first-child {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-mini-button {
+  max-width: 100%;
+  margin-left: auto;
+}
+
 .ds-upload-style-modal .ds-modal-inner-card + .ds-modal-inner-card {
   margin-top: 16px;
 }
