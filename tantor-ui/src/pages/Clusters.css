@@ -2577,6 +2577,23 @@
   padding: 0;
 }
 
+/* Keep the empty inventory state centred without relying on another page's
+   global .state-center rule or stylesheet import order. */
+.clusters-surface .full-empty-card > .state-center {
+  width: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.clusters-surface .full-empty-card > .state-center .empty-state-icon {
+  flex: 0 0 auto;
+}
+
 @media (max-width: 760px) {
   .clusters-page {
     padding: 12px;
