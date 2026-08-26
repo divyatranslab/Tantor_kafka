@@ -795,34 +795,6 @@
   padding: 16px 38px 24px 32px !important; /* Extra 6px on right to align with scrollbar */
 }
 
-/* Keep Add Topic visually aligned with the Upload Binary dialog without
-   changing the layout of topic details, delete, or confirmation dialogs. */
-.topic-modal.figma-topic-modal.upload-style-topic-modal {
-  width: min(760px, calc(100vw - 32px));
-  max-width: none;
-  max-height: calc(100vh - 32px);
-  border: 1px solid var(--border-default);
-  border-radius: 16px;
-  box-shadow: var(--shadow-md);
-}
-
-.upload-style-topic-modal .create-topic-header {
-  padding: 24px 24px 12px !important;
-}
-
-.upload-style-topic-modal .figma-topic-modal-body {
-  padding: 16px 24px;
-  overscroll-behavior: contain;
-}
-
-.upload-style-topic-modal .create-topic-footer {
-  flex-shrink: 0;
-  margin-top: 0;
-  padding: 20px 24px !important;
-  background: #F9F9F9;
-  border-top: 1px solid var(--border-default) !important;
-}
-
 .topic-create-modal form footer {
   position: sticky;
   z-index: 1;

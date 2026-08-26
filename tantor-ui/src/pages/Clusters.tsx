@@ -269,7 +269,7 @@ export function Clusters() {
   const renderHeader = () => (
     <header className="clusters-header flex-between">
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <h1>Clusters</h1>
         </div>
         <p className="clusters-subtitle">Deploy and manage your Tantor Kafka environments</p>
@@ -318,7 +318,7 @@ export function Clusters() {
             <section className="clusters-inventory white-card">
               {loading ? (
                 <div className="state-center loading-state">
-                  <RefreshCw size={24} className="spin" style={{ color: 'var(--button-primary)' }} />
+                  <RefreshCw size={24} className="spin" style={{ color: '#3E1363' }} />
                   <p>Loading clusters...</p>
                 </div>
               ) : (
@@ -362,13 +362,13 @@ export function Clusters() {
                             <td>
                               <div className="cluster-title-cell" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 {cluster.mode === 'EXTERNAL' ? (
-                                  <ExternalLink size={15} style={{ color: 'var(--button-primary)', flexShrink: 0, marginTop: '1px' }} />
+                                  <ExternalLink size={15} style={{ color: '#3E1363', flexShrink: 0, marginTop: '1px' }} />
                                 ) : (
-                                  <Network size={16} style={{ color: 'var(--button-primary)', flexShrink: 0, marginTop: '1px' }} />
+                                  <Network size={16} style={{ color: '#3E1363', flexShrink: 0, marginTop: '1px' }} />
                                 )}
                                 <div className="cluster-title-text" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                                  <strong style={{ color: 'var(--text-heading)', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-sm)' }}>{cluster.name}</strong>
-                                  <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', display: 'block', marginTop: '2px' }}>
+                                  <strong style={{ color: '#23252D', fontWeight: 600, fontSize: '13px' }}>{cluster.name}</strong>
+                                  <span style={{ color: '#818181', fontSize: '12px', display: 'block', marginTop: '2px' }}>
                                     Kafka {cluster.kafkaVersion || '4.0.1'} - {cluster.mode?.toLowerCase() || 'kraft'}
                                   </span>
                                 </div>

@@ -284,7 +284,7 @@ export function Topics() {
                 display: 'inline-block',
                 flexShrink: 0
               }} />
-              <span style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-semibold)', color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
+              <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
               <div style={{
                 width: '16px',
                 height: '16px',
@@ -299,7 +299,7 @@ export function Topics() {
               }}>
                 {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
               </div>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginLeft: '2px', whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B', marginLeft: '2px', whiteSpace: 'nowrap' }}>
                 {refreshInterval}s
               </span>
             </div>
@@ -426,7 +426,7 @@ export function Topics() {
           </thead>
           <tbody>
             {loading && !data ? (
-              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topicsÃ¢â‚¬Â¦</div></td></tr>
+              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
             ) : !data?.content.length ? (
               <tr><td colSpan={5} className="empty-state-cell">
                 <div className="topic-empty">
@@ -472,7 +472,7 @@ export function Topics() {
         {data && data.totalElements > 0 && (
           <footer className="topics-pagination">
             <span>
-              {data.totalElements.toLocaleString()} topic{data.totalElements === 1 ? '' : 's'} Ã‚Â· page {data.page + 1} of {Math.max(data.totalPages, 1)}
+              {data.totalElements.toLocaleString()} topic{data.totalElements === 1 ? '' : 's'} · page {data.page + 1} of {Math.max(data.totalPages, 1)}
             </span>
             <div>
               <select value={size} onChange={event => { setSize(Number(event.target.value)); setPage(0); }} aria-label="Rows per page">
@@ -490,7 +490,7 @@ export function Topics() {
 
       {canManage && showCreate && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
-          <div className="topic-modal create-topic-modal figma-topic-modal upload-style-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+          <div className="topic-modal create-topic-modal figma-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header className="create-topic-header">
               <div className="modal-title-area">
                 <h2>Create Resource</h2>
@@ -623,7 +623,7 @@ export function Topics() {
                   Cancel
                 </button>
                 <button className="topic-button filled create-btn" disabled={creating}>
-                  {creating ? 'CreatingÃ¢â‚¬Â¦' : 'Create topic'}
+                  {creating ? 'Creating…' : 'Create topic'}
                 </button>
               </footer>
             </form>
