@@ -639,9 +639,9 @@ export function ExternalClusters() {
                   <div className="inspection-result-header">
                     <div className="status-icon-wrapper">
                       {(bootstrapResult.success ?? bootstrapResult.connected) ? (
-                        <span className="success-check-dot">ÃƒÂ¢Ã…â€œÃ¢â‚¬Â</span>
+                        <span className="success-check-dot"><CheckCircle2 size={16} aria-hidden="true" /></span>
                       ) : (
-                        <span className="error-warn-dot">ÃƒÂ¢Ã…Â¡Ã‚Â </span>
+                        <span className="error-warn-dot"><AlertTriangle size={16} aria-hidden="true" /></span>
                       )}
                     </div>
                     <div className="status-info-col">

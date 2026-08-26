@@ -566,6 +566,7 @@
 .topic-modal.figma-topic-modal {
   width: 760px; /* matched to figma proportion */
   max-width: 90vw;
+  max-height: calc(100vh - 64px);
   background: #FFFFFF;
   border-radius: 16px;
   overflow: hidden;
@@ -599,11 +600,13 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-height: 80vh;
+  min-height: 0;
+  max-height: calc(100vh - 64px);
 }
 
 .figma-topic-modal-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 32px 24px;
   display: flex;
@@ -793,13 +796,19 @@
 .figma-topic-modal .create-topic-footer {
   border-top: 1px solid #EAEAEA !important;
   padding: 16px 38px 24px 32px !important; /* Extra 6px on right to align with scrollbar */
+  margin-top: 0;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #FFFFFF;
 }
 
 .topic-create-modal form footer {
   position: sticky;
   z-index: 1;
-  bottom: -1.25rem;
-  margin-top: 1.5rem;
+  bottom: 0;
+  margin-top: 0;
   box-shadow: 0 -8px 18px rgba(28, 28, 26, 0.04);
 }
 

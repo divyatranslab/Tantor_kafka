@@ -103,7 +103,7 @@ const nodeLabel = (node: MonitoringNode) => {
   const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
   const host = node.hostIp || node.hostname;
   const role = node.role;
-  return [nodeName, role, host].filter(Boolean).join(' Ã‚Â· ');
+  return [nodeName, role, host].filter(Boolean).join(' | ');
 };
 
 export function Monitoring() {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Activity, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 
@@ -200,7 +200,7 @@ export function ClusterActions() {
               color: 'var(--text-muted)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: 'var(--text-md)', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ</span>
+              <ArrowUpCircle size={18} aria-hidden="true" />
             </div>
             <div style={{ flex: 1 }}>
               <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Upgrade Kafka Version</h3>
@@ -292,7 +292,7 @@ export function ClusterActions() {
                 color: 'var(--text-muted)',
                 flexShrink: 0
               }}>
-                <span style={{ fontSize: 'var(--text-md)', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Ëœ</span>
+                <Activity size={18} aria-hidden="true" />
               </div>
               <div style={{ flex: 1 }}>
                 <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Monitoring Enablement</h3>
@@ -328,7 +328,7 @@ export function ClusterActions() {
                     color: 'var(--button-primary-active)'
                   }}
                 >
-                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` Ãƒâ€šÃ‚Â· ${host.ipAddress}` : ''}</option>)}
+                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` | ${host.ipAddress}` : ''}</option>)}
                 </select>
                 <input 
                   value={prometheusUrl} 
@@ -405,7 +405,7 @@ export function ClusterActions() {
               color: 'var(--text-muted)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: 'var(--text-md)', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>ÃƒÂ¢Ã¢â‚¬Â Ã‚Âº</span>
+              <RefreshCw size={18} aria-hidden="true" />
             </div>
             <div style={{ flex: 1 }}>
               <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Rolling Restart</h3>

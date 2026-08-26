@@ -967,8 +967,8 @@ export function KafkaConnect() {
               {selectedConn?.status && editingConnectionId && (
                 <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
                   Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
-                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>Ã¢Å“â€œ Cert Configured</span>}
-                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>Ã¢Å“â€œ Truststore Password Configured</span>}
+                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>Cert Configured</span>}
+                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>Truststore Password Configured</span>}
                 </div>
               )}
               

@@ -543,7 +543,7 @@ export function InternalConfigEditor() {
                     <strong>v{version.configVersion}</strong>
                     <span className={`version-status ${version.status.toLowerCase()}`}>{version.status.replaceAll('_', ' ')}</span>
                     {version.rollbackVersion != null && <span className="rollback-tag">Rollback of v{version.rollbackVersion}</span>}
-                    <small>created by {version.createdBy || 'Unknown'} Ã‚Â· {new Date(version.createdAt).toLocaleString()}</small>
+                    <small>created by {version.createdBy || 'Unknown'} | {new Date(version.createdAt).toLocaleString()}</small>
                   </div>
                   <div className="version-actions">
                     {version.status !== 'APPLIED' && canManage ? (

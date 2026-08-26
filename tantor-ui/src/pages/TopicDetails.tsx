@@ -146,7 +146,7 @@ function formatBytes(value: number) {
 }
 
 function formatDate(value: number) {
-  return value > 0 ? new Date(value).toLocaleString() : 'Ã¢â‚¬â€';
+  return value > 0 ? new Date(value).toLocaleString() : '-';
 }
 
 export function TopicDetails() {
@@ -407,7 +407,7 @@ export function TopicDetails() {
     config.name.toLowerCase().includes(configSearch.toLowerCase())), [configSearch, configs]);
 
   if (loadingDetail && !detail) {
-    return <div className="topic-detail-state"><RefreshCw className="spin" /> Loading topicÃ¢â‚¬Â¦</div>;
+    return <div className="topic-detail-state"><RefreshCw className="spin" /> Loading topic...</div>;
   }
 
   if (!detail) {
@@ -508,7 +508,7 @@ export function TopicDetails() {
                         <td className="preview-cell">{message.value ?? <span className="null-value">null</span>}</td>
                       </tr>,
                       expanded && <tr className="message-expanded" key={rowId + '-expanded'}><td colSpan={5}>
-                        <div><section><h4>Key Ã‚Â· {formatBytes(message.keySize)}</h4><pre>{message.key ?? 'null'}</pre></section><section><h4>Value Ã‚Â· {formatBytes(message.valueSize)}</h4><pre>{message.value ?? 'null'}</pre></section></div>
+                        <div><section><h4>Key | {formatBytes(message.keySize)}</h4><pre>{message.key ?? 'null'}</pre></section><section><h4>Value | {formatBytes(message.valueSize)}</h4><pre>{message.value ?? 'null'}</pre></section></div>
                         {Object.keys(message.headers).length > 0 && <section><h4>Headers</h4><pre>{JSON.stringify(message.headers, null, 2)}</pre></section>}
                       </td></tr>
                     ];
@@ -523,7 +523,7 @@ export function TopicDetails() {
           <div>
             <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
-              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || 'Ã¢â‚¬â€'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
+              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '-'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -540,7 +540,7 @@ export function TopicDetails() {
               </button>
             </div>
             <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th><th /></tr></thead>
-              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? 'Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢Ã¢â‚¬Â¢' : config.value ?? 'Ã¢â‚¬â€'}</td><td>{config.defaultValue ?? 'Ã¢â‚¬â€'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
+              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '******' : config.value ?? '-'}</td><td>{config.defaultValue ?? '-'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -560,7 +560,7 @@ export function TopicDetails() {
               <h3 style={{ margin: 0, color: 'var(--button-primary-hover)', fontSize: 'var(--text-md)', fontWeight: 'var(--font-medium)', fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
             </div>
             {statisticsLoading && !statistics ? (
-              <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messagesÃ¢â‚¬Â¦</div>
+              <div className="analysis-loading"><RefreshCw className="spin" /> Reading topic messages...</div>
             ) : (
               statistics && <StatisticsView statistics={statistics} />
             )}
@@ -571,7 +571,7 @@ export function TopicDetails() {
           <div>
             <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></button></div>
             <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Principal</th><th>Host</th><th>Operation</th><th>Permission</th><th>Pattern</th></tr></thead>
-              <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} Ã‚Â· {acl.resourceName}</td></tr>)}</tbody>
+              <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} | {acl.resourceName}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -623,7 +623,7 @@ export function TopicDetails() {
                   Cancel
                 </button>
                 <button className="topic-button filled create-btn" disabled={producing}>
-                  {producing ? 'ProducingÃ¢â‚¬Â¦' : 'Produce message'}
+                  {producing ? 'Producing...' : 'Produce message'}
                 </button>
               </footer>
             </form>
@@ -672,7 +672,7 @@ export function TopicDetails() {
                 Cancel
               </button>
               <button className="topic-button filled create-btn" onClick={saveConfig} disabled={savingConfig}>
-                {savingConfig ? 'SavingÃ¢â‚¬Â¦' : 'Save setting'}
+                {savingConfig ? 'Saving...' : 'Save setting'}
               </button>
             </footer>
           </div>
@@ -755,7 +755,7 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
             {detail.partitions.map(partition => (
               <tr key={partition.partition}>
                 <td><strong>{partition.partition}</strong></td>
-                <td>{partition.leader ?? 'Ã¢â‚¬â€'}</td>
+                <td>{partition.leader ?? '-'}</td>
                 <td>{partition.replicas.join(', ')}</td>
                 <td className={partition.underReplicated ? 'replicas-warning' : 'replicas-ok'}>{partition.inSyncReplicas.join(', ')}</td>
                 <td>{partition.firstOffset.toLocaleString()}</td>
@@ -780,11 +780,11 @@ function StatisticsView({ statistics }: { statistics: TopicStatistics }) {
         </div>
         <div className="stat-card-white">
           <span className="stat-card-label">Offset range</span>
-          <strong className="stat-card-value">{statistics.minOffset + 'Ã¢â‚¬â€' + statistics.maxOffset}</strong>
+          <strong className="stat-card-value">{statistics.minOffset + ' - ' + statistics.maxOffset}</strong>
         </div>
         <div className="stat-card-white timestamp-card" style={{ flexGrow: 1, minWidth: '321px' }}>
           <span className="stat-card-label">Timestamp range</span>
-          <strong className="stat-card-value">{formatDate(statistics.minTimestamp) + ' Ã¢â‚¬â€œ ' + formatDate(statistics.maxTimestamp)}</strong>
+          <strong className="stat-card-value">{formatDate(statistics.minTimestamp) + ' - ' + formatDate(statistics.maxTimestamp)}</strong>
         </div>
         <div className="stat-card-white">
           <span className="stat-card-label">Null keys</span>
@@ -884,7 +884,7 @@ function SizeStatSection({ title, stats }: { title: string; stats: SizeStatistic
 }
 
 function LoadingRow({ columns }: { columns: number }) {
-  return <tr><td colSpan={columns}><div className="table-state"><RefreshCw className="spin" size={18} /> Loading live Kafka dataÃ¢â‚¬Â¦</div></td></tr>;
+  return <tr><td colSpan={columns}><div className="table-state"><RefreshCw className="spin" size={18} /> Loading live Kafka data...</div></td></tr>;
 }
 
 function EmptyRow({ columns, text }: { columns: number; text: string }) {

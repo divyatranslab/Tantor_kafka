@@ -275,7 +275,7 @@ export function ClusterDetails() {
                 {cluster.name}
               </h1>
               <span 
-                title={`Kafka ${cluster.kafkaVersion} Ã¢â‚¬Â¢ ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} Ã¢â‚¬Â¢ ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
+                title={`Kafka ${cluster.kafkaVersion} | ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} | ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
                 style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '4px', cursor: 'pointer' }}
               >
                 <Info size={16} style={{ color: 'var(--text-tertiary)' }} />

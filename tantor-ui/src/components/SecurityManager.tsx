@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle,
+  Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle, X,
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
@@ -299,7 +299,7 @@ export default function SecurityManager({ clusterId }: Props) {
                   padding: '4px'
                 }}
               >
-                Ã¢Å“â€¢
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
 
@@ -589,7 +589,7 @@ export default function SecurityManager({ clusterId }: Props) {
             {/* Banner */}
             <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
               <button onClick={() => setAclToDelete(null)} className="confirm-modal-close-btn" style={{ color: 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xl)' }} aria-label="Close modal">
-                Ã¢Å“â€¢
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             
@@ -685,7 +685,7 @@ export default function SecurityManager({ clusterId }: Props) {
             {/* Banner */}
             <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
               <button onClick={() => setAlertMessage(null)} className="confirm-modal-close-btn" style={{ color: 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xl)' }} aria-label="Close modal">
-                Ã¢Å“â€¢
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             

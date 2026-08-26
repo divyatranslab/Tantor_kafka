@@ -434,7 +434,7 @@ function ExternalConfigEditor() {
                 {change.properties.map(p => (
                   <div className="config-diff-row modified" key={p.key}>
                     <div><span>MODIFIED</span><code>{p.key}</code></div>
-                    <pre>{p.oldValue || 'Ã¢Ë†â€¦'}</pre><b>Ã¢â€ â€™</b><pre>{p.newValue || 'Ã¢Ë†â€¦'}</pre>
+                    <pre>{p.oldValue || '-'}</pre><b>-&gt;</b><pre>{p.newValue || '-'}</pre>
                   </div>
                 ))}
               </div>

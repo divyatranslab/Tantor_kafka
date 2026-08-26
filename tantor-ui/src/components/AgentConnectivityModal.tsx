@@ -200,7 +200,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     </label>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 'var(--text-base)', color: '#1E293B', fontWeight: 'var(--font-medium)', margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
-                      <p style={{ fontSize: 'var(--text-xs)', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;Ã‚Â·&nbsp; {host.agentPath || 'Path unavailable'}</p>
+                      <p style={{ fontSize: 'var(--text-xs)', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;|&nbsp; {host.agentPath || 'Path unavailable'}</p>
                     </div>
                     <button
                       title="Reject & remove"
