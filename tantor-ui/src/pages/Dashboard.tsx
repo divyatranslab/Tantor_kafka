@@ -389,9 +389,9 @@ export function Dashboard() {
           <PanelTitle
             title="Task Activity"
             detail={
-              <select className="db-panel-select">
-                <option>Last 7 days</option>
-              </select>
+              <span className="db-panel-select">
+                Last 7 days
+              </span>
             }
           />
           <ResponsiveContainer width="100%" height={235}>

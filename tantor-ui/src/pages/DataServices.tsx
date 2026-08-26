@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Database, Activity, Box, Server, Settings, Layers, HardDrive, CheckCircle2, X } from 'lucide-react';
 import { notifyAction } from '../components/confirmUtils';
 import './DataServices.css';
@@ -139,44 +140,6 @@ export function DataServices() {
                 <button className="btn-secondary" onClick={() => setStep(1)}>Back</button>
                 <button className="btn-primary" onClick={() => setStep(3)}>Continue</button>
               </div>
-
-              {/* Host Selection Modal */}
-              {isHostModalOpen && (
-                <div className="modal-overlay">
-                  <div className="modal-content cloudera-modal">
-                    <div className="modal-header">
-                      <h3>Select Host for Master Node</h3>
-                      <button className="icon-btn" onClick={() => setIsHostModalOpen(false)}>
-                        <X size={20} />
-                      </button>
-                    </div>
-                    <div className="modal-body">
-                      {hosts.length === 0 ? (
-                        <p>No hosts available. Please add hosts first.</p>
-                      ) : (
-                        <div className="host-list">
-                          {hosts.map(host => (
-                            <label key={host.id} className={`host-row ${selectedHostId === host.id ? 'selected' : ''}`}>
-                              <input 
-                                type="radio" 
-                                name="host_select" 
-                                checked={selectedHostId === host.id}
-                                onChange={() => setSelectedHostId(host.id)}
-                              />
-                              <span className="host-name">{host.hostname}</span>
-                              <span className="host-ip">{host.ipAddresses}</span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="modal-footer">
-                      <button className="btn-secondary" onClick={() => setIsHostModalOpen(false)}>Cancel</button>
-                      <button className="btn-primary" onClick={() => setIsHostModalOpen(false)}>Select</button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -223,7 +186,7 @@ export function DataServices() {
 
           {step > 3 && (
             <div className="step-pane">
-              <h2>Review & Deploy</h2>
+              <h2>Review &amp; Deploy</h2>
               <p>You are about to deploy <strong>{availableServices.find(s => s.id === selectedService)?.name}</strong>.</p>
               
               <div className="role-assignment-box" style={{ marginTop: '20px' }}>
@@ -253,6 +216,44 @@ export function DataServices() {
           )}
         </div>
       </div>
+
+      {/* Host Selection Modal — portal to escape scroll container */}
+      {isHostModalOpen ? createPortal(
+        <div className="modal-overlay">
+          <div className="modal-content cloudera-modal">
+            <div className="modal-header">
+              <h3>Select Host for Master Node</h3>
+              <button className="icon-btn" onClick={() => setIsHostModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+            <div className="modal-body">
+              {hosts.length === 0 ? (
+                <p>No hosts available. Please add hosts first.</p>
+              ) : (
+                <div className="host-list">
+                  {hosts.map(host => (
+                    <label key={host.id} className={`host-row ${selectedHostId === host.id ? 'selected' : ''}`}>
+                      <input 
+                        type="radio" 
+                        name="host_select" 
+                        checked={selectedHostId === host.id}
+                        onChange={() => setSelectedHostId(host.id)}
+                      />
+                      <span className="host-name">{host.hostname}</span>
+                      <span className="host-ip">{host.ipAddresses}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setIsHostModalOpen(false)}>Cancel</button>
+              <button className="btn-primary" onClick={() => setIsHostModalOpen(false)}>Select</button>
+            </div>
+          </div>
+        </div>
+      , document.body) : null}
     </div>
   );
 }

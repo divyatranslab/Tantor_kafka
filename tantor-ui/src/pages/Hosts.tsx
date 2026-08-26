@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
@@ -171,117 +172,117 @@ export function Hosts() {
         <div className="hosts-empty-state">
           <div className="empty-illustration">
             <svg width="102" height="74" viewBox="0 0 102 74" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
-              <rect x="10" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
-              <rect x="10" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="60" y="8" width="14" height="2" rx="1" fill="#8B5CF6"/>
-              <rect x="60" y="13" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
-              <rect x="10" y="34" width="14" height="2" rx="1" fill="#8B5CF6"/>
-              <rect x="10" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="60" y="34" width="14" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="60" y="39" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)"/>
-              <rect x="10" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
-              <rect x="10" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
-              <rect x="60" y="60" width="14" height="2" rx="1" fill="#8B5CF6"/>
-              <rect x="60" y="65" width="28" height="2" rx="1" fill="#D1D5DB"/>
+              <rect x="0.5" y="0.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)" />
+              <rect x="10" y="8" width="14" height="2" rx="1" fill="#8B5CF6" />
+              <rect x="10" y="13" width="28" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="60" y="8" width="14" height="2" rx="1" fill="#8B5CF6" />
+              <rect x="60" y="13" width="28" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="0.5" y="26.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)" />
+              <rect x="10" y="34" width="14" height="2" rx="1" fill="#8B5CF6" />
+              <rect x="10" y="39" width="28" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="60" y="34" width="14" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="60" y="39" width="28" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="0.5" y="52.5" width="101" height="21" rx="2.5" fill="white" stroke="var(--bg-neutral)" />
+              <rect x="10" y="60" width="14" height="2" rx="1" fill="#8B5CF6" />
+              <rect x="10" y="65" width="28" height="2" rx="1" fill="#D1D5DB" />
+              <rect x="60" y="60" width="14" height="2" rx="1" fill="#8B5CF6" />
+              <rect x="60" y="65" width="28" height="2" rx="1" fill="#D1D5DB" />
             </svg>
           </div>
           <h3>No Host at this movment</h3>
           <p>Create your first rule to start identifying duplicate records and improving your data quality.</p>
         </div>
       ) : (
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th style={{ width: '100px' }}>Status</th>
-              <th style={{ width: '110px' }}>Availability</th>
-              <th style={{ width: '160px' }}>Agent name</th>
-              <th style={{ width: '160px' }}>Host name</th>
-              <th style={{ width: '120px' }}>IP address</th>
-              <th style={{ width: '160px' }}>Agent</th>
-              <th style={{ width: '140px' }}>CPU</th>
-              <th style={{ width: '140px' }}>Memory</th>
-            </tr>
-          </thead>
-          <tbody>
-            {!hasLoaded && activeHosts.length === 0 ? (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={8}>
-                  <div className="empty-state">
-                    Loading connected agents...
-                  </div>
-                </td>
+                <th style={{ width: '100px' }}>Status</th>
+                <th style={{ width: '110px' }}>Availability</th>
+                <th style={{ width: '160px' }}>Agent name</th>
+                <th style={{ width: '160px' }}>Host name</th>
+                <th style={{ width: '120px' }}>IP address</th>
+                <th style={{ width: '160px' }}>Agent</th>
+                <th style={{ width: '140px' }}>CPU</th>
+                <th style={{ width: '140px' }}>Memory</th>
               </tr>
-            ) : activeHosts.map(host => {
-              const ip = displayIp(host.ipAddresses);
-              const cpu = host.cpuUsagePct ? Math.round(host.cpuUsagePct) : 0;
-              const mem = (host.memTotalMb ?? 0) > 0
-                ? Math.round(((host.memUsedMb ?? 0) / host.memTotalMb!) * 100)
-                : 0;
-              return (
-                <tr key={host.id}>
-                  <td>
-                    <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
-                      {(host.agentStatus ?? 'OFFLINE').toUpperCase() === 'ONLINE' && (
-                        <span className="status-dot"></span>
-                      )}
-                      <span>
-                        {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
-                      </span>
-                    </span>
-                  </td>
-                  <td>
-                    <div className="availability-cell">
-                      <span className={`availability-badge ${
-                        host.status === 'OFFLINE' ? 'unavailable' :
-                        host.status === 'CRITICAL' ? 'critical' :
-                        ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
-                      }`}>
-                        {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
-                         host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
-                         host.status === 'OFFLINE' ? 'Unavailable' :
-                         host.status === 'REMOVED' ? 'Removed' :
-                         host.status === 'CRITICAL' ? 'Critical' : 'Available'}
-                      </span>
-                    </div>
-                  </td>
-                  <td>{host.agentName ?? '-'}</td>
-                  <td>{host.hostname}</td>
-                  <td>{ip}</td>
-                  <td>
-                    <div className="agent-kind-cell">
-                      <span>V{host.agentVersion || 'N/A'}</span>
-                      <small>{host.agentPath || 'Path unavailable'}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="metric-bar-stacked">
-                      <span>{cpu}%</span>
-                      <div className="bar-track">
-                        <div className="bar-fill normal" style={{ width: `${cpu}%` }} />
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="metric-bar-stacked">
-                      <span>{mem}%</span>
-                      <div className="bar-track">
-                        <div className="bar-fill normal" style={{ width: `${mem}%` }} />
-                      </div>
+            </thead>
+            <tbody>
+              {!hasLoaded && activeHosts.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="empty-state">
+                      Loading connected agents...
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+              ) : activeHosts.map(host => {
+                const ip = displayIp(host.ipAddresses);
+                const cpu = host.cpuUsagePct ? Math.round(host.cpuUsagePct) : 0;
+                const mem = (host.memTotalMb ?? 0) > 0
+                  ? Math.round(((host.memUsedMb ?? 0) / host.memTotalMb!) * 100)
+                  : 0;
+                return (
+                  <tr key={host.id}>
+                    <td>
+                      <span className={`host-status-badge ${(host.agentStatus ?? 'offline').toLowerCase()}`}>
+                        {(host.agentStatus ?? 'OFFLINE').toUpperCase() === 'ONLINE' && (
+                          <span className="status-dot"></span>
+                        )}
+                        <span>
+                          {host.agentStatus ? host.agentStatus.charAt(0) + host.agentStatus.slice(1).toLowerCase() : 'Offline'}
+                        </span>
+                      </span>
+                    </td>
+                    <td>
+                      <div className="availability-cell">
+                        <span className={`availability-badge ${host.status === 'OFFLINE' ? 'unavailable' :
+                            host.status === 'CRITICAL' ? 'critical' :
+                              ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
+                          }`}>
+                          {host.status === 'OCCUPIED_INTERNAL' ? 'Occupied' :
+                            host.status === 'OCCUPIED_EXTERNAL' ? 'Occupied' :
+                              host.status === 'OFFLINE' ? 'Unavailable' :
+                                host.status === 'REMOVED' ? 'Removed' :
+                                  host.status === 'CRITICAL' ? 'Critical' : 'Available'}
+                        </span>
+                      </div>
+                    </td>
+                    <td>{host.agentName ?? '-'}</td>
+                    <td>{host.hostname}</td>
+                    <td>{ip}</td>
+                    <td>
+                      <div className="agent-kind-cell">
+                        <span>V{host.agentVersion || 'N/A'}</span>
+                        <small>{host.agentPath || 'Path unavailable'}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="metric-bar-stacked">
+                        <span>{cpu}%</span>
+                        <div className="bar-track">
+                          <div className="bar-fill normal" style={{ width: `${cpu}%` }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="metric-bar-stacked">
+                        <span>{mem}%</span>
+                        <div className="bar-track">
+                          <div className="bar-fill normal" style={{ width: `${mem}%` }} />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
-      {canManage && showEnrollModal && (
+      {/* Agent Connectivity Modal — portal to escape scroll container */}
+      {canManage && showEnrollModal ? createPortal(
         <div className="modal-overlay" onClick={() => setShowEnrollModal(false)}>
           <div className="modal agent-connectivity-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -323,7 +324,7 @@ export function Hosts() {
                           <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                         </div>
                         <div className="pending-node-actions">
-                          <button className="btn icon-only danger" title="Reject & remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
+                          <button className="btn icon-only danger" title="Reject &amp; remove" onClick={(event) => { event.stopPropagation(); deleteHost(host.id); }}>
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -344,7 +345,7 @@ export function Hosts() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
     </div>
   );
 }

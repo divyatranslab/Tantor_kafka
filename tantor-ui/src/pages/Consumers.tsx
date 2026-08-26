@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
@@ -52,7 +53,7 @@ export function Consumers() {
   const [size] = useState(10);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('totalLag'); // Default sort
+  const [sortBy, setSortBy] = useState('totalLag');
 
   // Detail Modal State
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -108,8 +109,6 @@ export function Consumers() {
       setDetailLoading(false);
     }
   };
-
-
 
   return (
     <div className="consumers-tab animate-fade-in">
@@ -236,19 +235,9 @@ export function Consumers() {
         )}
       </div>
 
-      {/* Detail Modal */}
-      {selectedGroupId && (
+      {/* Detail Modal — rendered via portal to escape scroll container stacking context */}
+      {selectedGroupId ? createPortal(
         <div className="modal-overlay" onClick={() => setSelectedGroupId(null)} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
@@ -320,7 +309,7 @@ export function Consumers() {
 
                   {/* Section Title */}
                   <div style={{ padding: '0 32px 12px 32px' }}>
-                    <h4 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-md)', color: 'var(--button-primary-hover)' }}>Members & Partitions</h4>
+                    <h4 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-md)', color: 'var(--button-primary-hover)' }}>Members &amp; Partitions</h4>
                   </div>
 
                   {/* Members List */}
@@ -390,7 +379,7 @@ export function Consumers() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
     </div>
   );
 }

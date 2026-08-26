@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
 import { confirmAction, notifyAction } from './confirmUtils';
@@ -135,7 +136,7 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: '720px' }}>
         <div className="modal-header" style={{ padding: '24px 32px 16px 32px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -218,24 +219,24 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
         </div>
 
         <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: "var(--bg-surface)" }}>
-          <button 
-            className="btn" 
-            onClick={onClose} 
+          <button
+            className="btn"
+            onClick={onClose}
             style={{ background: "var(--bg-surface)", border: '1px solid #CBD5E1', color: 'var(--text-muted)', padding: '8px 24px', borderRadius: 'var(--radius-md)', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}
           >
             Cancel
           </button>
-          <button 
-            className="btn btn-primary-action" 
-            disabled={selectedCount === 0 || connectingAgents} 
-            onClick={connectSelectedAgents} 
-            style={{ 
-              background: "var(--bg-surface)", 
-              border: '1px solid #8B5CF6', 
-              color: '#8B5CF6', 
-              padding: '8px 24px', 
-              borderRadius: 'var(--radius-md)', 
-              fontWeight: 'var(--font-medium)', 
+          <button
+            className="btn btn-primary-action"
+            disabled={selectedCount === 0 || connectingAgents}
+            onClick={connectSelectedAgents}
+            style={{
+              background: "var(--bg-surface)",
+              border: '1px solid #8B5CF6',
+              color: '#8B5CF6',
+              padding: '8px 24px',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: 'var(--font-medium)',
               fontSize: 'var(--text-base)',
               opacity: (selectedCount === 0 || connectingAgents) ? 0.5 : 1
             }}
@@ -245,5 +246,5 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
         </div>
       </div>
     </div>
-  );
+    , document.body);
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Upload, XCircle, ChevronDown, ChevronUp,
   Loader2, X, RefreshCw, Server, DownloadCloud,
@@ -771,7 +772,7 @@ export function Artifacts() {
         </div>
       )}
 
-      {canManage && showUploadModal && (
+      {canManage && showUploadModal ? createPortal(
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
           <div className="modal upload-parcel-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header upload-parcel-header">
@@ -866,9 +867,9 @@ export function Artifacts() {
             </form>
           </div>
         </div>
-      )}
+        , document.body) : null}
 
-      {auditModalArtifact && (
+      {auditModalArtifact ? createPortal(
         <div className="modal-overlay" onClick={() => setAuditModalArtifact(null)}>
           <div className="modal artifact-log-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -909,9 +910,9 @@ export function Artifacts() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
 
-      {deleteConfirmVer && (
+      {deleteConfirmVer ? createPortal(
         <div className="modal-overlay" onClick={() => setDeleteConfirmVer(null)}>
           <div className="modal delete-confirm-modal" onClick={e => e.stopPropagation()}>
             <div className="delete-modal-banner">
@@ -942,7 +943,7 @@ export function Artifacts() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
     </div>
   );
 }
