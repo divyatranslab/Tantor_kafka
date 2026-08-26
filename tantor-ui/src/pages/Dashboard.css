@@ -665,6 +665,7 @@
 .db-panel-select {
   appearance: none;
   background-color: transparent;
+  border: 1px solid #E5E5E5;
   border-radius: 6px;
   padding: 4px 28px 4px 10px;
   font-family: 'Satoshi', sans-serif;
