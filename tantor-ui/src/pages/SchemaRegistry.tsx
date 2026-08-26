@@ -1485,15 +1485,15 @@ export function SchemaRegistry() {
                     />
                   </div>
                   {certType === 'PEM' ? (
-                    <div className="ds-field">
-                      <label>
-                        <span>Certificate</span>
+                    <div className="ds-field ds-certificate-field">
+                      <div className="ds-certificate-label-row">
+                        <label>Certificate</label>
                         <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
                           {certPasteMode
                             ? <><Paperclip size={14} aria-hidden="true" /> Upload file</>
                             : <><ClipboardPaste size={14} aria-hidden="true" /> Paste text</>}
                         </button>
-                      </label>
+                      </div>
                       {certPasteMode ? (
                         <textarea value={certPasteText} onChange={e => setCertPasteText(e.target.value)}
                           placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDXTCCAkWgAwIBAgIJAMEn...&#10;-----END CERTIFICATE-----"

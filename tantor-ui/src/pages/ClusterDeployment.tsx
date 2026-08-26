@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -2430,8 +2431,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </div>
         </div>
       )}
-      {commonConfigOpen && (
-        <div className="cd-modal-backdrop" onClick={() => setCommonConfigOpen(false)}>
+      {commonConfigOpen && createPortal(
+        <div className="cd-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setCommonConfigOpen(false)}>
           <div className="cd-config-modal common" onClick={e => e.stopPropagation()}>
             <div className="cd-config-modal-header">
               <div>
@@ -2466,7 +2467,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               <button className="cd-primary-btn" onClick={() => setCommonConfigOpen(false)} style={{ background: '#CBC0E0', color: '#FFFFFF', border: 'none', borderRadius: '8px', padding: '10px 16px', fontSize: '14px', fontWeight: 500 }}>Save</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
