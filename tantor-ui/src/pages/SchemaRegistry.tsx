@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -1200,7 +1200,9 @@ export function SchemaRegistry() {
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
                         <button className="ds-mini-button ds-expand-btn">
-                          {expandedVersions.has(version.version) ? 'ÃƒÂ¢Ã‹â€ Ã¢â‚¬â„¢' : 'ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â'}
+                          {expandedVersions.has(version.version)
+                            ? <ChevronDown size={14} aria-hidden="true" />
+                            : <ChevronRight size={14} aria-hidden="true" />}
                         </button>
                       </td>
                       <td>{version.version}</td>
@@ -1434,8 +1436,8 @@ export function SchemaRegistry() {
                 {selectedConn?.status && editingConnectionId && (
                   <div style={{ padding: '10px 14px', background: "var(--bg-surface)", borderRadius: 8, border: '1px solid #E8E6E1', fontSize: 13, color: 'var(--text-primary)' }}>
                     Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
-                    {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Cert Configured</span>}
-                    {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Truststore Password Configured</span>}
+                    {selectedConn.certificateConfigured && <span className="ds-configured-status"><Check size={14} aria-hidden="true" /> Cert Configured</span>}
+                    {selectedConn.truststoreConfigured && <span className="ds-configured-status"><Check size={14} aria-hidden="true" /> Truststore Password Configured</span>}
                   </div>
                 )}
                 <div className="ds-field">
@@ -1487,7 +1489,9 @@ export function SchemaRegistry() {
                       <label>
                         <span>Certificate</span>
                         <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
-                          {certPasteMode ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã…Â½ Upload file' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã¢â‚¬Â¹ Paste text'}
+                          {certPasteMode
+                            ? <><Paperclip size={14} aria-hidden="true" /> Upload file</>
+                            : <><ClipboardPaste size={14} aria-hidden="true" /> Paste text</>}
                         </button>
                       </label>
                       {certPasteMode ? (

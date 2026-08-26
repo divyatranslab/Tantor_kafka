@@ -813,14 +813,21 @@
 
 .ds-upload-style-modal .ds-modal-inner-card {
   margin: 0;
-  padding: 0;
-  background: transparent;
+  padding: 20px;
+  background: #F8F9FA;
+  border: 1px solid #ECECF1;
+  border-radius: 8px;
 }
 
 .ds-upload-style-modal .ds-modal-inner-card + .ds-modal-inner-card {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #ECECF1;
+  margin-top: 16px;
+}
+
+.ds-configured-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
 }
 
 .ds-upload-style-modal .ds-modal-footer {
