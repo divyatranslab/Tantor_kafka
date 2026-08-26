@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
@@ -488,7 +489,7 @@ export function Topics() {
         )}
       </div>
 
-      {canManage && showCreate && (
+      {canManage && showCreate && createPortal(
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
           <div className="topic-modal create-topic-modal figma-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header className="create-topic-header">
@@ -628,7 +629,8 @@ export function Topics() {
               </footer>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {canManage && pendingAction && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -948,7 +949,7 @@ export function KafkaConnect() {
       </>}
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Connection modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
-      {canManage && showConnection && (
+      {canManage && showConnection && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: 'var(--radius-lg)', background: "var(--bg-surface)", padding: 'var(--space-6)', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
             <div className="ds-modal-header" style={{ border: 'none', padding: '0 0 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1175,10 +1176,11 @@ export function KafkaConnect() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {canManage && showCreate && (
+      {canManage && showCreate && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <form className="ds-modal" onSubmit={createConnector}>
             <div className="ds-modal-header">
@@ -1204,14 +1206,17 @@ export function KafkaConnect() {
               </button>
             </div>
           </form>
-        </div>
-      )}      {successMessage && (
+        </div>,
+        document.body
+      )}
+      {successMessage && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-success-modal">
             <CheckCircle size={48} /><h3>Deployment successful</h3><p>{successMessage}</p>
             <button className="ds-button primary" onClick={() => setSuccessMessage(null)}>Done</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>
