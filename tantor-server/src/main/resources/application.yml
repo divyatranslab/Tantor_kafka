@@ -39,6 +39,13 @@ server:
 tantor:
   runtime:
     environment: ${TANTOR_ENVIRONMENT}
+  agent:
+    # Transitional compatibility for installations whose agents connect
+    # directly without a client certificate or user JWT.
+    legacy-unauthenticated-enabled: ${TANTOR_AGENT_LEGACY_UNAUTHENTICATED_ENABLED:false}
+  ui:
+    # Keep disabled when browser requests are authenticated by Keycloak/JWT.
+    legacy-unauthenticated-enabled: ${TANTOR_UI_LEGACY_UNAUTHENTICATED_ENABLED:false}
   security:
     encryption:
       key: ${TANTOR_ENCRYPTION_KEY}

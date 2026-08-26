@@ -27,6 +27,8 @@ public class SecurityConfig {
 
     private static final RequestMatcher INTERNAL_PROMETHEUS_PATH =
             new AntPathRequestMatcher("/internal/prometheus/**", HttpMethod.GET.name());
+    private static final RequestMatcher UI_API_PATH =
+            new AntPathRequestMatcher("/api/v1/ui/**");
     private static final RequestMatcher IPV4_LOOPBACK = new IpAddressMatcher("127.0.0.0/8");
     private static final RequestMatcher IPV6_LOOPBACK = new IpAddressMatcher("::1");
     private static final RequestMatcher LOOPBACK_INTERNAL_PROMETHEUS = request ->
@@ -35,7 +37,7 @@ public class SecurityConfig {
 
     private final JwtUtils jwtUtils;
 
-    @Value("${tantor.environment:production}")
+    @Value("${tantor.runtime.environment:production}")
     private String runtimeEnvironment;
 
     @Value("${tantor.agent.legacy-unauthenticated-enabled:false}")
@@ -75,21 +77,34 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/v1/monitoring/health").permitAll()
                     .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 
-                    // mTLS is the production agent trust boundary. A deliberately
-                    // opt-in development compatibility mode keeps an existing
-                    // unsecured control plane usable while it is migrated.
+                    // Agent transport authentication is controlled independently
+                    // from browser authentication. When the explicit compatibility
+                    // switch is enabled, existing internal and discovery agents may
+                    // call only their machine endpoints without a user JWT.
                     .requestMatchers("/api/v1/agents/**")
                     .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
-                            legacyUnauthenticatedAgentApiEnabled
-                                    && "development".equalsIgnoreCase(runtimeEnvironment)))
+                            legacyUnauthenticatedAgentApiEnabled))
+                    .requestMatchers(HttpMethod.POST,
+                            "/api/v1/ui/external-clusters/discovery/report",
+                            "/api/v1/ui/external-clusters/discovery/heartbeat",
+                            "/api/v1/ui/external-clusters/discovery/*/tasks/complete",
+                            "/api/v1/ui/external-clusters/discovery/*/metrics",
+                            "/api/v1/ui/clusters/external/*/tasks/complete",
+                            "/api/v1/ui/clusters/external/*/tasks/metrics")
+                    .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                            legacyUnauthenticatedAgentApiEnabled))
+                    .requestMatchers(HttpMethod.GET,
+                            "/api/v1/ui/external-clusters/discovery/*/tasks")
+                    .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
+                            legacyUnauthenticatedAgentApiEnabled))
 
                     // The current 194 development VM deliberately runs without
                     // Keycloak. Keep that compatibility explicitly scoped to its
                     // UI namespace; SIT/UAT/production still require JWT roles.
-                    .requestMatchers("/api/v1/ui/**")
-                    .access((authentication, context) -> new org.springframework.security.authorization.AuthorizationDecision(
-                            legacyUnauthenticatedUiApiEnabled
-                                    && "development".equalsIgnoreCase(runtimeEnvironment)))
+                    .requestMatchers(request -> legacyUnauthenticatedUiApiEnabled
+                            && "development".equalsIgnoreCase(runtimeEnvironment)
+                            && UI_API_PATH.matches(request))
+                    .permitAll()
 
                     // Account/directory administration and API documentation are
                     // restricted before the general read/mutation rules below.
