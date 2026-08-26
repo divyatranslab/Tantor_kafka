@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle, X,
 } from 'lucide-react';
@@ -257,27 +258,38 @@ export default function SecurityManager({ clusterId }: Props) {
         </div>
       )}
 
-      {canManage && showCreateAcl && (
-        <div style={{
+      {canManage && showCreateAcl && createPortal(
+        <div
+          role="presentation"
+          onClick={() => setShowCreateAcl(false)}
+          style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.48)',
+          backdropFilter: 'blur(2px)',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1000,
+          padding: '32px',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          zIndex: 10000,
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
-          <div style={{
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-acl-modal-title"
+            onClick={event => event.stopPropagation()}
+            style={{
             background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
             maxWidth: '780px',
+            maxHeight: 'calc(100vh - 64px)',
             boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-            overflow: 'hidden'
+            overflowY: 'auto',
+            flexShrink: 0
           }}>
             {/* Modal Header */}
             <div style={{
@@ -287,7 +299,7 @@ export default function SecurityManager({ clusterId }: Props) {
               padding: '20px 24px',
               borderBottom: '1px solid #f1f5f9'
             }}>
-              <h3 style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Add New ACL Binding</h3>
+              <h3 id="add-acl-modal-title" style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Add New ACL Binding</h3>
               <button 
                 onClick={() => setShowCreateAcl(false)} 
                 style={{
@@ -510,7 +522,8 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="table-container" style={{overflowX:'auto',border:'1px solid var(--bg-neutral)',borderRadius:8}}>
