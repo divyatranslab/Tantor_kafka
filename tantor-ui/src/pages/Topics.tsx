@@ -490,7 +490,7 @@ export function Topics() {
 
       {canManage && showCreate && (
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
-          <div className="topic-modal create-topic-modal figma-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
+          <div className="topic-modal create-topic-modal figma-topic-modal upload-style-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header className="create-topic-header">
               <div className="modal-title-area">
                 <h2>Create Resource</h2>

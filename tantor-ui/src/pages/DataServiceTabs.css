@@ -786,6 +786,51 @@
   background: #2D0E49;
 }
 
+/* Scoped compact dialog layout for Schema Registry create/connection flows.
+   The generic .ds-modal is also used by comparison and connector dialogs, so
+   do not change it globally. These rules follow the Upload Binary modal's
+   header, scrollable body, and fixed footer treatment. */
+.ds-modal.ds-upload-style-modal {
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.ds-upload-style-modal .ds-modal-header {
+  flex-shrink: 0;
+  padding: 24px 24px 12px;
+}
+
+.ds-upload-style-modal .ds-form {
+  min-height: 0;
+  padding: 16px 24px !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ds-upload-style-modal .ds-modal-inner-card {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.ds-upload-style-modal .ds-modal-inner-card + .ds-modal-inner-card {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ECECF1;
+}
+
+.ds-upload-style-modal .ds-modal-footer {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 20px 24px;
+  background: #F9F9F9;
+  border-top: 1px solid var(--border-default);
+}
+
 .ds-result-scroll {
   overflow-x: auto;
 }
