@@ -2356,8 +2356,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           loadHosts();
         }} />
       )}
-      {configModalHost && (
-        <div className="cd-modal-backdrop" onClick={() => setConfigModalHostId(null)}>
+      {configModalHost && createPortal(
+        <div className="cd-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setConfigModalHostId(null)}>
           <div className="cd-config-modal" onClick={e => e.stopPropagation()}>
             <div className="cd-config-modal-header">
               <div>
@@ -2429,7 +2429,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               })}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {commonConfigOpen && createPortal(
         <div className="cd-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setCommonConfigOpen(false)}>
