@@ -6,6 +6,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -18,7 +19,7 @@ class ArtifactSchemaHealthIndicatorTest {
 
     @Test
     void reportsUpOnlyWhenRequiredTableAndMigrationExist() {
-        when(jdbcTemplate.queryForObject(anyString(), Boolean.class, "67"))
+        when(jdbcTemplate.queryForObject(anyString(), eq(Boolean.class), eq("67")))
                 .thenReturn(true);
 
         assertThat(indicator.health().getStatus()).isEqualTo(Status.UP);
@@ -26,7 +27,7 @@ class ArtifactSchemaHealthIndicatorTest {
 
     @Test
     void reportsDownWhenSchemaContractIsAbsent() {
-        when(jdbcTemplate.queryForObject(anyString(), Boolean.class, "67"))
+        when(jdbcTemplate.queryForObject(anyString(), eq(Boolean.class), eq("67")))
                 .thenReturn(false);
 
         assertThat(indicator.health().getStatus()).isEqualTo(Status.DOWN);
@@ -34,7 +35,7 @@ class ArtifactSchemaHealthIndicatorTest {
 
     @Test
     void reportsDownWithoutLeakingDatabaseFailureDetails() {
-        when(jdbcTemplate.queryForObject(anyString(), Boolean.class, "67"))
+        when(jdbcTemplate.queryForObject(anyString(), eq(Boolean.class), eq("67")))
                 .thenThrow(new DataAccessResourceFailureException("sensitive connection detail"));
 
         var health = indicator.health();
