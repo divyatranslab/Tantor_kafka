@@ -658,11 +658,65 @@
   color: #7C3AED;
 }
 
-.parcel-error {
-  margin: 5px 0 0;
-  color: var(--color-danger);
+.parcel-error-details {
+  display: block !important;
+  grid-column: 2 / -1;
+  width: 100%;
+  min-width: 0;
+  margin-top: -2px;
+  border: 1px solid #f3c2c7;
+  border-radius: 8px;
+  background: #fff7f8;
+  overflow: hidden;
+}
+
+.parcel-error-details summary {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center !important;
+  gap: 8px;
+  padding: 9px 12px;
+  color: #b4232f;
+  cursor: pointer;
+  list-style: none;
+}
+
+.parcel-error-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.parcel-error-details summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.parcel-error-details summary b {
+  color: #6b3340;
   font-size: 0.72rem;
-  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.parcel-error-details[open] summary span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.parcel-error-details pre {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid #f3c2c7;
+  background: #2c2332;
+  color: #f7edf0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font: 11px/1.5 "Source Code Pro", Consolas, monospace;
 }
 
 .parcel-host-destination .form-control {
@@ -774,6 +828,10 @@
 
   .parcel-host-row.header {
     display: none;
+  }
+
+  .parcel-error-details {
+    grid-column: 1;
   }
 }
 

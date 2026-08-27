@@ -128,6 +128,15 @@ const artifactServiceLabel = (serviceType: string) =>
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+const summarizeError = (message: string, limit = 170) => {
+  const clean = message
+    .replace(/\s*Logs:\s*==>.*/is, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return clean.length <= limit ? clean : `${clean.slice(0, limit).trimEnd()}...`;
+};
+
 export function Artifacts() {
   const { canManage } = usePermissions();
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
@@ -737,13 +746,12 @@ export function Artifacts() {
                                     <span className="host-uuid">{host.id}</span>
                                   </div>
                                 </div>
-                                <div>
-                                  <span className={`parcel-status ${status.toLowerCase()}`}>
-                                    {formatParcelStatus(status)}
-                                  </span>
-                                  {state?.errorMsg && <p className="parcel-error">{state.errorMsg}</p>}
-                                </div>
-                                <div className="parcel-host-destination">
+                                  <div>
+                                    <span className={`parcel-status ${status.toLowerCase()}`}>
+                                      {formatParcelStatus(status)}
+                                    </span>
+                                  </div>
+                                  <div className="parcel-host-destination">
                                   <input
                                     className="form-control"
                                     value={hostDistributionDirs[`${ver.id}:${host.id}`] || ''}
@@ -755,10 +763,20 @@ export function Artifacts() {
                                     disabled={!canManage}
                                   />
                                 </div>
-                                <div className="parcel-actions">
-                                  {renderActions(ver, host, state)}
+                                  <div className="parcel-actions">
+                                    {renderActions(ver, host, state)}
+                                  </div>
+                                  {state?.errorMsg && (
+                                    <details className="parcel-error-details">
+                                      <summary>
+                                        <AlertTriangle size={15} aria-hidden="true" />
+                                        <span>{summarizeError(state.errorMsg)}</span>
+                                        <b>View details</b>
+                                      </summary>
+                                      <pre>{state.errorMsg}</pre>
+                                    </details>
+                                  )}
                                 </div>
-                              </div>
                             );
                           })}
                         </div>

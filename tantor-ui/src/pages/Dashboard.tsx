@@ -134,6 +134,15 @@ const emptyDashboard: DashboardPayload = {
   recentTasks: [],
 };
 
+const summarizeError = (message: string, limit = 170) => {
+  const clean = message
+    .replace(/\s*Logs:\s*==>.*/is, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return clean.length <= limit ? clean : `${clean.slice(0, limit).trimEnd()}...`;
+};
+
 const STATUS_COLORS: Record<string, string> = {
   SUCCESS: '#2AC792',
   ONLINE: '#2AC792',
@@ -466,7 +475,16 @@ export function Dashboard() {
                   <div>
                     <strong>{prettyCommand(task.command)}</strong>
                     <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
-                    {task.errorMsg && <em>{task.errorMsg}</em>}
+                    {task.errorMsg && (
+                      <details className="db-task-error">
+                        <summary>
+                          <AlertTriangle size={14} aria-hidden="true" />
+                          <span>{summarizeError(task.errorMsg)}</span>
+                          <b>Details</b>
+                        </summary>
+                        <pre>{task.errorMsg}</pre>
+                      </details>
+                    )}
                   </div>
                 </div>
               ))
