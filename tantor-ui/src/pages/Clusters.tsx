@@ -208,12 +208,6 @@ export function Clusters() {
 
   const primaryHost = (cluster: ClusterInfo) => cluster.hosts?.[0];
 
-  const diskLabel = (host?: ClusterHost) => {
-    if (!host?.diskTotalGb || host.diskTotalGb <= 0) return '-';
-    const used = host.diskUsedGb ?? 0;
-    return `${used}/${host.diskTotalGb} GB`;
-  };
-
   const diskPct = (host?: ClusterHost) => {
     if (!host?.diskTotalGb || host.diskTotalGb <= 0) return 0;
     return Math.min(100, Math.round(((host.diskUsedGb ?? 0) / host.diskTotalGb) * 100));
@@ -331,7 +325,7 @@ export function Clusters() {
                         <th>Cluster ID</th>
                         <th>Broker</th>
                         <th>DEV</th>
-                        <th>Storage</th>
+                        <th>Hosts</th>
                         <th>Created</th>
                         <th>Tags</th>
                         <th></th>
@@ -340,6 +334,7 @@ export function Clusters() {
                     <tbody>
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
+                        const internalHostCount = cluster.hosts?.length || cluster.nodeCount || 0;
                         const progress = diskPct(host);
                         const statusTagTone = isDeploymentInProgress(cluster)
                           ? 'state-deploying'
@@ -398,12 +393,14 @@ export function Clusters() {
                                   {cluster.mode === 'EXTERNAL' ? (
                                     <span>{cluster.managedHostsCount || 0}/{cluster.totalHostsCount || cluster.nodeCount || 0} hosts</span>
                                   ) : (
-                                    <span>{diskLabel(host)}</span>
+                                    <span>{internalHostCount} {internalHostCount === 1 ? 'host' : 'hosts'}</span>
                                   )}
                                 </div>
-                                <div className="progress-bar-container">
-                                  <div className="progress-bar-fill" style={{ width: `${progress > 0 ? progress : 0}%` }} />
-                                </div>
+                                {cluster.mode === 'EXTERNAL' && (
+                                  <div className="progress-bar-container">
+                                    <div className="progress-bar-fill" style={{ width: `${progress > 0 ? progress : 0}%` }} />
+                                  </div>
+                                )}
                               </div>
                             </td>
                             <td>
