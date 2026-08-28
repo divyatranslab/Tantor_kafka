@@ -1604,8 +1604,8 @@ export function SchemaRegistry() {
       )}
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Connection Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {showDeleteConfirm && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+      {showDeleteConfirm && createPortal(
+        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
             <div className="ds-delete-modal-banner">
               <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
@@ -1626,12 +1626,13 @@ export function SchemaRegistry() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Subject Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {subjectToDelete && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+      {subjectToDelete && createPortal(
+        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
             <div className="ds-delete-modal-banner">
               <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
@@ -1652,7 +1653,8 @@ export function SchemaRegistry() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -13,8 +13,6 @@ interface ClusterHost {
   status?: string;
   role?: string;
   lastHeartbeat?: string;
-  diskUsedGb?: number;
-  diskTotalGb?: number;
   bootstrap?: string;
 }
 
@@ -208,11 +206,6 @@ export function Clusters() {
 
   const primaryHost = (cluster: ClusterInfo) => cluster.hosts?.[0];
 
-  const diskPct = (host?: ClusterHost) => {
-    if (!host?.diskTotalGb || host.diskTotalGb <= 0) return 0;
-    return Math.min(100, Math.round(((host.diskUsedGb ?? 0) / host.diskTotalGb) * 100));
-  };
-
   const agentHealthLabel = (cluster: ClusterInfo) => {
     if (cluster.mode !== 'EXTERNAL') return '';
     switch ((cluster.agentHealth || '').toUpperCase()) {
@@ -335,7 +328,6 @@ export function Clusters() {
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
                         const internalHostCount = cluster.hosts?.length || cluster.nodeCount || 0;
-                        const progress = diskPct(host);
                         const statusTagTone = isDeploymentInProgress(cluster)
                           ? 'state-deploying'
                           : cluster.kafkaHealthChecking
@@ -396,11 +388,6 @@ export function Clusters() {
                                     <span>{internalHostCount} {internalHostCount === 1 ? 'host' : 'hosts'}</span>
                                   )}
                                 </div>
-                                {cluster.mode === 'EXTERNAL' && (
-                                  <div className="progress-bar-container">
-                                    <div className="progress-bar-fill" style={{ width: `${progress > 0 ? progress : 0}%` }} />
-                                  </div>
-                                )}
                               </div>
                             </td>
                             <td>

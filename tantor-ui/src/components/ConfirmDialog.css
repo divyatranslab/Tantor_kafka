@@ -6,6 +6,8 @@
   place-items: center;
   padding: 24px;
   background: rgba(18, 18, 18, 0.58);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .app-confirm-dialog {

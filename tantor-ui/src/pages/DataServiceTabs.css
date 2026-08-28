@@ -690,6 +690,11 @@
   padding: 24px;
 }
 
+.ds-delete-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 .ds-modal {
   width: min(1220px, 100vw - 32px);
   height: 554px;
