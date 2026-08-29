@@ -350,7 +350,12 @@ export function Dashboard() {
                 <span className="db-cluster-dot" />
                 <div>
                   <strong>{cluster.name || 'Unnamed cluster'}</strong>
-                  <small>{cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'} - {cluster.hostCount || 0} node{cluster.hostCount === 1 ? '' : 's'}</small>
+                  <small>
+                    {cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'}
+                    {(cluster.hostCount || 0) > 0
+                      ? ` - ${cluster.hostCount} node${cluster.hostCount === 1 ? '' : 's'}`
+                      : ''}
+                  </small>
                   <em>{cluster.reason}</em>
                 </div>
                 <b>{statusLabel(cluster.status)}</b>
