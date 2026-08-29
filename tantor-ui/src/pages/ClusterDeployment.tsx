@@ -121,6 +121,7 @@ type HostPortKey = keyof HostPorts;
 
 const DEFAULT_BROKER_JMX_PORT = 7071;
 const DEFAULT_CONTROLLER_JMX_PORT = 7072;
+const SCHEMA_REGISTRY_DEPLOYMENT_ENABLED = false;
 
 type PropertyRow = {
   key: string;
@@ -471,7 +472,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     loadHosts();
     loadVersions();
-    loadSchemaArtifacts();
+    if (SCHEMA_REGISTRY_DEPLOYMENT_ENABLED) loadSchemaArtifacts();
   }, []);
 
   useEffect(() => {
@@ -1762,7 +1763,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             </div>
           </section>
 
-          {!isAddNodeMode && (
+          {SCHEMA_REGISTRY_DEPLOYMENT_ENABLED && !isAddNodeMode && (
             <section className="cd-panel">
               <div className="cd-panel-title">
                 <div>

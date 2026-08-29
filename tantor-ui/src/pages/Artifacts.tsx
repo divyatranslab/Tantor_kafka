@@ -75,6 +75,8 @@ interface ArtifactAuditEvent {
   createdAt?: string;
 }
 
+const SCHEMA_REGISTRY_ARTIFACT_UPLOAD_ENABLED = false;
+
 const artifactServiceOptions = [
   {
     value: 'KAFKA',
@@ -112,7 +114,7 @@ const artifactServiceOptions = [
     fileAccept: '.tgz,.tar.gz',
     helper: 'Schema Registry binaries can be selected during Kafka cluster deployment.',
   },
-];
+].filter(option => SCHEMA_REGISTRY_ARTIFACT_UPLOAD_ENABLED || option.value !== 'SCHEMA_REGISTRY');
 
 const artifactServiceLabels: Record<string, string> = {
   KAFKA: 'Kafka',
@@ -796,7 +798,7 @@ export function Artifacts() {
             <div className="modal-header upload-parcel-header">
               <div className="upload-parcel-heading">
                 <h2>Upload Parcel Binary</h2>
-                <p className="modal-subtitle">Upload a Kafka, Schema Registry, Kafka Exporter, or JMX Exporter binary to the internal artifact repository.</p>
+                <p className="modal-subtitle">Upload a Kafka, Kafka Exporter, or JMX Exporter binary to the internal artifact repository.</p>
               </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
