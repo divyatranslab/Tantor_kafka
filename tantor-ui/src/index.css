@@ -945,9 +945,25 @@ body :is(.app-confirm-banner,
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  z-index: 10000 !important;
+  padding: 1rem;
+}
+
+/* Match every dialog backdrop to the Dashboard's New Cluster treatment. */
+.modal-overlay,
+.cd-modal-overlay,
+.add-cluster-modal-overlay,
+.app-confirm-backdrop,
+.topic-action-modal-backdrop,
+.cd-modal-backdrop,
+.cluster-edit-backdrop,
+.config-dialog-backdrop,
+.ds-modal-backdrop,
+.topic-modal-backdrop,
+.detail-modal-backdrop,
+.discovery-modal-backdrop,
+.monitoring-modal-backdrop {
   background: rgba(15, 15, 30, 0.48) !important;
   backdrop-filter: blur(4px) !important;
   -webkit-backdrop-filter: blur(4px) !important;
-  z-index: 10000 !important;
-  padding: 1rem;
 }

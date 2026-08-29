@@ -859,6 +859,15 @@
   border-top: 1px solid var(--border-default);
 }
 
+.ds-connector-create-modal .ds-upload-row {
+  align-items: center;
+  margin: 0;
+}
+
+.ds-connector-create-modal .ds-field textarea {
+  min-height: 220px;
+}
+
 .ds-result-scroll {
   overflow-x: auto;
 }

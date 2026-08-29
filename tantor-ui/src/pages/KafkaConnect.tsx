@@ -1177,21 +1177,26 @@ export function KafkaConnect() {
 
       {canManage && showCreate && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <form className="ds-modal" onSubmit={createConnector}>
+          <form className="ds-modal ds-upload-style-modal ds-connector-create-modal" onSubmit={createConnector}>
             <div className="ds-modal-header">
-              <h3>Create Connector</h3>
-              <button type="button" className="ds-icon-button" onClick={() => setShowCreate(false)} title="Close"><X size={16} /></button>
-            </div>
-            <div className="ds-form">
-              {createError && <div className="ds-alert">{createError}</div>}
-              <div className="ds-upload-row">
-                <label className="ds-button" htmlFor="connector-json-upload"><Upload size={16} /> Upload JSON files</label>
-                <input id="connector-json-upload" type="file" accept="application/json,.json" multiple hidden onChange={e => { void handleConnectorFiles(e.target.files); e.target.value = ''; }} />
-                <span>Choose multiple files, or paste a JSON array for bulk deployment.</span>
+              <div>
+                <h3>Create Connector</h3>
+                <span className="ds-muted-line">Deploy connector configuration</span>
               </div>
-              <div className="ds-field">
-                <label>Connector JSON</label>
-                <textarea value={connectorJson} onChange={e => setConnectorJson(e.target.value)} required />
+              <button type="button" className="ds-close-btn" onClick={() => setShowCreate(false)} title="Close"><X size={20} /></button>
+            </div>
+            <div className="ds-form" style={{ padding: 0 }}>
+              <div className="ds-modal-inner-card">
+                {createError && <div className="ds-alert">{createError}</div>}
+                <div className="ds-upload-row">
+                  <label className="ds-button" htmlFor="connector-json-upload"><Upload size={16} /> Upload JSON files</label>
+                  <input id="connector-json-upload" type="file" accept="application/json,.json" multiple hidden onChange={e => { void handleConnectorFiles(e.target.files); e.target.value = ''; }} />
+                  <span>Choose multiple files, or paste a JSON array for bulk deployment.</span>
+                </div>
+                <div className="ds-field">
+                  <label>Connector JSON</label>
+                  <textarea value={connectorJson} onChange={e => setConnectorJson(e.target.value)} required />
+                </div>
               </div>
             </div>
             <div className="ds-modal-footer">
