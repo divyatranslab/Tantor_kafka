@@ -145,6 +145,7 @@ public class ActivityAlertService {
                             EXTERNAL_AGENT_OFFLINE_TITLE,
                             "The discovery agent on " + (agent.hostname() != null && !agent.hostname().isBlank() ? agent.hostname() : "an unknown host") + " for external cluster '" + clusterName + "' has stopped reporting.",
                             clusterId,
+                            clusterName,
                             agent.ips() != null ? agent.ips() : List.of());
                 }
             }
@@ -165,6 +166,7 @@ public class ActivityAlertService {
                     "The Discovery Agent for external cluster '" + clusterName
                             + "' has stopped reporting, but Kafka is still reachable.",
                     clusterId,
+                    clusterName,
                     allOfflineIps);
         }
         if ("FAILED".equals(normalizedStatus)) {
@@ -178,6 +180,7 @@ public class ActivityAlertService {
                     EXTERNAL_FAILED_TITLE,
                     "Kafka Admin API cannot reach external cluster '" + clusterName + "'.",
                     clusterId,
+                    clusterName,
                     List.of());
         }
 
@@ -207,6 +210,7 @@ public class ActivityAlertService {
             String title,
             String description,
             UUID clusterId,
+            String clusterName,
             List<String> affectedIps) {
         Alert alert = alertRepository.findByAlertKey(alertKey).orElseGet(Alert::new);
         boolean newlyActive = alert.getId() == null || !"ACTIVE".equalsIgnoreCase(alert.getStatus());
@@ -218,7 +222,10 @@ public class ActivityAlertService {
         alert.setTitle(title);
         alert.setDescription(description);
         alert.setClusterId(clusterId);
-        alert.setAffectedIps(formatAffectedIps(affectedIps));
+        alert.setClusterNameSnapshot(clusterName);
+        String affectedIpValue = formatAffectedIps(affectedIps);
+        alert.setAffectedIps(affectedIpValue);
+        alert.setHostIpSnapshot(affectedIpValue);
         alert.setSource("external_health");
         alert.setStatus("ACTIVE");
         alert.setResolvedAt(null);

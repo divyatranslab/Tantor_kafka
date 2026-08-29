@@ -22,6 +22,8 @@ interface AlertRow {
   source?: string;
 }
 
+const ALERT_REFRESH_INTERVAL_MS = 2_000;
+
 export function Alerts() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +46,11 @@ export function Alerts() {
 
   useEffect(() => {
     void (async () => { await fetchAlerts(); })();
-    const timer = window.setInterval(() => { void (async () => { await fetchAlerts(true); })(); }, 15_000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void (async () => { await fetchAlerts(true); })();
+      }
+    }, ALERT_REFRESH_INTERVAL_MS);
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void (async () => { await fetchAlerts(true); })();
     };

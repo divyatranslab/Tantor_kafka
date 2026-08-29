@@ -2522,6 +2522,7 @@ public class ClusterController {
         summary.put("hostname", host.getHostname());
         summary.put("ipAddress", firstIp(host.getIpAddresses()));
         summary.put("status", hostStatusService.effectiveStatus(host));
+        summary.put("agentStatus", hostStatusService.agentConnectivityStatus(host));
         summary.put("role", service.getRole());
         summary.put("nodeId", service.getNodeId());
         summary.put("lastHeartbeat", host.getLastHeartbeat());

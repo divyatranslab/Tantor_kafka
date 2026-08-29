@@ -11,6 +11,7 @@ interface ClusterHost {
   hostname?: string;
   ipAddress?: string;
   status?: string;
+  agentStatus?: string;
   role?: string;
   lastHeartbeat?: string;
   bootstrap?: string;
@@ -46,7 +47,7 @@ interface ClusterInfo {
   kafkaHealthChecking?: boolean;
 }
 
-const EXTERNAL_HEALTH_REFRESH_MS = 15000;
+const CLUSTER_HEALTH_REFRESH_MS = 15000;
 
 export function Clusters() {
   const { canManage } = usePermissions();
@@ -54,11 +55,8 @@ export function Clusters() {
   const [loading, setLoading] = useState(true);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
 
-  const refreshExternalKafkaHealth = useCallback((items: ClusterInfo[]) => {
-    const externalClusters = items.filter(cluster => cluster.mode === 'EXTERNAL');
-    if (externalClusters.length === 0) return;
-
-    externalClusters
+  const refreshClusterHealth = useCallback((items: ClusterInfo[]) => {
+    items
       .forEach(cluster => {
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 7000);
@@ -122,15 +120,15 @@ export function Clusters() {
           kafkaHealthChecking: false,
         }));
         setClusters(visibleData);
-        refreshExternalKafkaHealth(visibleData);
+        refreshClusterHealth(visibleData);
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
     }
-  // refreshExternalKafkaHealth is intentionally stable (defined outside callback)
-  }, [refreshExternalKafkaHealth]);
+  // refreshClusterHealth is intentionally stable (defined outside callback)
+  }, [refreshClusterHealth]);
 
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
@@ -206,14 +204,28 @@ export function Clusters() {
 
   const primaryHost = (cluster: ClusterInfo) => cluster.hosts?.[0];
 
-  const uniqueHostCount = (cluster: ClusterInfo) => {
-    if (!cluster.hosts?.length) return cluster.nodeCount || 0;
-    return new Set(cluster.hosts.map((host, index) =>
-      host.hostId?.trim()
-      || host.ipAddress?.trim()
-      || host.hostname?.trim()
-      || `unidentified-host-${index}`
-    )).size;
+  const internalHostConnectivity = (cluster: ClusterInfo) => {
+    if (!cluster.hosts?.length) {
+      return { online: 0, total: cluster.nodeCount || 0 };
+    }
+
+    const connectivityByHost = new Map<string, boolean>();
+    cluster.hosts.forEach((host, index) => {
+      const identity = host.hostId?.trim()
+        || host.ipAddress?.trim()
+        || host.hostname?.trim()
+        || `unidentified-host-${index}`;
+      const connectivity = (host.agentStatus || host.status || '').toUpperCase();
+      const heartbeatAt = host.lastHeartbeat ? new Date(host.lastHeartbeat).getTime() : Number.NaN;
+      const heartbeatIsFresh = Number.isFinite(heartbeatAt) && Date.now() - heartbeatAt <= 90_000;
+      const isOnline = connectivity === 'ONLINE' || connectivity === 'CONNECTED' || heartbeatIsFresh;
+      connectivityByHost.set(identity, Boolean(connectivityByHost.get(identity)) || isOnline);
+    });
+
+    return {
+      online: [...connectivityByHost.values()].filter(Boolean).length,
+      total: connectivityByHost.size,
+    };
   };
 
   const agentHealthLabel = (cluster: ClusterInfo) => {
@@ -256,13 +268,12 @@ export function Clusters() {
   useEffect(() => { void (async () => { await fetchClusters(); })(); }, [fetchClusters]);
 
   useEffect(() => {
-    const externalClusters = clusters.filter(cluster => cluster.mode === 'EXTERNAL');
-    if (externalClusters.length === 0) return;
+    if (clusters.length === 0) return;
     const timer = window.setInterval(() => {
-      refreshExternalKafkaHealth(externalClusters);
-    }, EXTERNAL_HEALTH_REFRESH_MS);
+      refreshClusterHealth(clusters);
+    }, CLUSTER_HEALTH_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [clusters, refreshExternalKafkaHealth]);
+  }, [clusters, refreshClusterHealth]);
 
   const renderHeader = () => (
     <header className="clusters-header flex-between">
@@ -337,7 +348,7 @@ export function Clusters() {
                     <tbody>
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
-                        const internalHostCount = uniqueHostCount(cluster);
+                        const internalHosts = internalHostConnectivity(cluster);
                         const statusTagTone = isDeploymentInProgress(cluster)
                           ? 'state-deploying'
                           : cluster.kafkaHealthChecking
@@ -395,7 +406,7 @@ export function Clusters() {
                                   {cluster.mode === 'EXTERNAL' ? (
                                     <span>{cluster.managedHostsCount || 0}/{cluster.totalHostsCount || cluster.nodeCount || 0} hosts</span>
                                   ) : (
-                                    <span>{internalHostCount} {internalHostCount === 1 ? 'host' : 'hosts'}</span>
+                                    <span>{internalHosts.online}/{internalHosts.total} hosts</span>
                                   )}
                                 </div>
                               </div>

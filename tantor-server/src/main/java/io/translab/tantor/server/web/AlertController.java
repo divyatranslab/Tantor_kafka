@@ -62,7 +62,8 @@ public class AlertController {
     @Transactional
     public ResponseEntity<List<Map<String, Object>>> getActiveAlerts() {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
-        List<Host> hosts = hostRepository.findAll().stream()
+        List<Host> allHosts = hostRepository.findAll();
+        List<Host> hosts = allHosts.stream()
                 .filter(hostStatusService::isInfrastructureHost)
                 .toList();
         List<Task> tasks = taskRepository.findAll();
@@ -275,8 +276,13 @@ public class AlertController {
                     ));
                 });
 
-        syncRuntimeAlerts(alerts.stream()
-                .toList());
+        syncRuntimeAlerts(alerts, clusterById);
+
+        Map<String, Cluster> historyClusterById = new LinkedHashMap<>(clusterById);
+        clusterRepository.findAll().forEach(cluster ->
+                historyClusterById.putIfAbsent(cluster.getId().toString(), cluster));
+        Map<String, Host> historyHostById = allHosts.stream()
+                .collect(Collectors.toMap(Host::getId, host -> host, (a, b) -> a));
 
         // Query after synchronization so an alert resolved during this request is
         // returned as RESOLVED history instead of disappearing from the UI.
@@ -290,7 +296,7 @@ public class AlertController {
                 // affected agent, so the aggregate row must not reappear in
                 // either Current or Resolved alert views.
                 .filter(alert -> !isLegacyAggregateAgentAlert(alert))
-                .forEach(alert -> alertHistory.add(storedAlert(alert, clusterById, hostById)));
+                .forEach(alert -> alertHistory.add(storedAlert(alert, historyClusterById, historyHostById)));
 
         List<Map<String, Object>> deduped = alertHistory.stream()
                 .filter(Objects::nonNull)
@@ -314,20 +320,42 @@ public class AlertController {
             Map<String, Host> hostById) {
         Cluster cluster = alert.getClusterId() == null ? null : clusterById.get(alert.getClusterId().toString());
         Host host = alert.getHostId() == null ? null : hostById.get(alert.getHostId());
+        String liveHostIp = hostIp(host);
+        boolean snapshotChanged = false;
+        if (!hasText(alert.getClusterNameSnapshot()) && cluster != null && hasText(cluster.getName())) {
+            alert.setClusterNameSnapshot(cluster.getName());
+            snapshotChanged = true;
+        }
+        if (!hasText(alert.getKafkaClusterIdSnapshot()) && cluster != null && hasText(cluster.getKafkaClusterId())) {
+            alert.setKafkaClusterIdSnapshot(cluster.getKafkaClusterId());
+            snapshotChanged = true;
+        }
+        if (!hasText(alert.getHostIpSnapshot())) {
+            String snapshotIp = firstNonBlank(liveHostIp, alert.getAffectedIps());
+            if (hasText(snapshotIp)) {
+                alert.setHostIpSnapshot(snapshotIp);
+                snapshotChanged = true;
+            }
+        }
+        if (snapshotChanged) {
+            alertRepository.save(alert);
+        }
         Map<String, Object> response = runtimeAlert(
                 alert.getAlertKey() == null ? alert.getId().toString() : alert.getAlertKey(),
                 alert.getSeverity(),
                 alert.getTitle(),
                 alert.getDescription(),
                 alert.getClusterId(),
-                cluster == null ? null : cluster.getName(),
+                firstNonBlank(alert.getClusterNameSnapshot(), cluster == null ? null : cluster.getName()),
                 alert.getHostId(),
-                hostIp(host) == null ? alert.getAffectedIps() : hostIp(host),
+                firstNonBlank(alert.getHostIpSnapshot(), liveHostIp, alert.getAffectedIps()),
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
                 alert.getErrorLog(),
                 "stored"
         );
-        response.put("kafkaClusterId", cluster == null ? null : cluster.getKafkaClusterId());
+        response.put("kafkaClusterId", firstNonBlank(
+                alert.getKafkaClusterIdSnapshot(),
+                cluster == null ? null : cluster.getKafkaClusterId()));
         response.put("status", alert.getStatus() == null ? "ACTIVE" : alert.getStatus());
         response.put("resolvedAt", alert.getResolvedAt());
         response.put("updatedAt", alert.getUpdatedAt());
@@ -351,21 +379,41 @@ public class AlertController {
                 || title.equals("external agents partially connected");
     }
 
-    private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {
+    private void syncRuntimeAlerts(
+            List<Map<String, Object>> runtimeAlerts,
+            Map<String, Cluster> clusterById) {
         java.util.Set<String> observedKeys = new java.util.HashSet<>();
         for (Map<String, Object> runtime : runtimeAlerts) {
             String key = String.valueOf(runtime.get("id"));
             if (key.isBlank() || "null".equals(key)) continue;
             observedKeys.add(key);
             Alert alert = alertRepository.findByAlertKey(key).orElseGet(Alert::new);
+            boolean newlyActive = alert.getId() == null || !"ACTIVE".equalsIgnoreCase(alert.getStatus());
+            if (newlyActive) {
+                alert.setCreatedAt(java.time.Instant.now());
+            }
             alert.setAlertKey(key);
             alert.setSeverity(String.valueOf(runtime.getOrDefault("severity", "WARNING")));
             alert.setTitle(String.valueOf(runtime.getOrDefault("title", "Runtime alert")));
             alert.setDescription(String.valueOf(runtime.getOrDefault("description", "")));
             Object clusterId = runtime.get("clusterId");
-            alert.setClusterId(clusterId instanceof UUID uuid ? uuid
-                    : clusterId == null ? null : parseUuid(String.valueOf(clusterId)));
+            UUID parsedClusterId = clusterId instanceof UUID uuid ? uuid
+                    : clusterId == null ? null : parseUuid(String.valueOf(clusterId));
+            alert.setClusterId(parsedClusterId);
             alert.setHostId(runtime.get("hostId") == null ? null : String.valueOf(runtime.get("hostId")));
+            String clusterName = textValue(runtime.get("clusterName"));
+            if (hasText(clusterName)) {
+                alert.setClusterNameSnapshot(clusterName);
+            }
+            Cluster cluster = parsedClusterId == null ? null : clusterById.get(parsedClusterId.toString());
+            if (cluster != null && hasText(cluster.getKafkaClusterId())) {
+                alert.setKafkaClusterIdSnapshot(cluster.getKafkaClusterId());
+            }
+            String hostIp = textValue(runtime.get("hostIp"));
+            if (hasText(hostIp)) {
+                alert.setHostIpSnapshot(hostIp);
+                alert.setAffectedIps(hostIp);
+            }
             alert.setSource(String.valueOf(runtime.getOrDefault("source", "runtime")));
             alert.setErrorLog(runtime.get("errorLog") == null ? null : String.valueOf(runtime.get("errorLog")));
             alert.setStatus("ACTIVE");
@@ -395,6 +443,23 @@ public class AlertController {
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String textValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> runtimeAlert(

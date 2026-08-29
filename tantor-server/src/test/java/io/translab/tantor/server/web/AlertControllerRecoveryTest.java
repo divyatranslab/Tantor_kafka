@@ -206,6 +206,95 @@ class AlertControllerRecoveryTest {
     }
 
     @Test
+    void deletedClusterMetadataRemainsVisibleAndIsSnapshotted() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+
+        UUID clusterId = UUID.randomUUID();
+        Cluster deletedCluster = new Cluster();
+        deletedCluster.setId(clusterId);
+        deletedCluster.setName("deleted-payments");
+        deletedCluster.setKafkaClusterId("deleted-kafka-id");
+        deletedCluster.setStatus("DELETED");
+
+        Alert alert = new Alert();
+        alert.setAlertKey("deleted-cluster-history");
+        alert.setSeverity("WARNING");
+        alert.setTitle("Historical alert");
+        alert.setStatus("RESOLVED");
+        alert.setClusterId(clusterId);
+        alert.setAffectedIps("192.168.3.213");
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(clusterRepository.findAll()).thenReturn(List.of(deletedCluster));
+        when(hostRepository.findAll()).thenReturn(List.of());
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")).thenReturn(List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc()).thenReturn(List.of(alert));
+
+        AlertController controller = new AlertController(
+                alertRepository, clusterRepository, hostRepository, taskRepository,
+                mock(HostStatusService.class), hostParcelRepository, mock(ConsumerLagCacheService.class));
+
+        var response = controller.getActiveAlerts();
+
+        assertThat(response.getBody()).singleElement().satisfies(item -> {
+            assertThat(item.get("clusterName")).isEqualTo("deleted-payments");
+            assertThat(item.get("kafkaClusterId")).isEqualTo("deleted-kafka-id");
+            assertThat(item.get("hostIp")).isEqualTo("192.168.3.213");
+        });
+        assertThat(alert.getClusterNameSnapshot()).isEqualTo("deleted-payments");
+        assertThat(alert.getKafkaClusterIdSnapshot()).isEqualTo("deleted-kafka-id");
+        assertThat(alert.getHostIpSnapshot()).isEqualTo("192.168.3.213");
+        verify(alertRepository).save(alert);
+    }
+
+    @Test
+    void storedSnapshotsRemainVisibleWhenClusterAndHostNoLongerExist() {
+        AlertRepository alertRepository = mock(AlertRepository.class);
+        ClusterRepository clusterRepository = mock(ClusterRepository.class);
+        HostRepository hostRepository = mock(HostRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        HostParcelRepository hostParcelRepository = mock(HostParcelRepository.class);
+
+        Alert alert = new Alert();
+        alert.setAlertKey("orphaned-alert-history");
+        alert.setSeverity("CRITICAL");
+        alert.setTitle("Historical alert");
+        alert.setStatus("RESOLVED");
+        alert.setClusterId(UUID.randomUUID());
+        alert.setHostId("removed-host");
+        alert.setClusterNameSnapshot("archived-cluster");
+        alert.setKafkaClusterIdSnapshot("archived-kafka-id");
+        alert.setHostIpSnapshot("192.168.3.229");
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(clusterRepository.findAll()).thenReturn(List.of());
+        when(hostRepository.findAll()).thenReturn(List.of());
+        when(taskRepository.findAll()).thenReturn(List.of());
+        when(hostParcelRepository.findAll()).thenReturn(List.of());
+        when(alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")).thenReturn(List.of());
+        when(alertRepository.findTop100ByOrderByUpdatedAtDesc()).thenReturn(List.of(alert));
+
+        AlertController controller = new AlertController(
+                alertRepository, clusterRepository, hostRepository, taskRepository,
+                mock(HostStatusService.class), hostParcelRepository, mock(ConsumerLagCacheService.class));
+
+        var response = controller.getActiveAlerts();
+
+        assertThat(response.getBody()).singleElement().satisfies(item -> {
+            assertThat(item.get("clusterName")).isEqualTo("archived-cluster");
+            assertThat(item.get("kafkaClusterId")).isEqualTo("archived-kafka-id");
+            assertThat(item.get("hostIp")).isEqualTo("192.168.3.229");
+        });
+        verify(alertRepository, never()).save(alert);
+    }
+
+    @Test
     void hidesLegacyAggregateAgentAlertFromCurrentAndResolvedViews() {
         AlertRepository alertRepository = mock(AlertRepository.class);
         ClusterRepository clusterRepository = mock(ClusterRepository.class);

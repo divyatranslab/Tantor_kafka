@@ -26,6 +26,12 @@ public class Alert {
     @Column(name = "cluster_id")
     private UUID clusterId;
 
+    @Column(name = "cluster_name_snapshot")
+    private String clusterNameSnapshot;
+
+    @Column(name = "kafka_cluster_id_snapshot")
+    private String kafkaClusterIdSnapshot;
+
     @Column(name = "alert_key")
     private String alertKey;
 
@@ -38,6 +44,9 @@ public class Alert {
      */
     @Column(name = "affected_ips", columnDefinition = "TEXT")
     private String affectedIps;
+
+    @Column(name = "host_ip_snapshot", columnDefinition = "TEXT")
+    private String hostIpSnapshot;
 
     @Column(nullable = false)
     private String source = "stored";
