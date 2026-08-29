@@ -2425,6 +2425,12 @@
   color: #818181;
 }
 
+.ds-delete-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .ds-delete-btn-cancel {
   padding: 10px 24px;
   border: 1px solid #DF678B;
@@ -2549,6 +2555,8 @@
 /* Compare Versions dialog: keep generic modal rules from overriding this layout. */
 .ds-compare-backdrop {
   background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .ds-compare-modal {

@@ -206,6 +206,16 @@ export function Clusters() {
 
   const primaryHost = (cluster: ClusterInfo) => cluster.hosts?.[0];
 
+  const uniqueHostCount = (cluster: ClusterInfo) => {
+    if (!cluster.hosts?.length) return cluster.nodeCount || 0;
+    return new Set(cluster.hosts.map((host, index) =>
+      host.hostId?.trim()
+      || host.ipAddress?.trim()
+      || host.hostname?.trim()
+      || `unidentified-host-${index}`
+    )).size;
+  };
+
   const agentHealthLabel = (cluster: ClusterInfo) => {
     if (cluster.mode !== 'EXTERNAL') return '';
     switch ((cluster.agentHealth || '').toUpperCase()) {
@@ -327,7 +337,7 @@ export function Clusters() {
                     <tbody>
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
-                        const internalHostCount = cluster.hosts?.length || cluster.nodeCount || 0;
+                        const internalHostCount = uniqueHostCount(cluster);
                         const statusTagTone = isDeploymentInProgress(cluster)
                           ? 'state-deploying'
                           : cluster.kafkaHealthChecking

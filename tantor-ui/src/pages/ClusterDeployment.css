@@ -1632,6 +1632,7 @@ input:checked+.cd-toggle-slider:before {
   background: #F2EBFF;
   border-radius: 8px;
   align-self: stretch;
+  margin-bottom: 16px;
 }
 
 .cd-custom-import-row {
