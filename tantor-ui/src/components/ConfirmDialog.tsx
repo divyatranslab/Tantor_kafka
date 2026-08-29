@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { type ConfirmRequest, CONFIRM_EVENT } from './confirmUtils';
 import { X } from 'lucide-react';
 import orangeBanner from '../assets/orange.png';
@@ -34,7 +35,7 @@ export function GlobalConfirmDialog() {
 
   if (!request) return null;
 
-  return (
+  return createPortal(
     <div className="app-confirm-backdrop" onMouseDown={() => finish(false)}>
       <section
         className="app-confirm-dialog"
@@ -63,6 +64,7 @@ export function GlobalConfirmDialog() {
           </div>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }

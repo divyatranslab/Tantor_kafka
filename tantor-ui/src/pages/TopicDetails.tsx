@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, ChevronDown, ChevronRight,
@@ -577,7 +578,7 @@ export function TopicDetails() {
         )}
       </div>
 
-      {canManage && showProduce && (
+      {canManage && showProduce && createPortal(
         <div className="topic-modal-backdrop" onMouseDown={() => setShowProduce(false)}>
           <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>
             <header className="create-topic-header">
@@ -628,7 +629,8 @@ export function TopicDetails() {
               </footer>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {canManage && confirmAction && (
@@ -640,7 +642,7 @@ export function TopicDetails() {
           onConfirm={runAction}
         />
       )}
-      {canManage && editingConfig && (
+      {canManage && editingConfig && createPortal(
         <div className="topic-modal-backdrop" onMouseDown={handleCancelConfigEdit}>
           <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>
             <header className="create-topic-header">
@@ -676,10 +678,11 @@ export function TopicDetails() {
               </button>
             </footer>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {showUnsavedWarning && (
+      {showUnsavedWarning && createPortal(
         <div className="topic-modal-backdrop" onMouseDown={() => setShowUnsavedWarning(false)}>
           <div className="topic-modal figma-topic-modal figma-confirm-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '543px', borderRadius: '16px', padding: 0 }}>
             <div className="confirm-modal-banner">
@@ -705,7 +708,8 @@ export function TopicDetails() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </section>
   );

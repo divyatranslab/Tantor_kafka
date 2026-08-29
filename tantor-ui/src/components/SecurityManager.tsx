@@ -260,6 +260,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
       {canManage && showCreateAcl && createPortal(
         <div
+          className="modal-overlay"
           role="presentation"
           onClick={() => setShowCreateAcl(false)}
           style={{
@@ -577,8 +578,8 @@ export default function SecurityManager({ clusterId }: Props) {
         </table>
       </div>
 
-      {aclToDelete && (
-        <div style={{
+      {aclToDelete && createPortal(
+        <div className="modal-overlay" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -670,11 +671,12 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {alertMessage && (
-        <div style={{
+      {alertMessage && createPortal(
+        <div className="modal-overlay" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -740,7 +742,8 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

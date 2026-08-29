@@ -1,6 +1,7 @@
 import { Download, RefreshCw, Loader2, Save, UploadCloud, X, Plus, Trash2, Server, GitCompare, FileCheck } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigEditor.css';
 import './ConfigVersioning.css';
@@ -568,7 +569,7 @@ export function InternalConfigEditor() {
         </section>
       </> : <div className="empty-state">No managed configuration file is available for this node.</div>}
 
-      {dialog && (
+      {dialog && createPortal(
         <div className="config-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="config-dialog-title">
           <div className="config-dialog">
             <div className="config-dialog-banner">
@@ -598,7 +599,8 @@ export function InternalConfigEditor() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

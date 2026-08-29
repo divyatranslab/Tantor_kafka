@@ -1,4 +1,5 @@
 import { X } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import './TopicActionConfirmationModal.css';
 
 import { type TopicActionKind, topicActionCopy } from './topicActionTypes';
@@ -23,7 +24,9 @@ export function TopicActionConfirmationModal({
     ? 'The topics and all associated data will be permanently deleted.'
     : topicActionCopy[action].description;
 
-  return (
+  // Mount at the document root so the backdrop covers the full application,
+  // matching the Dashboard's New Cluster modal.
+  return createPortal(
     <div className="topic-action-modal-backdrop" role="presentation" onMouseDown={() => !acting && onClose()}>
       <div className="topic-action-modal" role="alertdialog" aria-modal="true" aria-labelledby="topic-action-confirmation-title" onMouseDown={event => event.stopPropagation()}>
         <div className="topic-action-banner" aria-hidden="true" />
@@ -41,6 +44,7 @@ export function TopicActionConfirmationModal({
           </footer>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

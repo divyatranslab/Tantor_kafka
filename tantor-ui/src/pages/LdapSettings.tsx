@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { KeyRound, Save, TestTube, RefreshCw, X, Check } from 'lucide-react';
 import './LdapSettings.css';
 
@@ -381,7 +382,7 @@ export function LdapSettings() {
       </form>
 
       {/* Test Connection Modal */}
-      {showTestModal && (
+      {showTestModal && createPortal(
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
@@ -432,7 +433,8 @@ export function LdapSettings() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
