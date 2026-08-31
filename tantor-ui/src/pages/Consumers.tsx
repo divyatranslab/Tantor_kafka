@@ -155,56 +155,45 @@ export function Consumers() {
           </div>
         ) : (
           <>
-            <div style={{ overflowX: 'auto', width: '100%' }}>
-              <div className="figma-table">
-                {/* Header Row */}
-                <div className="figma-table-header">
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', cursor: 'pointer' }} onClick={() => handleSort('groupId')}>
-                    <span>Group ID</span> <ArrowUp size={14} style={{ marginLeft: '4px' }} />
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', cursor: 'pointer' }} onClick={() => handleSort('state')}>
-                    <span>State</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)' }}>
-                    <span>Members</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', cursor: 'pointer' }} onClick={() => handleSort('totalLag')}>
-                    <span>Total Lag</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)' }}>
-                    <span>Health</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: 'var(--space-4)', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: 'var(--button-primary-active)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)' }}>
-                    <span>Last Updated</span>
-                  </div>
-                </div>
-
-                {/* Table Body */}
-                <div className="figma-table-body">
+            <div className="consumer-table-scroll">
+              <table className="consumer-groups-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('groupId')}>
+                        Group ID <ArrowUp size={14} aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('state')}>
+                        State
+                      </button>
+                    </th>
+                    <th>Members</th>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('totalLag')}>
+                        Total Lag
+                      </button>
+                    </th>
+                    <th>Health</th>
+                    <th>Last Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
                   {data?.content.map(g => (
-                    <div key={g.groupId} className="figma-table-row table-row-hover clickable" onClick={() => handleRowClick(g.groupId)} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '52px', background: "var(--bg-surface)", borderBottom: '1px solid var(--border-default)', boxSizing: 'border-box' }}>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-heading)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {g.groupId}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-heading)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)' }}>
-                        {g.state}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-heading)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)' }}>
-                        {g.membersCount}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-heading)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)' }}>
-                        {g.totalLag}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-heading)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)' }}>
-                        {g.health.charAt(0) + g.health.slice(1).toLowerCase()}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: 'var(--text-tertiary)', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)' }}>
+                    <tr key={g.groupId} className="consumer-group-row" onClick={() => handleRowClick(g.groupId)}>
+                      <td className="consumer-group-id" title={g.groupId}>{g.groupId}</td>
+                      <td>{g.state}</td>
+                      <td>{g.membersCount}</td>
+                      <td>{g.totalLag}</td>
+                      <td>{g.health.charAt(0) + g.health.slice(1).toLowerCase()}</td>
+                      <td className="consumer-last-updated">
                         {new Date(g.lastUpdated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
 
             {/* Pagination Controls */}

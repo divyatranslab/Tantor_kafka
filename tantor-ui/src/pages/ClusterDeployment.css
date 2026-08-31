@@ -1027,6 +1027,19 @@ input:checked+.cd-toggle-slider:before {
   cursor: pointer;
 }
 
+.cd-secondary-btn.compact.cd-fix-prereqs-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: max-content;
+  min-height: 30px;
+  height: 30px;
+  white-space: nowrap;
+}
+
+.cd-fix-prereqs-btn svg {
+  flex: 0 0 auto;
+}
+
 .cd-secondary-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;

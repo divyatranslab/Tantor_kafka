@@ -2312,7 +2312,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 Check prerequisites on all nodes
               </button>
               {selectedHosts.some(host => prereqResults[host.id]?.status === 'FAILED') && (
-                <button className="cd-secondary-btn compact" disabled={checkingPrereqs} onClick={fixPrerequisites}>
+                <button className="cd-secondary-btn compact cd-fix-prereqs-btn" disabled={checkingPrereqs} onClick={fixPrerequisites}>
                   <Settings2 size={14} /> Fix failed prerequisites
                 </button>
               )}
