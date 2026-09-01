@@ -42,9 +42,9 @@ class DashboardControllerTest {
         when(parcels.findAll()).thenReturn(List.of());
         when(activities.findTop50ByOrderByCreatedAtDesc()).thenReturn(List.of());
         when(hostStatus.isInfrastructureHost(host)).thenReturn(true);
-        AtomicReference<String> effectiveStatus = new AtomicReference<>("OFFLINE");
-        when(hostStatus.agentConnectivityStatus(host)).thenAnswer(ignored -> effectiveStatus.get());
-        when(hostStatus.effectiveStatus(host)).thenAnswer(ignored -> effectiveStatus.get());
+        AtomicReference<String> connectivityStatus = new AtomicReference<>("OFFLINE");
+        when(hostStatus.agentConnectivityStatus(host)).thenAnswer(ignored -> connectivityStatus.get());
+        when(hostStatus.effectiveStatus(host)).thenReturn("OCCUPIED");
 
         DashboardController controller = new DashboardController(
                 clusters, hosts, alerts, activities, tasks, parcels, hostStatus);
@@ -62,7 +62,7 @@ class DashboardControllerTest {
                     assertThat(row.get("usedPct")).isEqualTo(20L);
                 });
 
-        effectiveStatus.set("ONLINE");
+        connectivityStatus.set("ONLINE");
         Map<String, Object> onlineResponse = controller.getDashboard().getBody();
         assertThat(onlineResponse).isNotNull();
         @SuppressWarnings("unchecked")

@@ -266,7 +266,7 @@ public class DashboardController {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("name", host.getHostname() == null || host.getHostname().isBlank() ? host.getId() : host.getHostname());
                     row.put("hostId", host.getId());
-                    row.put("status", hostStatusService.effectiveStatus(host));
+                    row.put("status", hostStatusService.agentConnectivityStatus(host));
                     row.put("usedGb", used);
                     row.put("freeGb", Math.max(total - used, 0));
                     row.put("totalGb", total);
