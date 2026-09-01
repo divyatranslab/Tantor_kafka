@@ -512,6 +512,37 @@
   min-height: 318px;
 }
 
+.db-host-disk-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-height: 18px;
+  margin: 0 8px 2px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.db-host-disk-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.db-host-disk-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.db-host-disk-legend i.live {
+  background: var(--color-info);
+}
+
+.db-host-disk-legend i.offline {
+  background: #D92D20;
+}
+
 .db-panel-title {
   display: flex;
   align-items: center;

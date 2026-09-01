@@ -12,12 +12,69 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DashboardControllerTest {
+
+    @Test
+    void offlineHostDiskUsageRemainsVisibleAndReturnsToLive() {
+        Host host = new Host();
+        host.setId("external-host-1");
+        host.setHostname("broker1.translab.io");
+        host.setDiskUsedGb(20L);
+        host.setDiskTotalGb(100L);
+
+        ClusterRepository clusters = mock(ClusterRepository.class);
+        HostRepository hosts = mock(HostRepository.class);
+        AlertRepository alerts = mock(AlertRepository.class);
+        ActivityLogRepository activities = mock(ActivityLogRepository.class);
+        TaskRepository tasks = mock(TaskRepository.class);
+        HostParcelRepository parcels = mock(HostParcelRepository.class);
+        HostStatusService hostStatus = mock(HostStatusService.class);
+
+        when(clusters.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(hosts.findAll()).thenReturn(List.of(host));
+        when(tasks.findAll()).thenReturn(List.of());
+        when(parcels.findAll()).thenReturn(List.of());
+        when(activities.findTop50ByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(hostStatus.isInfrastructureHost(host)).thenReturn(true);
+        AtomicReference<String> effectiveStatus = new AtomicReference<>("OFFLINE");
+        when(hostStatus.agentConnectivityStatus(host)).thenAnswer(ignored -> effectiveStatus.get());
+        when(hostStatus.effectiveStatus(host)).thenAnswer(ignored -> effectiveStatus.get());
+
+        DashboardController controller = new DashboardController(
+                clusters, hosts, alerts, activities, tasks, parcels, hostStatus);
+
+        Map<String, Object> offlineResponse = controller.getDashboard().getBody();
+        assertThat(offlineResponse).isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> offlineDiskUsage =
+                (List<Map<String, Object>>) offlineResponse.get("hostDiskUsage");
+        assertThat(offlineDiskUsage)
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.get("hostId")).isEqualTo("external-host-1");
+                    assertThat(row.get("status")).isEqualTo("OFFLINE");
+                    assertThat(row.get("usedPct")).isEqualTo(20L);
+                });
+
+        effectiveStatus.set("ONLINE");
+        Map<String, Object> onlineResponse = controller.getDashboard().getBody();
+        assertThat(onlineResponse).isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> onlineDiskUsage =
+                (List<Map<String, Object>>) onlineResponse.get("hostDiskUsage");
+        assertThat(onlineDiskUsage)
+                .singleElement()
+                .satisfies(row -> {
+                    assertThat(row.get("hostId")).isEqualTo("external-host-1");
+                    assertThat(row.get("status")).isEqualTo("ONLINE");
+                });
+    }
 
     @Test
     void occupiedHostWithFreshAgentIsStillCountedAsActive() {

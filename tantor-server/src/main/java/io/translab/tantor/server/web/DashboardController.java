@@ -257,9 +257,6 @@ public class DashboardController {
 
     private List<Map<String, Object>> hostDiskUsage(List<Host> hosts) {
         return hosts.stream()
-                .filter(host -> !(host.getId() != null
-                        && host.getId().startsWith("external-")
-                        && "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))))
                 .filter(host -> host.getDiskTotalGb() != null && host.getDiskTotalGb() > 0)
                 .sorted(Comparator.comparingLong(this::diskUsedPercent).reversed())
                 .limit(8)

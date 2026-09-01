@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -37,6 +37,7 @@ interface DashboardSummary {
 
 interface ChartRow {
   name: string;
+  hostId?: string;
   status?: string;
   value?: number;
   usedGb?: number;
@@ -196,7 +197,7 @@ export function Dashboard() {
     return rawName.charAt(0).toUpperCase() + rawName.slice(1);
   }, [decodedToken]);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -208,14 +209,16 @@ export function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetchDashboard();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, []);
+    const initial = window.setTimeout(() => void fetchDashboard(), 0);
+    const interval = window.setInterval(() => void fetchDashboard(), 10000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [fetchDashboard]);
 
   const summary = dashboard.summary;
 
@@ -370,18 +373,29 @@ export function Dashboard() {
       <section className="db-main-grid">
         <article className="db-panel large">
           <PanelTitle title="Host Disk Usage" detail="From latest host heartbeat" />
-          {summary.activeHosts === 0 ? (
-            <EmptyPanel text="No hosts connected yet. Connect a host agent to view disk metrics." />
-          ) : dashboard.hostDiskUsage.length ? (
-            <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
-                <CartesianGrid stroke="#eeeae3" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
-                <YAxis dataKey="name" type="category" width={132} stroke="var(--text-secondary)" fontSize={11} tickLine={false} />
-                <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="var(--color-info)" barSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
+          {dashboard.hostDiskUsage.length ? (
+            <>
+              <div className="db-host-disk-legend" aria-label="Host status color legend">
+                <span><i className="live" />Live</span>
+                <span><i className="offline" />Offline</span>
+              </div>
+              <ResponsiveContainer width="100%" height={244}>
+                <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
+                  <CartesianGrid stroke="#eeeae3" horizontal={false} />
+                  <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
+                  <YAxis dataKey="name" type="category" width={132} stroke="var(--text-secondary)" fontSize={11} tickLine={false} />
+                  <Tooltip content={<DiskTooltip />} />
+                  <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} barSize={16}>
+                    {dashboard.hostDiskUsage.map(host => (
+                      <Cell
+                        key={host.hostId || host.name}
+                        fill={host.status?.toUpperCase() === 'OFFLINE' ? '#D92D20' : 'var(--color-info)'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </>
           ) : (
             <EmptyPanel text="No disk data yet. Wait for host heartbeat metrics." />
           )}
@@ -644,7 +658,7 @@ function statusLabel(status: string) {
   return status.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-interface DiskTooltipRow { name: string; usedGb: number; totalGb: number; freeGb: number }
+interface DiskTooltipRow { name: string; status?: string; usedGb: number; totalGb: number; freeGb: number }
 
 function DiskTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: DiskTooltipRow }> }) {
   if (!active || !payload?.length) return null;
@@ -652,6 +666,7 @@ function DiskTooltip({ active, payload }: { active?: boolean; payload?: Array<{ 
   return (
     <div className="db-tooltip">
       <strong>{row.name}</strong>
+      <span>Status: {row.status?.toUpperCase() === 'OFFLINE' ? 'Offline' : 'Live'}</span>
       <span>{row.usedGb} GB used of {row.totalGb} GB</span>
       <span>{row.freeGb} GB free</span>
     </div>
