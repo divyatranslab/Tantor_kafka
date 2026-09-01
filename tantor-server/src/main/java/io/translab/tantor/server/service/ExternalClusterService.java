@@ -625,11 +625,32 @@ public class ExternalClusterService {
                 return linkedCluster;
             }
         }
-        return findExternalCluster(
+
+        Optional<ExternalCluster> identityMatch = findExternalCluster(
                 report.getKafkaClusterId(),
-                report.getName(),
+                null,
                 report.getBootstrapServers().trim()
         );
+        if (identityMatch.isPresent()) {
+            return identityMatch;
+        }
+
+        Set<String> reportedHosts = discoveryHostCandidates(report, agent);
+        if (!reportedHosts.isEmpty()) {
+            for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+                boolean containsReportedHost = externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
+                        .map(io.translab.tantor.server.domain.ExternalClusterNode::getHost)
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .anyMatch(nodeHost -> reportedHosts.stream()
+                                .anyMatch(candidate -> candidate.equalsIgnoreCase(nodeHost)));
+                if (containsReportedHost) {
+                    return Optional.of(cluster);
+                }
+            }
+        }
+
+        return findExternalCluster(null, report.getName(), null);
     }
 
     public List<Map<String, Object>> listPendingDiscoveries() {

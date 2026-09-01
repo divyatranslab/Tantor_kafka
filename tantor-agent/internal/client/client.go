@@ -46,7 +46,11 @@ func NewAPIClient(cfg *config.Config) (*APIClient, error) {
 		return nil, fmt.Errorf("control-plane CA certificate contains no valid PEM certificates")
 	}
 
-	tlsConfig := &tls.Config{RootCAs: caCertPool, MinVersion: tls.VersionTLS12}
+	tlsConfig := &tls.Config{
+		RootCAs:            caCertPool,
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: cfg.Agent.InsecureSkipVerify,
+	}
 	if strings.TrimSpace(cfg.Agent.CertFile) != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.Agent.CertFile, cfg.Agent.KeyFile)
 		if err != nil {
@@ -195,3 +199,4 @@ func (c *APIClient) post(path string, reqBody interface{}, respBody interface{})
 	}
 	return nil
 }
+

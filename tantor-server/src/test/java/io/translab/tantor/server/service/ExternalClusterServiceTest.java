@@ -665,6 +665,65 @@ class ExternalClusterServiceTest {
     }
 
     @Test
+    void unlinkedAgentUsesKnownTopologyHostWhenClusterNameAndBootstrapDiffer() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("test");
+        cluster.setBootstrapServers("192.168.3.229:9092");
+
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setClusterId(clusterId);
+        broker.setNodeId(2);
+        broker.setHost("192.168.3.164");
+        broker.setIsBroker(true);
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("host-164");
+        agent.setHostname("192.168.3.164");
+
+        when(agentRepository.findById(agent.getId())).thenReturn(Optional.of(agent));
+        when(agentRepository.save(agent)).thenReturn(agent);
+        when(clusterRepository.findByBootstrapServersAndStatusNot(
+                "192.168.3.164:9092", "DELETED")).thenReturn(Optional.empty());
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(clusterRepository.findByNameAndStatusNot("production-kafka", "DELETED"))
+                .thenReturn(Optional.empty());
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(broker));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setHostId(agent.getId());
+        report.setAgentName("tantor-agent-192.168.3.164");
+        report.setName("production-kafka");
+        report.setHostname("192.168.3.164");
+        report.setIpAddresses("[\"192.168.3.164\"]");
+        report.setBootstrapServers("192.168.3.164:9092");
+        report.setKafkaClusterId("");
+        report.setNodeId(2);
+        report.setInstallPath("/opt/kafka_2.13-4.1.0");
+        report.setConfigFile("/opt/kafka_2.13-4.1.0/config/broker.properties");
+        report.setRunning(true);
+
+        Map<String, Object> result = service.recordDiscoveryReport(report);
+
+        assertThat(result).containsEntry("status", "registered")
+                .containsEntry("id", clusterId);
+        assertThat(agent.getClusterId()).isEqualTo(clusterId);
+        assertThat(broker.getInstallDir()).isEqualTo("/opt/kafka_2.13-4.1.0");
+        assertThat(broker.getConfigFile())
+                .isEqualTo("/opt/kafka_2.13-4.1.0/config/broker.properties");
+        verify(nodeRepository).save(broker);
+    }
+
+    @Test
     void staleDiscoveryAgentUsesConfiguredTimeoutAndReturnsOrangeDisconnectedState() {
         ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
         DiscoveryAgentRepository discoveryAgentRepository = mock(DiscoveryAgentRepository.class);

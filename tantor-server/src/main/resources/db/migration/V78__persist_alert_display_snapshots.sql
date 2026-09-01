@@ -5,7 +5,7 @@ ALTER TABLE kf_alerts
     ADD COLUMN IF NOT EXISTS host_ip_snapshot TEXT;
 
 UPDATE kf_alerts alert
-SET cluster_name_snapshot = COALESCE(alert.cluster_name_snapshot, NULLIF(c.name, '')),
+SET cluster_name_snapshot = COALESCE(alert.cluster_name_snapshot, NULLIF(c.cluster_name, '')),
     kafka_cluster_id_snapshot = COALESCE(alert.kafka_cluster_id_snapshot, NULLIF(c.kafka_cluster_id, ''))
 FROM kf_clusters c
 WHERE alert.cluster_id = c.id
