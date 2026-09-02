@@ -48,6 +48,8 @@ class PrometheusMonitoringServiceTest {
 
         ExternalClusterNode broker = externalNode(id, 1, "192.168.10.11", true, false);
         ExternalClusterNode controller = externalNode(id, 101, "192.168.10.11", false, true);
+        broker.setJmxExporterPort(17071);
+        controller.setJmxExporterPort(17072);
 
         ClusterRepository clusters = mock(ClusterRepository.class);
         ExternalClusterRepository externalClusters = mock(ExternalClusterRepository.class);
@@ -70,8 +72,8 @@ class PrometheusMonitoringServiceTest {
                         target -> target.getLabels().get("node_id"),
                         target -> target.getLabels().get("role"))
                 .containsExactlyInAnyOrder(
-                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:7071", "kafka_jmx", "1", "broker"),
-                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:7072", "kafka_jmx", "101", "controller"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:17071", "kafka_jmx", "1", "broker"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:17072", "kafka_jmx", "101", "controller"),
                         org.assertj.core.groups.Tuple.tuple("192.168.10.11:9308", "kafka_exporter", "1", "broker"));
     }
 

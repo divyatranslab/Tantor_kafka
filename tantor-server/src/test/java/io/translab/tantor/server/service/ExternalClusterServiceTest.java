@@ -455,6 +455,41 @@ class ExternalClusterServiceTest {
     }
 
     @Test
+    void discoveryReportPersistsConfiguredJmxExporterPort() {
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class),
+                mock(ExternalClusterRepository.class),
+                nodeRepository,
+                mock(DiscoveryAgentRepository.class),
+                mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setKafkaMode("KRaft");
+
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setClusterId(clusterId);
+        broker.setNodeId(2);
+        broker.setHost("192.168.3.164");
+        broker.setIsBroker(true);
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(broker));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(2);
+        report.setHostname("192.168.3.164");
+        report.setJmxExporterPort(17071);
+
+        ReflectionTestUtils.invokeMethod(service, "applyDiscoveryReportToNodes",
+                cluster, report, new DiscoveryAgent());
+
+        assertThat(broker.getJmxExporterPort()).isEqualTo(17071);
+        verify(nodeRepository).save(broker);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void testConnectionUsesMatchingDiscoveryReportsForDedicatedControllerEndpoints() {
         ExternalClusterService service = service(mock(ExternalClusterRepository.class));

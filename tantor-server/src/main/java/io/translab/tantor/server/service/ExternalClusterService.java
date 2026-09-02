@@ -1521,6 +1521,7 @@ public class ExternalClusterService {
             node.setDiskTotalGb(report.getDiskTotalGb());
             node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
             node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
+            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
             node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
@@ -1545,6 +1546,7 @@ public class ExternalClusterService {
             node.setDiskTotalGb(report.getDiskTotalGb());
             node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
             node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
+            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), null));
             node.setLogDirs(blankToDefault(report.getLogDirs(), null));
@@ -1659,6 +1661,15 @@ public class ExternalClusterService {
         }
         long gibibyte = 1024L * 1024L * 1024L;
         return legacyGiB > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : legacyGiB * gibibyte;
+    }
+
+    private void applyReportedJmxExporterPort(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            Integer reportedPort
+    ) {
+        if (reportedPort != null && reportedPort >= 1024 && reportedPort <= 65535) {
+            node.setJmxExporterPort(reportedPort);
+        }
     }
 
     private void addCandidate(Set<String> candidates, String value) {
@@ -2061,6 +2072,7 @@ public class ExternalClusterService {
         private Long diskTotalGb;
         private Long diskUsedBytes;
         private Long diskTotalBytes;
+        private Integer jmxExporterPort;
     }
 
     @Data
