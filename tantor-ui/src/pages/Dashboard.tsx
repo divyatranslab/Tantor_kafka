@@ -355,9 +355,6 @@ export function Dashboard() {
                   <strong>{cluster.name || 'Unnamed cluster'}</strong>
                   <small>
                     {cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'}
-                    {(cluster.hostCount || 0) > 0
-                      ? ` - ${cluster.hostCount} node${cluster.hostCount === 1 ? '' : 's'}`
-                      : ''}
                   </small>
                   <em>{cluster.reason}</em>
                 </div>
