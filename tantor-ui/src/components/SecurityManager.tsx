@@ -32,7 +32,7 @@ export default function SecurityManager({ clusterId }: Props) {
   const [aclsLoading, setAclsLoading] = useState(false);
   const [aclsError, setAclsError] = useState('');
   const [showCreateAcl, setShowCreateAcl] = useState(false);
-  const [aclPrincipal, setAclPrincipal] = useState('http://');
+  const [aclPrincipal, setAclPrincipal] = useState('');
   const [aclResourceType, setAclResourceType] = useState('Topic');
   const [aclResourceName, setAclResourceName] = useState('');
   const [aclPatternType, setAclPatternType] = useState('Literal');
@@ -65,6 +65,11 @@ export default function SecurityManager({ clusterId }: Props) {
   const handleCreateAcl = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage) return;
+    const normalizedPrincipal = aclPrincipal.trim().replace(/^User:/i, '').trim();
+    if (!normalizedPrincipal) {
+      setAlertMessage('Please enter a Kafka principal.');
+      return;
+    }
     if (aclOperations.length === 0) {
       setAlertMessage("Please select at least one operation.");
       return;
@@ -76,7 +81,7 @@ export default function SecurityManager({ clusterId }: Props) {
           resourceType: aclResourceType,
           resourceName: aclResourceName,
           pattern_type: aclPatternType,
-          principal: 'User:' + aclPrincipal.replace(/^User:/, ''),
+          principal: `User:${normalizedPrincipal}`,
           host: aclHost,
           operation: op,
           permission_type: aclPermission,
@@ -155,7 +160,7 @@ export default function SecurityManager({ clusterId }: Props) {
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
             <input 
               type="text" 
-              placeholder="Filter by principle..." 
+              placeholder="Filter by principal..." 
               value={aclFilterPrincipal} 
               onChange={e => setAclFilterPrincipal(e.target.value)} 
               style={{
@@ -327,22 +332,25 @@ export default function SecurityManager({ clusterId }: Props) {
                 gap: '20px 16px',
                 marginBottom: '20px'
               }}>
-                {/* Principle (Username) */}
+                {/* Principal (Username) */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Principle (Username)</label>
-                  <CustomSelect
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Principal (Username)</label>
+                  <input
+                    type="text"
                     value={aclPrincipal}
-                    onChange={setAclPrincipal}
-                    width="100%"
-                    variant="audit"
-                    options={[
-                      { value: 'http://', label: 'http://' },
-                      { value: 'User:*', label: 'User:*' },
-                      { value: 'User:alice', label: 'User:alice' },
-                      { value: 'User:bob', label: 'User:bob' },
-                      { value: 'User:anuj', label: 'User:anuj' },
-                      { value: 'User:admin', label: 'User:admin' },
-                    ]}
+                    onChange={e => setAclPrincipal(e.target.value)}
+                    placeholder="User:admin or admin"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: 'var(--text-base)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--button-primary-active)',
+                      outline: 'none'
+                    }}
                   />
                 </div>
 
