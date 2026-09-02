@@ -125,6 +125,13 @@ export function Brokers() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatMessageRate = (messages: number) => {
+    if (!Number.isFinite(messages) || messages <= 0) return '0';
+    if (messages < 1) return parseFloat(messages.toFixed(2)).toString();
+    if (messages < 10) return parseFloat(messages.toFixed(1)).toString();
+    return messages.toFixed(0);
+  };
+
   const ProgressBar = ({ value, max }: { value: number; max: number }) => {
     const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
     return (
@@ -152,7 +159,7 @@ export function Brokers() {
           </div>
           <div className="card-body">
             <span className="value">{formatBytes(agg.totalBytesIn)}/s</span>
-            <span className="subtext">{agg.totalMsgIn.toFixed(0)} msg/s</span>
+            <span className="subtext">{formatMessageRate(agg.totalMsgIn)} msg/s</span>
           </div>
         </div>
 

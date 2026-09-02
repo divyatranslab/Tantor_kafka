@@ -57,6 +57,12 @@ public class ExternalClusterNode {
     @Column(name = "disk_total_bytes")
     private Long diskTotalBytes;
 
+    @Column(name = "messages_in_per_sec")
+    private Double messagesInPerSec;
+
+    @Column(name = "bytes_in_per_sec")
+    private Double bytesInPerSec;
+
     @Column(name = "last_seen")
     private OffsetDateTime lastSeen;
 

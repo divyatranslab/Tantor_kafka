@@ -995,6 +995,12 @@ public class ExternalClusterService {
                     broker.getDiskTotalBytes(),
                     seen
             );
+            externalClusterNodeRepository.updateBrokerIngestionRates(
+                    cluster.getId(),
+                    broker.getHostname(),
+                    metrics.getMessagesInPerSec(),
+                    metrics.getBytesInPerSec()
+            );
         }
 
         discoveryAgentRepository.findByHostname(broker.getHostname()).ifPresent(agent -> {
@@ -1496,6 +1502,8 @@ public class ExternalClusterService {
             r.setDiskTotalGb(n.getDiskTotalGb());
             r.setDiskUsedBytes(n.getDiskUsedBytes());
             r.setDiskTotalBytes(n.getDiskTotalBytes());
+            r.setMessagesInPerSec(n.getMessagesInPerSec());
+            r.setBytesInPerSec(n.getBytesInPerSec());
             r.setInstallPath(blankToDefault(n.getInstallDir(), cluster.getInstallPath()));
             r.setLogDirs(blankToDefault(n.getLogDirs(), cluster.getLogDirs()));
             r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
@@ -1649,6 +1657,8 @@ public class ExternalClusterService {
         node.setDiskTotalGb(metrics.getDiskTotalGb());
         node.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
         node.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
+        node.setMessagesInPerSec(metrics.getMessagesInPerSec());
+        node.setBytesInPerSec(metrics.getBytesInPerSec());
         node.setLastSeen(seen);
     }
 

@@ -626,11 +626,15 @@ class ExternalClusterServiceTest {
         metrics.setBootstrap("192.168.3.228:9092");
         metrics.setDiskUsedBytes(7_784_919_040L);
         metrics.setDiskTotalBytes(44_286_992_384L);
+        metrics.setMessagesInPerSec(0.1);
+        metrics.setBytesInPerSec(7.7);
 
         service.receiveMetrics("external", metrics);
 
         assertThat(nodeOne.getDiskUsedBytes()).isEqualTo(7_784_919_040L);
         assertThat(nodeOne.getDiskTotalBytes()).isEqualTo(44_286_992_384L);
+        assertThat(nodeOne.getMessagesInPerSec()).isEqualTo(0.1);
+        assertThat(nodeOne.getBytesInPerSec()).isEqualTo(7.7);
         assertThat(nodeTwo.getDiskUsedBytes()).isNull();
         verify(nodeRepository).save(nodeOne);
     }

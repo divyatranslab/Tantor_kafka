@@ -71,4 +71,18 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
         @Param("diskTotalBytes") Long diskTotalBytes,
         @Param("lastSeen") OffsetDateTime lastSeen
     );
+
+    @Modifying
+    @Query(value = """
+        UPDATE kf_external_cluster_nodes SET
+            messages_in_per_sec = :messagesInPerSec,
+            bytes_in_per_sec = :bytesInPerSec
+        WHERE cluster_id = :clusterId AND host = :host AND is_broker = TRUE
+        """, nativeQuery = true)
+    void updateBrokerIngestionRates(
+        @Param("clusterId") UUID clusterId,
+        @Param("host") String host,
+        @Param("messagesInPerSec") Double messagesInPerSec,
+        @Param("bytesInPerSec") Double bytesInPerSec
+    );
 }
