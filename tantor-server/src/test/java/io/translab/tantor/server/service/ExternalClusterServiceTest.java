@@ -604,6 +604,7 @@ class ExternalClusterServiceTest {
         UUID clusterId = UUID.randomUUID();
         ExternalCluster cluster = new ExternalCluster();
         cluster.setId(clusterId);
+        cluster.setStatus("SUCCESS");
         cluster.setBootstrapServers("192.168.3.228:9092");
         ExternalClusterNode nodeOne = new ExternalClusterNode();
         nodeOne.setClusterId(clusterId);
@@ -614,16 +615,22 @@ class ExternalClusterServiceTest {
         nodeTwo.setNodeId(2);
         nodeTwo.setHost("192.168.3.228");
 
-        when(clusterRepository.findByBootstrapServersAndStatusNot("192.168.3.228:9092", "DELETED"))
-                .thenReturn(Optional.of(cluster));
+        DiscoveryAgent linkedAgent = new DiscoveryAgent();
+        linkedAgent.setId("host-229");
+        linkedAgent.setHostname("192.168.3.229");
+        linkedAgent.setClusterId(clusterId);
+        when(agentRepository.findById("host-229")).thenReturn(Optional.of(linkedAgent));
+        when(agentRepository.findByHostname("192.168.3.229")).thenReturn(Optional.of(linkedAgent));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
         when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(nodeOne, nodeTwo));
         when(nodeRepository.findByClusterIdAndNodeId(clusterId, 1)).thenReturn(Optional.of(nodeOne));
 
         ExternalClusterService.ExternalBrokerMetricsDto metrics =
                 new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setHostId("host-229");
         metrics.setNodeId(1);
         metrics.setHostname("192.168.3.229");
-        metrics.setBootstrap("192.168.3.228:9092");
+        metrics.setBootstrap("192.168.3.229:9092");
         metrics.setDiskUsedBytes(7_784_919_040L);
         metrics.setDiskTotalBytes(44_286_992_384L);
         metrics.setMessagesInPerSec(0.1);

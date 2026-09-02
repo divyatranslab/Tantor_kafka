@@ -940,7 +940,7 @@ public class ExternalClusterService {
 
     @Transactional
     public void receiveMetrics(String clusterName, ExternalBrokerMetricsDto metrics) {
-        Optional<ExternalCluster> clusterOpt = findExternalCluster(null, clusterName, metrics.getBootstrap());
+        Optional<ExternalCluster> clusterOpt = findExternalClusterForMetrics(clusterName, metrics);
         if (clusterOpt.isEmpty()) {
             return;
         }
@@ -1008,6 +1008,26 @@ public class ExternalClusterService {
             agent.setLastHeartbeat(OffsetDateTime.now());
             discoveryAgentRepository.save(agent);
         });
+    }
+
+    private Optional<ExternalCluster> findExternalClusterForMetrics(
+            String clusterName,
+            ExternalBrokerMetricsDto metrics
+    ) {
+        Optional<DiscoveryAgent> linkedAgent = Optional.empty();
+        if (metrics.getHostId() != null && !metrics.getHostId().isBlank()) {
+            linkedAgent = discoveryAgentRepository.findById(metrics.getHostId().trim());
+        }
+        if (linkedAgent.isEmpty() && metrics.getHostname() != null && !metrics.getHostname().isBlank()) {
+            linkedAgent = discoveryAgentRepository.findByHostname(metrics.getHostname().trim());
+        }
+        if (linkedAgent.isPresent() && linkedAgent.get().getClusterId() != null) {
+            Optional<ExternalCluster> linkedCluster = externalClusterRepository.findById(linkedAgent.get().getClusterId());
+            if (linkedCluster.isPresent() && !"DELETED".equalsIgnoreCase(linkedCluster.get().getStatus())) {
+                return linkedCluster;
+            }
+        }
+        return findExternalCluster(null, clusterName, metrics.getBootstrap());
     }
 
     public List<Map<String, Object>> listExternalClusters() {
@@ -2087,6 +2107,7 @@ public class ExternalClusterService {
 
     @Data
     public static class ExternalBrokerMetricsDto {
+        private String hostId;
         private String hostname;
         private String bootstrap;
         private Integer nodeId;
