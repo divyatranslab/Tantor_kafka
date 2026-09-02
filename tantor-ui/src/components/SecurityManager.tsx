@@ -339,7 +339,7 @@ export default function SecurityManager({ clusterId }: Props) {
                     type="text"
                     value={aclPrincipal}
                     onChange={e => setAclPrincipal(e.target.value)}
-                    placeholder="User:admin or admin"
+                    placeholder="User:admin"
                     required
                     style={{
                       width: '100%',
