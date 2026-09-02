@@ -173,6 +173,8 @@ public class BrokerMetricsCacheService {
                         .diskUsedGb(live ? record.getDiskUsedGb() : null)
                         .diskUsedBytes(live ? resolveDiskBytes(record.getDiskUsedBytes(), record.getDiskUsedGb()) : null)
                         .diskTotalBytes(live ? resolveDiskBytes(record.getDiskTotalBytes(), record.getDiskTotalGb()) : null)
+                        .messagesInPerSec(live ? record.getMessagesInPerSec() : 0.0)
+                        .bytesInPerSec(live ? record.getBytesInPerSec() : 0.0)
                         .build();
                 })
                 .collect(Collectors.toList());

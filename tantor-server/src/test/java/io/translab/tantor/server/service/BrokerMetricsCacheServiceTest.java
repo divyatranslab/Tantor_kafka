@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.repository.HostRepository;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +49,34 @@ class BrokerMetricsCacheServiceTest {
             assertThat(row.isController()).isTrue();
             assertThat(row.getDiskUsedGb()).isNull();
             assertThat(row.getDiskTotalGb()).isNull();
+        });
+    }
+
+    @Test
+    void exposesPersistedExternalIngestionRates() {
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+
+        ExternalClusterService.ExternalBrokerRecord record =
+                new ExternalClusterService.ExternalBrokerRecord();
+        record.setNodeId(3);
+        record.setHostname("192.168.3.191");
+        record.setRole("broker");
+        record.setRunning(true);
+        record.setMessagesInPerSec(1.67);
+        record.setBytesInPerSec(84.81);
+
+        ExternalClusterService externalClusters = mock(ExternalClusterService.class);
+        when(externalClusters.brokerRecords(cluster)).thenReturn(List.of(record));
+        BrokerMetricsCacheService service = new BrokerMetricsCacheService(
+                mock(HostRepository.class), mock(KafkaAdminService.class), externalClusters,
+                mock(HostStatusService.class), new ObjectMapper(), monitoringProperties());
+
+        var rows = service.getBrokerSummaries(cluster);
+
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.getMessagesInPerSec()).isEqualTo(1.67);
+            assertThat(row.getBytesInPerSec()).isEqualTo(84.81);
         });
     }
 
