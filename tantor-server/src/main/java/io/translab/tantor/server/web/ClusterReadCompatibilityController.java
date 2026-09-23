@@ -1,5 +1,7 @@
 package io.translab.tantor.server.web;
 
+import io.translab.tantor.server.domain.canonical.CanonicalClusterNodesResponse;
+import io.translab.tantor.server.service.CanonicalClusterNodeResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +19,7 @@ import java.util.UUID;
 public class ClusterReadCompatibilityController {
 
     private final ClusterController clusterController;
+    private final CanonicalClusterNodeResolver canonicalClusterNodeResolver;
 
     @GetMapping("/{id}/overview")
     public ResponseEntity<?> overview(@PathVariable UUID id) {
@@ -24,13 +27,8 @@ public class ClusterReadCompatibilityController {
     }
 
     @GetMapping("/{id}/nodes")
-    public ResponseEntity<?> nodes(@PathVariable UUID id) {
-        ResponseEntity<Map<String, Object>> response = clusterController.getCluster(id);
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
-            return ResponseEntity.status(response.getStatusCode()).build();
-        }
-        Object hosts = response.getBody().get("hosts");
-        return ResponseEntity.ok(hosts instanceof List<?> list ? list : List.of());
+    public ResponseEntity<CanonicalClusterNodesResponse> nodes(@PathVariable UUID id) {
+        return ResponseEntity.ok(canonicalClusterNodeResolver.resolve(id));
     }
 
     @GetMapping("/{id}/brokers")

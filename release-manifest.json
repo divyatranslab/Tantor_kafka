@@ -1,0 +1,95 @@
+{
+  "version": "1.0",
+  "components": {
+    "server": {
+      "sources": [
+        {
+          "directory": "tantor-server/target",
+          "patterns": [
+            "^tantor-server-[0-9\\.]+\\.jar$",
+            "^tantor-server-[0-9\\.]+-dns-resolver\\.jar$"
+          ]
+        }
+      ]
+    },
+    "artifact-repository": {
+      "sources": [
+        {
+          "directory": "tantor-artifact-repository/target",
+          "patterns": [
+            "^tantor-artifact-repository-[0-9\\.]+\\.jar$"
+          ]
+        }
+      ]
+    },
+    "agent": {
+      "sources": [
+        {
+          "directory": "tantor-agent",
+          "patterns": [
+            "^tantor-agent-linux$"
+          ]
+        },
+        {
+          "directory": ".",
+          "patterns": [
+            "^install-agent\\.sh$",
+            "^start-agent\\.ps1$",
+            "^run-agent-windows\\.ps1$"
+          ]
+        }
+      ]
+    },
+    "discovery-agent": {
+      "sources": [
+        {
+          "directory": "tantor-discovery-agent",
+          "patterns": [
+            "^tantor-discovery-agent-linux$"
+          ]
+        },
+        {
+          "directory": "tantor-discovery-agent",
+          "patterns": [
+            "^install-discovery-agent\\.sh$",
+            "^deploy-discovery-agent\\.ps1$"
+          ]
+        }
+      ]
+    },
+    "ui": {
+      "sources": [
+        {
+          "directory": "tantor-ui/dist",
+          "patterns": [
+            "^.*$"
+          ]
+        },
+        {
+          "directory": "tantor-ui",
+          "patterns": [
+            "^nginx\\.production\\.conf$"
+          ]
+        }
+      ]
+    },
+    "deployment": {
+      "sources": [
+        {
+          "directory": ".",
+          "patterns": [
+            "^package-deployment\\.ps1$",
+            "^podman-compose\\.production\\.yml$",
+            "^README\\.md$"
+          ]
+        },
+        {
+          "directory": "deploy",
+          "patterns": [
+            "^.*$"
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -2,6 +2,23 @@
   display: grid;
   gap: 12px;
 }
+.deployment-copy-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 26000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #A7F3D0;
+  border-radius: 8px;
+  background: #ECFDF5;
+  color: #047857;
+  box-shadow: 0 12px 30px rgba(40, 47, 73, 0.16);
+  font-size: 14px;
+  font-weight: 600;
+}
 
 .deployment-log-toolbar,
 .deployment-task-picker,

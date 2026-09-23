@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, XCircle, RefreshCw, AlertTriangle, Undo2, Maximize2, Minimize2, Check, MoreVertical } from 'lucide-react';
+import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction } from '../components/ConfirmDialog';
+import { confirmAction } from '../components/confirmUtils';
 import './JobStatusPage.css';
 
 type Job = {
@@ -30,6 +30,31 @@ type JobStep = {
   startTime?: string;
   endTime?: string;
 };
+
+type Host = {
+  id: string;
+  agentName?: string;
+  hostname?: string;
+  ipAddresses?: string;
+};
+
+type HostDisplay = {
+  name: string;
+  ip: string;
+};
+
+const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+
+function getFirstIp(ipAddresses?: string): string {
+  if (!ipAddresses) return '';
+  try {
+    const parsed = JSON.parse(ipAddresses);
+    if (Array.isArray(parsed)) return String(parsed[0] || '');
+  } catch {
+    // Fall back to a plain IP value if this server does not return JSON.
+  }
+  return ipAddresses.replace(/[[\]"]/g, '').split(',')[0]?.trim() || '';
+}
 
 function getBusinessStepName(rawName: string): string {
   if (!rawName) return '';
@@ -78,13 +103,14 @@ export function JobStatusPage() {
   const { canManage } = usePermissions();
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const [hostsById, setHostsById] = useState<Record<string, HostDisplay>>({});
   const [loading, setLoading] = useState(true);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  const fetchJob = async () => {
+  const fetchJob = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}`);
       if (res.ok) {
@@ -92,22 +118,33 @@ export function JobStatusPage() {
       }
       const stepsRes = await fetch(`/api/v1/ui/jobs/${id}/steps`);
       if (stepsRes.ok) setSteps(await stepsRes.json());
+      const hostsRes = await fetch('/api/v1/ui/hosts');
+      if (hostsRes.ok) {
+        const hosts: Host[] = await hostsRes.json();
+        setHostsById(Object.fromEntries(hosts.map(host => [
+          host.id,
+          {
+            name: host.hostname || host.agentName || host.id,
+            ip: getFirstIp(host.ipAddresses)
+          }
+        ])));
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchJob();
+    void (async () => { await fetchJob(); })();
     const interval = setInterval(() => {
       if (!['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job?.status || '')) {
-         fetchJob();
+        void (async () => { await fetchJob(); })();
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [id, job?.status]);
+  }, [fetchJob, job?.status]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -164,11 +201,12 @@ export function JobStatusPage() {
     for (const line of lines) {
       const compMatch = line.match(/\]\s*(.+?)\s+completed/);
       if (compMatch) {
+        const targetMatch = line.match(new RegExp(`\\b(?:on|from)\\s+(${UUID_PATTERN})\\b`, 'i'));
         reconstructed.push({
           id: `recon-${order}`,
           stepOrder: order++,
           name: compMatch[1],
-          targetId: '',
+          targetId: targetMatch?.[1] || '',
           status: 'SUCCESS',
           retryCount: 0
         });
@@ -219,13 +257,13 @@ export function JobStatusPage() {
     const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(status);
     const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(status);
     
-    let bgColor = '#CCCCCC'; // Pending / Default
+    let bgColor = 'var(--border-default)'; // Pending / Default
     if (isCompleted) bgColor = '#1F845A';
-    else if (isFailed) bgColor = '#EF4D5F';
-    else if (isRunning) bgColor = '#3E1363';
+    else if (isFailed) bgColor = 'var(--color-danger)';
+    else if (isRunning) bgColor = 'var(--button-primary)';
 
     if (isRunning) {
-      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: '#3E1363', flexShrink: 0 }} />;
+      return <RefreshCw className="spin step-icon-progress" size={20} style={{ color: 'var(--button-primary)', flexShrink: 0 }} />;
     }
 
     return (
@@ -246,7 +284,7 @@ export function JobStatusPage() {
 
   const renderLogs = (logsText: string) => {
     if (!logsText) return 'Waiting for execution logs...';
-    return logsText.split('\n').map((line, idx) => {
+    return logsText.split('\n').map((line, lineIndex) => {
       let className = 'log-line';
       const lowerLine = line.toLowerCase();
       if (lowerLine.includes('completed')) {
@@ -254,13 +292,31 @@ export function JobStatusPage() {
       } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
         className += ' log-error';
       }
-      return <div key={idx} className={className}>{line || ' '}</div>;
+      const displayLine = line.replace(
+        new RegExp(UUID_PATTERN, 'gi'),
+        targetId => {
+          const host = hostsById[targetId];
+          if (!host) return targetId;
+          return host.ip ? `${host.name} (${host.ip})` : host.name;
+        }
+      );
+      return <div key={lineIndex} className={className}>{displayLine || ' '}</div>;
     });
+  };
+
+  const getStepDisplayName = (step: JobStep): string => {
+    const businessName = getBusinessStepName(step.name);
+    const targetId = step.targetId || step.name.match(new RegExp(UUID_PATTERN, 'i'))?.[0];
+    if (!targetId) return businessName;
+
+    const host = hostsById[targetId];
+    if (!host) return businessName;
+    const hostLabel = host.ip ? `${host.name} (${host.ip})` : host.name;
+    return `${businessName} - ${hostLabel}`;
   };
 
   const totalSteps = displaySteps.length;
   const completedStepsCount = displaySteps.filter(s => ['SUCCESS', 'ROLLED_BACK'].includes(s.status)).length;
-  const progressPercentage = totalSteps === 0 ? 0 : Math.round((completedStepsCount / totalSteps) * 100);
 
   return (
     <div className="job-status-page animate-fade-in">
@@ -325,14 +381,14 @@ export function JobStatusPage() {
 
       {!isLogsExpanded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: '#3E1363', fontSize: '18px', fontWeight: 600 }}>Deployment Steps</h3>
+          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: 'var(--button-primary)', fontSize: '18px', fontWeight: 'var(--font-semibold)' }}>Deployment Steps</h3>
           <div style={{ position: 'relative' }}>
             <button 
               onClick={() => setShowDropdown(!showDropdown)} 
               style={{ 
-                background: '#FFFFFF', 
-                border: '1px solid #CCCCCC', 
-                borderRadius: '8px', 
+                background: "var(--bg-surface)", 
+                border: '1px solid var(--border-default)', 
+                borderRadius: 'var(--radius-md)', 
                 width: '32px', 
                 height: '32px', 
                 display: 'flex', 
@@ -341,16 +397,16 @@ export function JobStatusPage() {
                 cursor: 'pointer' 
               }}
             >
-              <MoreVertical size={16} color="#818181" />
+              <MoreVertical size={16} color="var(--text-tertiary)" />
             </button>
             {showDropdown && (
               <div style={{ 
                 position: 'absolute', 
                 right: 0, 
                 top: '36px', 
-                background: '#FFFFFF', 
-                border: '1px solid #CCCCCC', 
-                borderRadius: '8px', 
+                background: "var(--bg-surface)", 
+                border: '1px solid var(--border-default)', 
+                borderRadius: 'var(--radius-md)', 
                 boxShadow: '0 2px 8px rgba(0,0,0,0.1)', 
                 zIndex: 10,
                 minWidth: '120px'
@@ -365,8 +421,8 @@ export function JobStatusPage() {
                     border: 'none', 
                     cursor: 'pointer',
                     fontFamily: 'Satoshi',
-                    fontSize: '14px',
-                    color: '#332849'
+                    fontSize: 'var(--text-base)',
+                    color: 'var(--button-primary-active)'
                   }}
                 >
                   {showLogs ? 'Hide logs' : 'View logs'}
@@ -380,79 +436,81 @@ export function JobStatusPage() {
         {!isLogsExpanded && (
           <div className="job-sidebar" style={{ marginLeft: !showLogs ? 0 : '16px', width: !showLogs ? '100%' : 'auto' }}>
             <div style={{
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              padding: '16px',
-              background: '#FFFFFF',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              padding: 'var(--space-4)',
+              background: "var(--bg-surface)",
               display: 'flex',
               flexDirection: 'column',
-              gap: '16px',
+              gap: 'var(--space-4)',
               boxSizing: 'border-box',
               marginLeft: '16px'
             }}>
               {totalSteps > 0 && (
-                <div style={{ textAlign: 'left', fontSize: '12px', lineHeight: '16px', color: '#818181', fontFamily: 'Satoshi', fontWeight: 500 }}>
+                <div style={{ textAlign: 'left', fontSize: 'var(--text-xs)', lineHeight: '16px', color: 'var(--text-tertiary)', fontFamily: 'Satoshi', fontWeight: 'var(--font-medium)' }}>
                   {completedStepsCount} of {totalSteps} steps
                 </div>
               )}
-              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                {displaySteps.map((step, idx) => {
+              <div className="steps-list" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+                {displaySteps.map((step) => {
                   const isCompleted = ['SUCCESS', 'ROLLED_BACK'].includes(step.status);
                   const isFailed = ['FAILED', 'ROLLBACK_FAILED'].includes(step.status);
                   const isRunning = ['IN_PROGRESS', 'ROLLING_BACK'].includes(step.status);
                   
                   const progress = isCompleted ? 100 : isRunning ? 50 : 0;
+                  const stepDisplayName = getStepDisplayName(step);
                   
-                  let nameColor = '#818181'; // Unstarted default
-                  let statusColor = '#818181'; // Unstarted default
-                  let barColor = '#CCCCCC'; // Unstarted default track
+                  let nameColor = 'var(--text-tertiary)'; // Unstarted default
+                  let statusColor = 'var(--text-tertiary)'; // Unstarted default
+                  let barColor = 'var(--border-default)'; // Unstarted default track
                   
                   if (isCompleted) {
-                    nameColor = '#332849';
+                    nameColor = 'var(--button-primary-active)';
                     statusColor = '#1F845A';
                     barColor = '#098C60';
                   } else if (isFailed) {
-                    nameColor = '#332849';
-                    statusColor = '#EF4D5F';
-                    barColor = '#EF4D5F';
+                    nameColor = 'var(--button-primary-active)';
+                    statusColor = 'var(--color-danger)';
+                    barColor = 'var(--color-danger)';
                   } else if (isRunning) {
-                    nameColor = '#332849';
-                    statusColor = '#3E1363';
-                    barColor = '#3E1363';
+                    nameColor = 'var(--button-primary-active)';
+                    statusColor = 'var(--button-primary)';
+                    barColor = 'var(--button-primary)';
                   }
 
                   return (
-                    <div key={step.id} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
+                    <div key={step.id} style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'flex-start', padding: '0px', width: '100%' }}>
                       {getStepIcon(step.status, 20)}
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ 
-                            fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                          <span style={{
+                            fontFamily: 'Satoshi',
+                            fontSize: 'var(--text-xs)',
+                            fontWeight: 'var(--font-medium)',
                             lineHeight: '16px',
                             color: nameColor,
-                            width: '175px',
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            display: 'inline-block'
-                          }} title={getBusinessStepName(step.name)}>
-                            {getBusinessStepName(step.name)}
+                            flex: '1 1 auto',
+                            minWidth: 0,
+                            whiteSpace: 'normal',
+                            overflowWrap: 'anywhere',
+                            paddingRight: '12px'
+                          }} title={stepDisplayName}>
+                            {stepDisplayName}
                           </span>
-                          <span style={{ 
+                          <span style={{
                             fontFamily: 'Satoshi', 
-                            fontSize: '12px', 
-                            fontWeight: 500, 
+                            fontSize: 'var(--text-xs)', 
+                            fontWeight: 'var(--font-medium)', 
                             lineHeight: '16px',
                             color: statusColor,
                             width: '96px',
-                            textAlign: 'right'
+                            textAlign: 'right',
+                            flexShrink: 0
                           }}>
                             {progress}% Completed
                           </span>
                         </div>
-                        <div className="step-progress-track" style={{ height: '8px', background: '#CCCCCC', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
+                        <div className="step-progress-track" style={{ height: '8px', background: 'var(--border-default)', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>
                           {isCompleted || isFailed || isRunning ? (
                             <>
                               <div 
@@ -466,14 +524,14 @@ export function JobStatusPage() {
                                 }} 
                               />
                               {progress < 100 && (
-                                <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
+                                <div style={{ flex: 1, background: 'var(--border-default)', height: '100%', borderRadius: '0px 2px 2px 0px' }} />
                               )}
                             </>
                           ) : (
                             // Not Started / Pending step progress bar: partitioned rectangle 63 and rectangle 64
                             <>
-                              <div style={{ width: '3px', background: '#CCCCCC', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
-                              <div style={{ flex: 1, background: '#CCCCCC', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
+                              <div style={{ width: '3px', background: 'var(--border-default)', height: '100%', borderRadius: '2px 0px 0px 2px' }} />
+                              <div style={{ flex: 1, background: 'var(--border-default)', height: '100%', borderRadius: '0px 2px 2px 0px', marginLeft: '0px' }} />
                             </>
                           )}
                         </div>
@@ -481,7 +539,7 @@ export function JobStatusPage() {
                     </div>
                   );
                 })}
-                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: '#818181' }}>No steps recorded</div>}
+                {displaySteps.length === 0 && <div className="empty-state" style={{ textAlign: 'center', color: 'var(--text-tertiary)' }}>No steps recorded</div>}
               </div>
             </div>
           </div>

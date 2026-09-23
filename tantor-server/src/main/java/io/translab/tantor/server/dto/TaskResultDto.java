@@ -10,6 +10,7 @@ import java.util.Map;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class TaskResultDto {
     private String taskId;
+    private String claimToken;
     private String hostId;
     private String status; // SUCCESS, FAILED
     private String logOutput;

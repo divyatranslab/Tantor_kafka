@@ -68,6 +68,9 @@ public class ArtifactService {
 
     @Transactional
     public Artifact upload(UploadCommand cmd, InputStream data) {
+        StorageService.validateFileName(cmd.fileName());
+        validateCoordinate(cmd.version(), "version");
+        if (cmd.classifier() != null) validateCoordinate(cmd.classifier(), "classifier");
         String classifier = blankToNull(cmd.classifier());
         // 1. Stream bytes to temporary disk location and compute checksums.
         StorageService.TempStoreResult tempStore = storageService.storeTemporarily(cmd.fileName(), data);
@@ -139,8 +142,9 @@ public class ArtifactService {
                     artifactDir, manifestJson);
 
         } catch (Exception e) {
-            // Package Validation failed
-            storageService.deleteTemp(tempFile);
+            // Rejected bytes stay outside the downloadable artifact tree for
+            // forensic review; only successfully validated files become AVAILABLE.
+            storageService.quarantine(tempFile, cmd.fileName());
             artifact.setStatus(ArtifactStatus.FAILED);
         }
 
@@ -243,6 +247,12 @@ public class ArtifactService {
 
     private static String blankToNull(String s) {
         return (s == null || s.isBlank()) ? null : s;
+    }
+
+    private static void validateCoordinate(String value, String label) {
+        if (value == null || value.isBlank() || value.contains("/") || value.contains("\\") || value.contains("..")) {
+            throw new IllegalArgumentException("Artifact " + label + " contains an unsafe path value");
+        }
     }
 
     private String uploadDirectory(UploadCommand cmd, String classifier, UUID artifactId) {

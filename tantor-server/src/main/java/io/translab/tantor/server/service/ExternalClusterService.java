@@ -18,6 +18,7 @@ import io.translab.tantor.server.security.TruststoreStorageService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -45,7 +47,9 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 public class ExternalClusterService {
 
     private static final String EXTERNAL_MODE = "EXTERNAL";
-    private static final long AGENT_STALE_SECONDS = 180;
+
+    @Value("${tantor.discovery-agent.heartbeat-timeout-seconds:45}")
+    private long discoveryAgentHeartbeatTimeoutSeconds;
 
     private final ClusterRepository clusterRepository;
     private final ExternalClusterRepository externalClusterRepository;
@@ -64,6 +68,22 @@ public class ExternalClusterService {
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalDiscoveryReport> pendingDiscoveries = new ConcurrentHashMap<>();
+
+    public boolean isClusterNameAvailable(String name) {
+        String normalizedName = name == null ? "" : name.trim();
+        if (normalizedName.isBlank()) {
+            return true;
+        }
+        return !clusterRepository.existsActiveByNormalizedName(normalizedName)
+                && !externalClusterRepository.existsActiveByNormalizedName(normalizedName);
+    }
+
+    private void requireAvailableClusterName(String name) {
+        if (!isClusterNameAvailable(name)) {
+            throw new ClusterNameConflictException(
+                    "A cluster with this name already exists. Choose a different name.");
+        }
+    }
 
     public Map<String, String> getExternalTaskData(String taskId) {
         for (ExternalAgentTask task : pendingTasks.values()) {
@@ -114,6 +134,7 @@ public class ExternalClusterService {
             try {
                 Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(tempCluster, false); // false = don't decrypt since we passed plaintext
                 result.putAll(adminData);
+                enrichTestConnectionNodesFromDiscovery(result);
                 adminSuccess = true;
             } finally {
                 // Clean up temporary files
@@ -158,7 +179,16 @@ public class ExternalClusterService {
                     // If we blindly copied the agent's SASL_SSL it would confuse them.
                     result.put("message", result.getOrDefault("message", "Direct Admin API connection failed. Agent is enrolled, but the bootstrap port is unreachable or invalid."));
                 } else {
-                    // Just add the agent message to the successful admin data
+                    // Kafka's Admin API exposes brokers and the elected controller,
+                    // but it does not reliably identify whether that controller is
+                    // backed by ZooKeeper or the KRaft metadata quorum. The discovery
+                    // agent reads the running properties file, so its explicit mode is
+                    // authoritative even when the AdminClient connection succeeds.
+                    String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+                    if (discoveredMode != null) {
+                        result.put("kafkaMode", discoveredMode);
+                        result.put("mode", discoveredMode);
+                    }
                     result.put("message", "Direct Connection successful. Discovery Agent also enrolled.");
                 }
                 break;
@@ -172,6 +202,10 @@ public class ExternalClusterService {
                 throw new IllegalArgumentException(String.valueOf(result.getOrDefault("message", "Admin connection failed and no agent enrolled.")));
             }
         }
+
+        normalizeInspectionNodeRolesForMode(
+                result,
+                firstString(result, "mode", "kafkaMode", "kafka_mode"));
 
         // 3. Inject node-level agent availability
         if (adminSuccess && result.get("brokers") != null) {
@@ -226,11 +260,146 @@ public class ExternalClusterService {
         return result;
     }
 
+    @SuppressWarnings("unchecked")
+    void enrichTestConnectionNodesFromDiscovery(Map<String, Object> inspection) {
+        Object rawNodes = inspection.get("brokers");
+        if (!(rawNodes instanceof List<?> nodes)) {
+            return;
+        }
+
+        String kafkaClusterId = blankToDefault(
+                String.valueOf(inspection.getOrDefault("clusterId", inspection.getOrDefault("kafka_cluster_id", ""))),
+                "");
+        if (kafkaClusterId.isBlank()) {
+            return;
+        }
+
+        Map<Integer, Map<String, Object>> nodesById = new HashMap<>();
+        for (Object rawNode : nodes) {
+            if (rawNode instanceof Map<?, ?> rawMap) {
+                Map<String, Object> node = (Map<String, Object>) rawMap;
+                int nodeId = intValue(node.get("id"), intValue(node.get("broker_id"), -1));
+                if (nodeId >= 0) {
+                    nodesById.put(nodeId, node);
+                }
+            }
+        }
+
+        externalClusterRepository.findByKafkaClusterId(kafkaClusterId).ifPresent(cluster ->
+                externalClusterNodeRepository.findByClusterId(cluster.getId()).forEach(savedNode -> {
+                    if (savedNode.getNodeId() == null) {
+                        return;
+                    }
+                    Map<String, Object> node = nodesById.get(savedNode.getNodeId());
+                    if (node == null) {
+                        return;
+                    }
+                    if (savedNode.getHost() != null && !savedNode.getHost().isBlank()
+                            && !"unknown".equalsIgnoreCase(savedNode.getHost())) {
+                        node.put("host", savedNode.getHost());
+                    }
+                    if (savedNode.getPort() != null && savedNode.getPort() > 0) {
+                        node.put("port", savedNode.getPort());
+                    }
+                    if (savedNode.getIsBroker() != null) {
+                        node.put("isBroker", savedNode.getIsBroker());
+                    }
+                    if (savedNode.getIsController() != null) {
+                        node.put("isController", savedNode.getIsController());
+                    }
+                    node.put("endpoint", node.get("host") + ":" + node.get("port"));
+                }));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        for (Map.Entry<String, ExternalDiscoveryReport> entry : pendingDiscoveries.entrySet()) {
+            ExternalDiscoveryReport report = entry.getValue();
+            if (report.getNodeId() == null
+                    || !kafkaClusterId.equals(report.getKafkaClusterId())) {
+                continue;
+            }
+
+            Map<String, Object> node = nodesById.get(report.getNodeId());
+            if (node == null) {
+                continue;
+            }
+
+            boolean controller = roleContains(report.getProcessRoles(), "controller");
+            boolean broker = roleContains(report.getProcessRoles(), "broker");
+            if (controller || broker) {
+                node.put("isController", controller);
+                node.put("isBroker", broker);
+            }
+
+            String endpoint = discoveryListenerEndpoint(report, controller && !broker);
+            String discoveredHost = endpointHost(endpoint);
+            int discoveredPort = intValue(endpointPort(endpoint), 0);
+            if (!discoveredHost.isBlank()) {
+                node.put("host", discoveredHost);
+            } else if (report.getHostname() != null && !report.getHostname().isBlank()) {
+                node.put("host", report.getHostname());
+            }
+            if (discoveredPort > 0) {
+                node.put("port", discoveredPort);
+            }
+            node.put("endpoint", node.get("host") + ":" + node.get("port"));
+
+            if (report.isRunning() && isFreshDiscoveryReport(report, now)) {
+                node.put("hasActiveAgent", true);
+                node.put("agentDiscoveryKey", entry.getKey());
+            }
+        }
+    }
+
+    private String discoveryListenerEndpoint(ExternalDiscoveryReport report, boolean controllerOnly) {
+        String listeners = blankToDefault(report.getAdvertisedListeners(), report.getListeners());
+        String fallback = "";
+        for (String listener : listeners.split(",")) {
+            String candidate = listener.trim();
+            if (candidate.isBlank()) {
+                continue;
+            }
+            String listenerName = candidate.contains("://")
+                    ? candidate.substring(0, candidate.indexOf("://"))
+                    : "";
+            String endpoint = candidate.contains("://")
+                    ? candidate.substring(candidate.indexOf("://") + 3)
+                    : candidate;
+            if (fallback.isBlank()) {
+                fallback = endpoint;
+            }
+            boolean controllerListener = "CONTROLLER".equalsIgnoreCase(listenerName);
+            if (controllerOnly == controllerListener) {
+                return endpoint;
+            }
+        }
+        return fallback;
+    }
+
+    private boolean isFreshDiscoveryReport(ExternalDiscoveryReport report, OffsetDateTime now) {
+        try {
+            return report.getLastSeen() != null
+                    && OffsetDateTime.parse(report.getLastSeen()).isAfter(now.minusSeconds(agentStaleSeconds()));
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private boolean roleContains(String roles, String expectedRole) {
+        if (roles == null || roles.isBlank()) {
+            return false;
+        }
+        return java.util.Arrays.stream(roles.split(","))
+                .map(String::trim)
+                .anyMatch(expectedRole::equalsIgnoreCase);
+    }
+
     @Transactional
     public ExternalCluster registerBootstrapCluster(BootstrapExternalClusterRequest request) {
         if (request.getBootstrapServers() == null || request.getBootstrapServers().isBlank()) {
             throw new IllegalArgumentException("Bootstrap servers are required.");
         }
+
+        requireAvailableClusterName(request.getName());
 
         String bootstrap = request.getBootstrapServers().trim();
         Map<String, Object> inspection;
@@ -267,7 +436,9 @@ public class ExternalClusterService {
         savedCluster.setKafkaClusterId(clusterId);
         savedCluster.setKafkaVersion(blankToDefault(firstString(inspection, "kafkaVersion", "kafka_version"), "Unknown"));
         savedCluster.setEnvironment(blankToDefault(request.getEnvironment(), "unknown"));
-        savedCluster.setKafkaMode(blankToDefault(firstString(inspection, "mode", "kafkaMode", "kafka_mode"), "Unknown"));
+        savedCluster.setKafkaMode(blankToDefault(
+                normalizeKafkaMode(firstString(inspection, "mode", "kafkaMode", "kafka_mode")),
+                "Unknown"));
         savedCluster.setSecurity(blankToDefault(firstString(inspection, "security_protocol", "security"), "PLAINTEXT"));
         savedCluster.setSecurityProtocol(request.getSecurityProtocol());
         savedCluster.setSaslMechanism(request.getSaslMechanism());
@@ -335,6 +506,17 @@ public class ExternalClusterService {
             }
         }
 
+        // A selected discovery report is the source of truth for the Kafka
+        // coordination mode. Persist it before building the overview so a
+        // ZooKeeper cluster can never inherit an AdminClient fallback.
+        for (ExternalDiscoveryReport report : selectedDiscoveryReports) {
+            if (applyAuthoritativeDiscoveryMetadata(savedCluster, report)) {
+                savedCluster = externalClusterRepository.save(savedCluster);
+            }
+        }
+
+        normalizeInspectionNodeRolesForMode(inspection, savedCluster.getKafkaMode());
+
         // Map brokers to externalClusterNodeRepository (full topology)
         List<Map<String, Object>> brokers = (List<Map<String, Object>>) inspection.get("brokers");
         if (brokers != null) {
@@ -398,12 +580,16 @@ public class ExternalClusterService {
                 : report.getHostId();
         io.translab.tantor.server.domain.DiscoveryAgent agent = discoveryAgentRepository.findById(agentId).orElse(null);
 
-        Optional<ExternalCluster> connectedCluster = findExternalCluster(report.getKafkaClusterId(), report.getName(), report.getBootstrapServers().trim());
+        Optional<ExternalCluster> connectedCluster = resolveConnectedCluster(report, agent);
 
         if (connectedCluster.isPresent() && agent != null) {
-            ExternalCluster cluster = upsertDiscoveryCluster(report);
+            ExternalCluster cluster = connectedCluster.get();
             linkDiscoveryAgent(agent, cluster);
+            if (applyAuthoritativeDiscoveryMetadata(cluster, report)) {
+                cluster = externalClusterRepository.save(cluster);
+            }
             applyDiscoveryReportToNodes(cluster, report, agent);
+            pendingDiscoveries.remove(discoveryKey(report));
 
             return Map.of(
                     "id", cluster.getId(),
@@ -422,13 +608,60 @@ public class ExternalClusterService {
         );
     }
 
+    /**
+     * A persisted agent-to-cluster link is authoritative after onboarding.
+     * Discovery reports are intentionally node-local, so their name, bootstrap
+     * address, or Kafka cluster ID may be absent or differ from the value used
+     * when the external cluster was connected. Falling back to report identity
+     * is only appropriate for agents that have not been linked yet.
+     */
+    private Optional<ExternalCluster> resolveConnectedCluster(
+            ExternalDiscoveryReport report,
+            DiscoveryAgent agent
+    ) {
+        if (agent != null && agent.getClusterId() != null) {
+            Optional<ExternalCluster> linkedCluster = externalClusterRepository.findById(agent.getClusterId());
+            if (linkedCluster.isPresent()) {
+                return linkedCluster;
+            }
+        }
+
+        Optional<ExternalCluster> identityMatch = findExternalCluster(
+                report.getKafkaClusterId(),
+                null,
+                report.getBootstrapServers().trim()
+        );
+        if (identityMatch.isPresent()) {
+            return identityMatch;
+        }
+
+        Set<String> reportedHosts = discoveryHostCandidates(report, agent);
+        if (!reportedHosts.isEmpty()) {
+            for (ExternalCluster cluster : externalClusterRepository.findByStatusNot("DELETED")) {
+                boolean containsReportedHost = externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
+                        .map(io.translab.tantor.server.domain.ExternalClusterNode::getHost)
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .anyMatch(nodeHost -> reportedHosts.stream()
+                                .anyMatch(candidate -> candidate.equalsIgnoreCase(nodeHost)));
+                if (containsReportedHost) {
+                    return Optional.of(cluster);
+                }
+            }
+        }
+
+        return findExternalCluster(null, report.getName(), null);
+    }
+
     public List<Map<String, Object>> listPendingDiscoveries() {
         return pendingDiscoveries.entrySet().stream()
-                .filter(entry -> findExternalCluster(
-                        entry.getValue().getKafkaClusterId(),
-                        entry.getValue().getName(),
-                        entry.getValue().getBootstrapServers()
-                ).isEmpty())
+                .filter(entry -> {
+                    ExternalDiscoveryReport report = entry.getValue();
+                    String agentId = report.getHostId() == null || report.getHostId().isBlank()
+                            ? discoveryHostId(report) : report.getHostId();
+                    DiscoveryAgent agent = discoveryAgentRepository.findById(agentId).orElse(null);
+                    return resolveConnectedCluster(report, agent).isEmpty();
+                })
                 .filter(entry -> entry.getValue().isRunning())
                 .filter(entry -> isFreshDiscovery(entry.getValue()))
                 .sorted(Map.Entry.comparingByValue(Comparator.comparing(
@@ -462,7 +695,7 @@ public class ExternalClusterService {
                 ))
                 .map(agent -> {
                     boolean fresh = agent.getLastHeartbeat() != null
-                            && agent.getLastHeartbeat().isAfter(now.minusSeconds(AGENT_STALE_SECONDS));
+                            && agent.getLastHeartbeat().isAfter(now.minusSeconds(agentStaleSeconds()));
                     Map<String, Object> summary = new LinkedHashMap<>();
                     summary.put("id", agent.getId());
                     summary.put("agentName", blankToDefault(agent.getAgentName(), agent.getId()));
@@ -476,8 +709,8 @@ public class ExternalClusterService {
                     summary.put("status", fresh ? "ONLINE" : "STALE");
                     summary.put("health", fresh ? "green" : "orange");
                     summary.put("stateLabel", agent.getClusterId() == null
-                            ? (fresh ? "Online - no cluster connected" : "Stale - no recent polling")
-                            : (fresh ? "Online - cluster connected" : "Stale - cluster connection needs attention"));
+                            ? (fresh ? "Online - no cluster connected" : "Agent disconnected - no recent heartbeat")
+                            : (fresh ? "Online - cluster connected" : "Agent disconnected - cluster connection needs attention"));
                     return summary;
                 })
                 .toList();
@@ -585,7 +818,7 @@ public class ExternalClusterService {
     private ExternalCluster saveDiscoveryCluster(ExternalDiscoveryReport report, String bootstrap, ExternalCluster cluster) {
         boolean isNew = cluster.getId() == null;
         cluster.setName(isNew ? report.getName().trim() : cluster.getName());
-        cluster.setBootstrapServers(bootstrap);
+        String mergedBootstrapServers = mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap);
         // Discovery agents may send partial follow-up reports. Never erase the
         // Kafka-assigned cluster ID that was captured during registration.
         if (report.getKafkaClusterId() != null && !report.getKafkaClusterId().isBlank()) {
@@ -595,9 +828,14 @@ public class ExternalClusterService {
         cluster.setLogDirs(blankToDefault(report.getLogDirs(), null));
         cluster.setKafkaVersion(blankToDefault(report.getKafkaVersion(), "Unknown"));
         cluster.setEnvironment(blankToDefault(report.getEnvironment(), "unknown"));
-        cluster.setBootstrapServers(mergeBootstrapServers(cluster.getBootstrapServers(), bootstrap));
+        cluster.setBootstrapServers(mergedBootstrapServers);
         cluster.setStatus(report.isRunning() ? "SUCCESS" : "DEGRADED");
-        cluster.setKafkaMode(blankToDefault(report.getKafkaMode(), "KRaft"));
+        String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+        if (discoveredMode != null) {
+            cluster.setKafkaMode(discoveredMode);
+        } else if (cluster.getKafkaMode() == null || cluster.getKafkaMode().isBlank()) {
+            cluster.setKafkaMode("Unknown");
+        }
         cluster.setSecurity(blankToDefault(report.getSecurity(), "PLAINTEXT"));
         cluster.setBrokerCount(report.getBrokerCount());
         cluster.setListeners(report.getListeners());
@@ -634,11 +872,75 @@ public class ExternalClusterService {
         return saved;
     }
 
+    /**
+     * Applies metadata that can only be determined reliably from the running
+     * node configuration. In particular, Kafka AdminClient cannot distinguish
+     * ZooKeeper from KRaft merely from the elected controller returned by
+     * describeCluster().
+     */
+    private boolean applyAuthoritativeDiscoveryMetadata(
+            ExternalCluster cluster,
+            ExternalDiscoveryReport report) {
+        boolean changed = false;
+        String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
+        if (discoveredMode != null && !Objects.equals(cluster.getKafkaMode(), discoveredMode)) {
+            cluster.setKafkaMode(discoveredMode);
+            changed = true;
+        }
+
+        String discoveredVersion = cleanReportedValue(report.getKafkaVersion());
+        if (discoveredVersion != null && !Objects.equals(cluster.getKafkaVersion(), discoveredVersion)) {
+            cluster.setKafkaVersion(discoveredVersion);
+            changed = true;
+        }
+
+        String discoveredRoles = cleanReportedValue(report.getProcessRoles());
+        if ("ZooKeeper".equals(discoveredMode)) {
+            // ZooKeeper-backed brokers do not use process.roles. Clear a stale
+            // KRaft value if this cluster was previously misclassified.
+            discoveredRoles = null;
+        }
+        if ((discoveredRoles != null || "ZooKeeper".equals(discoveredMode))
+                && !Objects.equals(cluster.getProcessRoles(), discoveredRoles)) {
+            cluster.setProcessRoles(discoveredRoles);
+            changed = true;
+        }
+        return changed;
+    }
+
+    static String normalizeKafkaMode(String value) {
+        String cleaned = cleanReportedValue(value);
+        if (cleaned == null) {
+            return null;
+        }
+        if ("zookeeper".equalsIgnoreCase(cleaned) || "zk".equalsIgnoreCase(cleaned)) {
+            return "ZooKeeper";
+        }
+        if ("kraft".equalsIgnoreCase(cleaned)) {
+            return "KRaft";
+        }
+        return null;
+    }
+
+    private static String cleanReportedValue(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String cleaned = value.trim();
+        if ("null".equalsIgnoreCase(cleaned)
+                || "unknown".equalsIgnoreCase(cleaned)
+                || "auto-detected".equalsIgnoreCase(cleaned)
+                || "auto-detected by Kafka client".equalsIgnoreCase(cleaned)) {
+            return null;
+        }
+        return cleaned;
+    }
+
 
 
     @Transactional
     public void receiveMetrics(String clusterName, ExternalBrokerMetricsDto metrics) {
-        Optional<ExternalCluster> clusterOpt = findExternalCluster(null, clusterName, metrics.getBootstrap());
+        Optional<ExternalCluster> clusterOpt = findExternalClusterForMetrics(clusterName, metrics);
         if (clusterOpt.isEmpty()) {
             return;
         }
@@ -647,9 +949,10 @@ public class ExternalClusterService {
         List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
         String bootstrap = blankToDefault(metrics.getBootstrap(), cluster.getBootstrapServers());
         ExternalBrokerRecord broker = brokers.stream()
-                .filter(item -> safeEquals(item.getHostname(), metrics.getHostname()) 
-                        || (item.getBootstrap() != null && bootstrap != null && (item.getBootstrap().contains(bootstrap) || bootstrap.contains(item.getBootstrap())))
-                        || (item.getHostname() != null && bootstrap != null && bootstrap.contains(item.getHostname())))
+                .filter(item -> metrics.getNodeId() != null
+                        ? metrics.getNodeId().equals(item.getNodeId())
+                        : safeEquals(item.getHostname(), metrics.getHostname())
+                                || (item.getHostname() != null && bootstrap != null && bootstrap.contains(item.getHostname())))
                 .findFirst()
                 .orElseGet(() -> {
                     ExternalBrokerRecord item = new ExternalBrokerRecord();
@@ -665,27 +968,66 @@ public class ExternalClusterService {
         broker.setMemoryTotalMb(metrics.getMemoryTotalMb());
         broker.setDiskUsedGb(metrics.getDiskUsedGb());
         broker.setDiskTotalGb(metrics.getDiskTotalGb());
+        broker.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
+        broker.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
         broker.setMessagesInPerSec(metrics.getMessagesInPerSec());
         broker.setBytesInPerSec(metrics.getBytesInPerSec());
         broker.setLastSeen(OffsetDateTime.now().toString());
         broker.setLastSeen(OffsetDateTime.now().toString());
 
-        externalClusterNodeRepository.upsertTelemetry(
-                cluster.getId(),
-                broker.getHostname(),
-                broker.getCpuUsagePct(),
-                broker.getMemoryUsedMb(),
-                broker.getMemoryTotalMb(),
-                broker.getDiskUsedGb(),
-                broker.getDiskTotalGb(),
-                OffsetDateTime.now()
-        );
+        OffsetDateTime seen = OffsetDateTime.now();
+        Optional<io.translab.tantor.server.domain.ExternalClusterNode> targetNode = metrics.getNodeId() == null
+                ? Optional.empty()
+                : externalClusterNodeRepository.findByClusterIdAndNodeId(cluster.getId(), metrics.getNodeId());
+        if (targetNode.isPresent()) {
+            updateNodeTelemetry(targetNode.get(), metrics, seen);
+            externalClusterNodeRepository.save(targetNode.get());
+        } else {
+            externalClusterNodeRepository.upsertTelemetry(
+                    cluster.getId(),
+                    broker.getHostname(),
+                    broker.getCpuUsagePct(),
+                    broker.getMemoryUsedMb(),
+                    broker.getMemoryTotalMb(),
+                    broker.getDiskUsedGb(),
+                    broker.getDiskTotalGb(),
+                    broker.getDiskUsedBytes(),
+                    broker.getDiskTotalBytes(),
+                    seen
+            );
+            externalClusterNodeRepository.updateBrokerIngestionRates(
+                    cluster.getId(),
+                    broker.getHostname(),
+                    metrics.getMessagesInPerSec(),
+                    metrics.getBytesInPerSec()
+            );
+        }
 
         discoveryAgentRepository.findByHostname(broker.getHostname()).ifPresent(agent -> {
             agent.setStatus("ONLINE");
             agent.setLastHeartbeat(OffsetDateTime.now());
             discoveryAgentRepository.save(agent);
         });
+    }
+
+    private Optional<ExternalCluster> findExternalClusterForMetrics(
+            String clusterName,
+            ExternalBrokerMetricsDto metrics
+    ) {
+        Optional<DiscoveryAgent> linkedAgent = Optional.empty();
+        if (metrics.getHostId() != null && !metrics.getHostId().isBlank()) {
+            linkedAgent = discoveryAgentRepository.findById(metrics.getHostId().trim());
+        }
+        if (linkedAgent.isEmpty() && metrics.getHostname() != null && !metrics.getHostname().isBlank()) {
+            linkedAgent = discoveryAgentRepository.findByHostname(metrics.getHostname().trim());
+        }
+        if (linkedAgent.isPresent() && linkedAgent.get().getClusterId() != null) {
+            Optional<ExternalCluster> linkedCluster = externalClusterRepository.findById(linkedAgent.get().getClusterId());
+            if (linkedCluster.isPresent() && !"DELETED".equalsIgnoreCase(linkedCluster.get().getStatus())) {
+                return linkedCluster;
+            }
+        }
+        return findExternalCluster(null, clusterName, metrics.getBootstrap());
     }
 
     public List<Map<String, Object>> listExternalClusters() {
@@ -778,11 +1120,20 @@ public class ExternalClusterService {
     }
 
     public Map<String, Object> pollAgentTask(String clusterName, String hostname, String bootstrap) {
-        ExternalAgentTask task = pendingTasks.get(taskKey(clusterName, hostname, bootstrap));
-        if (task == null || !"PENDING".equals(task.getStatus())) {
+        String key = taskKey(clusterName, hostname, bootstrap);
+        ExternalAgentTask[] claimed = new ExternalAgentTask[1];
+        pendingTasks.compute(key, (unused, candidate) -> {
+            if (candidate == null || !"PENDING".equals(candidate.getStatus())) {
+                return candidate;
+            }
+            candidate.setStatus("IN_PROGRESS");
+            claimed[0] = candidate;
+            return candidate;
+        });
+        ExternalAgentTask task = claimed[0];
+        if (task == null) {
             return Map.of("task", "NONE");
         }
-        task.setStatus("IN_PROGRESS");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("task", task.getTask());
         response.put("taskId", task.getTaskId());
@@ -1011,6 +1362,8 @@ public class ExternalClusterService {
                 record.getMemoryTotalMb(),
                 record.getDiskUsedGb(),
                 record.getDiskTotalGb(),
+                record.getDiskUsedBytes(),
+                record.getDiskTotalBytes(),
                 lastSeen != null ? lastSeen : OffsetDateTime.now()
         );
     }
@@ -1139,12 +1492,16 @@ public class ExternalClusterService {
         List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
         List<DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
         List<ExternalBrokerRecord> records = new ArrayList<>();
+        boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
         for (io.translab.tantor.server.domain.ExternalClusterNode n : nodes) {
+            if (zookeeperMode && !Boolean.TRUE.equals(n.getIsBroker())) {
+                continue;
+            }
             ExternalBrokerRecord r = new ExternalBrokerRecord();
             r.setHostname(n.getHost());
             r.setBootstrap(cluster.getBootstrapServers());
-            boolean isBroker = Boolean.TRUE.equals(n.getIsBroker());
-            boolean isController = Boolean.TRUE.equals(n.getIsController());
+            boolean isBroker = zookeeperMode || Boolean.TRUE.equals(n.getIsBroker());
+            boolean isController = !zookeeperMode && Boolean.TRUE.equals(n.getIsController());
             if (isBroker && isController) r.setRole("broker_controller");
             else if (isBroker) r.setRole("broker");
             else if (isController) r.setRole("controller");
@@ -1163,9 +1520,13 @@ public class ExternalClusterService {
             r.setMemoryTotalMb(n.getMemoryTotalMb());
             r.setDiskUsedGb(n.getDiskUsedGb());
             r.setDiskTotalGb(n.getDiskTotalGb());
+            r.setDiskUsedBytes(n.getDiskUsedBytes());
+            r.setDiskTotalBytes(n.getDiskTotalBytes());
+            r.setMessagesInPerSec(n.getMessagesInPerSec());
+            r.setBytesInPerSec(n.getBytesInPerSec());
             r.setInstallPath(blankToDefault(n.getInstallDir(), cluster.getInstallPath()));
             r.setLogDirs(blankToDefault(n.getLogDirs(), cluster.getLogDirs()));
-            r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS)));
+            r.setRunning(lastSeen != null && lastSeen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds())));
             records.add(r);
         }
         return records;
@@ -1180,11 +1541,15 @@ public class ExternalClusterService {
                 continue;
             }
             matched = true;
+            enrichDiscoveryNodeIdentity(node, report);
             node.setCpuUsagePct(report.getCpuUsagePct());
             node.setMemoryUsedMb(report.getMemoryUsedMb());
             node.setMemoryTotalMb(report.getMemoryTotalMb());
             node.setDiskUsedGb(report.getDiskUsedGb());
             node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
+            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
+            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
             node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
@@ -1199,13 +1564,17 @@ public class ExternalClusterService {
             node.setHost(firstNonBlank(extractHostFromBootstrap(report.getBootstrapServers()), report.getHostname(), agent.getHostname()));
             node.setNodeId(report.getNodeId());
             String roles = blankToDefault(report.getProcessRoles(), "").toLowerCase();
-            node.setIsBroker(roles.isBlank() || roles.contains("broker"));
-            node.setIsController(roles.contains("controller"));
+            boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
+            node.setIsBroker(zookeeperMode || roles.isBlank() || roles.contains("broker"));
+            node.setIsController(!zookeeperMode && roles.contains("controller"));
             node.setCpuUsagePct(report.getCpuUsagePct());
             node.setMemoryUsedMb(report.getMemoryUsedMb());
             node.setMemoryTotalMb(report.getMemoryTotalMb());
             node.setDiskUsedGb(report.getDiskUsedGb());
             node.setDiskTotalGb(report.getDiskTotalGb());
+            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
+            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
+            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), null));
             node.setLogDirs(blankToDefault(report.getLogDirs(), null));
@@ -1215,7 +1584,7 @@ public class ExternalClusterService {
         }
     }
 
-    private boolean matchesDiscoveryNode(
+    boolean matchesDiscoveryNode(
             io.translab.tantor.server.domain.ExternalClusterNode node,
             ExternalDiscoveryReport report,
             DiscoveryAgent agent
@@ -1223,8 +1592,8 @@ public class ExternalClusterService {
         if (node == null) {
             return false;
         }
-        if (report.getNodeId() != null && report.getNodeId().equals(node.getNodeId())) {
-            return true;
+        if (report.getNodeId() != null) {
+            return report.getNodeId().equals(node.getNodeId());
         }
         String nodeHost = node.getHost();
         if (nodeHost == null || nodeHost.isBlank()) {
@@ -1247,6 +1616,90 @@ public class ExternalClusterService {
             candidates.addAll(parseAgentAddresses(agent.getIpAddresses()));
         }
         return candidates;
+    }
+
+    private void enrichDiscoveryNodeIdentity(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalDiscoveryReport report
+    ) {
+        String reportedHost = blankToDefault(report.getHostname(), null);
+        if (reportedHost != null && (node.getHost() == null || node.getHost().isBlank()
+                || "unknown".equalsIgnoreCase(node.getHost()))) {
+            node.setHost(reportedHost);
+        }
+        Integer listenerPort = listenerPort(report.getListeners(), Boolean.TRUE.equals(node.getIsController()));
+        if (listenerPort != null && (node.getPort() == null || node.getPort() <= 0)) {
+            node.setPort(listenerPort);
+        }
+    }
+
+    private Integer listenerPort(String listeners, boolean controller) {
+        if (listeners == null || listeners.isBlank()) {
+            return null;
+        }
+        String fallback = null;
+        for (String rawListener : listeners.split(",")) {
+            String listener = rawListener.trim();
+            if (listener.isBlank()) continue;
+            int scheme = listener.indexOf("://");
+            String name = scheme > 0 ? listener.substring(0, scheme) : "";
+            String address = scheme >= 0 ? listener.substring(scheme + 3) : listener;
+            int separator = address.lastIndexOf(':');
+            if (separator < 0 || separator == address.length() - 1) continue;
+            String port = address.substring(separator + 1).trim();
+            if (fallback == null) fallback = port;
+            if (controller && !"CONTROLLER".equalsIgnoreCase(name)) continue;
+            try {
+                int parsed = Integer.parseInt(port);
+                if (parsed > 0 && parsed <= 65535) return parsed;
+            } catch (NumberFormatException ignored) {
+                // Ignore malformed listener entries and continue looking.
+            }
+        }
+        if (controller || fallback == null) return null;
+        try {
+            int parsed = Integer.parseInt(fallback);
+            return parsed > 0 && parsed <= 65535 ? parsed : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private void updateNodeTelemetry(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalBrokerMetricsDto metrics,
+            OffsetDateTime seen
+    ) {
+        node.setCpuUsagePct(metrics.getCpuUsagePct());
+        node.setMemoryUsedMb(metrics.getMemoryUsedMb());
+        node.setMemoryTotalMb(metrics.getMemoryTotalMb());
+        node.setDiskUsedGb(metrics.getDiskUsedGb());
+        node.setDiskTotalGb(metrics.getDiskTotalGb());
+        node.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
+        node.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
+        node.setMessagesInPerSec(metrics.getMessagesInPerSec());
+        node.setBytesInPerSec(metrics.getBytesInPerSec());
+        node.setLastSeen(seen);
+    }
+
+    private Long resolveDiskBytes(Long exactBytes, Long legacyGiB) {
+        if (exactBytes != null && exactBytes >= 0) {
+            return exactBytes;
+        }
+        if (legacyGiB == null || legacyGiB < 0) {
+            return null;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return legacyGiB > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : legacyGiB * gibibyte;
+    }
+
+    private void applyReportedJmxExporterPort(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            Integer reportedPort
+    ) {
+        if (reportedPort != null && reportedPort >= 1024 && reportedPort <= 65535) {
+            node.setJmxExporterPort(reportedPort);
+        }
     }
 
     private void addCandidate(Set<String> candidates, String value) {
@@ -1308,10 +1761,14 @@ public class ExternalClusterService {
         return record.getInstallPath() != null && !record.getInstallPath().isBlank();
     }
 
+    long agentStaleSeconds() {
+        return Math.max(15, discoveryAgentHeartbeatTimeoutSeconds);
+    }
+
     private boolean isFreshAgent(ExternalBrokerRecord record) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(record.getLastSeen());
-            return seen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+            return seen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
         } catch (Exception e) {
             return false;
         }
@@ -1319,13 +1776,17 @@ public class ExternalClusterService {
 
     private boolean isFreshAgent(DiscoveryAgent agent) {
         return agent.getLastHeartbeat() != null
-                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
+    }
+
+    private boolean isFreshOnlineAgent(DiscoveryAgent agent) {
+        return "ONLINE".equalsIgnoreCase(agent.getStatus()) && isFreshAgent(agent);
     }
 
     private boolean isFreshDiscovery(ExternalDiscoveryReport report) {
         try {
             OffsetDateTime seen = OffsetDateTime.parse(report.getLastSeen());
-            return seen.isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS));
+            return seen.isAfter(OffsetDateTime.now().minusSeconds(agentStaleSeconds()));
         } catch (Exception e) {
             return false;
         }
@@ -1639,17 +2100,24 @@ public class ExternalClusterService {
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
+        private Integer jmxExporterPort;
     }
 
     @Data
     public static class ExternalBrokerMetricsDto {
+        private String hostId;
         private String hostname;
         private String bootstrap;
+        private Integer nodeId;
         private Double cpuUsagePct;
         private Long memoryUsedMb;
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
         private Double messagesInPerSec;
         private Double bytesInPerSec;
     }
@@ -1671,6 +2139,8 @@ public class ExternalClusterService {
         private Long memoryTotalMb;
         private Long diskUsedGb;
         private Long diskTotalGb;
+        private Long diskUsedBytes;
+        private Long diskTotalBytes;
         private Double messagesInPerSec;
         private Double bytesInPerSec;
         private String listeners;
@@ -1705,7 +2175,7 @@ public class ExternalClusterService {
         for (ExternalCluster cluster : externalClusters) {
             try {
                 String previousStatus = cluster.getStatus();
-                Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster.getBootstrapServers());
+                Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster, true);
                 boolean connected = Boolean.TRUE.equals(adminData.get("connected"));
                 String detectedKafkaClusterId = firstString(adminData, "clusterId", "kafka_cluster_id");
                 boolean kafkaClusterIdBackfilled = (cluster.getKafkaClusterId() == null || cluster.getKafkaClusterId().isBlank())
@@ -1714,16 +2184,31 @@ public class ExternalClusterService {
                     cluster.setKafkaClusterId(detectedKafkaClusterId.trim());
                 }
                 
+                List<DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findByClusterId(cluster.getId());
+                long registeredAgents = discoveryAgents.size();
+                long freshAgents = discoveryAgents.stream()
+                        .filter(this::isFreshOnlineAgent)
+                        .count();
+                List<ActivityAlertService.OfflineAgentInfo> offlineAgents = discoveryAgents.stream()
+                        .filter(agent -> !isFreshOnlineAgent(agent))
+                        .map(agent -> new ActivityAlertService.OfflineAgentInfo(
+                                agent.getId(),
+                                agent.getHostname(),
+                                parseAgentAddresses(agent.getIpAddresses()).stream()
+                                        .filter(address -> address != null && !address.isBlank())
+                                        .distinct()
+                                        .toList()
+                        ))
+                        .toList();
+
                 String newStatus;
                 if (!connected) {
                     newStatus = "FAILED";
                 } else {
                     // Check if discovery agent is healthy
-                    boolean agentHealthy = discoveryAgentRepository.findByClusterId(cluster.getId())
-                        .stream()
-                        .anyMatch(agent -> "ONLINE".equalsIgnoreCase(agent.getStatus()) 
-                                && agent.getLastHeartbeat() != null 
-                                && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(AGENT_STALE_SECONDS)));
+                    // Every registered agent must be reachable. A healthy peer must
+                    // not hide an agent outage for the same external cluster.
+                    boolean agentHealthy = registeredAgents > 0 && freshAgents == registeredAgents;
                     
                     newStatus = agentHealthy ? "SUCCESS" : "DEGRADED";
                 }
@@ -1733,16 +2218,37 @@ public class ExternalClusterService {
                     cluster.setStatus(newStatus);
                     externalClusterRepository.save(cluster);
                     
-                    if (statusChanged && "DEGRADED".equals(newStatus)) {
-                        activityAlertService.createAlert("WARNING", "External Cluster Degraded", 
-                            "The Discovery Agent for external cluster '" + cluster.getName() + "' has stopped reporting, but Kafka is still reachable.", cluster.getId());
-                    } else if (statusChanged && "FAILED".equals(newStatus)) {
-                        activityAlertService.createAlert("CRITICAL", "External Cluster Failed", 
-                            "Kafka Admin API cannot reach external cluster '" + cluster.getName() + "'.", cluster.getId());
-                    }
                 }
+                // Synchronize on every health cycle, not only on a status
+                // transition. This also repairs legacy ACTIVE alerts left behind
+                // after an agent recovered before this lifecycle was introduced.
+                activityAlertService.synchronizeExternalClusterHealth(
+                        cluster.getId(), cluster.getName(), newStatus, freshAgents, registeredAgents, offlineAgents);
             } catch (Exception e) {
                 log.error("Failed to check health for external cluster {}", cluster.getName(), e);
+            }
+        }
+        activityAlertService.resolveOrphanedExternalClusterHealthAlerts(
+                externalClusters.stream()
+                        .map(ExternalCluster::getId)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toSet()));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void normalizeInspectionNodeRolesForMode(Map<String, Object> inspection, String kafkaMode) {
+        if (!"ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(kafkaMode))) {
+            return;
+        }
+        Object rawNodes = inspection.get("brokers");
+        if (!(rawNodes instanceof List<?> nodes)) {
+            return;
+        }
+        for (Object rawNode : nodes) {
+            if (rawNode instanceof Map<?, ?> rawMap) {
+                Map<String, Object> node = (Map<String, Object>) rawMap;
+                node.put("isBroker", true);
+                node.put("isController", false);
             }
         }
     }

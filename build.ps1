@@ -1,5 +1,7 @@
 # build.ps1 - Automated Build Script for Tantor Java Backends
 
+$ErrorActionPreference = 'Stop'
+
 $MavenVersion = "3.9.6"
 $MavenUrl = "https://archive.apache.org/dist/maven/maven-3/$MavenVersion/binaries/apache-maven-$MavenVersion-bin.zip"
 $MavenZip = "$PSScriptRoot\apache-maven.zip"
@@ -37,21 +39,17 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-artifact-repository"
-& $MvnCmd clean package "-DskipTests"
+& $MvnCmd clean verify
+if ($LASTEXITCODE -ne 0) { throw "Artifact Repository verification failed." }
 
 # 3. Build Management Server
 Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-server"
-& $MvnCmd clean package "-Dmaven.test.skip=true"
+& $MvnCmd clean verify
+if ($LASTEXITCODE -ne 0) { throw "Management Server verification failed." }
 
 # Restore original directory
 cd $PSScriptRoot
-
-Write-Host "`nBuild Complete!" -ForegroundColor Green
-Write-Host "To start the Artifact Repository:"
-Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
-Write-Host "To start the Management Server:"
-Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"
 
 # 4. Build Agent (Linux amd64)
 Write-Host "`n=== Building Tantor Agent (Linux) ===" -ForegroundColor Magenta
@@ -59,7 +57,10 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
     cd "$PSScriptRoot\tantor-agent"
     $env:GOOS="linux"
     $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" test ./...
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent tests failed." }
     & "$PSScriptRoot\go\bin\go.exe" build -o tantor-agent-linux cmd/agent/main.go
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent build failed." }
     Write-Host "Agent successfully compiled to: tantor-agent\tantor-agent-linux" -ForegroundColor Green
     cd $PSScriptRoot
 } else {
@@ -72,9 +73,18 @@ if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
     cd "$PSScriptRoot\tantor-discovery-agent"
     $env:GOOS="linux"
     $env:GOARCH="amd64"
+    & "$PSScriptRoot\go\bin\go.exe" test ./...
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent tests failed." }
     & "$PSScriptRoot\go\bin\go.exe" build -o tantor-discovery-agent-linux .
+    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent build failed." }
     Write-Host "Discovery agent successfully compiled to: tantor-discovery-agent\tantor-discovery-agent-linux" -ForegroundColor Green
     cd $PSScriptRoot
 } else {
     Write-Host "Go compiler not found in the 'go' directory. Skipping discovery agent compilation." -ForegroundColor Yellow
 }
+
+Write-Host "`nBuild Complete!" -ForegroundColor Green
+Write-Host "To start the Artifact Repository:"
+Write-Host "  java -jar tantor-artifact-repository\target\tantor-artifact-repository-1.0.0.jar"
+Write-Host "To start the Management Server:"
+Write-Host "  java -jar tantor-server\target\tantor-server-1.0.0.jar"

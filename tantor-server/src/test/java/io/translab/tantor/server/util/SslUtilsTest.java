@@ -12,7 +12,7 @@ class SslUtilsTest {
 
     @Test
     void loadsCanonicalPkcs12ConnectionCertificateAsTruststore() throws Exception {
-        String password = "truststore-password";
+        String password = "truststore-password"; // gitleaks:allow -- deterministic test fixture
         String encodedTruststore = emptyPkcs12(password);
 
         var sslContext = SslUtils.createSslContext("PKCS12", encodedTruststore, password);
@@ -23,7 +23,7 @@ class SslUtilsTest {
 
     @Test
     void continuesToAcceptLegacyPkcs12RequestHeaderAlias() throws Exception {
-        String password = "truststore-password";
+        String password = "truststore-password"; // gitleaks:allow -- deterministic test fixture
         String encodedTruststore = emptyPkcs12(password);
 
         var sslContext = SslUtils.createSslContext("PKCS12_JKS", encodedTruststore, password);

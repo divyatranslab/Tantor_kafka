@@ -11,6 +11,14 @@ export default defineConfig(({ mode }) => {
   return {
     envDir,
     plugins: [react()],
+    build: {
+      // Vite 7 uses Rollup rather than Vite 8's Rolldown bundler. Keep normal
+      // production minification enabled; Recharts and its CommonJS helpers
+      // remain in one valid dependency graph.
+      minify: 'esbuild',
+      chunkSizeWarningLimit: 800,
+      // Let Rollup derive chunks from the full dependency graph.
+    },
     server: {
       proxy: {
         '/api/v1/artifacts': {

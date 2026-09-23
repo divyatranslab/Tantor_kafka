@@ -201,3 +201,23 @@
   height: 100%;
   background: #3E1363;
 }
+.broker-metric-level {
+  display: block;
+  color: #818181;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.broker-metric-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.broker-metric-status.stale {
+  background: #FFF7ED;
+  color: #C2410C;
+}

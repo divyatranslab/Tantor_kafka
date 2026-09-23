@@ -98,6 +98,7 @@ public class DashboardController {
     ) {
         Map<String, Long> hostCounts = hosts.stream()
                 .collect(Collectors.groupingBy(host -> normalizeStatus(hostStatusService.effectiveStatus(host)), Collectors.counting()));
+        long activeHosts = hosts.stream().filter(this::hasConnectedAgent).count();
         Map<String, Long> clusterCounts = clusters.stream()
                 .collect(Collectors.groupingBy(cluster -> normalizeStatus(cluster.getStatus()), Collectors.counting()));
         Map<String, Long> taskCounts = tasks.stream()
@@ -110,7 +111,7 @@ public class DashboardController {
 
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalHosts", hosts.size());
-        summary.put("activeHosts", hostCounts.getOrDefault("ONLINE", 0L));
+        summary.put("activeHosts", activeHosts);
         summary.put("offlineHosts", hostCounts.getOrDefault("OFFLINE", 0L));
         summary.put("pendingHosts", hostCounts.getOrDefault("PENDING", 0L));
         summary.put("totalClusters", clusters.size());
@@ -256,9 +257,6 @@ public class DashboardController {
 
     private List<Map<String, Object>> hostDiskUsage(List<Host> hosts) {
         return hosts.stream()
-                .filter(host -> !(host.getId() != null
-                        && host.getId().startsWith("external-")
-                        && "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))))
                 .filter(host -> host.getDiskTotalGb() != null && host.getDiskTotalGb() > 0)
                 .sorted(Comparator.comparingLong(this::diskUsedPercent).reversed())
                 .limit(8)
@@ -268,7 +266,7 @@ public class DashboardController {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("name", host.getHostname() == null || host.getHostname().isBlank() ? host.getId() : host.getHostname());
                     row.put("hostId", host.getId());
-                    row.put("status", hostStatusService.effectiveStatus(host));
+                    row.put("status", hostStatusService.agentConnectivityStatus(host));
                     row.put("usedGb", used);
                     row.put("freeGb", Math.max(total - used, 0));
                     row.put("totalGb", total);
@@ -402,7 +400,7 @@ public class DashboardController {
 
     private List<Map<String, Object>> runningServices(List<Cluster> clusters, List<Host> hosts, List<HostParcel> parcels) {
         List<Map<String, Object>> services = new ArrayList<>();
-        long onlineHosts = hosts.stream().filter(hostStatusService::isOnline).count();
+        long onlineHosts = hosts.stream().filter(this::hasConnectedAgent).count();
         long activeClusters = clusters.stream().filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus())).count();
         long activeExternal = clusters.stream()
                 .filter(cluster -> "EXTERNAL".equalsIgnoreCase(cluster.getMode()))
@@ -439,7 +437,7 @@ public class DashboardController {
     }
 
     private long runningServiceCount(List<Cluster> clusters, List<Host> hosts, List<HostParcel> parcels) {
-        long onlineHosts = hosts.stream().filter(hostStatusService::isOnline).count();
+        long onlineHosts = hosts.stream().filter(this::hasConnectedAgent).count();
         long activeClusters = clusters.stream().filter(cluster -> "SUCCESS".equalsIgnoreCase(cluster.getStatus())).count();
         long activeParcels = parcels.stream().filter(HostParcel::isActive).count();
         return 1 + onlineHosts + activeClusters + activeParcels;
@@ -452,6 +450,14 @@ public class DashboardController {
         long failedParcels = parcels.stream().filter(parcel -> "FAILED".equalsIgnoreCase(parcel.getStatus())).count();
         long diskIssues = hosts.stream().filter(host -> diskUsedPercent(host) >= 85).count();
         return offlineHosts + failedClusters + failedTasks + failedParcels + diskIssues;
+    }
+
+    private boolean hasConnectedAgent(Host host) {
+        if (host == null || Boolean.TRUE.equals(host.getRemoved())
+                || "PENDING".equalsIgnoreCase(host.getStatus())) {
+            return false;
+        }
+        return "ONLINE".equalsIgnoreCase(hostStatusService.agentConnectivityStatus(host));
     }
 
     private Map<String, Object> serviceRow(String name, String description, String status, String type) {

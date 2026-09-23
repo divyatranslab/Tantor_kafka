@@ -1,11 +1,12 @@
 .external-page {
-  min-height: 100%;
+  min-height: 100vh;
   padding: 24px;
-  background: var(--bg-base);
+  background: var(--page-grey);
   color: #1a1a18;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  box-sizing: border-box;
 }
 
 .external-wrapper {
@@ -135,7 +136,7 @@
 }
 
 .external-card {
-  background: #FAFAFA;
+  background: #FFFFFF;
   border: 1px solid #ECECF1;
   border-radius: 12px;
   padding: 24px;
@@ -189,6 +190,27 @@
 .form-field-group select:focus {
   outline: none;
   border-color: #7C3AED;
+}
+
+.form-field-group input.field-invalid,
+.form-field-group input.field-invalid:focus {
+  border-color: #EF4D5F;
+  box-shadow: 0 0 0 3px rgba(239, 77, 95, 0.12);
+}
+
+.field-error-message,
+.field-validation-message {
+  margin-top: -2px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.field-error-message {
+  color: #D92D45;
+}
+
+.field-validation-message {
+  color: #71717A;
 }
 
 .form-grid-columns {

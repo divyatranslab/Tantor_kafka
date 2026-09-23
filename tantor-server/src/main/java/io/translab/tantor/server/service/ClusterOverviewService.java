@@ -5,6 +5,7 @@ import io.translab.tantor.server.dto.ClusterOverviewDto;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
+import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -18,6 +19,7 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -37,8 +39,11 @@ public class ClusterOverviewService {
 
     private final ClusterRepository clusterRepository;
     private final ExternalClusterRepository externalClusterRepository;
+    private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
+    private final HostStatusService hostStatusService;
 
+    @Transactional(readOnly = true)
     public ClusterOverviewDto getOverview(UUID clusterId) {
         String clusterName;
         String kafkaVersion;
@@ -48,10 +53,14 @@ public class ClusterOverviewService {
         String configDirectory;
         String dataDirectory;
         String logDirectory;
+        Cluster internalCluster = null;
         
         var internalOpt = clusterRepository.findById(clusterId);
-        if (internalOpt.isPresent()) {
+        boolean hasInternalCluster = internalOpt.isPresent()
+                && !"EXTERNAL".equalsIgnoreCase(internalOpt.get().getMode());
+        if (hasInternalCluster) {
             Cluster cluster = internalOpt.get();
+            internalCluster = cluster;
             clusterName = cluster.getName();
             kafkaVersion = cluster.getKafkaVersion();
             originType = cluster.getOriginType();
@@ -61,6 +70,10 @@ public class ClusterOverviewService {
             dataDirectory = cluster.getDataDirectory();
             logDirectory = cluster.getLogDirectory();
         } else {
+            // External-cluster registration also keeps a compatibility Cluster
+            // row with mode=EXTERNAL. That shadow row is routing metadata, not
+            // the source of Kafka coordination mode/version. Always load those
+            // fields from ExternalCluster for an external overview.
             ExternalCluster ext = externalClusterRepository.findById(clusterId)
                     .orElseThrow(() -> new IllegalArgumentException("Cluster not found"));
             clusterName = ext.getName();
@@ -81,6 +94,14 @@ public class ClusterOverviewService {
             Collection<Node> nodes = clusterResult.nodes().get();
             Node controller = clusterResult.controller().get();
             String kafkaClusterId = clusterResult.clusterId().get();
+            boolean kraft = isKraftMode(mode);
+            boolean zookeeper = isZooKeeperMode(mode);
+            Integer activeControllerId = kraft
+                    ? kafkaAdminService.getControllerId(clusterId)
+                    : (zookeeper && controller != null ? controller.id() : null);
+            if (kraft && activeControllerId == null) {
+                warnings.add("The active KRaft controller is unavailable because metadata quorum details could not be loaded.");
+            }
 
             Map<Integer, BrokerAccumulator> brokerStats = new LinkedHashMap<>();
             nodes.stream()
@@ -89,16 +110,21 @@ public class ClusterOverviewService {
 
             PartitionAccumulator partitionStats = collectPartitionStats(client, brokerStats, warnings);
             collectLogDirStats(client, brokerStats, warnings);
+            applyInternalHostDiskStats(internalCluster, brokerStats);
 
             int brokerCount = brokerStats.size();
+            List<ClusterOverviewDto.ControllerRow> controllers = kraft
+                    ? internalControllerRows(internalCluster, activeControllerId)
+                    : List.of();
+            int configuredControllerCount = controllers.size();
             double avgReplicas = brokerCount == 0 ? 0 : (double) partitionStats.totalReplicas / brokerCount;
             double avgLeaders = brokerCount == 0 ? 0 : (double) partitionStats.totalPartitions / brokerCount;
 
             List<ClusterOverviewDto.BrokerRow> brokers = brokerStats.values().stream()
-                    .map(stats -> stats.toDto(controller != null && stats.node.id() == controller.id(), avgReplicas, avgLeaders, brokerCount))
+                    .map(stats -> stats.toDto(activeControllerId != null && stats.node.id() == activeControllerId, avgReplicas, avgLeaders, brokerCount))
                     .toList();
 
-            String controllerType = "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
+            String controllerType = zookeeper ? "ZooKeeper" : (kraft ? "KRaft" : "Not reported");
             return ClusterOverviewDto.builder()
                     .clusterId(clusterId)
                     .kafkaClusterId(kafkaClusterId)
@@ -114,7 +140,9 @@ public class ClusterOverviewService {
                     .warnings(warnings)
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
-                            .activeController(controller == null ? null : controller.id())
+                            .activeController(activeControllerId)
+                            .activeControllerId(activeControllerId)
+                            .configuredControllerCount(configuredControllerCount)
                             .version(kafkaVersion)
                             .controllerType(controllerType)
                             .build())
@@ -127,6 +155,7 @@ public class ClusterOverviewService {
                             .outOfSyncReplicas(Math.max(0, partitionStats.totalReplicas - partitionStats.inSyncReplicas))
                             .build())
                     .brokers(brokers)
+                    .controllers(controllers)
                     .build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -136,6 +165,126 @@ public class ClusterOverviewService {
             kafkaAdminService.refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to load cluster overview: " + e.getMessage(), e);
         }
+    }
+
+    private List<ClusterOverviewDto.ControllerRow> internalControllerRows(
+            Cluster cluster,
+            Integer activeControllerId
+    ) {
+        if (cluster == null || cluster.getServices() == null) {
+            return List.of();
+        }
+        return cluster.getServices().stream()
+                .filter(service -> isControllerRole(service.getRole()))
+                .filter(service -> service.getNodeId() != null)
+                .sorted(Comparator.comparingInt(service -> service.getNodeId()))
+                .map(service -> ClusterOverviewDto.ControllerRow.builder()
+                        .nodeId(service.getNodeId())
+                        .host(controllerHost(service.getHostId()))
+                        .port(controllerPort(service.getConfigJson(), cluster.getConfigJson()))
+                        .activeLeader(activeControllerId != null
+                                && activeControllerId.equals(service.getNodeId()))
+                        .build())
+                .toList();
+    }
+
+    private boolean isControllerRole(String role) {
+        if (role == null) {
+            return false;
+        }
+        String normalized = role.trim().toLowerCase(java.util.Locale.ROOT);
+        return "controller".equals(normalized) || "broker_controller".equals(normalized);
+    }
+
+    private String controllerHost(String hostId) {
+        if (hostId == null || hostId.isBlank()) {
+            return "unknown";
+        }
+        return hostRepository.findById(hostId)
+                .map(host -> firstNonBlank(host.getHostIp(), host.getHostname(), hostId))
+                .orElse(hostId);
+    }
+
+    private Integer controllerPort(String serviceConfigJson, String clusterConfigJson) {
+        Integer servicePort = configInt(serviceConfigJson, "controller_port");
+        if (servicePort != null) {
+            return servicePort;
+        }
+        Integer clusterPort = configInt(clusterConfigJson, "controller_port");
+        return clusterPort != null ? clusterPort : 9093;
+    }
+
+    private Integer configInt(String configJson, String key) {
+        if (configJson == null || configJson.isBlank()) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "\"" + java.util.regex.Pattern.quote(key) + "\"\\s*:\\s*\"?(\\d+)\"?"
+        ).matcher(configJson);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "unknown";
+    }
+
+    private boolean isKraftMode(String mode) {
+        return "kraft".equalsIgnoreCase(mode);
+    }
+
+    private boolean isZooKeeperMode(String mode) {
+        return "zookeeper".equalsIgnoreCase(mode) || "zk".equalsIgnoreCase(mode);
+    }
+
+    private void applyInternalHostDiskStats(
+            Cluster cluster,
+            Map<Integer, BrokerAccumulator> brokerStats
+    ) {
+        if (cluster == null || cluster.getServices() == null) {
+            return;
+        }
+        cluster.getServices().forEach(service -> {
+            if (service.getNodeId() == null || service.getHostId() == null) {
+                return;
+            }
+            BrokerAccumulator broker = brokerStats.get(service.getNodeId());
+            if (broker == null) {
+                return;
+            }
+            hostRepository.findById(service.getHostId()).ifPresent(host -> {
+                broker.hostDiskLastSeen = host.getLastHeartbeat();
+                boolean agentOnline = "ONLINE".equalsIgnoreCase(
+                        hostStatusService.agentConnectivityStatus(host)
+                );
+                if (!agentOnline) {
+                    broker.hostDiskMetricStatus = host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE";
+                    return;
+                }
+                broker.hostDiskMetricStatus = "LIVE";
+                broker.hostDiskUsedBytes = host.getDiskUsedGb() == null ? null : gibibytesToBytes(host.getDiskUsedGb());
+                broker.hostDiskTotalBytes = host.getDiskTotalGb() == null ? null : gibibytesToBytes(host.getDiskTotalGb());
+            });
+        });
+    }
+
+    private long gibibytesToBytes(long value) {
+        if (value <= 0) {
+            return 0;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return value > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : value * gibibyte;
     }
 
     private PartitionAccumulator collectPartitionStats(
@@ -245,6 +394,11 @@ public class ClusterOverviewService {
         int replicas;
         int leaders;
         long diskUsageBytes;
+        long diskTotalBytes;
+        Long hostDiskUsedBytes;
+        Long hostDiskTotalBytes;
+        String hostDiskMetricStatus = "UNAVAILABLE";
+        OffsetDateTime hostDiskLastSeen;
         int logReplicaCount;
 
         BrokerAccumulator(Node node) {
@@ -263,6 +417,11 @@ public class ClusterOverviewService {
                     .rack(node.rack() == null ? "" : node.rack())
                     .controller(controller)
                     .diskUsageBytes(diskUsageBytes)
+                    .diskTotalBytes(diskTotalBytes)
+                    .hostDiskUsedBytes(hostDiskUsedBytes)
+                    .hostDiskTotalBytes(hostDiskTotalBytes)
+                    .hostDiskMetricStatus(hostDiskMetricStatus)
+                    .hostDiskLastSeen(hostDiskLastSeen)
                     .logReplicaCount(logReplicaCount)
                     .inSyncReplicas(inSyncReplicas)
                     .replicas(replicas)

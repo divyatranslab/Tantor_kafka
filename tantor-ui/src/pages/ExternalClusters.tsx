@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -12,7 +12,21 @@ import {
   X,
   Wifi,
 } from 'lucide-react';
+import { getValidToken } from '../services/KeycloakService';
 import './ExternalClusters.css';
+
+interface BrokerNode {
+  node_id?: string | number;
+  broker_id?: string | number;
+  id?: string | number;
+  host?: string;
+  port?: number;
+  isBroker?: boolean;
+  isController?: boolean;
+  hasActiveAgent?: boolean;
+  agentDiscoveryKey?: string;
+  [key: string]: unknown;
+}
 
 interface BootstrapResult {
   name?: string;
@@ -28,7 +42,7 @@ interface BootstrapResult {
   cluster_id?: string;
   kafka_cluster_id?: string;
   brokerCount?: number;
-  brokers?: any[];
+  brokers?: BrokerNode[];
   topicCount?: number;
   topic_count?: number;
   topics?: unknown[];
@@ -41,7 +55,15 @@ interface BootstrapResult {
   environment?: string;
   socket_results?: unknown[];
   message?: string;
+  discoveryKey?: string;
 }
+
+const registrationKafkaMode = (result: BootstrapResult | null): string => {
+  const raw = String(result?.kafkaMode || result?.mode || '').trim();
+  if (/^zookeeper$/i.test(raw) || /^zk$/i.test(raw)) return 'ZooKeeper';
+  if (/^kraft$/i.test(raw)) return 'KRaft';
+  return 'Unknown';
+};
 
 interface DiscoveryAgentStatus {
   id: string;
@@ -70,6 +92,9 @@ export function ExternalClusters() {
   const [openPanel, setOpenPanel] = useState<'bootstrap' | 'agent'>('bootstrap');
   const [agents, setAgents] = useState<DiscoveryAgentStatus[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(false);
+  const [clusterNameError, setClusterNameError] = useState('');
+  const [checkingClusterName, setCheckingClusterName] = useState(false);
+  const clusterNameValidationSequence = useRef(0);
 
   const [form, setForm] = useState({
     name: '',
@@ -93,14 +118,15 @@ export function ExternalClusters() {
   });
   const [bootstrapResult, setBootstrapResult] = useState<BootstrapResult | null>(null);
   const [selectedAgents, setSelectedAgents] = useState<Record<string, string>>({});
+  const bootstrapIsZooKeeper = registrationKafkaMode(bootstrapResult) === 'ZooKeeper';
   const truststoreFileRule = TRUSTSTORE_FILE_RULES[form.truststoreType] || TRUSTSTORE_FILE_RULES.PKCS12;
 
   const serverHint = useMemo(() => {
     const host = window.location.hostname || '<tantor-server-ip>';
     if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://<tantor-server-ip-or-dns>:8443';
+      return 'https://<tantor-server-ip-or-dns>';
     }
-    return `${window.location.protocol}//${host}:8443`;
+    return `https://${host}`;
   }, []);
 
   const agentConfig = useMemo(() => (
@@ -122,10 +148,12 @@ export function ExternalClusters() {
   metrics_url: "http://localhost:7071/metrics"
   disable_metrics: false
   skip_precheck: false
-  tls_insecure_skip_verify: true`
+  tls_ca_cert: "/etc/tantor-discovery-agent/certs/control-plane-ca.crt"
+  tls_client_cert: "/etc/tantor-discovery-agent/certs/discovery-agent.crt"
+  tls_client_key: "/etc/tantor-discovery-agent/certs/discovery-agent.key"`
   ), [serverHint]);
 
-  const loadAgents = async () => {
+  const loadAgents = useCallback(async () => {
     setAgentsLoading(true);
     try {
       const res = await fetch('/api/v1/ui/external-clusters/agents');
@@ -135,13 +163,13 @@ export function ExternalClusters() {
     } finally {
       setAgentsLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadAgents();
-    const timer = window.setInterval(loadAgents, 10000);
+    void (async () => { await loadAgents(); })();
+    const timer = window.setInterval(() => { void (async () => { await loadAgents(); })(); }, 10000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [loadAgents]);
 
   const formatHeartbeat = (value?: string) => {
     if (!value) return 'Never';
@@ -167,6 +195,37 @@ export function ExternalClusters() {
     return value;
   };
 
+  const validateClusterName = async (value = form.name) => {
+    const name = value.trim();
+    const validationSequence = ++clusterNameValidationSequence.current;
+    if (!name) {
+      setClusterNameError('');
+      setCheckingClusterName(false);
+      return true;
+    }
+
+    setCheckingClusterName(true);
+    try {
+      const res = await fetch(`/api/v1/ui/external-clusters/name-availability?name=${encodeURIComponent(name)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Unable to validate the cluster name.');
+      if (validationSequence !== clusterNameValidationSequence.current) return false;
+      const available = data.available === true;
+      setClusterNameError(available ? '' : (data.message || 'A cluster with this name already exists. Choose a different name.'));
+      return available;
+    } catch (validationError) {
+      if (validationSequence !== clusterNameValidationSequence.current) return false;
+      setClusterNameError(validationError instanceof Error
+        ? validationError.message
+        : 'Unable to validate the cluster name.');
+      return false;
+    } finally {
+      if (validationSequence === clusterNameValidationSequence.current) {
+        setCheckingClusterName(false);
+      }
+    }
+  };
+
   const testBootstrap = async () => {
     if (!form.bootstrapServers.trim()) return;
     setTesting(true);
@@ -179,14 +238,14 @@ export function ExternalClusters() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
-      const data = await res.json();
+      const data: BootstrapResult = await res.json();
       setBootstrapResult(data);
 
       if (data.brokers) {
         const initialSelection: Record<string, string> = {};
-        data.brokers.forEach((b: any) => {
+        data.brokers.forEach((b) => {
           if (b.hasActiveAgent && b.agentDiscoveryKey) {
-            initialSelection[b.host] = b.agentDiscoveryKey;
+            initialSelection[b.host ?? ''] = b.agentDiscoveryKey;
           }
         });
         setSelectedAgents(initialSelection);
@@ -196,8 +255,8 @@ export function ExternalClusters() {
         throw new Error(data.message || 'Bootstrap connection failed');
       }
       setBanner('Kafka details fetched successfully.');
-    } catch (e: any) {
-      setError(e.message || 'Failed to inspect the Kafka cluster');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to inspect the Kafka cluster');
     } finally {
       setTesting(false);
     }
@@ -245,36 +304,64 @@ export function ExternalClusters() {
 
   const registerBootstrap = async () => {
     if (!form.bootstrapServers.trim() || bootstrapResult?.connected !== true) return;
+    if (!(await validateClusterName())) return;
     setRegistering(true);
     setError('');
     setBanner('');
     try {
+      const kafkaMode = registrationKafkaMode(bootstrapResult);
+      const normalizedBrokers = (bootstrapResult?.brokers || []).map((broker) =>
+        kafkaMode === 'ZooKeeper'
+          ? { ...broker, isBroker: true, isController: false }
+          : broker
+      );
       const payload = {
         ...form,
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
-        brokerCount: bootstrapResult?.brokerCount ?? bootstrapResult?.brokers?.length ?? 0,
-        agentFound: !!bootstrapResult?.brokers?.some((b: any) => b.hasActiveAgent),
+        brokerCount: bootstrapResult?.brokerCount
+          ?? bootstrapResult?.brokers?.filter((node) => node.isBroker !== false).length
+          ?? 0,
+        agentFound: !!bootstrapResult?.brokers?.some((b) => b.hasActiveAgent),
         security: form.securityProtocol,
-        brokers: bootstrapResult?.brokers || [],
+        brokers: normalizedBrokers,
         controllerId: bootstrapResult?.controllerId || bootstrapResult?.controller_id || null,
         kafkaVersion: bootstrapResult?.kafkaVersion || bootstrapResult?.kafka_version || 'Unknown',
-        kafkaMode: bootstrapResult?.kafkaMode || bootstrapResult?.mode || 'KRaft',
+        kafkaMode,
+        discoveryKey: bootstrapResult?.discoveryKey,
         selectedAgents: selectedAgents
       };
 
+      // Registration mutates managed-cluster state, so obtain a fresh Keycloak
+      // token explicitly instead of relying solely on the global fetch wrapper.
+      const token = await getValidToken();
+      if (!token) {
+        throw new Error('Your sign-in session is unavailable. Please sign in again and retry.');
+      }
+
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || data.error || 'Failed to register external cluster');
+      if (!res.ok) {
+        const message = data.message || data.error || 'Failed to register external cluster';
+        if (res.status === 409) {
+          setClusterNameError(message);
+          return;
+        }
+        throw new Error(message);
+      }
       setBanner(`External cluster ${data.name || form.name || 'connected'} connected.`);
+      setClusterNameError('');
       setForm(prev => ({ ...prev, name: '', bootstrapServers: '', kafkaVersion: '' }));
       setBootstrapResult(null);
       navigate(`/clusters`);
-    } catch (e: any) {
-      setError(e.message || 'Failed to connect external cluster');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to connect external cluster');
     } finally {
       setRegistering(false);
     }
@@ -334,8 +421,25 @@ export function ExternalClusters() {
                       type="text"
                       placeholder="prod-external-01"
                       value={form.name}
-                      onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                      className={clusterNameError ? 'field-invalid' : ''}
+                      aria-invalid={clusterNameError ? 'true' : 'false'}
+                      aria-describedby="external-cluster-name-message"
+                      onBlur={() => void validateClusterName()}
+                      onChange={e => {
+                        clusterNameValidationSequence.current += 1;
+                        setCheckingClusterName(false);
+                        setClusterNameError('');
+                        setForm(prev => ({ ...prev, name: e.target.value }));
+                      }}
                     />
+                    {(checkingClusterName || clusterNameError) && (
+                      <span
+                        id="external-cluster-name-message"
+                        className={clusterNameError ? 'field-error-message' : 'field-validation-message'}
+                      >
+                        {clusterNameError || 'Checking name availability...'}
+                      </span>
+                    )}
                   </div>
                   <div className="form-field-group">
                     <label>Environment</label>
@@ -535,9 +639,9 @@ export function ExternalClusters() {
                   <div className="inspection-result-header">
                     <div className="status-icon-wrapper">
                       {(bootstrapResult.success ?? bootstrapResult.connected) ? (
-                        <span className="success-check-dot">✔</span>
+                        <span className="success-check-dot"><CheckCircle2 size={16} aria-hidden="true" /></span>
                       ) : (
-                        <span className="error-warn-dot">⚠</span>
+                        <span className="error-warn-dot"><AlertTriangle size={16} aria-hidden="true" /></span>
                       )}
                     </div>
                     <div className="status-info-col">
@@ -548,7 +652,9 @@ export function ExternalClusters() {
 
                   <div className="bootstrap-summary">
                     <div className="summary-item">
-                      <span>{bootstrapResult.brokers?.length ?? bootstrapResult.brokerCount ?? 0} broker(s) detected</span>
+                      <span>{bootstrapResult.brokerCount
+                        ?? bootstrapResult.brokers?.filter((node) => node.isBroker !== false).length
+                        ?? 0} broker(s) detected</span>
                     </div>
                     <div className="summary-item">
                       <span>
@@ -574,11 +680,11 @@ export function ExternalClusters() {
                   </div>
 
                   {bootstrapResult.brokers && bootstrapResult.brokers.length > 0 && (
-                    <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <h4 style={{ marginBottom: '8px', fontSize: '12px', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Discovered Nodes</h4>
-                      <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+                    <div className="inspection-brokers" style={{ marginTop: '16px', background: '#f8fafc', padding: 'var(--space-3)', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                      <h4 style={{ marginBottom: '8px', fontSize: 'var(--text-xs)', fontWeight: '600', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Discovered Nodes</h4>
+                      <table style={{ width: '100%', fontSize: 'var(--text-sm)', borderCollapse: 'collapse' }}>
                         <thead>
-                          <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: '#64748b' }}>
+                          <tr style={{ borderBottom: '1px solid #cbd5e1', textAlign: 'left', color: 'var(--text-muted)' }}>
                             <th style={{ padding: '6px', width: '40px' }}></th>
                             <th style={{ padding: '6px' }}>Node ID</th>
                             <th style={{ padding: '6px' }}>Host</th>
@@ -587,11 +693,11 @@ export function ExternalClusters() {
                           </tr>
                         </thead>
                         <tbody>
-                          {bootstrapResult.brokers.map((broker: any) => {
-                            const isSelected = !!selectedAgents[broker.host];
+                          {bootstrapResult.brokers.map((broker) => {
+                            const isSelected = !!selectedAgents[broker.host ?? ''];
                             const hasAgent = !!broker.hasActiveAgent;
                             return (
-                              <tr key={broker.node_id || broker.broker_id || broker.id} style={{ borderBottom: '1px solid #e2e8f0', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                              <tr key={broker.node_id ?? broker.broker_id ?? broker.id} style={{ borderBottom: '1px solid var(--border-subtle)', background: isSelected ? '#f0fdf4' : 'transparent' }}>
                                 <td style={{ padding: '6px', textAlign: 'center' }}>
                                   <input
                                     type="checkbox"
@@ -601,9 +707,9 @@ export function ExternalClusters() {
                                       setSelectedAgents(prev => {
                                         const next = { ...prev };
                                         if (e.target.checked) {
-                                          next[broker.host] = broker.agentDiscoveryKey || broker.host;
+                                          next[broker.host ?? ''] = broker.agentDiscoveryKey || broker.host || '';
                                         } else {
-                                          delete next[broker.host];
+                                          delete next[broker.host ?? ''];
                                         }
                                         return next;
                                       });
@@ -611,19 +717,21 @@ export function ExternalClusters() {
                                     style={{ cursor: 'pointer' }}
                                   />
                                 </td>
-                                <td style={{ padding: '6px' }}><strong>{broker.node_id || broker.broker_id || broker.id}</strong></td>
+                                <td style={{ padding: '6px' }}><strong>{broker.node_id ?? broker.broker_id ?? broker.id}</strong></td>
                                 <td style={{ padding: '6px' }}>
                                   {broker.host}
                                   {!hasAgent && <span style={{ display: 'block', fontSize: '11px', color: '#94a3b8' }}>No telemetry / unmanaged</span>}
                                 </td>
                                 <td style={{ padding: '6px' }}>{broker.port}</td>
                                 <td style={{ padding: '6px' }}>
-                                  {broker.isController && broker.isBroker ? (
-                                    <span style={{ color: '#059669', fontWeight: 500 }}>Controller + Broker</span>
+                                  {bootstrapIsZooKeeper ? (
+                                    <span style={{ color: '#3b82f6', fontWeight: 'var(--font-medium)' }}>Broker</span>
+                                  ) : broker.isController && broker.isBroker ? (
+                                    <span style={{ color: '#059669', fontWeight: 'var(--font-medium)' }}>Controller + Broker</span>
                                   ) : broker.isController ? (
-                                    <span style={{ color: '#7c3aed', fontWeight: 500 }}>Controller</span>
+                                    <span style={{ color: '#7c3aed', fontWeight: 'var(--font-medium)' }}>Controller</span>
                                   ) : (
-                                    <span style={{ color: '#3b82f6', fontWeight: 500 }}>Broker</span>
+                                    <span style={{ color: '#3b82f6', fontWeight: 'var(--font-medium)' }}>Broker</span>
                                   )}
                                 </td>
                               </tr>
@@ -656,7 +764,7 @@ export function ExternalClusters() {
                 <button
                   className={`action-btn connect-btn ${bootstrapResult?.connected === true ? 'active' : ''}`}
                   onClick={registerBootstrap}
-                  disabled={registering || bootstrapResult?.connected !== true}
+                  disabled={registering || checkingClusterName || !!clusterNameError || bootstrapResult?.connected !== true}
                 >
                   {registering ? <RefreshCw size={14} className="spin" /> : <Network size={14} />}
                   Connect Cluster

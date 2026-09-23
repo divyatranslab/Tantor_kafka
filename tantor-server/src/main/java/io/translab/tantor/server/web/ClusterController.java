@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.service.DeploymentService;
+import io.translab.tantor.server.config.ArtifactRepositoryProperties;
 import io.translab.tantor.server.service.HostStatusService;
 import io.translab.tantor.server.service.JobService;
 import io.translab.tantor.server.domain.Job;
@@ -25,11 +26,13 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -42,6 +45,7 @@ import java.util.stream.Collectors;
 @lombok.extern.slf4j.Slf4j
 public class ClusterController {
     private static final int DEFAULT_JMX_EXPORTER_PORT = 7071;
+    private static final int DEFAULT_CONTROLLER_JMX_EXPORTER_PORT = 7072;
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
@@ -62,8 +66,7 @@ public class ClusterController {
     private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
 
-    @Value("${tantor.artifact-repo.url:http://localhost:8081}")
-    private String artifactRepoUrl;
+    private final ArtifactRepositoryProperties artifactRepositoryProperties;
 
     @Value("${tantor.discovery-agent.heartbeat-timeout-seconds:45}")
     private long discoveryAgentHeartbeatTimeoutSeconds;
@@ -354,10 +357,21 @@ public class ClusterController {
             String overviewLogDir = null;
             String displayVersion = externalKafkaVersion(extCluster, nodes);
             String displayControllerType = externalControllerType(extCluster, nodes);
+            boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(displayControllerType);
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents =
+                    discoveryAgentRepository.findByClusterId(id);
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents =
+                    discoveryAgentRepository.findAll();
 
             for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
                 boolean isBroker = Boolean.TRUE.equals(node.getIsBroker());
                 boolean isController = Boolean.TRUE.equals(node.getIsController());
+                boolean hasFreshAgent = matchingFreshAgent(
+                        node.getHost(), id, linkedAgents, allAgents).isPresent();
+                boolean hasFreshTelemetry = hasFreshAgent
+                        && node.getLastSeen() != null
+                        && node.getLastSeen().isAfter(java.time.OffsetDateTime.now()
+                                .minusSeconds(discoveryAgentFreshnessSeconds()));
                 if (isBroker) brokerCount++;
                 if (isController) activeControllerCount++;
 
@@ -367,11 +381,16 @@ public class ClusterController {
                             .host(node.getHost())
                             .port(node.getPort())
                             .controller(isController)
-                            .diskUsageBytes(node.getDiskUsedGb() != null ? node.getDiskUsedGb() * 1024L * 1024L * 1024L : 0L)
+                            .diskUsageBytes(0L)
+                            .diskTotalBytes(0L)
+                            .hostDiskUsedBytes(hasFreshTelemetry ? externalDiskBytes(node.getDiskUsedBytes(), node.getDiskUsedGb()) : null)
+                            .hostDiskTotalBytes(hasFreshTelemetry ? externalDiskBytes(node.getDiskTotalBytes(), node.getDiskTotalGb()) : null)
+                            .hostDiskMetricStatus(hasFreshTelemetry ? "LIVE" : (node.getLastSeen() == null ? "UNAVAILABLE" : "STALE"))
+                            .hostDiskLastSeen(node.getLastSeen())
                             .build());
                 }
                 
-                if (isController) {
+                if (isController && !zookeeperMode) {
                     controllerRows.add(io.translab.tantor.server.dto.ClusterOverviewDto.ControllerRow.builder()
                             .nodeId(node.getNodeId() != null ? node.getNodeId() : -1)
                             .host(node.getHost())
@@ -379,12 +398,20 @@ public class ClusterController {
                             .build());
                 }
                 
-                String role = (isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown"));
-                String installDir = firstNonBlank(node.getInstallDir(), extCluster.getInstallPath(), firstExternalNodeValue(nodes, node.getHost(), "installDir"));
-                String configFile = firstNonBlank(node.getConfigFile(), firstExternalNodeValue(nodes, node.getHost(), "configFile"),
-                        inferredExternalConfigFile(role, displayControllerType, displayVersion, installDir));
-                String dataDir = firstNonBlank(node.getDataDirs(), firstExternalNodeValue(nodes, node.getHost(), "dataDirs"));
-                String logDir = firstNonBlank(node.getLogDirs(), extCluster.getLogDirs(), firstExternalNodeValue(nodes, node.getHost(), "logDirs"));
+                String role = zookeeperMode && isBroker
+                        ? "broker"
+                        : ((isBroker && isController) ? "broker_controller" : (isBroker ? "broker" : (isController ? "controller" : "unknown")));
+                String installDir = hasFreshAgent
+                        ? firstNonBlank(node.getInstallDir(), extCluster.getInstallPath())
+                        : null;
+                String configFile = hasFreshAgent
+                        ? firstNonBlank(node.getConfigFile(),
+                                inferredExternalConfigFile(role, displayControllerType, displayVersion, installDir))
+                        : null;
+                String dataDir = hasFreshAgent ? firstNonBlank(node.getDataDirs()) : null;
+                String logDir = hasFreshAgent
+                        ? firstNonBlank(node.getLogDirs(), extCluster.getLogDirs())
+                        : null;
                 overviewInstallDir = firstNonBlank(overviewInstallDir, installDir);
                 overviewConfigDir = firstNonBlank(overviewConfigDir, parentPath(configFile));
                 overviewDataDir = firstNonBlank(overviewDataDir, dataDir);
@@ -397,11 +424,16 @@ public class ClusterController {
                         .config(configFile)
                         .dataDir(dataDir)
                         .logDir(logDir)
-                        .hasTelemetry(node.getLastSeen() != null || firstNonBlank(installDir, configFile, dataDir, logDir) != null)
+                        .hasTelemetry(hasFreshAgent)
                         .build());
             }
 
             if (liveOverview != null) {
+                // Kafka's Admin API reports the size of Kafka replica files only.  For
+                // external clusters, the discovery agent also reports the host file
+                // system capacity.  Prefer that fresh, node-specific telemetry so the
+                // overview's disk column means the same thing for both cluster types.
+                applyExternalNodeDiskTelemetry(liveOverview, nodes, id, linkedAgents, allAgents);
                 liveOverview.setOriginType("EXTERNAL");
                 liveOverview.setKafkaVersion(firstNonBlank(cleanExternalValue(liveOverview.getKafkaVersion()), displayVersion));
                 liveOverview.setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getControllerType()), displayControllerType));
@@ -414,8 +446,11 @@ public class ClusterController {
                 if (liveOverview.getUptime() != null) {
                     liveOverview.getUptime().setVersion(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getVersion()), displayVersion));
                     liveOverview.getUptime().setControllerType(firstNonBlank(cleanExternalValue(liveOverview.getUptime().getControllerType()), displayControllerType));
-                    if (liveOverview.getUptime().getActiveController() == null && activeControllerCount > 0) {
-                        liveOverview.getUptime().setActiveController(1);
+                    liveOverview.getUptime().setConfiguredControllerCount(activeControllerCount);
+                    Integer activeControllerId = liveOverview.getUptime().getActiveControllerId();
+                    for (io.translab.tantor.server.dto.ClusterOverviewDto.ControllerRow controllerRow : controllerRows) {
+                        controllerRow.setActiveLeader(activeControllerId != null
+                                && activeControllerId == controllerRow.getNodeId());
                     }
                 }
                 if (!warnings.isEmpty()) {
@@ -448,7 +483,9 @@ public class ClusterController {
                     .warnings(warnings)
                     .uptime(io.translab.tantor.server.dto.ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(extCluster.getBrokerCount() != null ? extCluster.getBrokerCount() : brokerCount)
-                            .activeController(activeControllerCount > 0 ? 1 : 0)
+                            .activeController(null)
+                            .activeControllerId(null)
+                            .configuredControllerCount(activeControllerCount)
                             .version(displayVersion)
                             .controllerType(displayControllerType)
                             .build())
@@ -460,6 +497,61 @@ public class ClusterController {
 
             return ResponseEntity.ok(dto);
         }).orElse(ResponseEntity.notFound().build());
+    }
+
+    private void applyExternalNodeDiskTelemetry(
+            io.translab.tantor.server.dto.ClusterOverviewDto overview,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            UUID clusterId,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents
+    ) {
+        if (overview.getBrokers() == null || overview.getBrokers().isEmpty()) {
+            return;
+        }
+
+        Map<Integer, io.translab.tantor.server.domain.ExternalClusterNode> nodesById = new HashMap<>();
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
+            if (Boolean.TRUE.equals(node.getIsBroker()) && node.getNodeId() != null) {
+                nodesById.put(node.getNodeId(), node);
+            }
+        }
+
+        for (io.translab.tantor.server.dto.ClusterOverviewDto.BrokerRow broker : overview.getBrokers()) {
+            io.translab.tantor.server.domain.ExternalClusterNode node = nodesById.get(broker.getBrokerId());
+            if (node == null) {
+                continue;
+            }
+            broker.setHostDiskLastSeen(node.getLastSeen());
+            boolean fresh = matchingFreshAgent(node.getHost(), clusterId, linkedAgents, allAgents).isPresent()
+                    && node.getLastSeen() != null
+                    && node.getLastSeen().isAfter(java.time.OffsetDateTime.now()
+                            .minusSeconds(discoveryAgentFreshnessSeconds()));
+            if (!fresh) {
+                broker.setHostDiskUsedBytes(null);
+                broker.setHostDiskTotalBytes(null);
+                broker.setHostDiskMetricStatus(node.getLastSeen() == null ? "UNAVAILABLE" : "STALE");
+                continue;
+            }
+            broker.setHostDiskUsedBytes(externalDiskBytes(node.getDiskUsedBytes(), node.getDiskUsedGb()));
+            broker.setHostDiskTotalBytes(externalDiskBytes(node.getDiskTotalBytes(), node.getDiskTotalGb()));
+            broker.setHostDiskMetricStatus("LIVE");
+        }
+    }
+
+    private Long externalDiskBytes(Long exactBytes, Long legacyGiB) {
+        if (exactBytes != null && exactBytes >= 0) {
+            return exactBytes;
+        }
+        return legacyGiB == null ? null : gibibytesToBytes(legacyGiB);
+    }
+
+    private long gibibytesToBytes(long value) {
+        if (value <= 0) {
+            return 0L;
+        }
+        long gibibyte = 1024L * 1024L * 1024L;
+        return value > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : value * gibibyte;
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -479,6 +571,7 @@ public class ClusterController {
         Map<String, Object> deploymentConfig = buildDeploymentConfig(request, deploymentMode);
         String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
         String bootstrapServers = String.valueOf(deploymentConfig.getOrDefault("bootstrap_servers", ""));
+        SchemaRegistryAddonReq schemaAddon = schemaAddon(request);
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
@@ -521,14 +614,30 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
-            if (isBrokerRole(sa.getRole())) {
-                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
-            }
+            assign.setJmxExporterPort(jmxPortForService(sa));
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             assignments.add(assign);
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
+        Map<String, Object> schemaRegistryPayload = null;
+        if (schemaAddon != null) {
+            schemaRegistryPayload = schemaAddonPayload(
+                    schemaAddon,
+                    cluster.getId(),
+                    bootstrapServers,
+                    activeKafkaInstallDir(deploymentConfig),
+                    (int) request.getServices().stream().filter(service -> isBrokerRole(service.getRole())).count()
+            );
+            ClusterServiceAssignment schemaAssignment = new ClusterServiceAssignment();
+            schemaAssignment.setCluster(cluster);
+            schemaAssignment.setHostId(schemaAddon.getHost_id());
+            schemaAssignment.setRole("schema_registry");
+            schemaAssignment.setStatus("PENDING");
+            schemaAssignment.setConfigJson(writeJson(schemaRegistryPayload));
+            cluster.getServices().add(schemaAssignment);
+            clusterRepository.save(cluster);
+        }
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {
@@ -561,18 +670,27 @@ public class ClusterController {
         jobPayload.put("finalArtifactUrl", finalArtifactUrl);
         jobPayload.put("quorumVoters", quorumVoters);
         jobPayload.put("kafkaVersion", request.getKafka_version());
+        jobPayload.put("requestedBy", username);
+        if (schemaRegistryPayload != null) {
+            jobPayload.put("schemaRegistry", schemaRegistryPayload);
+        }
 
         Job job = new Job();
         job.setType(JobType.DEPLOYMENT);
         job.setStatus(JobStatus.PENDING);
         job.setRollbackSupported(true);
         job.setResourceKey("cluster:" + cluster.getId());
+        job.setRequestedBy(username);
         try {
             job.setPayload(objectMapper.writeValueAsString(jobPayload));
         } catch (Exception e) {
             job.setPayload("{}");
         }
-        Job savedJob = jobService.createJob(job, deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode));
+        List<JobStep> deploymentSteps = deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode);
+        if (schemaAddon != null) {
+            appendSchemaRegistrySteps(deploymentSteps, schemaAddon.getHost_id());
+        }
+        Job savedJob = jobService.createJob(job, deploymentSteps);
         
         activityAlertService.logActivity("INFO", "Created deployment job for cluster: " + request.getName(), cluster.getId());
         
@@ -636,6 +754,7 @@ public class ClusterController {
                 svc.setHost_id(existing.getHostId());
                 svc.setRole(existing.getRole());
                 svc.setNode_id(existing.getNodeId());
+                svc.setJmx_port(existing.getJmxExporterPort());
                 allServices.add(svc);
             }
         }
@@ -682,9 +801,7 @@ public class ClusterController {
             assign.setHostId(sa.getHost_id());
             assign.setRole(sa.getRole());
             assign.setNodeId(sa.getNode_id());
-            if (isBrokerRole(sa.getRole())) {
-                assign.setJmxExporterPort(DEFAULT_JMX_EXPORTER_PORT);
-            }
+            assign.setJmxExporterPort(jmxPortForService(sa));
             assign.setConfigJson(buildServiceConfigJson(deploymentConfig, sa));
             cluster.getServices().add(assign);
         }
@@ -914,7 +1031,9 @@ public class ClusterController {
                 targetVersion,
                 service.getNodeId() == null ? "1" : String.valueOf(service.getNodeId()),
                 service.getRole(),
-                cluster.getConfigJson()
+                service.getConfigJson() == null || service.getConfigJson().isBlank()
+                        ? cluster.getConfigJson()
+                        : service.getConfigJson()
             );
         }
 
@@ -1007,6 +1126,105 @@ public class ClusterController {
         return steps;
     }
 
+    private void appendSchemaRegistrySteps(List<JobStep> steps, String hostId) {
+        for (Map.Entry<String, String> entry : List.of(
+                Map.entry("precheck_schema", "Pre-check Schema Registry"),
+                Map.entry("create_schema_topic", "Create or verify _schemas topic"),
+                Map.entry("install_schema", "Install Schema Registry"),
+                Map.entry("verify_schema", "Verify Schema Registry REST API"),
+                Map.entry("save_schema_connection", "Save Schema Registry connection"))) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("operation", entry.getKey());
+            payload.put("host_id", hostId);
+            steps.add(jobStep(steps.size() + 1, hostId, entry.getValue(), payload));
+        }
+    }
+
+    private SchemaRegistryAddonReq schemaAddon(DeployClusterRequest request) {
+        if (request.getAddons() == null || request.getAddons().getSchema_registry() == null
+                || !request.getAddons().getSchema_registry().isEnabled()) {
+            return null;
+        }
+        return request.getAddons().getSchema_registry();
+    }
+
+    private void validateSchemaAddon(SchemaRegistryAddonReq addon, List<ServiceAssignmentReq> services) {
+        if (addon == null) return;
+        if (addon.getHost_id() == null || addon.getHost_id().isBlank()) {
+            throw new IllegalArgumentException("Schema Registry host is required.");
+        }
+        if (services == null || services.stream().noneMatch(service -> addon.getHost_id().equals(service.getHost_id()))) {
+            throw new IllegalArgumentException("Schema Registry must be assigned to a selected Kafka node.");
+        }
+        if (addon.getArtifact_id() == null || addon.getArtifact_id().isBlank()) {
+            throw new IllegalArgumentException("Schema Registry artifact is required.");
+        }
+        int port = addon.getPort() == null ? 8081 : addon.getPort();
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("Schema Registry port must be between 1 and 65535.");
+        }
+        Set<Integer> reservedPorts = services.stream()
+                .filter(service -> addon.getHost_id().equals(service.getHost_id()))
+                .flatMap(service -> java.util.stream.Stream.of(
+                        service.getListener_port(), service.getController_port(), service.getJmx_port(),
+                        service.getZookeeper_peer_port(), service.getZookeeper_election_port()))
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (reservedPorts.contains(port)) {
+            throw new IllegalArgumentException("Schema Registry port " + port
+                    + " conflicts with another service port on the selected host.");
+        }
+        for (String path : new String[]{addon.getInstall_dir(), addon.getConfig_dir(), addon.getLog_dir(), addon.getWorking_dir()}) {
+            if (path == null || !path.startsWith("/") || "/".equals(path) || path.contains("..")) {
+                throw new IllegalArgumentException("Schema Registry paths must be absolute, non-root paths without '..'.");
+            }
+        }
+        String compatibility = String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT);
+        if (!Set.of("BACKWARD", "BACKWARD_TRANSITIVE", "FORWARD", "FORWARD_TRANSITIVE",
+                "FULL", "FULL_TRANSITIVE", "NONE").contains(compatibility)) {
+            throw new IllegalArgumentException("Unsupported Schema Registry compatibility level.");
+        }
+    }
+
+    private Map<String, Object> schemaAddonPayload(SchemaRegistryAddonReq addon, UUID clusterId,
+                                                    String bootstrapServers, String kafkaInstallDir,
+                                                    int brokerCount) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("host_id", addon.getHost_id());
+        payload.put("host_name", hostRepository.findById(addon.getHost_id())
+                .map(host -> host.getHostIp() == null || host.getHostIp().isBlank()
+                        ? host.getHostname() : host.getHostIp())
+                .orElse(addon.getHost_id()));
+        payload.put("artifact_id", addon.getArtifact_id());
+        payload.put("artifact_url", addon.getArtifact_url() == null || addon.getArtifact_url().isBlank()
+                ? joinArtifactRepoBase("/api/v1/artifacts/" + addon.getArtifact_id() + "/download")
+                : resolveAgentArtifactUrl(addon.getArtifact_url()));
+        payload.put("checksum", addon.getChecksum() == null ? "" : addon.getChecksum());
+        payload.put("schema_version", addon.getVersion() == null ? "" : addon.getVersion());
+        payload.put("rest_port", addon.getPort() == null ? 8081 : addon.getPort());
+        payload.put("install_dir", addon.getInstall_dir());
+        payload.put("config_dir", addon.getConfig_dir());
+        payload.put("log_dir", addon.getLog_dir());
+        payload.put("working_dir", addon.getWorking_dir());
+        payload.put("kafka_install_dir", kafkaInstallDir);
+        payload.put("heap_size", addon.getHeap_size());
+        payload.put("compatibility_level", String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT));
+        payload.put("bootstrap_servers", schemaBootstrapServers(bootstrapServers));
+        payload.put("kafkastore_topic", "_schemas");
+        payload.put("replication_factor", Math.max(1, Math.min(3, brokerCount)));
+        payload.put("group_id", "tantor-sr-" + clusterId);
+        payload.put("service_user", "root");
+        return payload;
+    }
+
+    private String schemaBootstrapServers(String bootstrapServers) {
+        return Arrays.stream(String.valueOf(bootstrapServers).split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(value -> value.contains("://") ? value : "PLAINTEXT://" + value)
+                .collect(Collectors.joining(","));
+    }
+
     private JobStep deploymentStep(int order, Map<String, Object> service) {
         return jobStep(
                 order,
@@ -1078,6 +1296,29 @@ public class ClusterController {
         private String environment;
         private String artifactUrl;
         private boolean acknowledge_kraft_risk;
+        private AddonsReq addons;
+    }
+
+    @Data
+    static class AddonsReq {
+        private SchemaRegistryAddonReq schema_registry;
+    }
+
+    @Data
+    static class SchemaRegistryAddonReq {
+        private boolean enabled;
+        private String host_id;
+        private String artifact_id;
+        private String artifact_url;
+        private String checksum;
+        private String version;
+        private Integer port = 8081;
+        private String install_dir = "/opt/tantor/schema-registry";
+        private String config_dir = "/opt/tantor/schema-registry/etc/schema-registry";
+        private String log_dir = "/var/log/tantor/schema-registry";
+        private String working_dir = "/var/lib/tantor/schema-registry";
+        private String heap_size = "1G";
+        private String compatibility_level = "BACKWARD";
     }
 
     @Data
@@ -1118,6 +1359,7 @@ public class ClusterController {
         private String heap_size;
         private Integer listener_port;
         private Integer controller_port;
+        private Integer jmx_port;
         private Integer zookeeper_peer_port;
         private Integer zookeeper_election_port;
     }
@@ -1136,6 +1378,11 @@ public class ClusterController {
         }
         if (svc.getController_port() != null) {
             serviceConfig.put("controller_port", svc.getController_port());
+        }
+        Integer jmxPort = jmxPortForService(svc);
+        if (jmxPort != null) {
+            serviceConfig.put("jmx_port", jmxPort);
+            serviceConfig.put("jmx_enabled", true);
         }
         if (svc.getProperties_template() != null && !svc.getProperties_template().isBlank()) {
             String role = svc.getRole();
@@ -1177,6 +1424,7 @@ public class ClusterController {
 
         Set<String> assignmentKeys = new HashSet<>();
         Set<Integer> nodeIds = new HashSet<>();
+        Map<String, Set<Integer>> jmxPortsByHost = new HashMap<>();
         boolean hasBroker = false;
         int brokerCount = 0;
         boolean hasController = false;
@@ -1193,6 +1441,13 @@ public class ClusterController {
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            Integer jmxPort = jmxPortForService(service);
+            if (jmxPort != null && (jmxPort < 1 || jmxPort > 65535)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port must be between 1 and 65535 for host " + service.getHost_id() + "."));
+            }
+            if (jmxPort != null && !jmxPortsByHost.computeIfAbsent(service.getHost_id(), ignored -> new HashSet<>()).add(jmxPort)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port " + jmxPort + " is assigned more than once on host " + service.getHost_id() + "."));
             }
             if (!nodeIds.add(service.getNode_id())) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Node id " + service.getNode_id() + " is assigned more than once."));
@@ -1268,6 +1523,11 @@ public class ClusterController {
                 ));
             }
         }
+        try {
+            validateSchemaAddon(schemaAddon(request), request.getServices());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
         return null;
     }
 
@@ -1300,6 +1560,10 @@ public class ClusterController {
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            Integer jmxPort = jmxPortForService(service);
+            if (jmxPort != null && (jmxPort < 1 || jmxPort > 65535)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "JMX exporter port must be between 1 and 65535 for host " + service.getHost_id() + "."));
             }
             if (!nodeIds.add(service.getNode_id())) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Node id " + service.getNode_id() + " is already used in this cluster."));
@@ -1342,13 +1606,13 @@ public class ClusterController {
         config.put("mode", deploymentMode);
         config.put("version", request.getKafka_version());
         config.putIfAbsent("kafka_install_dir", "/opt");
-        int listenerPort = parseIntConfig(config.get("listener_port"), 9092);
+        int listenerPort = requiredPort(config.get("listener_port"), "listener_port");
         config.put("listener_port", listenerPort);
         config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
         if ("zookeeper".equals(deploymentMode)) {
-            int zookeeperPort = parseIntConfig(config.get("zookeeper_port"), parseIntConfig(config.get("controller_port"), 2181));
-            int zookeeperPeerPort = parseIntConfig(config.get("zookeeper_peer_port"), 2888);
-            int zookeeperElectionPort = parseIntConfig(config.get("zookeeper_election_port"), 3888);
+            int zookeeperPort = requiredPort(config.get("zookeeper_port"), "zookeeper_port");
+            int zookeeperPeerPort = requiredPort(config.get("zookeeper_peer_port"), "zookeeper_peer_port");
+            int zookeeperElectionPort = requiredPort(config.get("zookeeper_election_port"), "zookeeper_election_port");
             config.put("zookeeper_port", zookeeperPort);
             config.put("controller_port", zookeeperPort);
             config.put("zookeeper_connect", buildZooKeeperConnect(request.getServices(), zookeeperPort));
@@ -1359,7 +1623,7 @@ public class ClusterController {
                 config.put("zookeeper_servers", zookeeperServers);
             }
         } else {
-            int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+            int controllerPort = requiredPort(config.get("controller_port"), "controller_port");
             config.put("controller_port", controllerPort);
             String quorumMode = normalizedKraftQuorumMode(request.getKafka_version(), config.get("kraft_quorum_mode"));
             String quorumVoters = buildQuorumVoters(request.getServices(), controllerPort);
@@ -1405,8 +1669,8 @@ public class ClusterController {
         List<Map<String, Object>> topology = new ArrayList<>();
         String installDir = activeKafkaInstallDir(config);
         String dataDir = defaultKafkaDataDir(config);
-        String listenerPort = String.valueOf(config.getOrDefault("listener_port", "9092"));
-        String controllerPort = String.valueOf(config.getOrDefault("controller_port", "9093"));
+        String listenerPort = String.valueOf(requiredPort(config.get("listener_port"), "listener_port"));
+        String controllerPort = String.valueOf(requiredPort(config.get("controller_port"), "controller_port"));
         for (ServiceAssignmentReq service : services) {
             String role = service.getRole();
             String hostAddress = resolveHostAddress(service.getHost_id());
@@ -1474,7 +1738,7 @@ public class ClusterController {
         Set<String> controllerEndpoints = new HashSet<>();
         int controllerCount = 0;
         int brokerCount = 0;
-        int controllerPort = parseIntConfig(config.get("controller_port"), 9093);
+        int controllerPort = requiredPort(config.get("controller_port"), "controller_port");
 
         for (ServiceAssignmentReq service : request.getServices()) {
             String role = service.getRole() == null ? "" : service.getRole();
@@ -1694,6 +1958,18 @@ public class ClusterController {
         return "broker".equals(role) || "controller".equals(role) || "broker_controller".equals(role);
     }
 
+    private Integer jmxPortForService(ServiceAssignmentReq service) {
+        if (service == null || service.getRole() == null || isZooKeeperRole(service.getRole())) {
+            return null;
+        }
+        if (service.getJmx_port() != null) {
+            return service.getJmx_port();
+        }
+        return "controller".equals(service.getRole())
+                ? DEFAULT_CONTROLLER_JMX_EXPORTER_PORT
+                : DEFAULT_JMX_EXPORTER_PORT;
+    }
+
     private boolean isBrokerRole(String role) {
         return "broker".equals(role) || "broker_controller".equals(role) || "broker_zookeeper".equals(role);
     }
@@ -1798,7 +2074,11 @@ public class ClusterController {
         }
 
         try {
-            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService.getBrokerSummaries(cluster);
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService
+                    .getBrokerSummaries(cluster)
+                    .stream()
+                    .filter(broker -> isBrokerRole(broker.getRole()))
+                    .toList();
             long total = brokers.size();
             long offline = brokers.stream().filter(b -> "OFFLINE".equalsIgnoreCase(b.getBrokerHealth())).count();
             long degraded = brokers.stream().filter(b -> "DEGRADED".equalsIgnoreCase(b.getBrokerHealth())).count();
@@ -1869,7 +2149,6 @@ public class ClusterController {
                 .filter(agent -> cluster.getId().equals(agent.getClusterId()))
                 .toList();
         OffsetDateTime maxHeartbeat = null;
-        long reportingHostsCount = 0;
         long freshHostsCount = 0;
         for (String host : hosts) {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> freshAgent = matchingFreshAgent(host, cluster.getId(), linkedAgents, allAgents);
@@ -1879,7 +2158,6 @@ public class ClusterController {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> lastReportingAgent =
                     freshAgent.isPresent() ? freshAgent : matchingAgent(host, cluster.getId(), linkedAgents, allAgents);
             if (lastReportingAgent.isPresent()) {
-                reportingHostsCount++;
                 OffsetDateTime heartbeat = lastReportingAgent.get().getLastHeartbeat();
                 if (heartbeat != null && (maxHeartbeat == null || heartbeat.isAfter(maxHeartbeat))) {
                     maxHeartbeat = heartbeat;
@@ -1887,25 +2165,10 @@ public class ClusterController {
             }
         }
 
-        String telemetry = "None";
-        String managementLevel = "Agent Not Connected";
-        String agentHealth = reportingHostsCount > 0 ? "NOT_CONNECTED" : "NOT_INSTALLED";
-        if (reportingHostsCount > 0) {
-            if (reportingHostsCount == totalHostsCount || totalHostsCount == 0) {
-                telemetry = "Full";
-                managementLevel = "Agent Connected";
-            } else {
-                telemetry = "Partial";
-                managementLevel = "Partially Connected";
-            }
-        }
-        if (freshHostsCount > 0) {
-            if (freshHostsCount == totalHostsCount || totalHostsCount == 0) {
-                agentHealth = "CONNECTED";
-            } else {
-                agentHealth = "PARTIAL";
-            }
-        }
+        AgentConnectivityState connectivity = agentConnectivityState(freshHostsCount, totalHostsCount);
+        String telemetry = connectivity.telemetry();
+        String managementLevel = connectivity.label();
+        String agentHealth = connectivity.health();
 
         String kafkaHealth = kafkaHealthOverride != null
                 ? kafkaHealthOverride
@@ -1935,6 +2198,17 @@ public class ClusterController {
                 totalHostsCount,
                 maxHeartbeat
         );
+    }
+
+    /** Keeps label, color-driving health and telemetry on the same live-agent count. */
+    static AgentConnectivityState agentConnectivityState(long freshHostsCount, long totalHostsCount) {
+        if (freshHostsCount <= 0 || totalHostsCount <= 0) {
+            return new AgentConnectivityState("NOT_CONNECTED", "Agent Not Connected", "None");
+        }
+        if (freshHostsCount >= totalHostsCount) {
+            return new AgentConnectivityState("CONNECTED", "Agent Connected", "Full");
+        }
+        return new AgentConnectivityState("PARTIAL", "Partially Connected", "Partial");
     }
 
     private Optional<io.translab.tantor.server.domain.DiscoveryAgent> matchingAgent(
@@ -2047,6 +2321,8 @@ public class ClusterController {
             OffsetDateTime lastAgentHeartbeat
     ) {}
 
+    record AgentConnectivityState(String health, String label, String telemetry) {}
+
     private String externalRuntimeHealth(String status) {
         if ("SUCCESS".equalsIgnoreCase(status)) return "HEALTHY";
         if ("FAILED".equalsIgnoreCase(status)) return "OFFLINE";
@@ -2154,11 +2430,15 @@ public class ClusterController {
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
     ) {
         String mode = cleanExternalValue(cluster.getKafkaMode());
-        if (mode != null) {
-            return "zookeeper".equalsIgnoreCase(mode) ? "ZooKeeper" : "KRaft";
+        if ("zookeeper".equalsIgnoreCase(mode) || "zk".equalsIgnoreCase(mode)) {
+            return "ZooKeeper";
         }
-        boolean hasController = nodes.stream().anyMatch(node -> Boolean.TRUE.equals(node.getIsController()));
-        return hasController ? "KRaft" : "Not reported";
+        if ("kraft".equalsIgnoreCase(mode)) {
+            return "KRaft";
+        }
+        // describeCluster().controller() exists in ZooKeeper mode too, so a
+        // controller-looking broker is not sufficient evidence of KRaft.
+        return "Not reported";
     }
 
     private String cleanExternalValue(String value) {
@@ -2242,6 +2522,7 @@ public class ClusterController {
         summary.put("hostname", host.getHostname());
         summary.put("ipAddress", firstIp(host.getIpAddresses()));
         summary.put("status", hostStatusService.effectiveStatus(host));
+        summary.put("agentStatus", hostStatusService.agentConnectivityStatus(host));
         summary.put("role", service.getRole());
         summary.put("nodeId", service.getNodeId());
         summary.put("lastHeartbeat", host.getLastHeartbeat());
@@ -2391,6 +2672,14 @@ public class ClusterController {
         return defaultValue;
     }
 
+    private int requiredPort(Object value, String name) {
+        int port = parseIntConfig(value, -1);
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException(name + " is required and must be between 1 and 65535");
+        }
+        return port;
+    }
+
     private String resolveAgentArtifactUrl(String artifactUrl) {
         if (artifactUrl == null || artifactUrl.isBlank()) {
             return artifactUrl;
@@ -2421,9 +2710,7 @@ public class ClusterController {
     }
 
     private String joinArtifactRepoBase(String pathAndQuery) {
-        String base = artifactRepoUrl == null || artifactRepoUrl.isBlank()
-                ? "http://localhost:8081"
-                : artifactRepoUrl.trim();
+        String base = artifactRepositoryProperties.getPublicUrl().toString();
         while (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
@@ -2505,6 +2792,9 @@ public class ClusterController {
             hostRepository.findById(service.getHostId()).ifPresent(host -> {
                 if (cluster.getId().equals(host.getClusterId())) {
                     host.setClusterId(null);
+                    if ("OCCUPIED".equalsIgnoreCase(host.getStatus())) {
+                        host.setStatus("ONLINE");
+                    }
                     hostRepository.save(host);
                 }
             });

@@ -133,6 +133,43 @@ public class HostController {
         return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
     }
 
+    @PostMapping("/{id}/schema-directory-candidates")
+    public ResponseEntity<?> schemaDirectoryCandidates(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> options) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
+        return createSchemaHostTask(id, "SCHEMA_DIRECTORY_CANDIDATES", options);
+    }
+
+    @PostMapping("/{id}/precheck-schema")
+    public ResponseEntity<?> precheckSchema(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> options) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
+        return createSchemaHostTask(id, "PRECHECK_SCHEMA", options);
+    }
+
+    private ResponseEntity<?> createSchemaHostTask(String id, String command, Map<String, Object> options) {
+        Host host = hostRepository.findById(id).orElse(null);
+        if (host == null) return ResponseEntity.notFound().build();
+        if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE."));
+        }
+        try {
+            Task task = schemaHostTask(id, command, options);
+            taskRepository.save(task);
+            return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+        }
+    }
+
     @PostMapping("/{id}/fix-prerequisites")
     public ResponseEntity<?> fixPrerequisites(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -210,6 +247,27 @@ public class HostController {
             copyOption(options, parameters, "required_ports");
             copyOption(options, parameters, "java_home");
             copyOption(options, parameters, "javaHome");
+        }
+        task.setParameters(objectMapper.writeValueAsString(parameters));
+        return task;
+    }
+
+    private Task schemaHostTask(String hostId, String command, Map<String, Object> options) throws Exception {
+        Task task = new Task();
+        task.setHostId(hostId);
+        task.setCommand(command);
+        task.setStatus("PENDING");
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("requested_by", io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
+        if (options != null) {
+            options.forEach((key, value) -> {
+                if (value != null && !String.valueOf(value).isBlank()
+                        && !"artifact_url".equals(key) && !"checksum".equals(key)) {
+                    parameters.put(key, String.valueOf(value));
+                }
+            });
+            task.setArtifactUrl(String.valueOf(options.getOrDefault("artifact_url", "")));
+            task.setChecksum(String.valueOf(options.getOrDefault("checksum", "")));
         }
         task.setParameters(objectMapper.writeValueAsString(parameters));
         return task;

@@ -1,18 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, Bot, Database, ExternalLink,
-  HardDrive, Info, Network, Plus, RefreshCw, Server, ShieldCheck, X, FileCheck, FileText, FileCode
+  Activity, AlertTriangle, ExternalLink, Info, Network, Plus, RefreshCw, Server, X, FileCheck, FileText, FileCode,
+  type LucideIcon
 } from 'lucide-react';
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
-  ResponsiveContainer, Tooltip, XAxis, YAxis
+  Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, Line, LineChart,
+  ResponsiveContainer, Tooltip, XAxis, YAxis, type LegendProps
 } from 'recharts';
 import { usePermissions } from '../hooks/usePermissions';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import './Dashboard.css';
-import { NewClusterModal } from '../components/NewClusterModal';
 
 interface DashboardSummary {
   totalHosts: number;
@@ -38,6 +37,7 @@ interface DashboardSummary {
 
 interface ChartRow {
   name: string;
+  hostId?: string;
   status?: string;
   value?: number;
   usedGb?: number;
@@ -135,6 +135,15 @@ const emptyDashboard: DashboardPayload = {
   recentTasks: [],
 };
 
+const summarizeError = (message: string, limit = 170) => {
+  const clean = message
+    .replace(/\s*Logs:\s*==>.*/is, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return clean.length <= limit ? clean : `${clean.slice(0, limit).trimEnd()}...`;
+};
+
 const STATUS_COLORS: Record<string, string> = {
   SUCCESS: '#2AC792',
   ONLINE: '#2AC792',
@@ -147,11 +156,16 @@ const STATUS_COLORS: Record<string, string> = {
   UNKNOWN: '#8b8982',
 };
 
-const renderTaskLegend = (props: any) => {
-  const { payload } = props;
+interface TaskLegendPayload {
+  color?: string;
+  value?: React.ReactNode;
+}
+
+const renderTaskLegend = (props: LegendProps & { payload?: readonly TaskLegendPayload[] }) => {
+  const { payload = [] } = props;
   return (
     <div className="task-legend">
-      {payload.map((entry: any, index: number) => (
+      {payload.map((entry, index) => (
         <span key={`item-${index}`} className="task-legend-item">
           <i style={{ background: entry.color }} />
           {entry.value}
@@ -161,7 +175,7 @@ const renderTaskLegend = (props: any) => {
   );
 };
 
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../contexts/useAuth';
 import { ClusterDeployment } from './ClusterDeployment';
 
 export function Dashboard() {
@@ -183,23 +197,28 @@ export function Dashboard() {
     return rawName.charAt(0).toUpperCase() + rawName.slice(1);
   }, [decodedToken]);
 
-  const fetchDashboard = async () => {
+  const fetchDashboard = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const res = await fetch('/api/v1/ui/dashboard');
       if (!res.ok) throw new Error(`Dashboard request failed (${res.status})`);
       setDashboard(await res.json());
-    } catch (e: any) {
-      setError(e.message || 'Failed to load dashboard');
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchDashboard();
-  }, []);
+    const initial = window.setTimeout(() => void fetchDashboard(), 0);
+    const interval = window.setInterval(() => void fetchDashboard(), 10000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [fetchDashboard]);
 
   const summary = dashboard.summary;
 
@@ -222,7 +241,7 @@ export function Dashboard() {
     {
       label: 'External Clusters',
       value: `${summary.externalClusters.toString().padStart(2, '0')}`,
-      detail: `${summary.internalClusters} Internal | ${summary.externalClusters} External`,
+      detail: `${summary.externalClusters} External`,
       icon: ExternalLink,
       tone: 'indigo',
     },
@@ -242,7 +261,7 @@ export function Dashboard() {
     },
   ], [summary]);
 
-  const serviceIcon = (type: string) => {
+  const serviceIcon = () => {
     return FileCheck;
   };
 
@@ -251,7 +270,7 @@ export function Dashboard() {
       <header className="db-hero">
         <div>
           <div>
-            <h1>👋 Welcome {username}!</h1>
+            <h1><span aria-hidden="true">{'\u{1F44B}'}</span> Welcome {username}!</h1>
             <p className="db-subtitle-wrap">
               Dashboard overview
               <span className="db-info-wrap">
@@ -289,7 +308,7 @@ export function Dashboard() {
         <div className="db-kpi-grid">
           {kpis.map(kpi => (
             <article key={kpi.label} className={`db-kpi-card ${kpi.tone}`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                 <div className="db-kpi-icon"><kpi.icon size={18} /></div>
                 <span>{kpi.label}</span>
               </div>
@@ -334,7 +353,9 @@ export function Dashboard() {
                 <span className="db-cluster-dot" />
                 <div>
                   <strong>{cluster.name || 'Unnamed cluster'}</strong>
-                  <small>{cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'} - {cluster.hostCount || 0} node{cluster.hostCount === 1 ? '' : 's'}</small>
+                  <small>
+                    {cluster.source || 'Cluster'} - Kafka {cluster.kafkaVersion || '-'}
+                  </small>
                   <em>{cluster.reason}</em>
                 </div>
                 <b>{statusLabel(cluster.status)}</b>
@@ -349,18 +370,29 @@ export function Dashboard() {
       <section className="db-main-grid">
         <article className="db-panel large">
           <PanelTitle title="Host Disk Usage" detail="From latest host heartbeat" />
-          {summary.activeHosts === 0 ? (
-            <EmptyPanel text="No hosts connected yet. Connect a host agent to view disk metrics." />
-          ) : dashboard.hostDiskUsage.length ? (
-            <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
-                <CartesianGrid stroke="#eeeae3" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
-                <YAxis dataKey="name" type="category" width={132} stroke="#5f5e5a" fontSize={11} tickLine={false} />
-                <Tooltip content={<DiskTooltip />} />
-                <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} fill="#16ABC2" barSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
+          {dashboard.hostDiskUsage.length ? (
+            <>
+              <div className="db-host-disk-legend" aria-label="Host status color legend">
+                <span><i className="live" />Live</span>
+                <span><i className="offline" />Offline</span>
+              </div>
+              <ResponsiveContainer width="100%" height={244}>
+                <BarChart data={dashboard.hostDiskUsage} layout="vertical" margin={{ top: 8, right: 22, bottom: 8, left: 18 }}>
+                  <CartesianGrid stroke="#eeeae3" horizontal={false} />
+                  <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${v}%`} stroke="#8b8982" fontSize={11} />
+                  <YAxis dataKey="name" type="category" width={132} stroke="var(--text-secondary)" fontSize={11} tickLine={false} />
+                  <Tooltip content={<DiskTooltip />} />
+                  <Bar dataKey="usedPct" radius={[0, 6, 6, 0]} barSize={16}>
+                    {dashboard.hostDiskUsage.map(host => (
+                      <Cell
+                        key={host.hostId || host.name}
+                        fill={host.status?.toUpperCase() === 'OFFLINE' ? '#D92D20' : 'var(--color-info)'}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </>
           ) : (
             <EmptyPanel text="No disk data yet. Wait for host heartbeat metrics." />
           )}
@@ -382,10 +414,9 @@ export function Dashboard() {
           <PanelTitle
             title="Task Activity"
             detail={
-              <select className="db-panel-select">
-                <option>Last 7 days</option>
-                <option>Last 30 days</option>
-              </select>
+              <span className="db-panel-select">
+                Last 7 days
+              </span>
             }
           />
           <ResponsiveContainer width="100%" height={235}>
@@ -395,7 +426,7 @@ export function Dashboard() {
               <YAxis allowDecimals={false} stroke="#8b8982" fontSize={11} tickLine={false} />
               <Tooltip />
               <Legend content={renderTaskLegend} verticalAlign="bottom" align="left" wrapperStyle={{ bottom: -5 }} />
-              <Line type="monotone" dataKey="failed" stroke="#DF678B" strokeWidth={2} dot={false} name="Failed" />
+              <Line type="monotone" dataKey="failed" stroke="var(--accent-primary)" strokeWidth={2} dot={false} name="Failed" />
               <Line type="monotone" dataKey="running" stroke="#FFCF57" strokeWidth={2} dot={false} name="Running" />
               <Line type="monotone" dataKey="success" stroke="#098C60" strokeWidth={2} dot={false} name="Success" />
             </LineChart>
@@ -460,7 +491,16 @@ export function Dashboard() {
                   <div>
                     <strong>{prettyCommand(task.command)}</strong>
                     <small>{task.clusterName || task.hostId} - {formatDateTime(task.createdAt)}</small>
-                    {task.errorMsg && <em>{task.errorMsg}</em>}
+                    {task.errorMsg && (
+                      <details className="db-task-error">
+                        <summary>
+                          <AlertTriangle size={14} aria-hidden="true" />
+                          <span>{summarizeError(task.errorMsg)}</span>
+                          <b>Details</b>
+                        </summary>
+                        <pre>{task.errorMsg}</pre>
+                      </details>
+                    )}
                   </div>
                 </div>
               ))
@@ -585,7 +625,7 @@ function StatusDonut({ data }: { data: ChartRow[] }) {
   );
 }
 
-function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => any }) {
+function ServiceList({ rows, iconFor }: { rows: ServiceRow[]; iconFor: (type: string) => LucideIcon }) {
   if (!rows.length) return <EmptyPanel text="No services found for this status." compact />;
   return (
     <div className="db-service-list">
@@ -615,12 +655,15 @@ function statusLabel(status: string) {
   return status.toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function DiskTooltip({ active, payload }: any) {
+interface DiskTooltipRow { name: string; status?: string; usedGb: number; totalGb: number; freeGb: number }
+
+function DiskTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: DiskTooltipRow }> }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   return (
     <div className="db-tooltip">
       <strong>{row.name}</strong>
+      <span>Status: {row.status?.toUpperCase() === 'OFFLINE' ? 'Offline' : 'Live'}</span>
       <span>{row.usedGb} GB used of {row.totalGb} GB</span>
       <span>{row.freeGb} GB free</span>
     </div>

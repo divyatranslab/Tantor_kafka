@@ -15,7 +15,7 @@ The server uses Flyway migrations to create and update the PostgreSQL schema.
 Install these before running the project:
 
 - Java 21
-- PostgreSQL 13 or newer
+- PostgreSQL 16.14
 - Node.js 20 or newer
 - npm
 - PowerShell
@@ -63,27 +63,68 @@ Copy-Item .env.example .env
 
 Then edit `.env` for your machine.
 
-Minimum local development values:
+Configuration ownership, supported profiles, production requirements, and
+safe startup diagnostics are documented in
+[Runtime configuration](docs/configuration.md).
+
+Minimum local development values are shown below. Generate a random,
+development-only password rather than copying a shared or production secret.
+When Compose is used, PostgreSQL is reachable from the host only through
+`127.0.0.1:5432`.
 
 ```properties
 TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
-TANTOR_DB_USER=postgres
-TANTOR_DB_PASSWORD=postgres
-TANTOR_REPO_URL=http://localhost:8081
+TANTOR_DB_USER=tantor_dev
+TANTOR_DB_PASSWORD=<generated-local-only-password>
+TANTOR_REPO_INTERNAL_URL=http://localhost:8081
+TANTOR_REPO_PUBLIC_URL=https://localhost:8443
+TANTOR_PUBLIC_ORIGIN=https://localhost:8443
 TANTOR_REPO_PATH=./.runtime/repository
 TANTOR_MONITORING_MODE=direct
 TANTOR_PROMETHEUS_URL=http://127.0.0.1:9090
 TANTOR_MONITORING_EXPORTER_HOST=127.0.0.1
 ```
 
-For a VM/server deployment, set `TANTOR_REPO_URL` and `TANTOR_MONITORING_EXPORTER_HOST` to the Tantor server IP, for example:
+For SIT, UAT, and production, supply the internal repository service URL,
+public HTTPS origin, monitoring endpoint, and agent endpoints through the
+deployment environment. Do not copy local addresses into a production profile.
 
-```properties
-TANTOR_REPO_URL=http://192.168.3.191:8081
-TANTOR_MONITORING_EXPORTER_HOST=192.168.3.191
+Do not commit real passwords or production secrets in `.env`. Containerized
+services connect privately through `database:5432`; production does not publish
+the database port on the host.
+
+See [Repository credential and history security](docs/repository-security.md)
+for rotation, secret scanning, prohibited artifacts, and coordinated history
+cleanup requirements.
+
+### Podman composition
+
+Start the repository composition after setting the required values in `.env`:
+
+```bash
+podman-compose --env-file .env --file podman-compose.yml up --detach --build
 ```
 
-Do not commit real passwords or production secrets in `.env`.
+PostgreSQL must pass `pg_isready` before `tantor-server` runs the Flyway
+migrations. Production `start.sh` enforces this sequence explicitly with
+`up --no-deps` and health polling; correctness does not depend on the Compose
+provider honoring `depends_on`. The Artifact Repository uses the explicit
+`jdbc:postgresql://database:5432/tantor` URL and becomes ready only when its
+database is connected, `public.kf_artifact` exists, and server-owned Flyway
+migration V67 is recorded as successful. Missing database settings fail
+startup; there is no localhost database fallback.
+
+To validate the same sequence against a fresh, isolated project and volumes:
+
+```bash
+bash scripts/test-h01-deployment.sh
+```
+
+The validator deliberately starts the Artifact Repository once with PostgreSQL
+unavailable and once with an empty database. It verifies bounded failure and a
+503 readiness response until `tantor-server` migrates the schema, then exercises
+the production file-backed secret/config-tree path and restart persistence. It
+removes its uniquely named test containers and volumes when complete.
 
 ## 4. Build Backend And Agents
 
@@ -146,14 +187,19 @@ Open the URL printed by Vite, usually:
 http://localhost:5173
 ```
 
-Authentication is disabled by default. Enable Keycloak only when you have a valid Keycloak setup:
+Authentication is disabled by default. For local Vite development only, enable
+Keycloak with development environment values:
 
 ```properties
 VITE_AUTH_ENABLED=true
-VITE_KEYCLOAK_URL=https://your-keycloak-host
+VITE_KEYCLOAK_URL=https://identity.development.internal
 VITE_KEYCLOAK_REALM=Gatekeeper
 VITE_KEYCLOAK_CLIENT_ID=apb-kafka
 ```
+
+Production does not consume compiled `VITE_*` identity settings. Release
+packaging generates `ui-runtime-config.js` and validates its public origin,
+OIDC values, API routes, Nginx routes, CORS, and CSP together.
 
 ## 7. First Data Setup In UI
 
@@ -190,6 +236,10 @@ Current monitoring flow:
 5. Prometheus scrapes those targets.
 6. UI calls Tantor monitoring APIs.
 7. Tantor server queries Prometheus and returns metrics to the UI.
+
+The service-discovery endpoint accepts only loopback clients. Keep Prometheus on
+the Tantor server host; remote and proxied requests to `/internal/prometheus/**`
+are denied even when they carry a user JWT.
 
 Required monitoring components:
 

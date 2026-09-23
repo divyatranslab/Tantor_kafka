@@ -13,12 +13,13 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.HostRepository;
 import io.translab.tantor.server.security.EncryptionService;
+import io.translab.tantor.server.config.MonitoringHttpClientConfiguration.MonitoringRestTemplate;
+import io.translab.tantor.server.config.MonitoringProperties;
 import jakarta.annotation.PostConstruct;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -27,7 +28,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
@@ -35,22 +35,17 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
-import java.security.cert.X509Certificate;
 
 @Service
 @RequiredArgsConstructor
@@ -66,76 +61,47 @@ public class PrometheusMonitoringService {
     private final HostRepository hostRepository;
     private final EncryptionService encryptionService;
     private final ObjectMapper objectMapper;
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final MonitoringRestTemplate restTemplate;
+    private final MonitoringProperties monitoringProperties;
 
-    @Value("${tantor.monitoring.mode:direct}")
     private String monitoringMode;
 
-    @Value("${tantor.monitoring.prometheus-url:}")
     private String prometheusUrl;
 
-    @Value("${tantor.monitoring.grafana-url:}")
     private String grafanaUrl;
 
-    @Value("${tantor.monitoring.grafana-datasource-uid:}")
     private String grafanaDatasourceUid;
 
-    @Value("${tantor.monitoring.grafana-username:}")
     private String grafanaUsername;
 
-    @Value("${tantor.monitoring.grafana-password:}")
     private String grafanaPassword;
 
-    @Value("${tantor.monitoring.grafana-skip-tls-validation:false}")
-    private boolean grafanaSkipTlsValidation;
-
-    @Value("${tantor.monitoring.exporter-host:}")
     private String defaultExporterHost;
 
-    @Value("${tantor.monitoring.kafka-exporter-port-base:9308}")
     private int kafkaExporterPortBase;
 
-    @Value("${tantor.monitoring.jmx-exporter-port:7071}")
     private int defaultJmxExporterPort;
 
+    private int defaultControllerJmxExporterPort;
+
     @PostConstruct
-    void configureGrafanaTls() {
-        if (!grafanaSkipTlsValidation) {
-            return;
-        }
-        try {
-            TrustManager[] trustAllManagers = new TrustManager[] {
-                    new X509TrustManager() {
-                        @Override
-                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
-                        }
-
-                        @Override
-                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
-                        }
-
-                        @Override
-                        public X509Certificate[] getAcceptedIssuers() {
-                            return new X509Certificate[0];
-                        }
-                    }
-            };
-            SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(null, trustAllManagers, new SecureRandom());
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslContext.getSocketFactory());
-            HostnameVerifier trustAllHosts = (hostname, session) -> true;
-            HttpsURLConnection.setDefaultHostnameVerifier(trustAllHosts);
-            log.warn("Grafana TLS validation is disabled for monitoring proxy requests. Use only for test/self-signed environments.");
-        } catch (Exception e) {
-            log.warn("Could not disable Grafana TLS validation", e);
-        }
+    void bindTypedConfiguration() {
+        monitoringMode = monitoringProperties.getMode();
+        prometheusUrl = monitoringProperties.getPrometheusUrl() == null ? "" : monitoringProperties.getPrometheusUrl().toString();
+        grafanaUrl = monitoringProperties.getGrafanaUrl() == null ? "" : monitoringProperties.getGrafanaUrl().toString();
+        grafanaDatasourceUid = monitoringProperties.getGrafanaDatasourceUid();
+        grafanaUsername = monitoringProperties.getGrafanaUsername();
+        grafanaPassword = monitoringProperties.getGrafanaPassword();
+        defaultExporterHost = monitoringProperties.getExporterHost();
+        kafkaExporterPortBase = monitoringProperties.getKafkaExporterPortBase();
+        defaultJmxExporterPort = monitoringProperties.getJmxExporterPort();
+        defaultControllerJmxExporterPort = monitoringProperties.getControllerJmxExporterPort();
     }
-
-
 
     @Transactional(readOnly = true)
     public List<SdTargetGroup> prometheusTargets() {
         List<SdTargetGroup> targets = new ArrayList<>();
+        Set<UUID> mirroredExternalClusterIds = new HashSet<>();
         for (Cluster cluster : clusterRepository.findByStatusNot("DELETED")) {
             if (!Boolean.TRUE.equals(cluster.getMonitoringEnabled()) && !isExternal(cluster)) {
                 continue;
@@ -143,11 +109,15 @@ public class PrometheusMonitoringService {
 
             if (isExternal(cluster)) {
                 addExternalJmxTargets(targets, cluster);
+                mirroredExternalClusterIds.add(cluster.getId());
             } else {
                 addInternalTargets(targets, cluster);
             }
+        }
         for (ExternalCluster extCluster : externalClusterRepository.findByStatusNot("DELETED")) {
-            addExternalJmxTargets(targets, extCluster);
+            if (!mirroredExternalClusterIds.contains(extCluster.getId())) {
+                addExternalJmxTargets(targets, extCluster);
+            }
         }
         return targets;
     }
@@ -205,6 +175,19 @@ public class PrometheusMonitoringService {
         String selectedNodeId = selectedNodeId(nodes, nodeId);
         String clusterSelector = labelSelector(cluster.getId());
         String metricSelector = labelSelector(cluster.getId(), selectedNodeId);
+        String brokerMetricSelector = metricSelector + ",role=~\"broker.*\"";
+        String selectedRole = selectedNodeId == null ? null : nodes.stream()
+                .filter(node -> selectedNodeId.equals(node.getNodeId()))
+                .map(MonitoringNodeSummary::getRole)
+                .findFirst()
+                .orElse(null);
+        boolean brokerMetricsRequested = selectedNodeId == null || roleContains(selectedRole, "broker");
+        boolean controllerMetricsRequested = selectedNodeId != null
+                && roleContains(selectedRole, "controller")
+                && !brokerMetricsRequested;
+        String jmxMetricSelector = controllerMetricsRequested
+                ? metricSelector + ",role=~\"controller.*\""
+                : brokerMetricSelector;
 
         MonitoringOverview overview = new MonitoringOverview();
         overview.setClusterId(cluster.getId());
@@ -221,50 +204,113 @@ public class PrometheusMonitoringService {
             overview.getWarnings().add(warning);
         }
 
-        overview.setKafkaExporterUp(firstNumber("max(max_over_time(up{job=\"kafka_exporter\"," + clusterSelector + "}[90s]))"));
-        overview.setJmxUp(firstNumber("max(max_over_time(up{job=\"kafka_jmx\"," + metricSelector + "}[90s]))"));
+        // A node-specific monitoring request must report the selected broker's
+        // exporter health, not the aggregate health of every broker in the
+        // cluster. Otherwise one unreachable exporter makes every healthy node
+        // appear down in the UI.
+        if (brokerMetricsRequested) {
+            String exporterHealthSelector = selectedNodeId == null ? clusterSelector : brokerMetricSelector;
+            overview.setKafkaExporterUpTargets(targetCount("kafka_exporter", exporterHealthSelector, true));
+            overview.setKafkaExporterTotalTargets(targetCount("kafka_exporter", exporterHealthSelector, false));
+            overview.setKafkaExporterUp(healthValue(
+                    overview.getKafkaExporterUpTargets(), overview.getKafkaExporterTotalTargets()));
+        }
+        if (brokerMetricsRequested || controllerMetricsRequested) {
+            overview.setJmxUpTargets(targetCount("kafka_jmx", jmxMetricSelector, true));
+            overview.setJmxTotalTargets(targetCount("kafka_jmx", jmxMetricSelector, false));
+            overview.setJmxUp(healthValue(overview.getJmxUpTargets(), overview.getJmxTotalTargets()));
+        }
         overview.setBrokerCount(firstNumber("max(kafka_brokers{" + clusterSelector + "})"));
         overview.setTopicCount(firstNumber("count(count by (topic) (kafka_topic_partitions{" + clusterSelector + "}))"));
         overview.setPartitionCount(firstNumber("sum(max(kafka_topic_partitions{" + clusterSelector + "}) by (topic))"));
-        overview.setUnderReplicatedPartitions(firstOrZero("sum(kafka_topic_partition_under_replicated_partition{" + clusterSelector + "})"));
-        overview.setConsumerLag(firstOrZero("sum(max(kafka_consumergroup_lag{" + clusterSelector + "}) by (consumergroup, topic))"));
-        overview.setMessagesInPerSecond(firstPresentNumber(
-                append(brokerTopicRate(metricSelector, "MessagesInPerSec"),
-                        "sum(rate(kafka_topic_partition_current_offset{" + metricSelector + "}[5m]))")
-        ));
-        overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesInPerSec")));
-        overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(metricSelector, "BytesOutPerSec")));
-        overview.setJvmHeapUsedPercent(firstPresentNumber(
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
-                heapPercent(metricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
-        ));
-        overview.setBrokerCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_processcpuload", metricSelector),
-                "sum(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + metricSelector + "}[5m])) * 100"
-        ));
-        overview.setSystemCpuPercent(firstPresentNumber(
-                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", metricSelector),
-                cpuPercent("jvm_OperatingSystem_CpuLoad", metricSelector),
-                cpuPercent("jvm_operatingsystem_systemcpuload", metricSelector),
-                cpuPercent("jvm_operatingsystem_cpuload", metricSelector)
-        ));
+        overview.setUnderReplicatedPartitions(firstNumber("sum(kafka_topic_partition_under_replicated_partition{" + clusterSelector + "})"));
+        overview.setConsumerLag(firstNumber("sum(max(kafka_consumergroup_lag{" + clusterSelector + "}) by (consumergroup, topic))"));
+        if (brokerMetricsRequested) {
+            overview.setMessagesInPerSecond(firstPresentNumber(
+                    append(brokerTopicRate(brokerMetricSelector, "MessagesInPerSec"),
+                            "sum(rate(kafka_topic_partition_current_offset{" + metricSelector + "}[5m]))")
+            ));
+            overview.setBytesInPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesInPerSec")));
+            overview.setBytesOutPerSecond(firstPresentNumber(brokerTopicRate(brokerMetricSelector, "BytesOutPerSec")));
+        }
+        if (brokerMetricsRequested || controllerMetricsRequested) {
+            overview.setJvmHeapUsedPercent(firstPresentNumber(
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapPercent(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+            ));
+            overview.setJvmHeapAvailableBytes(firstPresentNumber(
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_max", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_bytes_used", "jvm_memory_bytes_committed", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_max_bytes", "Heap"),
+                    heapAvailableBytes(jmxMetricSelector, "jvm_memory_used_bytes", "jvm_memory_committed_bytes", "Heap")
+            ));
+            overview.setJvmHeapTotalBytes(firstPresentNumber(
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_max", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_committed", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_max_bytes", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_committed_bytes", "heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_max", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_bytes_committed", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_max_bytes", "Heap"),
+                    heapBytes(jmxMetricSelector, "jvm_memory_committed_bytes", "Heap")
+            ));
+            Double jvmProcessCpuPercent = firstPresentNumber(
+                    cpuPercent("jvm_OperatingSystem_ProcessCpuLoad", jmxMetricSelector),
+                    cpuPercent("jvm_operatingsystem_processcpuload", jmxMetricSelector),
+                    "avg(rate(process_cpu_seconds_total{job=\"kafka_jmx\"," + jmxMetricSelector + "}[5m])) * 100"
+            );
+            overview.setJvmProcessCpuPercent(jvmProcessCpuPercent);
+            if (brokerMetricsRequested) {
+                overview.setBrokerCpuPercent(jvmProcessCpuPercent);
+            }
+        }
+        Double systemCpuPercent = firstPresentNumber(
+                cpuPercent("jvm_OperatingSystem_CpuLoad", jmxMetricSelector),
+                cpuPercent("jvm_operatingsystem_cpuload", jmxMetricSelector),
+                cpuPercent("jvm_OperatingSystem_SystemCpuLoad", jmxMetricSelector),
+                cpuPercent("jvm_operatingsystem_systemcpuload", jmxMetricSelector)
+        );
+        if (systemCpuPercent == null && isExternal(cluster)) {
+            systemCpuPercent = computeExternalSystemCpuPercent(cluster, selectedNodeId);
+        }
+        overview.setSystemCpuPercent(systemCpuPercent);
 
         overview.setHostMemoryUsedPercent(computeHostMemoryPercent(cluster, selectedNodeId));
+        overview.setHostMemoryAvailableMb(computeHostMemoryAvailableMb(cluster, selectedNodeId));
+        overview.setHostMemoryTotalMb(computeHostMemoryTotalMb(cluster, selectedNodeId));
 
-        if (overview.getKafkaExporterUp() == null) {
+        if (brokerMetricsRequested
+                && (overview.getKafkaExporterTotalTargets() == null || overview.getKafkaExporterTotalTargets() <= 0)) {
             overview.getWarnings().add("Prometheus has no kafka_exporter samples for this cluster yet.");
+        } else if (brokerMetricsRequested && (overview.getKafkaExporterUpTargets() == null
+                || overview.getKafkaExporterUpTargets() < overview.getKafkaExporterTotalTargets())) {
+            overview.getWarnings().add("Kafka exporter is degraded: "
+                    + targetCountValue(overview.getKafkaExporterUpTargets()) + "/"
+                    + overview.getKafkaExporterTotalTargets().intValue() + " targets are up.");
         }
         if (!Boolean.TRUE.equals(overview.getJmxAvailable())) {
-            overview.getWarnings().add("JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
-        } else if (overview.getJmxUp() == null || overview.getJmxUp() <= 0) {
-            overview.getWarnings().add("JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
+            overview.getWarnings().add(controllerMetricsRequested
+                    ? "Controller JVM/JMX metrics are unavailable because a separate controller JMX endpoint is not configured."
+                    : "Broker JMX exporter target is not configured. Showing kafka_exporter-level monitoring only.");
+        } else if (overview.getJmxTotalTargets() == null || overview.getJmxTotalTargets() <= 0) {
+            overview.getWarnings().add(controllerMetricsRequested
+                    ? "Controller JVM/JMX metrics are unavailable because Prometheus has no recent samples for the selected Controller."
+                    : "Broker JMX exporter target is configured but Prometheus has no recent JMX samples for this cluster.");
+        } else if (overview.getJmxUpTargets() == null
+                || overview.getJmxUpTargets() < overview.getJmxTotalTargets()) {
+            overview.getWarnings().add("JMX exporter is degraded: "
+                    + targetCountValue(overview.getJmxUpTargets()) + "/"
+                    + overview.getJmxTotalTargets().intValue() + " targets are up.");
         }
         return overview;
     }
@@ -301,11 +347,17 @@ public class PrometheusMonitoringService {
                 }
                 
                 // Add node-level kafka_exporter target
-                targets.add(group(hostIp + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+                addTargetIfAbsent(targets, hostIp + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", role, nodeId));
+            } else if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isControllerRole(role)) {
+                int port = validExporterPort(service.getJmxExporterPort())
+                        ? service.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                addJmxTarget(targets, cluster, hostIp, port, "controller", nodeId);
             }
             if (Boolean.TRUE.equals(cluster.getNodeExporterEnabled())) {
                 int port = service.getNodeExporterPort() != null ? service.getNodeExporterPort() : nodeExporterPort(cluster);
-                targets.add(group(hostIp + ":" + port, labels(cluster, "node", role, nodeId)));
+                addTargetIfAbsent(targets, hostIp + ":" + port, labels(cluster, "node", role, nodeId));
             }
         }
     }
@@ -314,13 +366,7 @@ public class PrometheusMonitoringService {
         if (port <= 0) {
             return;
         }
-        String target = hostIp + ":" + port;
-        boolean exists = targets.stream()
-                .filter(group -> group.getLabels() != null && "kafka_jmx".equals(group.getLabels().get("job")))
-                .anyMatch(group -> group.getTargets() != null && group.getTargets().contains(target));
-        if (!exists) {
-            targets.add(group(target, labels(cluster, "kafka_jmx", role, nodeId)));
-        }
+        addTargetIfAbsent(targets, hostIp + ":" + port, labels(cluster, "kafka_jmx", role, nodeId));
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, Cluster cluster) {
@@ -328,15 +374,31 @@ public class PrometheusMonitoringService {
             return;
         }
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
-            if (node.getJmxExporterPort() == null || node.getHost() == null || node.getHost().isBlank()) {
+            if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
-            String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
-                    ? "controller"
-                    : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            targets.add(group(node.getHost() + ":" + node.getJmxExporterPort(), labels(cluster, "kafka_jmx", role, nodeId)));
-            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+            boolean broker = Boolean.TRUE.equals(node.getIsBroker());
+            boolean controller = Boolean.TRUE.equals(node.getIsController());
+            if (broker) {
+                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultJmxExporterPort;
+                if (validExporterPort(jmxPort)) {
+                    addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
+                            labels(cluster, "kafka_jmx", controller ? "broker_controller" : "broker", nodeId));
+                }
+                addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
+            } else if (controller) {
+                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                if (validExporterPort(jmxPort)) {
+                    addTargetIfAbsent(targets, node.getHost() + ":" + jmxPort,
+                            labels(cluster, "kafka_jmx", "controller", nodeId));
+                }
+            }
         }
     }
 
@@ -345,13 +407,37 @@ public class PrometheusMonitoringService {
             if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
             }
-            Integer port = node.getJmxExporterPort() != null ? node.getJmxExporterPort() : defaultJmxExporterPort;
-            String role = Boolean.TRUE.equals(node.getIsController()) && !Boolean.TRUE.equals(node.getIsBroker())
-                    ? "controller"
-                    : "broker";
             String nodeId = node.getNodeId() == null ? null : String.valueOf(node.getNodeId());
-            targets.add(group(node.getHost() + ":" + port, labels(cluster, "kafka_jmx", role, nodeId)));
-            targets.add(group(node.getHost() + ":" + kafkaExporterPortBase, labels(cluster, "kafka_exporter", role, nodeId)));
+            boolean broker = Boolean.TRUE.equals(node.getIsBroker());
+            boolean controller = Boolean.TRUE.equals(node.getIsController());
+            if (broker) {
+                int port = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultJmxExporterPort;
+                addTargetIfAbsent(targets, node.getHost() + ":" + port,
+                        labels(cluster, "kafka_jmx", controller ? "broker_controller" : "broker", nodeId));
+                addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
+                        labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
+            } else if (controller) {
+                int port = validExporterPort(node.getJmxExporterPort())
+                        ? node.getJmxExporterPort()
+                        : defaultControllerJmxExporterPort;
+                addTargetIfAbsent(targets, node.getHost() + ":" + port,
+                        labels(cluster, "kafka_jmx", "controller", nodeId));
+            }
+        }
+    }
+
+    private void addTargetIfAbsent(List<SdTargetGroup> targets, String target, Map<String, String> labels) {
+        String job = labels.get("job");
+        String clusterId = labels.get("cluster_id");
+        boolean exists = targets.stream()
+                .filter(group -> group.getLabels() != null)
+                .filter(group -> job.equals(group.getLabels().get("job")))
+                .filter(group -> clusterId.equals(group.getLabels().get("cluster_id")))
+                .anyMatch(group -> group.getTargets() != null && group.getTargets().contains(target));
+        if (!exists) {
+            targets.add(group(target, labels));
         }
     }
 
@@ -400,10 +486,18 @@ public class PrometheusMonitoringService {
         }
         if (isExternal(cluster)) {
             return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
-                    .anyMatch(node -> node.getHost() != null && !node.getHost().isBlank());
+                    .anyMatch(node -> (Boolean.TRUE.equals(node.getIsBroker())
+                                    || Boolean.TRUE.equals(node.getIsController()))
+                            && node.getHost() != null
+                            && !node.getHost().isBlank()
+                            && validExporterPort(node.getJmxExporterPort() != null
+                                    ? node.getJmxExporterPort()
+                                    : Boolean.TRUE.equals(node.getIsBroker())
+                                            ? defaultJmxExporterPort
+                                            : defaultControllerJmxExporterPort));
         }
         return cluster.getServices() != null && cluster.getServices().stream()
-                .filter(service -> isBrokerRole(service.getRole()))
+                .filter(service -> isBrokerRole(service.getRole()) || isControllerRole(service.getRole()))
                 .map(ClusterServiceAssignment::getHostId)
                 .map(hostRepository::findById)
                 .map(optional -> optional.map(this::hostIp).orElse(null))
@@ -411,36 +505,73 @@ public class PrometheusMonitoringService {
     }
 
     private boolean hasJmxTargets(ExternalCluster cluster) {
-        return !externalClusterNodeRepository.findByClusterId(cluster.getId()).isEmpty();
+        return externalClusterNodeRepository.findByClusterId(cluster.getId()).stream()
+                .anyMatch(node -> (Boolean.TRUE.equals(node.getIsBroker())
+                                || Boolean.TRUE.equals(node.getIsController()))
+                        && node.getHost() != null
+                        && !node.getHost().isBlank()
+                        && validExporterPort(node.getJmxExporterPort() != null
+                                ? node.getJmxExporterPort()
+                                : Boolean.TRUE.equals(node.getIsBroker())
+                                        ? defaultJmxExporterPort
+                                        : defaultControllerJmxExporterPort));
     }
 
     private List<MonitoringNodeSummary> monitoringNodes(Cluster cluster) {
         Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
-        if (cluster.getServices() == null) {
-            return new ArrayList<>();
-        }
-        for (ClusterServiceAssignment service : cluster.getServices()) {
-            String key = service.getNodeId() == null ? service.getHostId() : String.valueOf(service.getNodeId());
-            if (key == null || key.isBlank()) {
-                continue;
+        if (cluster.getServices() != null) {
+            for (ClusterServiceAssignment service : cluster.getServices()) {
+                String key = service.getNodeId() == null ? service.getHostId() : String.valueOf(service.getNodeId());
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                MonitoringNodeSummary node = nodes.computeIfAbsent(key, ignored -> {
+                    MonitoringNodeSummary created = new MonitoringNodeSummary();
+                    created.setNodeId(service.getNodeId() == null ? null : String.valueOf(service.getNodeId()));
+                    created.setHostId(service.getHostId());
+                    Host host = service.getHostId() == null ? null : hostRepository.findById(service.getHostId()).orElse(null);
+                    created.setHostname(host == null ? service.getHostId() : host.getHostname());
+                    created.setHostIp(hostIp(host));
+                    return created;
+                });
+                node.setRole(mergeRole(node.getRole(), roleLabel(service.getRole())));
             }
-            MonitoringNodeSummary node = nodes.computeIfAbsent(key, ignored -> {
-                MonitoringNodeSummary created = new MonitoringNodeSummary();
-                created.setNodeId(service.getNodeId() == null ? null : String.valueOf(service.getNodeId()));
-                created.setHostId(service.getHostId());
-                Host host = service.getHostId() == null ? null : hostRepository.findById(service.getHostId()).orElse(null);
-                created.setHostname(host == null ? service.getHostId() : host.getHostname());
-                created.setHostIp(hostIp(host));
-                return created;
-            });
-            node.setRole(mergeRole(node.getRole(), roleLabel(service.getRole())));
+        }
+
+        // External clusters are mirrored into kf_clusters, but their discovered
+        // topology is stored in kf_external_cluster_nodes rather than service
+        // assignments. Enrich the mirror so monitoring selectors can list and
+        // target every discovered broker/controller.
+        if (isExternal(cluster)) {
+            for (MonitoringNodeSummary externalNode : externalMonitoringNodes(cluster.getId())) {
+                String key = externalNode.getNodeId() == null ? externalNode.getHostIp() : externalNode.getNodeId();
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                MonitoringNodeSummary node = nodes.get(key);
+                if (node == null) {
+                    nodes.put(key, externalNode);
+                    continue;
+                }
+                if (node.getHostname() == null || node.getHostname().isBlank()) {
+                    node.setHostname(externalNode.getHostname());
+                }
+                if (node.getHostIp() == null || node.getHostIp().isBlank()) {
+                    node.setHostIp(externalNode.getHostIp());
+                }
+                node.setRole(mergeRole(node.getRole(), externalNode.getRole()));
+            }
         }
         return new ArrayList<>(nodes.values());
     }
 
     private List<MonitoringNodeSummary> monitoringNodes(ExternalCluster cluster) {
+        return externalMonitoringNodes(cluster.getId());
+    }
+
+    private List<MonitoringNodeSummary> externalMonitoringNodes(UUID clusterId) {
         Map<String, MonitoringNodeSummary> nodes = new LinkedHashMap<>();
-        for (ExternalClusterNode externalNode : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+        for (ExternalClusterNode externalNode : externalClusterNodeRepository.findByClusterId(clusterId)) {
             String key = externalNode.getNodeId() == null ? externalNode.getHost() : String.valueOf(externalNode.getNodeId());
             if (key == null || key.isBlank()) {
                 continue;
@@ -476,6 +607,14 @@ public class PrometheusMonitoringService {
                 || "broker_controller".equals(normalized)
                 || "broker+controller".equals(normalized)
                 || "broker_zookeeper".equals(normalized);
+    }
+
+    private boolean isControllerRole(String role) {
+        return roleContains(role, "controller");
+    }
+
+    private boolean roleContains(String role, String expectedRole) {
+        return role != null && role.trim().toLowerCase(Locale.ROOT).contains(expectedRole);
     }
 
     private String roleLabel(String role) {
@@ -593,7 +732,51 @@ public class PrometheusMonitoringService {
         return null;
     }
 
-    private Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
+    Double computeHostMemoryPercent(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        if (memory == null || memory.totalMb() <= 0) {
+            return null;
+        }
+        return Math.min(100.0, Math.round((memory.usedMb() * 1000.0) / memory.totalMb()) / 10.0);
+    }
+
+    Long computeHostMemoryAvailableMb(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        return memory == null ? null : Math.max(0L, memory.totalMb() - memory.usedMb());
+    }
+
+    Long computeHostMemoryTotalMb(Cluster cluster, String nodeId) {
+        MemoryUsage memory = hostMemory(cluster, nodeId);
+        return memory == null ? null : memory.totalMb();
+    }
+
+    Double computeExternalSystemCpuPercent(Cluster cluster, String nodeId) {
+        if (!isExternal(cluster)) {
+            return null;
+        }
+        Map<String, Double> hostCpu = new LinkedHashMap<>();
+        for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            if (nodeId != null && (node.getNodeId() == null || !nodeId.equals(String.valueOf(node.getNodeId())))) {
+                continue;
+            }
+            if (node.getCpuUsagePct() == null) {
+                continue;
+            }
+            String hostKey = node.getHost() == null || node.getHost().isBlank()
+                    ? "node:" + node.getNodeId()
+                    : node.getHost().trim().toLowerCase(Locale.ROOT);
+            hostCpu.put(hostKey, Math.max(0.0, Math.min(100.0, node.getCpuUsagePct())));
+        }
+        if (hostCpu.isEmpty()) {
+            return null;
+        }
+        return hostCpu.values().stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    }
+
+    private MemoryUsage hostMemory(Cluster cluster, String nodeId) {
+        if (isExternal(cluster)) {
+            return externalHostMemory(cluster, nodeId);
+        }
         if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
             return null;
         }
@@ -620,8 +803,34 @@ public class PrometheusMonitoringService {
         if (counted == 0 || totalMb <= 0) {
             return null;
         }
-        return Math.min(100.0, Math.round((usedMb * 1000.0) / totalMb) / 10.0);
+        return new MemoryUsage(usedMb, totalMb);
     }
+
+    private MemoryUsage externalHostMemory(Cluster cluster, String nodeId) {
+        Map<String, MemoryUsage> hostMemory = new LinkedHashMap<>();
+        for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
+            if (nodeId != null && (node.getNodeId() == null || !nodeId.equals(String.valueOf(node.getNodeId())))) {
+                continue;
+            }
+            if (node.getMemoryTotalMb() == null || node.getMemoryTotalMb() <= 0) {
+                continue;
+            }
+            String hostKey = node.getHost() == null || node.getHost().isBlank()
+                    ? "node:" + node.getNodeId()
+                    : node.getHost().trim().toLowerCase(Locale.ROOT);
+            hostMemory.put(hostKey, new MemoryUsage(
+                    node.getMemoryUsedMb() == null ? 0 : node.getMemoryUsedMb(),
+                    node.getMemoryTotalMb()));
+        }
+        if (hostMemory.isEmpty()) {
+            return null;
+        }
+        long totalMb = hostMemory.values().stream().mapToLong(MemoryUsage::totalMb).sum();
+        long usedMb = hostMemory.values().stream().mapToLong(MemoryUsage::usedMb).sum();
+        return new MemoryUsage(usedMb, totalMb);
+    }
+
+    private record MemoryUsage(long usedMb, long totalMb) {}
 
     private String hostIp(Host host) {
         if (host == null) {
@@ -670,11 +879,6 @@ public class PrometheusMonitoringService {
             log.debug("Prometheus query failed: {}", promql, e);
             return null;
         }
-    }
-
-    private Double firstOrZero(String promql) {
-        Double value = firstNumber(promql);
-        return value == null ? 0.0 : value;
     }
 
     private Double firstPresentNumber(String... promqls) {
@@ -730,8 +934,34 @@ public class PrometheusMonitoringService {
         return "(sum(" + usedMetric + "{" + selector + ",area=\"" + area + "\"}) / sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"})) * 100";
     }
 
+    private String heapAvailableBytes(String selector, String usedMetric, String limitMetric, String area) {
+        return "clamp_min(sum(" + limitMetric + "{" + selector + ",area=\"" + area + "\"}) - sum("
+                + usedMetric + "{" + selector + ",area=\"" + area + "\"}), 0)";
+    }
+
+    private String heapBytes(String selector, String metric, String area) {
+        return "sum(" + metric + "{" + selector + ",area=\"" + area + "\"})";
+    }
+
     private String cpuPercent(String metric, String selector) {
-        return "clamp_min(clamp_max(max(" + metric + "{" + selector + "}) * 100, 100), 0)";
+        return "clamp_min(clamp_max(avg(" + metric + "{" + selector + "}) * 100, 100), 0)";
+    }
+
+    private Double targetCount(String job, String selector, boolean upOnly) {
+        String sample = "max_over_time(up{job=\"" + job + "\"," + selector + "}[90s])";
+        String condition = upOnly ? " == 1" : "";
+        return firstNumber("count(count by (instance) (" + sample + condition + "))");
+    }
+
+    private Double healthValue(Double upTargets, Double totalTargets) {
+        if (totalTargets == null || totalTargets <= 0 || upTargets == null) {
+            return null;
+        }
+        return upTargets >= totalTargets ? 1.0 : 0.0;
+    }
+
+    private int targetCountValue(Double value) {
+        return value == null ? 0 : value.intValue();
     }
 
     private JsonNode prometheusGet(String path, Map<String, String> params) {
@@ -837,8 +1067,11 @@ public class PrometheusMonitoringService {
             args.add("--tls.enabled");
             String truststoreType = normalizeCertificateType(external.getTruststoreType());
             boolean hasPemCaFile = hasText(external.getTruststorePath()) && isPemCertificateType(truststoreType);
-            if (Boolean.TRUE.equals(external.getDisableHostnameVerification()) || !hasPemCaFile) {
-                args.add("--tls.insecure-skip-tls-verify");
+            if (Boolean.TRUE.equals(external.getDisableHostnameVerification())) {
+                throw new IllegalStateException("Kafka exporter hostname verification cannot be disabled");
+            }
+            if (!hasPemCaFile) {
+                throw new IllegalStateException("Kafka exporter TLS requires a PEM CA file");
             }
             if (hasPemCaFile) {
                 args.add("--tls.ca-file=" + systemdArg(external.getTruststorePath().trim()));
@@ -952,6 +1185,10 @@ public class PrometheusMonitoringService {
         private Boolean jmxAvailable;
         private Double kafkaExporterUp;
         private Double jmxUp;
+        private Double kafkaExporterUpTargets;
+        private Double kafkaExporterTotalTargets;
+        private Double jmxUpTargets;
+        private Double jmxTotalTargets;
         private Double brokerCount;
         private Double topicCount;
         private Double partitionCount;
@@ -961,9 +1198,14 @@ public class PrometheusMonitoringService {
         private Double bytesInPerSecond;
         private Double bytesOutPerSecond;
         private Double jvmHeapUsedPercent;
+        private Double jvmHeapAvailableBytes;
+        private Double jvmHeapTotalBytes;
         private Double brokerCpuPercent;
+        private Double jvmProcessCpuPercent;
         private Double systemCpuPercent;
         private Double hostMemoryUsedPercent;
+        private Long hostMemoryAvailableMb;
+        private Long hostMemoryTotalMb;
         private String selectedNodeId;
         private List<MonitoringNodeSummary> nodes;
         private List<String> warnings;

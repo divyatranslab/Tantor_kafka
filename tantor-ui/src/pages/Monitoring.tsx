@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Activity, AlertTriangle, Database, HardDrive, RefreshCw, Check, Server } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, RefreshCw, Check, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -33,6 +33,10 @@ interface MonitoringOverview {
   jmxAvailable?: boolean;
   kafkaExporterUp?: number | null;
   jmxUp?: number | null;
+  kafkaExporterUpTargets?: number | null;
+  kafkaExporterTotalTargets?: number | null;
+  jmxUpTargets?: number | null;
+  jmxTotalTargets?: number | null;
   brokerCount?: number | null;
   topicCount?: number | null;
   partitionCount?: number | null;
@@ -42,10 +46,15 @@ interface MonitoringOverview {
   bytesInPerSecond?: number | null;
   bytesOutPerSecond?: number | null;
   jvmHeapUsedPercent?: number | null;
+  jvmHeapAvailableBytes?: number | null;
+  jvmHeapTotalBytes?: number | null;
   brokerCpuPercent?: number | null;
+  jvmProcessCpuPercent?: number | null;
   systemCpuPercent?: number | null;
   warnings?: string[];
   hostMemoryUsedPercent?: number | null;
+  hostMemoryAvailableMb?: number | null;
+  hostMemoryTotalMb?: number | null;
   selectedNodeId?: string | null;
   nodes?: MonitoringNode[];
 }
@@ -67,12 +76,12 @@ interface MonitoringSample {
 }
 
 const formatNumber = (value?: number | null, digits = 0) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '0';
+  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
   return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
 };
 
 const formatBytes = (value?: number | null) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return '0 B';
+  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
   if (value <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   let next = value;
@@ -92,9 +101,9 @@ const nodeValue = (node: MonitoringNode) => String(node.nodeId || '');
 
 const nodeLabel = (node: MonitoringNode) => {
   const nodeName = node.nodeId ? `Node ${node.nodeId}` : 'Node';
-  const host = node.hostname || node.hostIp;
+  const host = node.hostIp || node.hostname;
   const role = node.role;
-  return [nodeName, host, role].filter(Boolean).join(' - ');
+  return [nodeName, role, host].filter(Boolean).join(' | ');
 };
 
 export function Monitoring() {
@@ -102,7 +111,7 @@ export function Monitoring() {
   const [clusters, setClusters] = useState<MonitoringCluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState('');
   const [selectedNodeId, setSelectedNodeId] = useState('');
-  const [nodes, setNodes] = useState<{ value: string, label: string }[]>([]);
+  const [nodes, setNodes] = useState<{ value: string, label: string, role?: string | null }[]>([]);
 
   const [overview, setOverview] = useState<MonitoringOverview | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,41 +120,30 @@ export function Monitoring() {
   const [refreshInterval, setRefreshInterval] = useState(10); // Default 10 seconds
   const [history, setHistory] = useState<MonitoringSample[]>([]);
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
-  const liveDropdownRef = useRef<HTMLDivElement>(null);
+  const [liveDropdownAnchor, setLiveDropdownAnchor] = useState<HTMLDivElement | null>(null);
+  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
 
   // Load nodes when selectedClusterId changes
   useEffect(() => {
-    if (!selectedClusterId) {
-      setNodes([]);
-      setSelectedNodeId('');
-      return;
-    }
-    fetch(`/api/v1/ui/clusters/${selectedClusterId}`)
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        if (data && Array.isArray(data.hosts) && data.hosts.length > 0) {
-          const formatted = data.hosts.map((host: any, index: number) => ({
-            value: host.hostId || `node-${index}`,
-            label: [host.hostname || `Node ${index + 1}`, host.ipAddress, host.role].filter(Boolean).join(' - ')
-          }));
-          setNodes(formatted);
-          setSelectedNodeId(formatted[0].value);
-        } else {
-          setNodes([]);
-          setSelectedNodeId('');
-        }
-      })
-      .catch(() => {
+    if (!selectedClusterId || !selectedCluster) {
+      Promise.resolve().then(() => {
         setNodes([]);
         setSelectedNodeId('');
       });
-  }, [selectedClusterId]);
-
-  const selectedCluster = useMemo(() => clusters.find(c => c.id === selectedClusterId), [clusters, selectedClusterId]);
+      return;
+    }
+    const formatted = (selectedCluster.nodes || [])
+      .filter(node => Boolean(nodeValue(node)))
+      .map(node => ({ value: nodeValue(node), label: nodeLabel(node), role: node.role }));
+    Promise.resolve().then(() => {
+      setNodes(formatted);
+      setSelectedNodeId(current => formatted.some(node => node.value === current) ? current : (formatted[0]?.value || ''));
+    });
+  }, [selectedCluster, selectedClusterId]);
 
 
   // 1. Load clusters and hosts on mount
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     if (!selectedType) {
       setClusters([]);
       setSelectedClusterId('');
@@ -167,26 +165,28 @@ export function Monitoring() {
           ? current
           : (clusterList[0]?.id || '')
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       setError('Failed to load initial monitoring data.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedType]);
 
   useEffect(() => {
-    setOverview(null);
-    setHistory([]);
-    setSelectedNodeId('');
-    loadInitialData();
-  }, [selectedType]);
+    Promise.resolve().then(() => {
+      setOverview(null);
+      setHistory([]);
+      setSelectedNodeId('');
+    });
+    void (async () => { await loadInitialData(); })();
+  }, [selectedType, loadInitialData]);
 
 
 
   // Fetch overview metrics for the selected cluster
   const loadOverview = useCallback(async (silent = false) => {
-    if (!selectedClusterId) return;
+    if (!selectedClusterId && !selectedCluster) return;
 
     if (!silent) setLoading(true);
     try {
@@ -207,19 +207,20 @@ export function Monitoring() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [selectedClusterId, selectedNodeId]);
+  }, [selectedClusterId, selectedNodeId, selectedCluster]);
 
   useEffect(() => {
     if (selectedClusterId) {
-      setHistory([]);
-      loadOverview();
+      Promise.resolve().then(() => setHistory([]));
+      void (async () => { await loadOverview(); })();
     }
   }, [selectedClusterId, loadOverview]);
 
   // Append sample to history when overview updates
   useEffect(() => {
     if (!overview) return;
-    setHistory(current => {
+    Promise.resolve().then(() => {
+      setHistory(current => {
       const next: MonitoringSample = {
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         brokers: chartNumber(overview.brokerCount),
@@ -232,10 +233,11 @@ export function Monitoring() {
         bytesOut: chartNumber(overview.bytesOutPerSecond),
         heap: chartNumber(overview.jvmHeapUsedPercent),
         hostMemory: chartNumber(overview.hostMemoryUsedPercent),
-        brokerCpu: chartNumber(overview.brokerCpuPercent),
+        brokerCpu: chartNumber(overview.jvmProcessCpuPercent ?? overview.brokerCpuPercent),
         systemCpu: chartNumber(overview.systemCpuPercent),
       };
       return [...current, next].slice(-15); // keep 15 samples
+      });
     });
   }, [overview]);
 
@@ -255,22 +257,49 @@ export function Monitoring() {
   const clusterTitle = overview?.name || selectedCluster?.name || 'Select a cluster';
   const exporterTarget = overview?.kafkaExporterTarget || selectedCluster?.kafkaExporterTarget;
   const selectedNode = nodes.find(node => node.value === selectedNodeId);
-  const kafkaExporterHealthy = overview?.kafkaExporterUp === 1;
-  const jmxHealthy = overview?.jmxUp === 1;
-  const kafkaRunning = Boolean(overview) && (kafkaExporterHealthy || (overview?.brokerCount || 0) > 0);
-  const kafkaExporterLabel = overview
-    ? (kafkaExporterHealthy ? 'KAFKA_EXPORTER UP' : 'KAFKA_EXPORTER REQUIRED')
-    : 'KAFKA_EXPORTER';
-  const jmxLabel = overview
-    ? (jmxHealthy ? 'JMX UP' : 'JMX REQUIRED')
-    : 'JMX';
+  const kafkaExporterHealthy = hasValue(overview?.kafkaExporterTotalTargets)
+    && Number(overview?.kafkaExporterTotalTargets) > 0
+    && Number(overview?.kafkaExporterUpTargets) === Number(overview?.kafkaExporterTotalTargets);
+  const kafkaExporterStatus = targetHealthStatus(
+    overview?.kafkaExporterUpTargets,
+    overview?.kafkaExporterTotalTargets
+  );
+  const jmxStatus = targetHealthStatus(overview?.jmxUpTargets, overview?.jmxTotalTargets);
+  // Kafka Exporter reports broker/partition metrics, but it is not the Kafka
+  // process itself. A live JMX target is also authoritative evidence that the
+  // selected Kafka JVM is running, even while exporter deployment is degraded.
+  const kafkaRunning = Boolean(overview) && (
+    kafkaExporterHealthy
+    || jmxStatus.state === 'up'
+    || (overview?.brokerCount || 0) > 0
+  );
   const warningMessages = [
     selectedCluster?.warning,
     ...(overview?.warnings || []),
   ].filter((message): message is string => Boolean(message && message.trim()));
-  const clusterTypeLabel = overview?.originType || selectedCluster?.originType || selectedType;
-  const displayCpuUsage = overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
+  const selectedRole = selectedNode?.role || '';
+  const controllerOnlySelected = selectedRole.toLowerCase().includes('controller')
+    && !selectedRole.toLowerCase().includes('broker');
+  const combinedRoleSelected = selectedRole.toLowerCase().includes('controller')
+    && selectedRole.toLowerCase().includes('broker');
+  const brokerMetricsApplicable = !controllerOnlySelected;
+  const jvmRoleLabel = controllerOnlySelected
+    ? 'Controller JVM'
+    : (combinedRoleSelected ? 'Broker + Controller JVM' : 'Broker JVM');
+  const jmxTargetLabel = controllerOnlySelected
+    ? 'Controller JMX'
+    : (combinedRoleSelected ? 'Broker + Controller JMX' : 'Broker JMX');
+  const visibleWarnings = warningMessages.filter(message => !(
+    controllerOnlySelected && message.toLowerCase().includes('kafka exporter')
+  ));
+  const displayCpuUsage = overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent ?? overview?.systemCpuPercent;
   const displayMemoryUsage = overview?.jvmHeapUsedPercent ?? overview?.hostMemoryUsedPercent;
+  const cpuUsageLabel = hasValue(overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent)
+    ? `${jvmRoleLabel} CPU`
+    : 'Host CPU Usage';
+  const memoryUsageLabel = hasValue(overview?.jvmHeapUsedPercent)
+    ? `${jvmRoleLabel} Heap`
+    : 'Host Memory Usage';
 
   return (
     <div className="monitoring-container animate-fade-in">
@@ -286,25 +315,27 @@ export function Monitoring() {
 
           {/* Controls */}
           <div className="controls-area">
-            <label className="monitoring-control-field">
+            <div className="monitoring-control-field monitoring-type-field">
               <span>Cluster type</span>
-              <select
-                className="tantor-select"
+              <CustomSelect
                 value={selectedType}
-                onChange={event => {
-                  setSelectedType(event.target.value as 'INTERNAL' | 'EXTERNAL');
+                onChange={val => {
+                  setSelectedType(val as 'INTERNAL' | 'EXTERNAL');
                   setSelectedClusterId('');
                 }}
-              >
-                <option value="INTERNAL">Internal</option>
-                <option value="EXTERNAL">External</option>
-              </select>
-            </label>
+                options={[
+                  { value: 'INTERNAL', label: 'Internal' },
+                  { value: 'EXTERNAL', label: 'External' },
+                ]}
+                width="154px"
+                placeholder="Select Type"
+              />
+            </div>
 
 
             {/* CLUSTER NAME Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ fontSize: '11px', fontWeight: 'var(--font-bold)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Cluster Name
               </span>
               <CustomSelect
@@ -323,30 +354,30 @@ export function Monitoring() {
 
             {/* NODE NAME Selector */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <span style={{ fontSize: '11px', fontWeight: 'var(--font-bold)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Node Name
               </span>
               <CustomSelect
                 value={selectedNodeId}
                 onChange={val => setSelectedNodeId(val)}
                 options={nodes}
-                width="360px"
+                width="min(360px, 100%)"
                 placeholder="Select Node"
               />
             </div>
 
             {/* Live indicator Pill Box */}
-            <div ref={liveDropdownRef} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
+            <div ref={setLiveDropdownAnchor} className="live-pill-dropdown-wrapper" style={{ height: '40px', display: 'flex', alignItems: 'center' }}>
               <div
                 className={`live-pill-container ${autoRefresh ? 'active' : ''}`}
                 onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '8px',
+                  gap: 'var(--space-2)',
                   background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: '8px',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
                   padding: '8px 12px',
                   cursor: 'pointer',
                   userSelect: 'none',
@@ -361,7 +392,7 @@ export function Monitoring() {
                   background: autoRefresh ? '#10B981' : '#94A3B8',
                   display: 'inline-block'
                 }}></span>
-                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>Live</span>
+                <span style={{ fontSize: 'var(--text-base)', fontWeight: 'var(--font-semibold)', color: '#334155' }}>Live</span>
                 <div
                   style={{
                     width: '16px',
@@ -379,9 +410,9 @@ export function Monitoring() {
                 </div>
               </div>
 
-              {showIntervalDropdown && liveDropdownRef.current && (
+              {showIntervalDropdown && liveDropdownAnchor && (
                 <AnchoredMenu
-                  anchor={liveDropdownRef.current}
+                  anchor={liveDropdownAnchor}
                   className="live-dropdown-menu"
                   onClose={() => setShowIntervalDropdown(false)}
                   align="start"
@@ -421,12 +452,12 @@ export function Monitoring() {
               display: 'flex',
               alignItems: 'center',
               background: '#F8FAFC',
-              border: '1px solid #E2E8F0',
-              borderRadius: '8px',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-md)',
               padding: '8px 16px',
               height: '40px',
-              fontSize: '14px',
-              fontWeight: 600,
+              fontSize: 'var(--text-base)',
+              fontWeight: 'var(--font-semibold)',
               color: '#334155',
               boxSizing: 'border-box'
             }}>
@@ -450,9 +481,9 @@ export function Monitoring() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: '1px solid #E2E8F0',
-                borderRadius: '8px',
-                background: '#fff',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-md)',
+                background: "var(--bg-surface)",
                 cursor: 'pointer'
               }}
             >
@@ -467,23 +498,23 @@ export function Monitoring() {
               <svg width="120" height="96" viewBox="0 0 120 96" fill="none" xmlns="http://www.w3.org/2000/svg">
                 {/* Card 1 */}
                 <g filter="url(#shadow-1)">
-                  <rect x="10" y="2" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="12" width="16" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="46" y="12" width="40" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="2" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="12" width="16" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="46" y="12" width="40" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 {/* Card 2 */}
                 <g filter="url(#shadow-2)">
-                  <rect x="10" y="34" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="44" width="36" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="66" y="44" width="20" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="34" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="44" width="36" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="66" y="44" width="20" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 {/* Card 3 */}
                 <g filter="url(#shadow-3)">
-                  <rect x="10" y="66" width="100" height="24" rx="6" fill="white" stroke="#E2E8F0" strokeWidth="1.5" />
-                  <rect x="22" y="76" width="12" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
-                  <rect x="42" y="76" width="30" height="4" rx="2" fill="#8E77BB" fillOpacity="0.4" />
+                  <rect x="10" y="66" width="100" height="24" rx="6" fill="white" stroke="var(--border-subtle)" strokeWidth="1.5" />
+                  <rect x="22" y="76" width="12" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
+                  <rect x="42" y="76" width="30" height="4" rx="2" fill="var(--border-focus)" fillOpacity="0.4" />
                 </g>
 
                 <defs>
@@ -510,9 +541,9 @@ export function Monitoring() {
               </div>
             )}
 
-            {warningMessages.length > 0 && (
+            {visibleWarnings.length > 0 && (
               <div className="monitoring-warning-list">
-                {warningMessages.map(message => (
+                {visibleWarnings.map(message => (
                   <div className="monitoring-warning" key={message}>
                     <AlertTriangle size={16} />
                     <span>{message}</span>
@@ -524,7 +555,7 @@ export function Monitoring() {
             {/* Broker Details Header Card */}
             <div className="broker-details-card">
               <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                <Server size={28} color="#DF678B" style={{ flexShrink: 0 }} />
+                <Server size={28} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
                 <div className="broker-info">
                   <h2 style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {clusterTitle}
@@ -555,11 +586,13 @@ export function Monitoring() {
                   </span>
                 </div>
                 <div className="monitoring-status-pills-row">
-                  <span className={`monitoring-connection-pill ${kafkaExporterHealthy ? 'up' : 'down'}`}>
-                    {kafkaExporterHealthy ? 'Kafka Exporter UP' : 'Kafka Exporter DOWN'}
-                  </span>
-                  <span className={`monitoring-connection-pill ${jmxHealthy ? 'up' : 'down'}`}>
-                    {jmxHealthy ? 'Jmx Indicator UP' : 'Jmx Indicator DOWN'}
+                  {brokerMetricsApplicable && (
+                    <span className={`monitoring-connection-pill ${kafkaExporterStatus.state}`}>
+                      {targetHealthLabel('Kafka Exporter', kafkaExporterStatus)}
+                    </span>
+                  )}
+                  <span className={`monitoring-connection-pill ${jmxStatus.state}`}>
+                    {targetHealthLabel(jmxTargetLabel, jmxStatus)}
                   </span>
                 </div>
               </div>
@@ -569,9 +602,9 @@ export function Monitoring() {
                   {/* CPU Usage Chart */}
                   <div className="chart-box-wrapper">
                     <div className="chart-box-header">
-                      <span>CPU Usage</span>
+                      <span>{cpuUsageLabel}</span>
                       <span className="chart-stat-value green">
-                        {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : '-'}
+                        {hasValue(displayCpuUsage) ? `${formatNumber(displayCpuUsage, 1)}%` : 'N/A'}
                       </span>
                     </div>
                     <div className="chart-body-container">
@@ -581,7 +614,7 @@ export function Monitoring() {
                           <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
                           <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} domain={[0, 100]} />
                           <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
-                          <Line type="monotone" dataKey="systemCpu" stroke="#3b82f6" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
+                          <Line type="monotone" dataKey="brokerCpu" stroke="#3b82f6" strokeWidth={1.5} dot={false} activeDot={{ r: 4 }} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -590,9 +623,9 @@ export function Monitoring() {
                   {/* Memory Usage Chart */}
                   <div className="chart-box-wrapper">
                     <div className="chart-box-header">
-                      <span>Memory Usage</span>
+                      <span>{memoryUsageLabel}</span>
                       <span className="chart-stat-value green">
-                        {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : '-'}
+                        {hasValue(displayMemoryUsage) ? `${formatNumber(displayMemoryUsage, 1)}%` : 'N/A'}
                       </span>
                     </div>
                     <div className="chart-body-container">
@@ -608,33 +641,36 @@ export function Monitoring() {
                     </div>
                   </div>
 
-                  {/* Messages In Chart */}
-                  <div className="chart-box-wrapper">
-                    <div className="chart-box-header">
-                      <span>Messages In</span>
-                      <span className="chart-stat-value red">
-                        {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : '-'}
-                      </span>
+                  {/* Messages In is a broker metric and does not apply to controller-only nodes. */}
+                  {brokerMetricsApplicable && (
+                    <div className="chart-box-wrapper">
+                      <div className="chart-box-header">
+                        <span>Messages In</span>
+                        <span className="chart-stat-value red">
+                          {hasValue(overview?.messagesInPerSecond) ? `${formatNumber(overview?.messagesInPerSecond, 1)}/s` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="chart-body-container">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                            <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
+                            <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                            <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
-                    <div className="chart-body-container">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                          <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                          <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                          <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
-                          <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              {/* Kafka Broker Section */}
-              <div className="monitoring-bottom-section">
-                <h3 className="monitoring-section-title-custom">Kafka Broker</h3>
-                <div className="monitoring-kpi-row">
+              {/* Kafka broker traffic is not exposed by controller-only nodes. */}
+              {brokerMetricsApplicable && (
+                <div className="monitoring-bottom-section">
+                  <h3 className="monitoring-section-title-custom">Kafka Broker</h3>
+                  <div className="monitoring-kpi-row">
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">MSG IN/Sec</span>
                     <strong className="kpi-card-val">{formatNumber(overview?.messagesInPerSecond, 2)}</strong>
@@ -649,7 +685,7 @@ export function Monitoring() {
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Partition</span>
-                    <strong className="kpi-card-val">{overview?.partitionCount != null ? formatNumber(overview.partitionCount) : '-'}</strong>
+                    <strong className="kpi-card-val">{formatNumber(overview?.partitionCount)}</strong>
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Under-replication</span>
@@ -665,38 +701,51 @@ export function Monitoring() {
                   </div>
                   <div className="kpi-card-box">
                     <span className="kpi-card-label">Topics</span>
-                    <strong className="kpi-card-val">{overview?.topicCount != null ? formatNumber(overview.topicCount) : '-'}</strong>
+                    <strong className="kpi-card-val">{formatNumber(overview?.topicCount)}</strong>
+                  </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* System Resources Section */}
               <div className="monitoring-bottom-section">
                 <h3 className="monitoring-section-title-custom">System Resources</h3>
                 <div className="resources-cards-grid">
                   <ResourceCard
-                    label="Broker CPU"
-                    value={overview?.brokerCpuPercent}
+                    label={`${jvmRoleLabel} CPU`}
+                    value={overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent}
                     tone="purple"
-                    subtext="Load: 0.09 / 0.07 / 0.02"
+                    subtext={availablePercentText(overview?.jvmProcessCpuPercent ?? overview?.brokerCpuPercent)}
                   />
                   <ResourceCard
                     label="System CPU"
                     value={overview?.systemCpuPercent}
                     tone="green"
-                    subtext="13245 MB available"
+                    subtext={availablePercentText(overview?.systemCpuPercent)}
                   />
                   <ResourceCard
                     label="JVM Heap"
                     value={overview?.jvmHeapUsedPercent}
                     tone="purple"
-                    subtext="8.6 GB free"
+                    subtext={hasValue(overview?.jvmHeapAvailableBytes)
+                      ? availableCapacityText(
+                          Number(overview?.jvmHeapAvailableBytes),
+                          overview?.jvmHeapTotalBytes
+                        )
+                      : undefined}
                   />
                   <ResourceCard
                     label="Host Memory (Agent Heartbeat)"
                     value={overview?.hostMemoryUsedPercent}
                     tone="blue"
-                    subtext="8.6 GB free"
+                    subtext={hasValue(overview?.hostMemoryAvailableMb)
+                      ? availableCapacityText(
+                          Number(overview?.hostMemoryAvailableMb) * 1024 * 1024,
+                          hasValue(overview?.hostMemoryTotalMb)
+                            ? Number(overview?.hostMemoryTotalMb) * 1024 * 1024
+                            : undefined
+                        )
+                      : undefined}
                   />
                 </div>
               </div>
@@ -714,6 +763,41 @@ const boundedPercent = (value?: number | null) => {
   return Math.max(0, Math.min(100, Number(value)));
 };
 
+const availablePercentText = (usedPercent?: number | null) => {
+  if (!hasValue(usedPercent)) return undefined;
+  return `${formatNumber(100 - boundedPercent(usedPercent), 1)}% available`;
+};
+
+const availableCapacityText = (availableBytes: number, totalBytes?: number | null) => {
+  const available = `${formatBytes(availableBytes)} available`;
+  return hasValue(totalBytes) && Number(totalBytes) > 0
+    ? `${available} / ${formatBytes(Number(totalBytes))} total`
+    : available;
+};
+
+type TargetHealthState = 'up' | 'degraded' | 'down' | 'unavailable';
+
+const targetHealthStatus = (up?: number | null, total?: number | null): {
+  up: number;
+  total: number;
+  state: TargetHealthState;
+} => {
+  if (!hasValue(total) || Number(total) <= 0) {
+    return { up: 0, total: 0, state: 'unavailable' };
+  }
+  const totalCount = Math.max(0, Number(total));
+  const upCount = hasValue(up) ? Math.max(0, Number(up)) : 0;
+  if (upCount >= totalCount) return { up: upCount, total: totalCount, state: 'up' };
+  if (upCount > 0) return { up: upCount, total: totalCount, state: 'degraded' };
+  return { up: 0, total: totalCount, state: 'down' };
+};
+
+const targetHealthLabel = (name: string, health: ReturnType<typeof targetHealthStatus>) => {
+  if (health.state === 'unavailable') return `${name} N/A`;
+  if (health.state === 'down') return `${name} DOWN`;
+  return `${name} ${health.up}/${health.total} UP`;
+};
+
 function ResourceCard({ label, value, subtext, tone = 'blue' }: {
   label: string;
   value?: number | null;
@@ -726,7 +810,7 @@ function ResourceCard({ label, value, subtext, tone = 'blue' }: {
       <div className="resource-card-header">
         <span className="resource-card-label">{label}</span>
         <strong className="resource-card-value">
-          {hasValue(value) ? `${formatNumber(value, 1)}%` : '-'}
+          {hasValue(value) ? `${formatNumber(value, 1)}%` : 'N/A'}
         </strong>
       </div>
       <div className="progress-track-bg">

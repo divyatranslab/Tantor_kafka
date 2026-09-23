@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Database, Download, Server, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import './ClusterOverview.css';
 
 interface OverviewSummary {
   brokerCount: number;
   activeController: number | null;
+  activeControllerId: number | null;
+  configuredControllerCount: number;
   version: string;
   controllerType: string;
 }
@@ -25,6 +27,11 @@ interface BrokerRow {
   port: number;
   controller: boolean;
   diskUsageBytes: number;
+  diskTotalBytes: number;
+  hostDiskUsedBytes: number | null;
+  hostDiskTotalBytes: number | null;
+  hostDiskMetricStatus: 'LIVE' | 'STALE' | 'UNAVAILABLE';
+  hostDiskLastSeen: string | null;
   logReplicaCount: number;
   inSyncReplicas: number;
   replicas: number;
@@ -37,6 +44,7 @@ interface ControllerRow {
   nodeId: number;
   host: string;
   port: number | null;
+  activeLeader: boolean;
 }
 
 interface NodePathRow {
@@ -73,7 +81,7 @@ export function ClusterOverview() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOverview = async () => {
+  const fetchOverview = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/overview`);
       if (!res.ok) {
@@ -82,26 +90,30 @@ export function ClusterOverview() {
       const data = await res.json();
       setOverview(data);
       setError(null);
-    } catch (e: any) {
-      setError(e.message || 'Failed to fetch cluster overview');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch cluster overview');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchOverview();
-    const interval = setInterval(fetchOverview, 10000);
+    void (async () => { await fetchOverview(); })();
+    const interval = setInterval(() => { void (async () => { await fetchOverview(); })(); }, 10000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [fetchOverview]);
 
   const csv = useMemo(() => {
     if (!overview) return '';
     const rows = [
-      ['Broker ID', 'Disk Usage Bytes', 'Log Replicas', 'In Sync Replicas', 'Replicas', 'Replica Skew', 'Leaders', 'Leader Skew', 'Port', 'Host'],
+      ['Broker ID', 'Kafka Data Usage Bytes', 'Host Disk Used Bytes', 'Host Disk Total Bytes', 'Host Disk Status', 'Host Disk Last Seen', 'Log Replicas', 'In Sync Replicas', 'Replicas', 'Replica Skew', 'Leaders', 'Leader Skew', 'Port', 'Host'],
       ...overview.brokers.map(broker => [
         broker.brokerId,
         broker.diskUsageBytes,
+        broker.hostDiskUsedBytes ?? '',
+        broker.hostDiskTotalBytes ?? '',
+        broker.hostDiskMetricStatus ?? 'UNAVAILABLE',
+        broker.hostDiskLastSeen ?? '',
         broker.logReplicaCount,
         broker.inSyncReplicas,
         broker.replicas,
@@ -160,7 +172,7 @@ export function ClusterOverview() {
           <div className="overview-grid identity-grid">
             <div className="overview-item">
               <div className="overview-label">Kafka cluster ID</div>
-              <div className="overview-value">{overview.kafkaClusterId || '-'}</div>
+              <div className="overview-value cluster-id-value">{overview.kafkaClusterId || '-'}</div>
             </div>
             <div className="overview-item">
               <div className="overview-label">Cluster type</div>
@@ -201,8 +213,18 @@ export function ClusterOverview() {
               <div className="overview-value">{(uptime.brokerCount || 0).toString().padStart(2, '0')}</div>
             </div>
             <div className="overview-item">
-              <div className="overview-label">Active Controller</div>
-              <div className="overview-value">{uptime.activeController ?? '-'}</div>
+              <div className="overview-label">
+                {uptime.controllerType === 'ZooKeeper' ? 'Active Broker Controller ID' : 'Active Controller ID'}
+              </div>
+              <div className="overview-value">{uptime.activeControllerId ?? uptime.activeController ?? '-'}</div>
+            </div>
+            <div className="overview-item">
+              <div className="overview-label">
+                {uptime.controllerType === 'ZooKeeper' ? 'ZooKeeper Ensemble' : 'Configured Controllers'}
+              </div>
+              <div className="overview-value">
+                {uptime.controllerType === 'ZooKeeper' ? 'Not reported' : (uptime.configuredControllerCount ?? '-')}
+              </div>
             </div>
             <div className="overview-item">
               <div className="overview-label">Version</div>
@@ -245,7 +267,14 @@ export function ClusterOverview() {
               <thead>
                 <tr>
                   <th>Broker ID</th>
-                  <th>Disk usage</th>
+                  <th title="Kafka replica-log bytes reported by the Kafka Admin API">
+                    Kafka Data Usage
+                    <span className="overview-metric-level">Broker level</span>
+                  </th>
+                  <th title="OS filesystem containing the Kafka data directory; reported by the node agent">
+                    Host Disk Usage
+                    <span className="overview-metric-level">OS level</span>
+                  </th>
                   <th>In sync replicas</th>
                   <th>Replicas</th>
                   <th>Replicas skew</th>
@@ -260,11 +289,12 @@ export function ClusterOverview() {
                   <tr key={broker.brokerId}>
                     <td>
                       <div className="overview-broker-id">
-                        <CheckCircle2 size={24} color="#FFFFFF" fill="#36AD8F" />
+                        <CheckCircle2 size={24} color="#FFFFFF" fill="var(--color-success)" />
                         <span>{broker.brokerId}</span>
                       </div>
                     </td>
-                    <td>{broker.diskUsageBytes ? broker.diskUsageBytes.toString(16) : '-'}</td>
+                    <td>{formatBytes(broker.diskUsageBytes)}</td>
+                    <td>{formatHostDiskUsage(broker)}</td>
                     <td>{broker.inSyncReplicas}</td>
                     <td>{broker.replicas}</td>
                     <td>{formatSkew(broker.replicaSkewPct)}</td>
@@ -280,7 +310,9 @@ export function ClusterOverview() {
         </div>
       </section>
 
-      {overview.originType === 'EXTERNAL' && overview.controllers && overview.controllers.length > 0 && (
+      {uptime.controllerType === 'KRaft'
+        && overview.controllers
+        && overview.controllers.length > 0 && (
         <section className="overview-section">
           <div className="overview-band">
             <div className="section-header-row">
@@ -293,6 +325,7 @@ export function ClusterOverview() {
                     <th>Node ID</th>
                     <th>Host</th>
                     <th>Port</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -305,6 +338,7 @@ export function ClusterOverview() {
                       </td>
                       <td className="font-mono">{c.host}</td>
                       <td>{c.port ? c.port : '-'}</td>
+                      <td>{c.activeLeader ? <span className="metric-status live">Active leader</span> : 'Voter'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -372,20 +406,6 @@ function Notice({ kind, text }: { kind: 'error' | 'warning'; text: string }) {
   );
 }
 
-function OverviewTile({ icon, label, value, healthy }: { icon?: React.ReactNode; label: string; value: React.ReactNode; healthy?: boolean }) {
-  return (
-    <div className="overview-tile">
-      <div className="overview-tile-label">
-        {label}
-        {healthy !== undefined && <span className={healthy ? 'status-dot ok' : 'status-dot warn'} />}
-      </div>
-      <div className="overview-tile-main">
-        {icon && <span className="overview-tile-icon">{icon}</span>}
-        <span>{value}</span>
-      </div>
-    </div>
-  );
-}
 
 function formatSkew(value: number | null) {
   if (value === null || value === undefined) return '-';
@@ -395,7 +415,27 @@ function formatSkew(value: number | null) {
 
 function formatBytes(bytes: number) {
   if (!bytes) return '0 B';
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const sizes = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
   return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 2)} ${sizes[i]}`;
+}
+
+function formatDiskUsage(usedBytes: number | null | undefined, totalBytes: number | null | undefined) {
+  if (usedBytes == null || !Number.isFinite(usedBytes) || usedBytes < 0) return '-';
+  const used = formatBytes(usedBytes);
+  return totalBytes != null && totalBytes > 0 ? `${used} / ${formatBytes(totalBytes)}` : used;
+}
+
+function formatHostDiskUsage(broker: BrokerRow) {
+  if (broker.hostDiskMetricStatus !== 'LIVE' || broker.hostDiskUsedBytes == null || broker.hostDiskTotalBytes == null) {
+    const label = broker.hostDiskMetricStatus === 'STALE' ? 'Stale' : 'Agent unavailable';
+    const title = broker.hostDiskLastSeen ? `Last reported ${new Date(broker.hostDiskLastSeen).toLocaleString()}` : undefined;
+    return <span className="metric-status stale" title={title}>{label}</span>;
+  }
+  return (
+    <span>
+      {formatDiskUsage(broker.hostDiskUsedBytes, broker.hostDiskTotalBytes)}{' '}
+      <span className="metric-status live">Live</span>
+    </span>
+  );
 }

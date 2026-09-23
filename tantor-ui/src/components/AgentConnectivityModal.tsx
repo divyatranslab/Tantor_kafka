@@ -1,31 +1,44 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, X } from 'lucide-react';
 import '../pages/Hosts.css';
-import { confirmAction, notifyAction } from './ConfirmDialog';
+import { confirmAction, notifyAction } from './confirmUtils';
 
 type AgentConnectivityModalProps = {
   onClose: () => void;
 };
 
+interface HostRecord {
+  id?: string;
+  hostname?: string;
+  status?: string;
+  agentStatus?: string;
+  ipAddresses?: string;
+  lastHeartbeat?: string;
+  agentName?: string;
+  agentPath?: string;
+  [key: string]: unknown;
+}
+
 export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps) {
-  const [hosts, setHosts] = useState<any[]>([]);
+  const [hosts, setHosts] = useState<HostRecord[]>([]);
   const [selectedPendingIds, setSelectedPendingIds] = useState<Record<string, boolean>>({});
   const [connectingAgents, setConnectingAgents] = useState(false);
 
-  const fetchHosts = async () => {
+  const fetchHosts = useCallback(async () => {
     try {
       const res = await fetch('/api/v1/ui/hosts');
       if (res.ok) setHosts(await res.json());
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchHosts();
-    const t = setInterval(fetchHosts, 5000);
+    void (async () => { await fetchHosts(); })();
+    const t = setInterval(() => { void (async () => { await fetchHosts(); })(); }, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [fetchHosts]);
 
   const deleteHost = async (id: string) => {
     if (!(await confirmAction('Disconnect this node? It will move back to discovered nodes and can be connected again.'))) return;
@@ -43,19 +56,19 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  const parseIpList = (raw: any): string[] => {
+  const parseIpList = (raw: unknown): string[] => {
     if (Array.isArray(raw)) return raw.map(String).map(ip => ip.trim()).filter(Boolean);
     if (typeof raw === 'string' && raw.startsWith('[')) {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) return parsed.map(String).map(ip => ip.trim()).filter(Boolean);
-      } catch {}
+      } catch { /* ignore */ }
     }
     if (typeof raw === 'string') return raw.split(',').map(ip => ip.trim()).filter(Boolean);
     return [];
   };
 
-  const displayIp = (raw: any) => {
+  const displayIp = (raw: unknown) => {
     const ips = parseIpList(raw);
     return ips.find(ip => ip.startsWith('192.168.'))
       || ips.find(ip => !ip.startsWith('127.') && !ip.startsWith('172.'))
@@ -68,11 +81,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
   const pendingHosts = Array.from(
     hosts
       .filter(h => h.status === 'PENDING' && !activeHostIps.has(displayIp(h.ipAddresses)))
-      .reduce<Map<string, any>>((byIp, host) => {
+      .reduce<Map<string, HostRecord>>((byIp, host) => {
         const ip = displayIp(host.ipAddresses);
         const existing = byIp.get(ip);
-        const heartbeat = Date.parse(host.lastHeartbeat || '') || 0;
-        const existingHeartbeat = Date.parse(existing?.lastHeartbeat || '') || 0;
+        const heartbeat = Date.parse(String(host.lastHeartbeat ?? '')) || 0;
+        const existingHeartbeat = Date.parse(String(existing?.lastHeartbeat ?? '')) || 0;
         const expectedSuffix = `-${ip.split('.').pop()}`;
         const isCanonicalId = String(host.id || '').endsWith(expectedSuffix);
         const existingIsCanonicalId = String(existing?.id || '').endsWith(expectedSuffix);
@@ -85,10 +98,10 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           byIp.set(ip, host);
         }
         return byIp;
-      }, new Map<string, any>())
+      }, new Map<string, HostRecord>())
       .values(),
   );
-  const selectedCount = pendingHosts.filter(host => selectedPendingIds[host.id]).length;
+  const selectedCount = pendingHosts.filter(host => selectedPendingIds[String(host.id)]).length;
   const allPendingSelected = pendingHosts.length > 0 && selectedCount === pendingHosts.length;
 
   const togglePendingHost = (id: string) => {
@@ -100,11 +113,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
       setSelectedPendingIds({});
       return;
     }
-    setSelectedPendingIds(Object.fromEntries(pendingHosts.map(host => [host.id, true])));
+    setSelectedPendingIds(Object.fromEntries(pendingHosts.map(host => [String(host.id), true])));
   };
 
   const connectSelectedAgents = async () => {
-    const selectedIds = pendingHosts.filter(host => selectedPendingIds[host.id]).map(host => host.id);
+    const selectedIds = pendingHosts.filter(host => selectedPendingIds[String(host.id)]).map(host => host.id);
     if (selectedIds.length === 0) return;
     setConnectingAgents(true);
     try {
@@ -123,11 +136,11 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
     }
   };
 
-  return (
+  return createPortal(
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 9999 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ padding: 0, overflow: 'hidden', maxWidth: '720px' }}>
         <div className="modal-header" style={{ padding: '24px 32px 16px 32px', margin: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 500, color: '#111827', margin: 0 }}>Agent Connectivity</h2>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 'var(--font-medium)', color: '#111827', margin: 0 }}>Agent Connectivity</h2>
           <button className="modal-close" onClick={onClose} style={{ border: 'none', background: 'transparent', padding: 0, color: '#9CA3AF' }}>
             <X size={20} />
           </button>
@@ -145,30 +158,30 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
             <div>
               {/* Section label row */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 'var(--font-semibold)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
                   Discovered Nodes
                 </span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0, cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', margin: 0, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     checked={allPendingSelected}
                     onChange={toggleAllPendingHosts}
                     style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                   />
-                  <span style={{ fontSize: '13px', color: '#1E293B', fontWeight: 500 }}>Select all</span>
+                  <span style={{ fontSize: 'var(--text-sm)', color: '#1E293B', fontWeight: 'var(--font-medium)' }}>Select all</span>
                 </label>
               </div>
 
               {/* Node cards inside grey container */}
-              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '360px', overflowY: 'auto' }}>
+              <div style={{ background: '#F8FAFC', borderRadius: '10px', padding: 'var(--space-3)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '360px', overflowY: 'auto' }}>
                 {pendingHosts.map(host => (
                   <div
-                    key={host.id}
-                    onClick={() => togglePendingHost(host.id)}
+                    key={String(host.id)}
+                    onClick={() => togglePendingHost(String(host.id))}
                     style={{
-                      background: '#FFFFFF',
-                      border: selectedPendingIds[host.id] ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
-                      borderRadius: '8px',
+                      background: "var(--bg-surface)",
+                      border: selectedPendingIds[String(host.id)] ? '1.5px solid #8B5CF6' : '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)',
                       padding: '12px 14px',
                       display: 'flex',
                       alignItems: 'center',
@@ -180,18 +193,18 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
                     <label onClick={e => e.stopPropagation()} style={{ margin: 0, display: 'flex', flexShrink: 0 }}>
                       <input
                         type="checkbox"
-                        checked={!!selectedPendingIds[host.id]}
-                        onChange={() => togglePendingHost(host.id)}
+                        checked={!!selectedPendingIds[String(host.id)]}
+                        onChange={() => togglePendingHost(String(host.id))}
                         style={{ width: '16px', height: '16px', accentColor: '#8B5CF6', cursor: 'pointer' }}
                       />
                     </label>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: '14px', color: '#1E293B', fontWeight: 500, margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
-                      <p style={{ fontSize: '12px', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;·&nbsp; {host.agentPath || 'Path unavailable'}</p>
+                      <p style={{ fontSize: 'var(--text-base)', color: '#1E293B', fontWeight: 'var(--font-medium)', margin: '0 0 2px 0' }}>{host.agentName || host.hostname}</p>
+                      <p style={{ fontSize: 'var(--text-xs)', color: '#94A3B8', margin: 0 }}>{displayIp(host.ipAddresses)} &nbsp;|&nbsp; {host.agentPath || 'Path unavailable'}</p>
                     </div>
                     <button
                       title="Reject & remove"
-                      onClick={e => { e.stopPropagation(); deleteHost(host.id); }}
+                      onClick={e => { e.stopPropagation(); deleteHost(String(host.id)); }}
                       style={{ border: 'none', background: 'transparent', color: '#CBD5E1', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#EF4444')}
                       onMouseLeave={e => (e.currentTarget.style.color = '#CBD5E1')}
@@ -205,26 +218,26 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
           )}
         </div>
 
-        <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: '#FFFFFF' }}>
-          <button 
-            className="btn" 
-            onClick={onClose} 
-            style={{ background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#64748B', padding: '8px 24px', borderRadius: '8px', fontWeight: 500, fontSize: '14px' }}
+        <div className="modal-footer" style={{ margin: '0', borderTop: '1px solid #F1F5F9', padding: '20px 32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', background: "var(--bg-surface)" }}>
+          <button
+            className="btn"
+            onClick={onClose}
+            style={{ background: "var(--bg-surface)", border: '1px solid #CBD5E1', color: 'var(--text-muted)', padding: '8px 24px', borderRadius: 'var(--radius-md)', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)' }}
           >
             Cancel
           </button>
-          <button 
-            className="btn btn-primary-action" 
-            disabled={selectedCount === 0 || connectingAgents} 
-            onClick={connectSelectedAgents} 
-            style={{ 
-              background: '#FFFFFF', 
-              border: '1px solid #8B5CF6', 
-              color: '#8B5CF6', 
-              padding: '8px 24px', 
-              borderRadius: '8px', 
-              fontWeight: 500, 
-              fontSize: '14px',
+          <button
+            className="btn btn-primary-action"
+            disabled={selectedCount === 0 || connectingAgents}
+            onClick={connectSelectedAgents}
+            style={{
+              background: "var(--bg-surface)",
+              border: '1px solid #8B5CF6',
+              color: '#8B5CF6',
+              padding: '8px 24px',
+              borderRadius: 'var(--radius-md)',
+              fontWeight: 'var(--font-medium)',
+              fontSize: 'var(--text-base)',
               opacity: (selectedCount === 0 || connectingAgents) ? 0.5 : 1
             }}
           >
@@ -233,5 +246,5 @@ export function AgentConnectivityModal({ onClose }: AgentConnectivityModalProps)
         </div>
       </div>
     </div>
-  );
+    , document.body);
 }

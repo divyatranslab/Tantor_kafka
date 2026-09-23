@@ -340,10 +340,73 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #F9F9F9;
+  background: #FAFAFC;
   padding: 12px 16px;
   border-radius: 8px;
-  border: 1px solid #CCCCCC;
+  border: 1px solid #E4E4E7;
+}
+
+.bulk-actions-count {
+  margin-right: 2px;
+  color: #282F49;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.bulk-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bulk-action-button.neutral {
+  color: #4C1D6F;
+  background: #FFFFFF;
+  border-color: #D5CBDD;
+}
+
+.bulk-action-button.neutral:hover {
+  background: #FAF8FF;
+  border-color: #4C1D6F;
+}
+
+.bulk-action-button.destructive {
+  color: #D1435B;
+  background: #FFFFFF;
+  border-color: #F0A4B2;
+}
+
+.bulk-action-button.destructive:hover {
+  background: #FFF1F3;
+  border-color: #D1435B;
+}
+
+.bulk-action-button.primary {
+  color: #FFFFFF;
+  background: #4C1D6F;
+  border-color: #4C1D6F;
+}
+
+.bulk-action-button.primary:hover {
+  background: #3D1359;
+  border-color: #3D1359;
+  box-shadow: 0 3px 8px rgba(76, 29, 111, 0.18);
+}
+
+.bulk-action-button:focus-visible {
+  outline: 3px solid rgba(76, 29, 111, 0.2);
+  outline-offset: 2px;
 }
 
 .topic-alert {
@@ -503,6 +566,7 @@
 .topic-modal.figma-topic-modal {
   width: 760px; /* matched to figma proportion */
   max-width: 90vw;
+  max-height: calc(100vh - 64px);
   background: #FFFFFF;
   border-radius: 16px;
   overflow: hidden;
@@ -536,11 +600,13 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  max-height: 80vh;
+  min-height: 0;
+  max-height: calc(100vh - 64px);
 }
 
 .figma-topic-modal-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px 32px 24px;
   display: flex;
@@ -562,23 +628,6 @@
   font-size: 14px;
   font-weight: 600;
   color: #3E1363;
-}
-
-.figma-topic-modal .custom-toggle-area {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 18px;
-}
-
-.figma-topic-modal .custom-toggle-area .toggle-label {
-  font-family: 'Satoshi', sans-serif;
-  font-size: 12px;
-  color: #332849;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  height: 100%;
 }
 
 .figma-topic-modal .form-grid-row {
@@ -747,13 +796,19 @@
 .figma-topic-modal .create-topic-footer {
   border-top: 1px solid #EAEAEA !important;
   padding: 16px 38px 24px 32px !important; /* Extra 6px on right to align with scrollbar */
+  margin-top: 0;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #FFFFFF;
 }
 
 .topic-create-modal form footer {
   position: sticky;
   z-index: 1;
-  bottom: -1.25rem;
-  margin-top: 1.5rem;
+  bottom: 0;
+  margin-top: 0;
   box-shadow: 0 -8px 18px rgba(28, 28, 26, 0.04);
 }
 
@@ -778,27 +833,6 @@
     width: 100%;
     height: 34px;
   }
-}
-
-/* -- Custom Toggle Overrides for Topics Create Modal -- */
-.figma-topic-modal .cd-toggle-switch {
-  width: 34px !important;
-  height: 20px !important;
-}
-
-.figma-topic-modal .cd-toggle-slider {
-  border-radius: 10px !important;
-}
-
-.figma-topic-modal .cd-toggle-slider:before {
-  height: 16px !important;
-  width: 16px !important;
-  left: 2px !important;
-  bottom: 1px !important;
-}
-
-.figma-topic-modal .cd-toggle-switch input:checked + .cd-toggle-slider:before {
-  transform: translateX(14px) !important;
 }
 
 /* === Live interval dropdown (shared with Monitoring) === */

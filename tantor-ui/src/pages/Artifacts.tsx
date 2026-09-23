@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Upload, XCircle, ChevronDown, ChevronUp,
   Loader2, X, RefreshCw, Server, DownloadCloud,
@@ -8,6 +9,20 @@ import { usePermissions } from '../hooks/usePermissions';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './Artifacts.css';
 import orangeBanner from '../assets/orange.png';
+
+interface ArtifactVersionRaw {
+  id: string;
+  serviceType?: string;
+  version: string;
+  status?: string;
+  createdAt?: string;
+  fileSizeBytes?: number;
+  fileName?: string;
+  filename?: string;
+  sha256: string;
+  downloadUrl?: string;
+  download_url?: string;
+}
 
 interface ArtifactVersion {
   id: string;
@@ -60,6 +75,8 @@ interface ArtifactAuditEvent {
   createdAt?: string;
 }
 
+const SCHEMA_REGISTRY_ARTIFACT_UPLOAD_ENABLED = false;
+
 const artifactServiceOptions = [
   {
     value: 'KAFKA',
@@ -88,12 +105,22 @@ const artifactServiceOptions = [
     fileAccept: '.jar',
     helper: 'JMX exporter jars are stored for Kafka monitoring deployments.',
   },
-];
+  {
+    value: 'SCHEMA_REGISTRY',
+    label: 'Schema Registry',
+    versionPlaceholder: 'e.g. 7.6.0',
+    directoryPlaceholder: 'custom/schema-registry (under configured repository root)',
+    fileLabel: 'Confluent Schema Registry binary (.tgz or .tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Schema Registry binaries can be selected during Kafka cluster deployment.',
+  },
+].filter(option => SCHEMA_REGISTRY_ARTIFACT_UPLOAD_ENABLED || option.value !== 'SCHEMA_REGISTRY');
 
 const artifactServiceLabels: Record<string, string> = {
   KAFKA: 'Kafka',
   KAFKA_EXPORTER: 'Kafka Exporter',
   JMX_EXPORTER: 'JMX Exporter',
+  SCHEMA_REGISTRY: 'Schema Registry',
 };
 
 const artifactServiceLabel = (serviceType: string) =>
@@ -102,6 +129,15 @@ const artifactServiceLabel = (serviceType: string) =>
     .split('_')
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+
+const summarizeError = (message: string, limit = 170) => {
+  const clean = message
+    .replace(/\s*Logs:\s*==>.*/is, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return clean.length <= limit ? clean : `${clean.slice(0, limit).trimEnd()}...`;
+};
 
 export function Artifacts() {
   const { canManage } = usePermissions();
@@ -136,36 +172,36 @@ export function Artifacts() {
     .split(',')
     .some(extension => file.name.toLowerCase().endsWith(extension.trim().toLowerCase()));
 
-  const fetchVersions = async () => {
+  const fetchVersions = useCallback(async () => {
     const res = await fetch('/api/v1/artifacts?status=AVAILABLE&size=100');
     if (!res.ok) return;
     const data = await res.json();
-    setVersions((data.content || []).map((a: any) => ({
+    setVersions((data.content || []).map((a: ArtifactVersionRaw) => ({
       id: a.id,
       service_type: (a.serviceType || 'KAFKA').toUpperCase(),
       version: a.version,
       available: a.status === 'AVAILABLE',
       release_date: a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '',
-      size_mb: (a.fileSizeBytes / 1024 / 1024).toFixed(1),
-      filename: a.fileName,
+      size_mb: ((a.fileSizeBytes ?? 0) / 1024 / 1024).toFixed(1),
+      filename: a.fileName ?? a.filename ?? '',
       sha256: a.sha256,
-      download_url: a.downloadUrl || `/api/v1/artifacts/${a.id}/download`,
+      download_url: a.downloadUrl || a.download_url || `/api/v1/artifacts/${a.id}/download`,
     })));
-  };
+  }, []);
 
-  const fetchHosts = async () => {
+  const fetchHosts = useCallback(async () => {
     const res = await fetch('/api/v1/ui/hosts');
     if (!res.ok) return;
     setHosts(await res.json());
-  };
+  }, []);
 
-  const fetchParcelState = async () => {
+  const fetchParcelState = useCallback(async () => {
     const res = await fetch('/api/v1/ui/parcels');
     if (!res.ok) return;
     setHostParcels(await res.json());
-  };
+  }, []);
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
       await Promise.all([fetchVersions(), fetchHosts(), fetchParcelState()]);
@@ -174,13 +210,13 @@ export function Artifacts() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchVersions, fetchHosts, fetchParcelState]);
 
   useEffect(() => {
-    refreshAll();
-    const timer = window.setInterval(fetchParcelState, 5000);
+    void (async () => { await refreshAll(); })();
+    const timer = window.setInterval(() => { void (async () => { await fetchParcelState(); })(); }, 5000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [refreshAll, fetchParcelState]);
 
   useEffect(() => {
     window.localStorage.setItem('tantor.universalDistributionDir', universalDistributionDir);
@@ -224,12 +260,10 @@ export function Artifacts() {
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
-  const isHostOnline = (_host: Host) => {
-    //const status = (host.status || '').toUpperCase();
-    //const agentStatus = (host.agentStatus || '').toUpperCase();
-    //return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';
-    return true; // Bypass offline check for local UI/Figma design testing
-
+  const isHostOnline = (host: Host) => {
+    const status = (host.status || '').toUpperCase();
+    const agentStatus = (host.agentStatus || '').toUpperCase();
+    return agentStatus === 'ONLINE' || status === 'ONLINE' || status === 'AVAILABLE';
   };
 
   const runParcelAction = async (action: ParcelAction, ver: ArtifactVersion, host: Host) => {
@@ -256,8 +290,8 @@ export function Artifacts() {
       }
       await fetchParcelState();
       setUploadMsg({ text: `${actionLabel(action)} scheduled on ${host.hostname || host.id}`, ok: true });
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || `${actionLabel(action)} failed`, ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : `${actionLabel(action)} failed`, ok: false });
     } finally {
       setActingKey(null);
     }
@@ -301,8 +335,8 @@ export function Artifacts() {
       }
       setUploadMsg({ text: `Distribution scheduled on ${eligible.length} hosts.`, ok: true });
       await fetchParcelState();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Distribute all failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Distribute all failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -342,8 +376,8 @@ export function Artifacts() {
       setUploadMsg({ text: `Distribution scheduled on ${targets.length} selected host${targets.length === 1 ? '' : 's'}.`, ok: true });
       setSelectedHosts(current => ({ ...current, [ver.id]: [] }));
       await fetchParcelState();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Selected-host distribution failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Selected-host distribution failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -391,8 +425,8 @@ export function Artifacts() {
       if (expanded === ver.id) setExpanded(null);
       setUploadMsg({ text: `Deleted ${artifactServiceLabel(ver.service_type)} ${ver.version} binary.`, ok: true });
       await refreshAll();
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Delete failed.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Delete failed.', ok: false });
     } finally {
       setActingKey(null);
     }
@@ -408,8 +442,8 @@ export function Artifacts() {
       if (!res.ok) throw new Error('Unable to load artifact logs.');
       const body = await res.json();
       setArtifactAuditEvents(body.events || []);
-    } catch (e: any) {
-      setUploadMsg({ text: e.message || 'Unable to load artifact logs.', ok: false });
+    } catch (e) {
+      setUploadMsg({ text: e instanceof Error ? e.message : 'Unable to load artifact logs.', ok: false });
     } finally {
       setArtifactAuditLoading(false);
     }
@@ -430,6 +464,15 @@ export function Artifacts() {
         {actionLabel(action)}
       </button>
     );
+  };
+
+  const formatParcelStatus = (status?: string) => {
+    if (!status || status === 'AVAILABLE') return 'Available';
+    return status
+      .toLowerCase()
+      .split('_')
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   };
 
   const renderActions = (ver: ArtifactVersion, host: Host, state?: HostParcel) => {
@@ -459,7 +502,7 @@ export function Artifacts() {
         status === 'ACTIVATING' ? 'Activating' :
           status === 'DEACTIVATING' ? 'Deactivating' : 'Removing';
       return (
-        <button className="parcel-action distribute" disabled style={{ opacity: 0.8, cursor: 'not-allowed' }}>
+        <button className={`parcel-action progress ${status.toLowerCase()}`} disabled>
           <Loader2 size={13} className="spin" />
           {displayLabel}
         </button>
@@ -492,7 +535,7 @@ export function Artifacts() {
       <header className="page-header flex-between">
         <div>
           <h1>Artifacts</h1>
-          <p>Manage your Linux sDistribute, activate, deactivate, and remove Kafka parcels on managed hostservers for Kafka deployment</p>
+          <p>Manage your Linux Distribute, activate, deactivate, and remove Kafka parcels on managed hostservers for Kafka deployment</p>
         </div>
         <div className="header-actions">
           {uploadMsg && (
@@ -534,7 +577,7 @@ export function Artifacts() {
           <div className="no-artifacts-illustration-container">
             <svg className="no-artifacts-illustration" width="130" height="100" viewBox="0 0 130 100" fill="none" xmlns="http://www.w3.org/2000/svg">
               {/* Card 1 */}
-              <rect x="15" y="10" width="100" height="20" rx="4" fill="white" stroke="#E2E8F0" strokeWidth="1" />
+              <rect x="15" y="10" width="100" height="20" rx="4" fill="white" stroke="var(--border-subtle)" strokeWidth="1" />
               <rect x="25" y="18" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               <rect x="55" y="18" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               {/* Card 2 */}
@@ -542,13 +585,13 @@ export function Artifacts() {
               <rect x="25" y="44" width="24" height="4" rx="1" fill="#8B5CF6" opacity="0.8" />
               <rect x="57" y="44" width="24" height="4" rx="1" fill="#8B5CF6" opacity="0.8" />
               {/* Card 3 */}
-              <rect x="15" y="62" width="100" height="20" rx="4" fill="white" stroke="#E2E8F0" strokeWidth="1" />
+              <rect x="15" y="62" width="100" height="20" rx="4" fill="white" stroke="var(--border-subtle)" strokeWidth="1" />
               <rect x="25" y="70" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               <rect x="55" y="70" width="20" height="4" rx="1" fill="#A78BFA" opacity="0.6" />
               {/* Reflection lines under cards */}
-              <line x1="25" y1="90" x2="45" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="55" y1="90" x2="75" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="85" y1="90" x2="105" y2="90" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="25" y1="90" x2="45" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="55" y1="90" x2="75" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
+              <line x1="85" y1="90" x2="105" y2="90" stroke="var(--bg-neutral)" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
           <h3>No Artifacts</h3>
@@ -705,13 +748,12 @@ export function Artifacts() {
                                     <span className="host-uuid">{host.id}</span>
                                   </div>
                                 </div>
-                                <div>
-                                  <span className={`parcel-status ${status.toLowerCase()}`}>
-                                    {status === 'AVAILABLE' ? 'Available' : status}
-                                  </span>
-                                  {state?.errorMsg && <p className="parcel-error">{state.errorMsg}</p>}
-                                </div>
-                                <div className="parcel-host-destination">
+                                  <div>
+                                    <span className={`parcel-status ${status.toLowerCase()}`}>
+                                      {formatParcelStatus(status)}
+                                    </span>
+                                  </div>
+                                  <div className="parcel-host-destination">
                                   <input
                                     className="form-control"
                                     value={hostDistributionDirs[`${ver.id}:${host.id}`] || ''}
@@ -723,10 +765,20 @@ export function Artifacts() {
                                     disabled={!canManage}
                                   />
                                 </div>
-                                <div className="parcel-actions">
-                                  {renderActions(ver, host, state)}
+                                  <div className="parcel-actions">
+                                    {renderActions(ver, host, state)}
+                                  </div>
+                                  {state?.errorMsg && (
+                                    <details className="parcel-error-details">
+                                      <summary>
+                                        <AlertTriangle size={15} aria-hidden="true" />
+                                        <span>{summarizeError(state.errorMsg)}</span>
+                                        <b>View details</b>
+                                      </summary>
+                                      <pre>{state.errorMsg}</pre>
+                                    </details>
+                                  )}
                                 </div>
-                              </div>
                             );
                           })}
                         </div>
@@ -740,13 +792,13 @@ export function Artifacts() {
         </div>
       )}
 
-      {canManage && showUploadModal && (
+      {canManage && showUploadModal ? createPortal(
         <div className="modal-overlay" onClick={() => setShowUploadModal(false)}>
           <div className="modal upload-parcel-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header upload-parcel-header">
               <div className="upload-parcel-heading">
                 <h2>Upload Parcel Binary</h2>
-                <p className="modal-subtitle">Upload a Kafka binary, Kafka Exporter binary, or JMX Exporter jar to the internal artifact repository.</p>
+                <p className="modal-subtitle">Upload a Kafka, Kafka Exporter, or JMX Exporter binary to the internal artifact repository.</p>
               </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
@@ -835,9 +887,9 @@ export function Artifacts() {
             </form>
           </div>
         </div>
-      )}
+        , document.body) : null}
 
-      {auditModalArtifact && (
+      {auditModalArtifact ? createPortal(
         <div className="modal-overlay" onClick={() => setAuditModalArtifact(null)}>
           <div className="modal artifact-log-modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -878,9 +930,9 @@ export function Artifacts() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
 
-      {deleteConfirmVer && (
+      {deleteConfirmVer ? createPortal(
         <div className="modal-overlay" onClick={() => setDeleteConfirmVer(null)}>
           <div className="modal delete-confirm-modal" onClick={e => e.stopPropagation()}>
             <div className="delete-modal-banner">
@@ -911,7 +963,7 @@ export function Artifacts() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
     </div>
   );
 }

@@ -7,8 +7,11 @@ import java.util.*;
 
 public class TestLagGenerator {
     public static void main(String[] args) throws Exception {
-        String bootstrap = "192.168.3.149:9088"; // Hardcoded from user's env
-        String topic = "yawar-topic-1"; // Assume this topic exists or auto-create
+        if (args.length < 2) {
+            throw new IllegalArgumentException("Usage: TestLagGenerator <bootstrap-servers> <topic>");
+        }
+        String bootstrap = args[0];
+        String topic = args[1];
 
         // 1. Produce 100 messages
         Properties prodProps = new Properties();

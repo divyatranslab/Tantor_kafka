@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Edit3, FileDown, FileText, GitCompare, MoreVertical, Plus, RefreshCw, Save, Settings, Trash2, X, AlertOctagon, Copy } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -52,6 +54,17 @@ interface SavedConnection {
   certificateType?: CertificateType;
 }
 
+interface DiscoveredConnection {
+  detected: boolean;
+  certificateRequired: boolean;
+  httpsRequired: boolean;
+  protocol: string | null;
+  host: string | null;
+  port: number | null;
+  endpoint: string | null;
+  message: string | null;
+}
+
 const emptySchema = `{
   "type": "record",
   "name": "Example",
@@ -69,19 +82,139 @@ const compatibilityOptions = [
   'FULL_TRANSITIVE'
 ];
 
-/**
- * Schema Registry returns JSON-based schemas as an escaped string. Format those
- * schemas for display while leaving formats such as Protobuf untouched.
- */
-const formatSchema = (schema: unknown, fallback = '{}'): string => {
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+
+/** Unwraps Schema Registry responses that contain an encoded schema string. */
+const schemaSource = (schema: unknown, fallback = '{}'): string => {
   if (schema === null || schema === undefined || schema === '') return fallback;
 
-  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+  let source = typeof schema === 'string' ? schema : JSON.stringify(schema);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const parsed = JSON.parse(source);
+      if (typeof parsed !== 'string') return JSON.stringify(parsed);
+      source = parsed;
+    } catch {
+      break;
+    }
+  }
+  return source;
+};
+
+/**
+ * Protobuf is not JSON, so it needs a small syntax-aware formatter. Quoted
+ * strings and comments are copied verbatim while braces and semicolons control
+ * indentation. If the input is already formatted, the result remains stable.
+ */
+const formatProtobuf = (source: string): string => {
+  const lines: string[] = [];
+  let current = '';
+  let indent = 0;
+  let quote = '';
+  let escaped = false;
+
+  const append = (text: string) => { current += text; };
+  const flush = () => {
+    const value = current.trim();
+    if (value) lines.push(`${'  '.repeat(Math.max(0, indent))}${value}`);
+    current = '';
+  };
+  const nextNonWhitespace = (from: number) => {
+    let cursor = from;
+    while (cursor < source.length && /\s/.test(source[cursor])) cursor += 1;
+    return source[cursor] || '';
+  };
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1] || '';
+
+    if (quote) {
+      append(char);
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === quote) quote = '';
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      append(char);
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      flush();
+      let comment = '//';
+      index += 2;
+      while (index < source.length && source[index] !== '\n' && source[index] !== '\r') {
+        comment += source[index];
+        index += 1;
+      }
+      lines.push(`${'  '.repeat(Math.max(0, indent))}${comment.trimEnd()}`);
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      flush();
+      let comment = '/*';
+      index += 2;
+      while (index < source.length) {
+        comment += source[index];
+        if (source[index] === '*' && source[index + 1] === '/') {
+          comment += '/';
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      comment.split(/\r?\n/).forEach(line => {
+        if (line.trim()) lines.push(`${'  '.repeat(Math.max(0, indent))}${line.trim()}`);
+      });
+      continue;
+    }
+
+    if (char === '{') {
+      if (current && !/\s$/.test(current)) append(' ');
+      append('{');
+      flush();
+      indent += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      flush();
+      indent = Math.max(0, indent - 1);
+      append('}');
+      if (nextNonWhitespace(index + 1) !== ';') flush();
+      continue;
+    }
+
+    if (char === ';') {
+      append(';');
+      flush();
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current && !/\s$/.test(current)) append(' ');
+      continue;
+    }
+
+    append(char);
+  }
+  flush();
+  return lines.join('\n') || source;
+};
+
+/** Formats Avro/JSON Schema as JSON and Protobuf as native proto syntax. */
+const formatSchema = (schema: unknown, schemaType?: string, fallback = '{}'): string => {
+  const source = schemaSource(schema, fallback);
+  if ((schemaType || '').toUpperCase() === 'PROTOBUF') return formatProtobuf(source);
 
   try {
     const parsed = JSON.parse(source);
-
-    // Some responses contain a JSON document encoded inside another JSON string.
     if (typeof parsed === 'string') {
       try {
         return JSON.stringify(JSON.parse(parsed), null, 2);
@@ -89,28 +222,7 @@ const formatSchema = (schema: unknown, fallback = '{}'): string => {
         return parsed;
       }
     }
-
     return JSON.stringify(parsed, null, 2);
-  } catch {
-    return source;
-  }
-};
-
-const formatSchemaCompact = (schema: unknown, fallback = '{}'): string => {
-  if (schema === null || schema === undefined || schema === '') return fallback;
-
-  const source = typeof schema === 'string' ? schema : JSON.stringify(schema);
-
-  try {
-    const parsed = JSON.parse(source);
-    if (typeof parsed === 'string') {
-      try {
-        return JSON.stringify(JSON.parse(parsed));
-      } catch {
-        return parsed;
-      }
-    }
-    return JSON.stringify(parsed);
   } catch {
     return source;
   }
@@ -127,11 +239,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -140,9 +252,9 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
+          anchor={anchor}
           className="ds-custom-select-dropdown"
           onClose={() => setIsOpen(false)}
           align="start"
@@ -171,10 +283,11 @@ type View = 'list' | 'detail' | 'edit';
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
+  const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
-  const [summary, setSummary] = useState<SchemaSummary | null>(null);
+  const [summary, setSummary] = useState<SchemaSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
@@ -210,9 +323,10 @@ export function SchemaRegistry() {
   const [createSchemaType, setCreateSchemaType] = useState('AVRO');
   const [createSchema, setCreateSchema] = useState(emptySchema);
 
-  // ── Multi-instance state ──────────────────────────────────────────────────
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Multi-instance state ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
+  const loadRequestId = useRef(0);
 
   // Connection form state
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -226,9 +340,9 @@ export function SchemaRegistry() {
   const [certPasteMode, setCertPasteMode] = useState(false);
   const [certPasteText, setCertPasteText] = useState('');
   const [formIsDefault, setFormIsDefault] = useState(false);
-  /** ID of the connection being edited — set when editing an existing connection. */
+  /** ID of the connection being edited ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â set when editing an existing connection. */
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
-  const [globalCompatibility, setGlobalCompatibility] = useState('BACKWARD');
+  const [globalCompatibility, setGlobalCompatibility] = useState(initialSession?.metadata?.globalCompatibility ?? 'BACKWARD');
   const [subjectCompatibility, setSubjectCompatibility] = useState('BACKWARD');
   const [connectSaving, setConnectSaving] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -252,7 +366,7 @@ export function SchemaRegistry() {
       .sort((a, b) => b.version - a.version);
   }, [details]);
 
-  // ── Cert helpers ──────────────────────────────────────────────
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Cert helpers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   /**
    * Safely appends ?connectionId=... to any URL using URLSearchParams.
@@ -300,10 +414,10 @@ export function SchemaRegistry() {
     return undefined;
   };
 
-  // ── Data fetching ─────────────────────────────────────────────
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Data fetching ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
   /** Load all saved SR connections for the instance switcher. */
-  const loadConnections = async () => {
+  const loadConnections = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/connections`);
       if (!res.ok) return;
@@ -314,7 +428,7 @@ export function SchemaRegistry() {
         setSelectedConnectionId(prev => prev ?? defaultConn.id);
       }
     } catch { /* non-fatal */ }
-  };
+  }, [id]);
 
   /** Open connection modal, optionally pre-filling from an existing connection. */
   const openConnectionModal = (conn?: SavedConnection) => {
@@ -376,9 +490,9 @@ export function SchemaRegistry() {
       setShowConnection(false);
       await loadConnections();
       if (data.id) setSelectedConnectionId(data.id);
-      await load();
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to save connection.');
+      await load(data.id || null);
+    } catch (e: unknown) {
+      setConnectError(errorMessage(e, 'Failed to save connection.'));
     } finally {
       setConnectSaving(false);
     }
@@ -402,47 +516,185 @@ export function SchemaRegistry() {
       setSelectedConnectionId(null);
       await loadConnections();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete connection.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete connection.'));
       setLoading(false);
     }
   };
 
-  const loadGlobalCompatibility = async () => {
+  const loadGlobalCompatibility = async (
+    connectionId: string | null = selectedConnectionId,
+    requestId: number = loadRequestId.current
+  ): Promise<string> => {
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`));
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId));
       const data = await res.json().catch(() => ({}));
-      if (res.ok) setGlobalCompatibility(data.compatibilityLevel || data.compatibility || 'BACKWARD');
-    } catch { setGlobalCompatibility('BACKWARD'); }
+      const compatibility = res.ok
+        ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
+        : 'BACKWARD';
+      if (requestId === loadRequestId.current) setGlobalCompatibility(compatibility);
+      return compatibility;
+    } catch {
+      if (requestId === loadRequestId.current) setGlobalCompatibility('BACKWARD');
+      return 'BACKWARD';
+    }
   };
 
-  const load = async () => {
+  const load = async (
+    connectionId: string | null = selectedConnectionId,
+    discovered?: DiscoveredConnection
+  ): Promise<boolean> => {
+    const requestId = ++loadRequestId.current;
     setHasFetched(true);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`));
+      let url = withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`, connectionId);
+      if (!connectionId && discovered?.protocol && discovered.host && discovered.port) {
+        const params = new URLSearchParams({
+          protocol: discovered.protocol,
+          ip: discovered.host,
+          port: String(discovered.port)
+        });
+        url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
+      }
+      const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
+      if (requestId !== loadRequestId.current) return false;
       setSummary(data);
-      await loadGlobalCompatibility();
-    } catch (e: any) {
-      setError(e.message || 'Failed to load Schema Registry.');
+      const compatibility = await loadGlobalCompatibility(connectionId, requestId);
+      if (requestId !== loadRequestId.current) return false;
+
+      // Persist the successful response directly as well as through the layout
+      // effect below. This makes the fetched snapshot durable even if the user
+      // changes routes as soon as the response is painted.
+      writeDataServiceSession('schema-registry', id, {
+        selectedConnectionId: connectionId,
+        summary: data,
+        hasFetched: true,
+        metadata: { globalCompatibility: compatibility }
+      });
+      return true;
+    } catch (e: unknown) {
+      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Schema Registry.'));
+      return false;
+    } finally {
+      if (requestId === loadRequestId.current) setLoading(false);
+    }
+  };
+
+  const handleInstanceChange = (value: string) => {
+    const connectionId = value || null;
+    if (!connectionId || connectionId === selectedConnectionId) return;
+    loadRequestId.current += 1;
+    setSelectedConnectionId(connectionId);
+    setSummary(null);
+    setError(null);
+    setHasFetched(true);
+    void load(connectionId);
+  };
+
+  const prefillDiscoveredConnection = (discovered: DiscoveredConnection, existing?: SavedConnection | null) => {
+    setEditingConnectionId(existing?.id || null);
+    setFormConnectionName(existing?.connectionName || 'Default connection');
+    setProtocol(discovered.protocol || (discovered.httpsRequired ? 'https' : 'http'));
+    setCustomIp(discovered.host || '');
+    setCustomPort(discovered.port ? String(discovered.port) : '8081');
+    setFormIsDefault(true);
+    setCertType('PEM');
+    setCertFile(null);
+    setCertFileName('');
+    setCertPasteText('');
+    setCertPasteMode(false);
+    setCertPassword('');
+    setConnectError(discovered.message || null);
+    setShowConnection(true);
+  };
+
+  const fetchWithDiscovery = async () => {
+    const existingId = selectedConnectionId
+      || savedConnections.find(connection => connection.isDefault)?.id
+      || savedConnections[0]?.id
+      || null;
+    if (existingId) {
+      const loaded = await load(existingId);
+      if (loaded) return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry/discover`);
+      const discovered: DiscoveredConnection = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(discovered.message || 'Failed to detect Schema Registry.');
+
+      if (!discovered.detected) {
+        setHasFetched(false);
+        if (canManage) prefillDiscoveredConnection(
+          discovered,
+          savedConnections.find(connection => connection.id === existingId)
+        );
+        else setError(discovered.message || 'No Schema Registry endpoint could be detected.');
+        return;
+      }
+
+      if (canManage) {
+        const existing = savedConnections.find(connection => connection.id === existingId);
+        const saveUrl = existingId
+          ? `/api/v1/clusters/${id}/data-services/schema-registry/connections/${existingId}`
+          : `/api/v1/clusters/${id}/data-services/schema-registry/connection`;
+        const saveResponse = await fetch(saveUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connectionName: existing?.connectionName || 'Default connection',
+            protocol: discovered.protocol,
+            host: discovered.host,
+            port: discovered.port,
+            isDefault: true
+          })
+        });
+        const saved = await saveResponse.json().catch(() => ({}));
+        if (!saveResponse.ok) throw new Error(saved.message || 'Detected Schema Registry, but could not save the connection.');
+        setSelectedConnectionId(saved.id);
+        await loadConnections();
+        await load(saved.id);
+      } else {
+        await load(null, discovered);
+      }
+    } catch (e: unknown) {
+      setHasFetched(false);
+      setError(errorMessage(e, 'Failed to detect Schema Registry.'));
     } finally {
       setLoading(false);
     }
   };
 
-  // Initial load
-  useEffect(() => { if (id) { loadConnections(); } }, [id]);
+  const loadConnectionsRef = useRef(loadConnections);
+  useLayoutEffect(() => {
+    loadConnectionsRef.current = loadConnections;
+  }, [loadConnections]);
 
-  // Live registry data is fetched only after the user explicitly requests it.
+  // Initial load
   useEffect(() => {
-    setHasFetched(false);
-    setSummary(null);
-    setError(null);
-  }, [id, selectedConnectionId]);
+    if (!id) return;
+    const timer = window.setTimeout(() => { void loadConnectionsRef.current(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [id]);
+
+  // Commit the latest fetched snapshot before the browser can navigate away and
+  // unmount this route. A normal effect can run too late when another tab is
+  // selected immediately after a fetch completes.
+  useLayoutEffect(() => {
+    writeDataServiceSession('schema-registry', id, {
+      selectedConnectionId,
+      summary,
+      hasFetched,
+      metadata: { globalCompatibility }
+    });
+  }, [globalCompatibility, hasFetched, id, selectedConnectionId, summary]);
 
   const openSubject = async (item: SchemaSubject) => {
     setSelected(item);
@@ -458,7 +710,7 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
       setSubjectCompatibility(data.compatibility || globalCompatibility);
-    } catch (e: any) {
+    } catch (e: unknown) {
       setDetails({
         subject: item.subject,
         latest: { version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema },
@@ -466,7 +718,7 @@ export function SchemaRegistry() {
         compatibility: globalCompatibility
       });
       setSubjectCompatibility(globalCompatibility);
-      setError(e.message || 'Failed to load subject details.');
+      setError(errorMessage(e, 'Failed to load subject details.'));
     } finally {
       setLoadingDetails(false);
     }
@@ -478,7 +730,7 @@ export function SchemaRegistry() {
     if (!selected || !latest) return;
     setEditSchemaType(latest.schemaType || 'AVRO');
     setEditCompatibility(subjectCompatibility);
-    setNewSchema(formatSchemaCompact(latest.schema || emptySchema));
+    setNewSchema(formatSchema(latest.schema || emptySchema, latest.schemaType));
     setView('edit');
   };
 
@@ -515,12 +767,13 @@ export function SchemaRegistry() {
   const toggleVersion = (version: number) => {
     setExpandedVersions(prev => {
       const next = new Set(prev);
-      next.has(version) ? next.delete(version) : next.add(version);
+      if (next.has(version)) next.delete(version);
+      else next.add(version);
       return next;
     });
   };
 
-  // ── Actions ───────────────────────────────────────────────────
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Actions ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const submitCreateSchema = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage) return;
@@ -539,8 +792,8 @@ export function SchemaRegistry() {
       setCreateSchema(emptySchema);
       setCreateSchemaType('AVRO');
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to create schema.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to create schema.'));
     } finally {
       setSaving(false);
     }
@@ -571,8 +824,8 @@ export function SchemaRegistry() {
       // Reload detail
       const refreshed = summary?.subjects.find(s => s.subject === selected.subject) || selected;
       await openSubject(refreshed);
-    } catch (e: any) {
-      setError(e.message || 'Failed to update schema.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update schema.'));
     } finally {
       setSaving(false);
     }
@@ -594,8 +847,8 @@ export function SchemaRegistry() {
       if (!res.ok) throw new Error(data.message || 'Failed to delete subject.');
       backToList();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete subject.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete subject.'));
     } finally {
       setSaving(false);
     }
@@ -612,8 +865,8 @@ export function SchemaRegistry() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to update global compatibility.');
-    } catch (e: any) {
-      setError(e.message || 'Failed to update global compatibility.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update global compatibility.'));
     } finally { setSaving(false); }
   };
 
@@ -629,32 +882,32 @@ export function SchemaRegistry() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to update subject compatibility.');
       setDetails(prev => prev ? { ...prev, compatibility: subjectCompatibility } : prev);
-    } catch (e: any) {
-      setError(e.message || 'Failed to update subject compatibility.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to update subject compatibility.'));
     } finally { setSaving(false); }
   };
 
   const connStatusColor = (s: string) =>
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
-  // ── Render ────────────────────────────────────────────────────
+  // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   return (
     <div className="data-services-page animate-fade-in">
 
-      {/* ── LIST VIEW ─────────────────────────────────────────── */}
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ LIST VIEW ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {view === 'list' && (
         <>
           <div className="ds-header ds-sr-header">
             <div className="ds-actions">
               <div className="ds-selectors-group">
-                {/* ── Instance Selector ── */}
+                {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Instance Selector ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
                 <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance Selector</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Instance Selector</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <CustomSelect
                       className="ds-instance-select"
                       value={selectedConnectionId ?? ''}
-                      onChange={val => setSelectedConnectionId(val || null)}
+                      onChange={handleInstanceChange}
                       disabled={savedConnections.length === 0}
                       options={
                         savedConnections.length > 0
@@ -669,9 +922,9 @@ export function SchemaRegistry() {
                   </div>
                 </div>
 
-                {/* ── Global Compatibility Selector ── */}
+                {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Global Compatibility Selector ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
                 <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Global Compatibility Selector</span>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Global Compatibility Selector</span>
                   <CustomSelect
                     className="ds-compat-select"
                     value={globalCompatibility}
@@ -686,7 +939,7 @@ export function SchemaRegistry() {
               </div>
 
               <div className="ds-buttons-group">
-                {/* ── Buttons ── */}
+                {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Buttons ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
                 {canManage && (
                   <button 
                     className="ds-sr-save-button"
@@ -698,15 +951,15 @@ export function SchemaRegistry() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       padding: '0 8px',
-                      gap: '8px',
+                      gap: 'var(--space-2)',
                       height: '32px',
-                      background: '#FFFFFF',
-                      border: '1px solid #3E1363',
-                      borderRadius: '8px',
-                      color: '#3E1363',
+                      background: "var(--bg-surface)",
+                      border: '1px solid var(--button-primary)',
+                      borderRadius: 'var(--radius-md)',
+                      color: 'var(--button-primary)',
                       fontFamily: 'Satoshi, sans-serif',
-                      fontWeight: 500,
-                      fontSize: '14px',
+                      fontWeight: 'var(--font-medium)',
+                      fontSize: 'var(--text-base)',
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
@@ -736,7 +989,7 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
-                <button className="ds-icon-button icon-gray" onClick={load} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
+                <button className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
                 </button>
 
@@ -753,26 +1006,26 @@ export function SchemaRegistry() {
 
           {!hasFetched ? (
             <div className="ds-fetch-prompt ds-sr-fetch-prompt">
-              <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: '16px', fontWeight: 400, color: '#818181' }}>
+              <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-md)', fontWeight: 'var(--font-regular)', color: 'var(--text-tertiary)' }}>
                 Schema Registry data is not loaded automatically.
               </p>
               <button 
                 className="ds-sr-fetch-button"
                 type="button" 
-                onClick={load} 
+                onClick={() => void fetchWithDiscovery()}
                 disabled={loading}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
+                  gap: 'var(--space-2)',
                   height: '36px',
                   padding: '0 16px',
-                  borderRadius: '8px',
-                  background: '#3E1363',
-                  color: '#fff',
-                  fontWeight: 500,
-                  fontSize: '14px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--button-primary)',
+                  color: "var(--text-light)",
+                  fontWeight: 'var(--font-medium)',
+                  fontSize: 'var(--text-base)',
                   border: 'none',
                   cursor: 'pointer',
                   transition: 'all 0.2s'
@@ -843,7 +1096,7 @@ export function SchemaRegistry() {
         </>
       )}
 
-      {/* ── DETAIL VIEW ───────────────────────────────────────── */}
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ DETAIL VIEW ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {view === 'detail' && selected && (
         <>
           {/* Breadcrumb bar */}
@@ -880,10 +1133,16 @@ export function SchemaRegistry() {
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
-                  onClick={() => handleCopy(details?.latest?.schema || selected.schema)}
+                  onClick={() => handleCopy(formatSchema(
+                    details?.latest?.schema || selected.schema,
+                    details?.latest?.schemaType || selected.schemaType
+                  ))}
                   title="Copy schema to clipboard"
                 >
-                  {copiedText === (details?.latest?.schema || selected.schema) ? (
+                  {copiedText === formatSchema(
+                    details?.latest?.schema || selected.schema,
+                    details?.latest?.schemaType || selected.schemaType
+                  ) ? (
                     <span className="ds-copied-text">Copied!</span>
                   ) : (
                     <Copy size={16} />
@@ -891,7 +1150,10 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-schema-code">
-                {loadingDetails ? 'Loading schema...' : formatSchemaCompact(details?.latest?.schema || selected.schema)}
+                {loadingDetails ? 'Loading schema...' : formatSchema(
+                  details?.latest?.schema || selected.schema,
+                  details?.latest?.schemaType || selected.schemaType
+                )}
               </pre>
             </div>
             <div className="ds-schema-meta-card">
@@ -938,7 +1200,9 @@ export function SchemaRegistry() {
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
                         <button className="ds-mini-button ds-expand-btn">
-                          {expandedVersions.has(version.version) ? '−' : '—'}
+                          {expandedVersions.has(version.version)
+                            ? <ChevronDown size={14} aria-hidden="true" />
+                            : <ChevronRight size={14} aria-hidden="true" />}
                         </button>
                       </td>
                       <td>{version.version}</td>
@@ -953,17 +1217,17 @@ export function SchemaRegistry() {
                               <button
                                 type="button"
                                 className="ds-schema-copy-btn"
-                                onClick={() => handleCopy(version.schema)}
+                                onClick={() => handleCopy(formatSchema(version.schema, version.schemaType))}
                                 title="Copy schema to clipboard"
                               >
-                                {copiedText === version.schema ? (
+                                {copiedText === formatSchema(version.schema, version.schemaType) ? (
                                   <span className="ds-copied-text">Copied!</span>
                                 ) : (
                                   <Copy size={16} />
                                 )}
                               </button>
                             </div>
-                            <pre className="ds-version-schema-code">{formatSchema(version.schema)}</pre>
+                            <pre className="ds-version-schema-code">{formatSchema(version.schema, version.schemaType)}</pre>
                           </div>
                         </td>
                       </tr>
@@ -978,12 +1242,12 @@ export function SchemaRegistry() {
           </div>
         </>
       )}
-      {showCompare && details && (
+      {showCompare && details && createPortal(
         <div className="ds-modal-backdrop ds-compare-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-versions-title">
           <div className="ds-modal ds-compare-modal animate-fade-in">
             <div className="ds-modal-header">
               <div>
-                <h3 id="compare-versions-title" style={{ fontSize: '18px', fontWeight: 700 }}>Compare Versions</h3>
+                <h3 id="compare-versions-title" style={{ fontSize: '18px', fontWeight: 'var(--font-bold)' }}>Compare Versions</h3>
                 <span className="ds-muted-line">{details.subject}</span>
               </div>
               <button type="button" className="ds-close-btn" onClick={() => setShowCompare(false)} title="Close">
@@ -1030,7 +1294,7 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaA?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaA?.schema, 'Schema unavailable')}
+                      {formatSchema(comparedSchemaA?.schema, comparedSchemaA?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                   <div className="ds-compare-card">
@@ -1039,17 +1303,18 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaB?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaB?.schema, 'Schema unavailable')}
+                      {formatSchema(comparedSchemaB?.schema, comparedSchemaB?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                 </div>
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── EDIT VIEW ─────────────────────────────────────────── */}
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ EDIT VIEW ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {canManage && view === 'edit' && selected && (
         <form className="ds-sr-edit-form" onSubmit={submitEditSchema}>
           {/* Breadcrumb bar */}
@@ -1104,10 +1369,16 @@ export function SchemaRegistry() {
                 <button
                   type="button"
                   className="ds-schema-copy-btn"
-                  onClick={() => handleCopy(details?.latest?.schema || selected.schema || '{}')}
+                  onClick={() => handleCopy(formatSchema(
+                    details?.latest?.schema || selected.schema || '{}',
+                    details?.latest?.schemaType || selected.schemaType
+                  ))}
                   title="Copy schema to clipboard"
                 >
-                  {copiedText === (details?.latest?.schema || selected.schema || '{}') ? (
+                  {copiedText === formatSchema(
+                    details?.latest?.schema || selected.schema || '{}',
+                    details?.latest?.schemaType || selected.schemaType
+                  ) ? (
                     <span className="ds-copied-text">Copied!</span>
                   ) : (
                     <Copy size={16} />
@@ -1115,7 +1386,10 @@ export function SchemaRegistry() {
                 </button>
               </div>
               <pre className="ds-edit-code ds-edit-readonly">
-                {formatSchemaCompact(details?.latest?.schema || selected.schema || '{}')}
+                {formatSchema(
+                  details?.latest?.schema || selected.schema || '{}',
+                  details?.latest?.schemaType || selected.schemaType
+                )}
               </pre>
             </div>
             <div className="ds-edit-pane">
@@ -1146,10 +1420,10 @@ export function SchemaRegistry() {
         </form>
       )}
 
-      {/* ── Connection modal ──────────────────────────────────── */}
-      {canManage && showConnection && (
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Connection modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {canManage && showConnection && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ds-modal ds-connection-modal">
+          <div className="ds-modal ds-connection-modal ds-upload-style-modal">
             <div className="ds-modal-header">
               <div>
                 <h3>{editingConnectionId ? 'Edit Connection' : 'Add Schema Registry Connection'}</h3>
@@ -1161,10 +1435,10 @@ export function SchemaRegistry() {
               <div className="ds-modal-inner-card">
                 {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
                 {selectedConn?.status && editingConnectionId && (
-                  <div style={{ padding: '10px 14px', background: '#FFFFFF', borderRadius: 8, border: '1px solid #E8E6E1', fontSize: 13, color: '#282F49' }}>
+                  <div style={{ padding: '10px 14px', background: "var(--bg-surface)", borderRadius: 8, border: '1px solid #E8E6E1', fontSize: 13, color: 'var(--text-primary)' }}>
                     Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
-                    {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>✓ Cert Configured</span>}
-                    {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
+                    {selectedConn.certificateConfigured && <span className="ds-configured-status"><Check size={14} aria-hidden="true" /> Cert Configured</span>}
+                    {selectedConn.truststoreConfigured && <span className="ds-configured-status"><Check size={14} aria-hidden="true" /> Truststore Password Configured</span>}
                   </div>
                 )}
                 <div className="ds-field">
@@ -1212,13 +1486,15 @@ export function SchemaRegistry() {
                     />
                   </div>
                   {certType === 'PEM' ? (
-                    <div className="ds-field">
-                      <label>
-                        <span>Certificate</span>
+                    <div className="ds-field ds-certificate-field">
+                      <div className="ds-certificate-label-row">
+                        <label>Certificate</label>
                         <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
-                          {certPasteMode ? '📎 Upload file' : '📋 Paste text'}
+                          {certPasteMode
+                            ? <><Paperclip size={14} aria-hidden="true" /> Upload file</>
+                            : <><ClipboardPaste size={14} aria-hidden="true" /> Paste text</>}
                         </button>
-                      </label>
+                      </div>
                       {certPasteMode ? (
                         <textarea value={certPasteText} onChange={e => setCertPasteText(e.target.value)}
                           placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDXTCCAkWgAwIBAgIJAMEn...&#10;-----END CERTIFICATE-----"
@@ -1271,7 +1547,7 @@ export function SchemaRegistry() {
                       <span className="ds-toggle-thumb" />
                     </span>
                   </label>
-                  <label htmlFor="sr-is-default" className="ds-toggle-label" style={{ color: '#818181', fontSize: '13px', cursor: 'pointer' }}>
+                  <label htmlFor="sr-is-default" className="ds-toggle-label" style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)', cursor: 'pointer' }}>
                     Set as default connection for this cluster
                   </label>
                 </div>
@@ -1284,13 +1560,14 @@ export function SchemaRegistry() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Create Schema modal ───────────────────────────────── */}
-      {canManage && showCreate && (
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Create Schema modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {canManage && showCreate && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <form className="ds-modal" onSubmit={submitCreateSchema}>
+          <form className="ds-modal ds-upload-style-modal" onSubmit={submitCreateSchema}>
             <div className="ds-modal-header">
               <div>
                 <h3>Create Schema</h3>
@@ -1323,12 +1600,13 @@ export function SchemaRegistry() {
               </button>
             </div>
           </form>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Custom Delete Connection Confirmation Modal ── */}
-      {showDeleteConfirm && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Connection Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {showDeleteConfirm && createPortal(
+        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
             <div className="ds-delete-modal-banner">
               <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
@@ -1349,12 +1627,13 @@ export function SchemaRegistry() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {/* ── Custom Delete Subject Confirmation Modal ── */}
-      {subjectToDelete && (
-        <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
+      {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Subject Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {subjectToDelete && createPortal(
+        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
             <div className="ds-delete-modal-banner">
               <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
@@ -1375,7 +1654,8 @@ export function SchemaRegistry() {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

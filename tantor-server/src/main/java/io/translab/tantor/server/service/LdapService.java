@@ -2,6 +2,7 @@ package io.translab.tantor.server.service;
 
 import io.translab.tantor.server.domain.LdapConfig;
 import io.translab.tantor.server.dto.LdapDTOs;
+import io.translab.tantor.server.security.EncryptionService;
 import org.springframework.stereotype.Service;
 
 import javax.naming.Context;
@@ -14,6 +15,12 @@ import java.util.List;
 
 @Service
 public class LdapService {
+    private static final String ENCRYPTION_PREFIX = "enc:v1:";
+    private final EncryptionService encryptionService;
+
+    public LdapService(EncryptionService encryptionService) {
+        this.encryptionService = encryptionService;
+    }
 
     /**
      * Create JNDI Environment Properties
@@ -117,13 +124,17 @@ public class LdapService {
     }
 
     public String encryptPassword(String plainText) {
-        // Simple base64 encoding for placeholder. In production use AES Encryptors.
         if (plainText == null) return null;
-        return java.util.Base64.getEncoder().encodeToString(plainText.getBytes());
+        return ENCRYPTION_PREFIX + encryptionService.encrypt(plainText);
     }
 
     public String decryptPassword(String encrypted) {
         if (encrypted == null) return null;
-        return new String(java.util.Base64.getDecoder().decode(encrypted));
+        if (encrypted.startsWith(ENCRYPTION_PREFIX)) {
+            return encryptionService.decrypt(encrypted.substring(ENCRYPTION_PREFIX.length()));
+        }
+        // Read legacy Base64 values once so an administrator can re-save the
+        // configuration, which migrates them to AES-GCM encryption.
+        return new String(java.util.Base64.getDecoder().decode(encrypted), java.nio.charset.StandardCharsets.UTF_8);
     }
 }

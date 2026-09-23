@@ -5,12 +5,12 @@
 The UI uses Keycloak Authorization Code Flow with PKCE S256 through `keycloak-js`.
 Do not configure a client secret in the React application.
 
-Default client settings:
+Deployment-supplied client settings:
 
 ```text
-Keycloak URL: https://keycloak.tantor.io
-Realm: Gatekeeper
-Client ID: apb-kafka
+Keycloak URL: <identity-provider-origin>
+Realm: <realm>
+Client ID: <public-client-id>
 Client type: Public
 ```
 
@@ -32,13 +32,17 @@ Web origins:
 <frontend-origin>
 ```
 
-Optional Vite environment overrides:
+Optional local-development Vite overrides:
 
 ```text
-VITE_KEYCLOAK_URL=https://keycloak.tantor.io
-VITE_KEYCLOAK_REALM=Gatekeeper
-VITE_KEYCLOAK_CLIENT_ID=apb-kafka
+VITE_KEYCLOAK_URL=https://identity.development.internal
+VITE_KEYCLOAK_REALM=development
+VITE_KEYCLOAK_CLIENT_ID=tantor-ui-development
 ```
+
+Production values are not compiled into the bundle. `package-deployment.ps1`
+generates `runtime-config.js`; `runtimeConfig.ts` validates it and routes all
+same-origin `/api` and `/api/v1/artifacts` calls through its configured paths.
 
 Every protected backend request must include `Authorization: Bearer <access-token>`.
 The backend must validate token signature, issuer, expiry, and required roles or authorities.

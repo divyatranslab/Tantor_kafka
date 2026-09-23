@@ -2,6 +2,7 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.LdapConfig;
 import io.translab.tantor.server.domain.User;
+import io.translab.tantor.server.audit.AuditService;
 import io.translab.tantor.server.dto.LdapDTOs;
 import io.translab.tantor.server.repository.LdapConfigRepository;
 import io.translab.tantor.server.repository.UserRepository;
@@ -16,6 +17,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import io.translab.tantor.server.dto.UserDto;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.beans.factory.annotation.Value;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -27,47 +33,93 @@ public class AuthController {
     private final LdapService ldapService;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditService auditService;
+
+    @Value("${tantor.security.local-break-glass.enabled:false}")
+    private boolean breakGlassEnabled;
+
+    @Value("${tantor.security.local-break-glass.username:}")
+    private String breakGlassUsername;
 
     @PostMapping("/login")
     public ResponseEntity<JwtResponse> authenticateUser(@RequestBody LoginRequest loginRequest) {
         String username = loginRequest.getUsername();
         String password = loginRequest.getPassword();
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            return ResponseEntity.status(401).build();
+        }
+        username = username.trim();
 
         LdapConfig ldapConfig = ldapConfigRepository.findAll().stream().findFirst().orElse(null);
-        boolean ldapSuccess = false;
+        boolean ldapEnabled = ldapConfig != null && ldapConfig.isEnabled();
 
-        if (ldapConfig != null && ldapConfig.isEnabled()) {
+        if (ldapEnabled) {
             String bindPassword = ldapService.decryptPassword(ldapConfig.getEncryptedBindPassword());
             LdapDTOs.LdapTestResponse ldapResponse = ldapService.authenticate(username, password, ldapConfig, bindPassword);
             
             if (ldapResponse.isSuccess()) {
-                ldapSuccess = true;
-                
-                // Sync user to local DB
-                User user = userRepository.findByUsername(username).orElse(new User());
+                User user = userRepository.findByUsername(username).orElse(null);
+                if (user != null && !user.isActive()) {
+                    return ResponseEntity.status(403).build();
+                }
+                if (user == null) user = new User();
                 user.setUsername(username);
-                // Assign a dummy password hash as they login via LDAP
-                user.setPasswordHash(""); 
+                user.setPasswordHash("");
                 user.setAuthSource("ldap");
                 user.setLdapDn(ldapResponse.getUserDn());
-                // In a real scenario, map ldap groups to role here
+                user.setRole(roleForGroups(ldapResponse.getGroups(), ldapConfig));
+                user.setActive(true);
                 userRepository.save(user);
                 
-                String jwt = jwtUtils.generateTokenFromUsername(username);
+                String jwt = jwtUtils.generateToken(username, user.getRole(), "ldap");
                 return ResponseEntity.ok(new JwtResponse(jwt));
             }
         }
 
-        // Fallback to local auth
-        if (!ldapSuccess) {
+        // LDAP mode does not silently fall back to local credentials. The only
+        // exception is the explicitly configured, audited break-glass account.
+        boolean breakGlassLogin = ldapEnabled && isBreakGlassUser(username);
+        if (!ldapEnabled || breakGlassLogin) {
             User user = userRepository.findByUsername(username).orElse(null);
-            if (user != null && user.isActive() && passwordEncoder.matches(password, user.getPasswordHash())) {
-                String jwt = jwtUtils.generateTokenFromUsername(username);
+            if (user != null && (user.getAuthSource() == null || "local".equalsIgnoreCase(user.getAuthSource()))
+                    && user.isActive() && passwordEncoder.matches(password, user.getPasswordHash())) {
+                if (breakGlassLogin && !"admin".equalsIgnoreCase(user.getRole())) {
+                    return ResponseEntity.status(403).build();
+                }
+                if (breakGlassLogin) {
+                    auditService.recordAs(username, "LOCAL_BREAK_GLASS", null,
+                            "AUTHENTICATION", "BREAK_GLASS_LOGIN", "USER", username,
+                            null, "SUCCESS", null, null, null,
+                            Map.of("reason", "LDAP authentication was unavailable or rejected"));
+                }
+                String jwt = jwtUtils.generateToken(username, user.getRole(), "local");
                 return ResponseEntity.ok(new JwtResponse(jwt));
             }
         }
         
         return ResponseEntity.status(401).build();
+    }
+
+    private boolean isBreakGlassUser(String username) {
+        return breakGlassEnabled && breakGlassUsername != null && !breakGlassUsername.isBlank()
+                && breakGlassUsername.equalsIgnoreCase(username);
+    }
+
+    private String roleForGroups(List<String> groups, LdapConfig config) {
+        List<String> safeGroups = groups == null ? List.of() : groups;
+        if (groupPresent(safeGroups, config.getAdminGroupDn())) return "admin";
+        if (groupPresent(safeGroups, config.getMonitorGroupDn())) return "monitor";
+        return "admin".equalsIgnoreCase(config.getDefaultRole()) ? "admin" : "monitor";
+    }
+
+    private boolean groupPresent(List<String> groups, String configuredGroup) {
+        if (configuredGroup == null || configuredGroup.isBlank()) return false;
+        String expected = normalizeDn(configuredGroup);
+        return groups.stream().map(this::normalizeDn).anyMatch(expected::equals);
+    }
+
+    private String normalizeDn(String dn) {
+        return dn == null ? "" : dn.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
     }
 
     @GetMapping("/me")

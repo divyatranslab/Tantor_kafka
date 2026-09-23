@@ -15,11 +15,10 @@ import {
   Users,
 } from 'lucide-react';
 import './Sidebar.css';
-import { useAuth } from '../contexts/AuthContext';
 import collapseIcon from '../assets/collapse.png';
 
 type NavItem = {
-  icon?: any;
+  icon?: React.ElementType;
   label: string;
   path?: string;
   subItems?: NavItem[];
@@ -51,7 +50,6 @@ const navSections: NavSection[] = [
 const hiddenNavPaths = new Set(['/user-management', '/commands', '/ldap-settings', '/admin']);
 
 export function Sidebar() {
-  const { decodedToken } = useAuth();
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('tantor.sidebarCollapsed') === 'true';
   });
@@ -68,7 +66,6 @@ export function Sidebar() {
     Clusters: true,
   });
   const location = useLocation();
-  const displayName = decodedToken?.preferred_username || decodedToken?.name || 'Authenticated';
 
   const toggleExpand = (label: string) => {
     setExpandedItems(prev => ({ ...prev, [label]: !prev[label] }));

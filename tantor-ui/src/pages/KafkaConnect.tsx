@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plug, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown, Database } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction } from '../components/ConfirmDialog';
+import { confirmAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import './DataServiceTabs.css';
 
 interface ConnectorRow {
@@ -47,6 +49,17 @@ interface SavedConnection {
   certificateType?: string;
 }
 
+interface DiscoveredConnection {
+  detected: boolean;
+  certificateRequired: boolean;
+  httpsRequired: boolean;
+  protocol: string | null;
+  host: string | null;
+  port: number | null;
+  endpoint: string | null;
+  message: string | null;
+}
+
 const connectorTemplate = `{
   "name": "file-source",
   "config": {
@@ -56,6 +69,9 @@ const connectorTemplate = `{
     "topic": "file-source-topic"
   }
 }`;
+
+const errorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 interface CustomSelectProps {
   value: string;
@@ -68,11 +84,11 @@ interface CustomSelectProps {
 
 function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(o => o.value === value);
 
   return (
-    <div ref={containerRef} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div 
         className="ds-custom-select-trigger" 
         onClick={() => !disabled && setIsOpen(!isOpen)}
@@ -81,9 +97,9 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
         <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </div>
       
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
+          anchor={anchor}
           className="ds-custom-select-dropdown"
           onClose={() => setIsOpen(false)}
           align="start"
@@ -110,9 +126,10 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
   const { canManage } = usePermissions();
-  const [summary, setSummary] = useState<ConnectSummary | null>(null);
+  const [initialSession] = useState(() => readDataServiceSession<ConnectSummary>('kafka-connect', id));
+  const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
   const [loading, setLoading] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
+  const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
@@ -122,11 +139,12 @@ export function KafkaConnect() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // ── Multi-instance state ──────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Multi-instance state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
+  const loadRequestId = useRef(0);
 
-  // ── Connection form state ─────────────────────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Connection form state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [formConnectionName, setFormConnectionName] = useState('');
   const [customIp, setCustomIp] = useState('');
   const [customPort, setCustomPort] = useState('');
@@ -136,13 +154,13 @@ export function KafkaConnect() {
   const [certFileName, setCertFileName] = useState('');
   const [certPassword, setCertPassword] = useState('');
   const [formIsDefault, setFormIsDefault] = useState(false);
-  /** ID of the connection being edited — set when editing an existing connection. */
+  /** ID of the connection being edited Ã¢â‚¬â€ set when editing an existing connection. */
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
 
   const [connectSaving, setConnectSaving] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
-  // ── Derived: currently selected connection ────────────────────
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Derived: currently selected connection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const selectedConn = useMemo(
     () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
     [savedConnections, selectedConnectionId]
@@ -179,8 +197,8 @@ export function KafkaConnect() {
     return undefined;
   };
 
-  // ── Load all connections (for instance switcher) ──────────────
-  const loadConnections = async () => {
+  // Ã¢â€â‚¬Ã¢â€â‚¬ Load all connections (for instance switcher) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  const loadConnections = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/connections`);
       if (!res.ok) return;
@@ -191,7 +209,7 @@ export function KafkaConnect() {
         setSelectedConnectionId(prev => prev ?? defaultConn.id);
       }
     } catch { /* non-fatal */ }
-  };
+  }, [id]);
 
   /**
    * Open connection modal.
@@ -258,9 +276,9 @@ export function KafkaConnect() {
       setShowConnection(false);
       await loadConnections();
       if (data.id) setSelectedConnectionId(data.id);
-      await load();
-    } catch (e: any) {
-      setConnectError(e.message || 'Failed to save connection.');
+      await load(data.id || null);
+    } catch (e: unknown) {
+      setConnectError(errorMessage(e, 'Failed to save connection.'));
     } finally {
       setConnectSaving(false);
     }
@@ -283,39 +301,160 @@ export function KafkaConnect() {
       setSelectedConnectionId(null);
       await loadConnections();
       await load();
-    } catch (e: any) {
-      setError(e.message || 'Failed to delete connection.');
+    } catch (e: unknown) {
+      setError(errorMessage(e, 'Failed to delete connection.'));
       setLoading(false);
     }
   };
 
-  const load = async () => {
+  const load = async (
+    connectionId: string | null = selectedConnectionId,
+    discovered?: DiscoveredConnection
+  ): Promise<boolean> => {
+    const requestId = ++loadRequestId.current;
     setHasFetched(true);
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`));
+      let url = withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`, connectionId);
+      if (!connectionId && discovered?.protocol && discovered.host && discovered.port) {
+        const params = new URLSearchParams({
+          protocol: discovered.protocol,
+          ip: discovered.host,
+          port: String(discovered.port)
+        });
+        url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
+      }
+      const res = await fetch(url);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
+      if (requestId !== loadRequestId.current) return false;
       setSummary(data);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load Kafka Connect.');
+
+      // Persist the successful response directly as well as through the layout
+      // effect below. This makes the fetched snapshot durable even if the user
+      // changes routes as soon as the response is painted.
+      writeDataServiceSession('kafka-connect', id, {
+        selectedConnectionId: connectionId,
+        summary: data,
+        hasFetched: true
+      });
+      return true;
+    } catch (e: unknown) {
+      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Kafka Connect.'));
+      return false;
+    } finally {
+      if (requestId === loadRequestId.current) setLoading(false);
+    }
+  };
+
+  const handleInstanceChange = (value: string) => {
+    const connectionId = value || null;
+    if (!connectionId || connectionId === selectedConnectionId) return;
+    loadRequestId.current += 1;
+    setSelectedConnectionId(connectionId);
+    setSummary(null);
+    setError(null);
+    setHasFetched(true);
+    void load(connectionId);
+  };
+
+  const prefillDiscoveredConnection = (discovered: DiscoveredConnection, existing?: SavedConnection | null) => {
+    setEditingConnectionId(existing?.id || null);
+    setFormConnectionName(existing?.connectionName || 'Default connection');
+    setProtocol(discovered.protocol || (discovered.httpsRequired ? 'https' : 'http'));
+    setCustomIp(discovered.host || '');
+    setCustomPort(discovered.port ? String(discovered.port) : '8083');
+    setFormIsDefault(true);
+    setCertType('PEM');
+    setCertFile(null);
+    setCertFileName('');
+    setCertPassword('');
+    setConnectError(discovered.message || null);
+    setShowConnection(true);
+  };
+
+  const fetchWithDiscovery = async () => {
+    const existingId = selectedConnectionId
+      || savedConnections.find(connection => connection.isDefault)?.id
+      || savedConnections[0]?.id
+      || null;
+    if (existingId) {
+      const loaded = await load(existingId);
+      if (loaded) return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/data-services/kafka-connect/discover`);
+      const discovered: DiscoveredConnection = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(discovered.message || 'Failed to detect Kafka Connect.');
+
+      if (!discovered.detected) {
+        setHasFetched(false);
+        if (canManage) prefillDiscoveredConnection(
+          discovered,
+          savedConnections.find(connection => connection.id === existingId)
+        );
+        else setError(discovered.message || 'No Kafka Connect endpoint could be detected.');
+        return;
+      }
+
+      if (canManage) {
+        const existing = savedConnections.find(connection => connection.id === existingId);
+        const saveUrl = existingId
+          ? `/api/v1/clusters/${id}/data-services/kafka-connect/connections/${existingId}`
+          : `/api/v1/clusters/${id}/data-services/kafka-connect/connection`;
+        const saveResponse = await fetch(saveUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            connectionName: existing?.connectionName || 'Default connection',
+            protocol: discovered.protocol,
+            host: discovered.host,
+            port: discovered.port,
+            isDefault: true
+          })
+        });
+        const saved = await saveResponse.json().catch(() => ({}));
+        if (!saveResponse.ok) throw new Error(saved.message || 'Detected Kafka Connect, but could not save the connection.');
+        setSelectedConnectionId(saved.id);
+        await loadConnections();
+        await load(saved.id);
+      } else {
+        await load(null, discovered);
+      }
+    } catch (e: unknown) {
+      setHasFetched(false);
+      setError(errorMessage(e, 'Failed to detect Kafka Connect.'));
     } finally {
       setLoading(false);
     }
   };
 
+  const loadConnectionsRef = useRef(loadConnections);
+  useLayoutEffect(() => {
+    loadConnectionsRef.current = loadConnections;
+  }, [loadConnections]);
+
   // Initial load
   useEffect(() => {
-    if (id) { loadConnections(); }
+    if (!id) return;
+    const timer = window.setTimeout(() => { void loadConnectionsRef.current(); }, 0);
+    return () => window.clearTimeout(timer);
   }, [id]);
 
-  // Live Connect data is fetched only after the user explicitly requests it.
-  useEffect(() => {
-    setHasFetched(false);
-    setSummary(null);
-    setError(null);
-  }, [id, selectedConnectionId]);
+  // Commit the latest fetched snapshot before the browser can navigate away and
+  // unmount this route. A normal effect can run too late when another tab is
+  // selected immediately after a fetch completes.
+  useLayoutEffect(() => {
+    writeDataServiceSession('kafka-connect', id, {
+      selectedConnectionId,
+      summary,
+      hasFetched
+    });
+  }, [hasFetched, id, selectedConnectionId, summary]);
 
   const clusters = useMemo(() => [{
     name: selectedConn?.connectionName || 'default-connect',
@@ -343,7 +482,7 @@ export function KafkaConnect() {
       }
       if (!payloads.length) throw new Error('No connector definitions found.');
       setConnectorJson(JSON.stringify(payloads.length === 1 ? payloads[0] : payloads, null, 2));
-    } catch (e: any) { setCreateError(e.message || 'Unable to read connector JSON.'); }
+    } catch (e: unknown) { setCreateError(errorMessage(e, 'Unable to read connector JSON.')); }
   };
 
   const createConnector = async (e: React.FormEvent) => {
@@ -363,7 +502,7 @@ export function KafkaConnect() {
       }
       setShowCreate(false); setConnectorJson(connectorTemplate); await load();
       setSuccessMessage(deployed === 1 ? 'Connector deployed successfully.' : (deployed + ' connectors deployed successfully.'));
-    } catch (e: any) { setCreateError(e.message || 'Failed to deploy connector.'); }
+    } catch (e: unknown) { setCreateError(errorMessage(e, 'Failed to deploy connector.')); }
     finally { setSaving(false); }
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
@@ -381,8 +520,8 @@ export function KafkaConnect() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${action} connector.`);
       await load();
-    } catch (e: any) {
-      setError(e.message || `Failed to ${action} connector.`);
+    } catch (e: unknown) {
+      setError(errorMessage(e, `Failed to ${action} connector.`));
     } finally {
       setSaving(false);
     }
@@ -402,14 +541,14 @@ export function KafkaConnect() {
       <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
         <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: hasFetched ? 'space-between' : 'flex-end', alignItems: 'flex-end', marginBottom: hasFetched ? '0' : '24px' }}>
           
-          {/* ── Instance Selector ── */}
+          {/* Ã¢â€â‚¬Ã¢â€â‚¬ Instance Selector Ã¢â€â‚¬Ã¢â€â‚¬ */}
           {hasFetched && <div className="ds-compat-control" style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '13px', fontWeight: 500, color: '#332849' }}>Instance</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: 'var(--text-sm)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Instance</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <CustomSelect
                 className="ds-instance-select"
                 value={selectedConnectionId ?? ''}
-                onChange={val => setSelectedConnectionId(val || null)}
+                onChange={handleInstanceChange}
                 disabled={savedConnections.length === 0}
                 options={
                   savedConnections.length > 0
@@ -436,14 +575,14 @@ export function KafkaConnect() {
             </div>
           </div>}
 
-          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* ── Buttons ── */}
+          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            {/* Ã¢â€â‚¬Ã¢â€â‚¬ Buttons Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {canManage && (
               <button 
                 className="ds-button ds-kafka-connect-action-button"
                 onClick={() => openConnectionModal()} 
               >
-                <Settings size={16} style={{ color: '#3E1363' }} /> Add Connection
+                <Settings size={16} style={{ color: 'var(--button-primary)' }} /> Add Connection
               </button>
             )}
 
@@ -455,16 +594,16 @@ export function KafkaConnect() {
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: '8px',
+                  gap: 'var(--space-2)',
                   height: '35px',
                   padding: '8px 16px',
-                  background: '#3E1363',
+                  background: 'var(--button-primary)',
                   border: 'none',
-                  borderRadius: '8px',
-                  color: '#FFFFFF',
+                  borderRadius: 'var(--radius-md)',
+                  color: "var(--text-light)",
                   fontFamily: 'Satoshi, sans-serif',
-                  fontWeight: 500,
-                  fontSize: '14px',
+                  fontWeight: 'var(--font-medium)',
+                  fontSize: 'var(--text-base)',
                   cursor: 'pointer',
                   transition: 'all 0.2s'
                 }}
@@ -484,21 +623,21 @@ export function KafkaConnect() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: '#FFFFFF',
-                  border: '1px solid #D2D2D7',
-                  borderRadius: '8px',
+                  background: "var(--bg-surface)",
+                  border: '1px solid var(--border-mid)',
+                  borderRadius: 'var(--radius-md)',
                   cursor: 'pointer',
                   opacity: selectedConn ? 1 : 0.5
                 }}
                 title="Delete connection"
               >
-                <Trash2 size={16} style={{ color: '#71717A' }} />
+                <Trash2 size={16} style={{ color: 'var(--text-neutral)' }} />
               </button>
             )}
 
             <button 
               className="ds-icon-button icon-gray" 
-              onClick={load} 
+              onClick={() => void fetchWithDiscovery()}
               disabled={loading}
               style={{
                 width: '35px',
@@ -506,14 +645,14 @@ export function KafkaConnect() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: '#FFFFFF',
-                border: '1px solid #D2D2D7',
-                borderRadius: '8px',
+                background: "var(--bg-surface)",
+                border: '1px solid var(--border-mid)',
+                borderRadius: 'var(--radius-md)',
                 cursor: 'pointer'
               }}
               title="Refresh"
             >
-              <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: '#71717A' }} />
+              <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: 'var(--text-neutral)' }} />
             </button>
 
             {canManage && (
@@ -527,15 +666,15 @@ export function KafkaConnect() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: '#FFFFFF',
-                  border: '1px solid #D2D2D7',
-                  borderRadius: '8px',
+                  background: "var(--bg-surface)",
+                  border: '1px solid var(--border-mid)',
+                  borderRadius: 'var(--radius-md)',
                   cursor: 'pointer',
                   opacity: selectedConn ? 1 : 0.5
                 }}
                 title="Edit connection"
               >
-                <MoreVertical size={16} style={{ color: '#71717A' }} />
+                <MoreVertical size={16} style={{ color: 'var(--text-neutral)' }} />
               </button>
             )}
           </div>
@@ -545,24 +684,24 @@ export function KafkaConnect() {
       {error && <div className="ds-alert">{error}</div>}
 
       {!hasFetched ? (
-        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: '16px' }}>
-          <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: '16px', color: '#818181' }}>Kafka Connect data is not loaded automatically.</p>
+        <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: 'var(--space-4)' }}>
+          <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-md)', color: 'var(--text-tertiary)' }}>Kafka Connect data is not loaded automatically.</p>
           <button 
             type="button" 
-            onClick={load} 
+            onClick={() => void fetchWithDiscovery()}
             disabled={loading}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px',
+              gap: 'var(--space-2)',
               height: '36px',
               padding: '0 16px',
-              borderRadius: '8px',
-              background: '#3E1363',
-              color: '#FFFFFF',
-              fontWeight: 500,
-              fontSize: '14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--button-primary)',
+              color: "var(--text-light)",
+              fontWeight: 'var(--font-medium)',
+              fontSize: 'var(--text-base)',
               border: 'none',
               cursor: 'pointer',
               fontFamily: 'Satoshi, sans-serif'
@@ -578,7 +717,7 @@ export function KafkaConnect() {
         flexDirection: 'row',
         alignItems: 'center',
         padding: '0 0 24px 0',
-        gap: '16px',
+        gap: 'var(--space-4)',
         background: 'transparent',
         borderRadius: '0',
         marginBottom: '24px',
@@ -591,15 +730,15 @@ export function KafkaConnect() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-start',
-          padding: '16px',
-          gap: '8px',
-          background: '#FFFFFF',
+          padding: 'var(--space-4)',
+          gap: 'var(--space-2)',
+          background: "var(--bg-surface)",
           border: '1px solid #E4E4E7',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           flex: '1 1 0px'
         }}>
-          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Total Connectors</span>
-          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.connectorCount ?? 0}</strong>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-neutral)' }}>Total Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: '22px', color: 'var(--button-primary-active)' }}>{summary?.connectorCount ?? 0}</strong>
         </div>
 
         {/* Running Connectors */}
@@ -608,15 +747,15 @@ export function KafkaConnect() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-start',
-          padding: '16px',
-          gap: '8px',
-          background: '#FFFFFF',
+          padding: 'var(--space-4)',
+          gap: 'var(--space-2)',
+          background: "var(--bg-surface)",
           border: '1px solid #E4E4E7',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           flex: '1 1 0px'
         }}>
-          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Running Connectors</span>
-          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.runningConnectors ?? 0}</strong>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-neutral)' }}>Running Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: '22px', color: 'var(--button-primary-active)' }}>{summary?.runningConnectors ?? 0}</strong>
         </div>
 
         {/* Paused Connectors */}
@@ -625,15 +764,15 @@ export function KafkaConnect() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-start',
-          padding: '16px',
-          gap: '8px',
-          background: '#FFFFFF',
+          padding: 'var(--space-4)',
+          gap: 'var(--space-2)',
+          background: "var(--bg-surface)",
           border: '1px solid #E4E4E7',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           flex: '1 1 0px'
         }}>
-          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Paused Connectors</span>
-          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.pausedConnectors ?? 0}</strong>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-neutral)' }}>Paused Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: '22px', color: 'var(--button-primary-active)' }}>{summary?.pausedConnectors ?? 0}</strong>
         </div>
 
         {/* Failed Connectors */}
@@ -642,30 +781,30 @@ export function KafkaConnect() {
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'flex-start',
-          padding: '16px',
-          gap: '8px',
-          background: '#FFFFFF',
+          padding: 'var(--space-4)',
+          gap: 'var(--space-2)',
+          background: "var(--bg-surface)",
           border: '1px solid #E4E4E7',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           flex: '1 1 0px'
         }}>
-          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px', color: '#71717A' }}>Failed Connectors</span>
-          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 700, fontSize: '22px', color: '#332849' }}>{summary?.failedConnectors ?? 0}</strong>
+          <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-neutral)' }}>Failed Connectors</span>
+          <strong style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: '22px', color: 'var(--button-primary-active)' }}>{summary?.failedConnectors ?? 0}</strong>
         </div>
       </div>
 
-      <div className="ds-tabs ds-kc-tabs" style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #CCCCCC', marginBottom: '20px' }}>
+      <div className="ds-tabs ds-kc-tabs" style={{ display: 'flex', gap: 'var(--space-6)', borderBottom: '1px solid var(--border-default)', marginBottom: '20px' }}>
         <button 
           className={activeTab === 'clusters' ? 'active' : ''}
           onClick={() => setActiveTab('clusters')}
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'clusters' ? '2px solid #3E1363' : '2px solid transparent',
-            color: activeTab === 'clusters' ? '#3E1363' : '#818181',
+            borderBottom: activeTab === 'clusters' ? '2px solid var(--button-primary)' : '2px solid transparent',
+            color: activeTab === 'clusters' ? 'var(--button-primary)' : 'var(--text-tertiary)',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'clusters' ? 500 : 400,
-            fontSize: '14px',
+            fontSize: 'var(--text-base)',
             padding: '8px 12px 12px 12px',
             cursor: 'pointer',
             marginBottom: '-1px'
@@ -679,11 +818,11 @@ export function KafkaConnect() {
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'connectors' ? '2px solid #3E1363' : '2px solid transparent',
-            color: activeTab === 'connectors' ? '#3E1363' : '#818181',
+            borderBottom: activeTab === 'connectors' ? '2px solid var(--button-primary)' : '2px solid transparent',
+            color: activeTab === 'connectors' ? 'var(--button-primary)' : 'var(--text-tertiary)',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'connectors' ? 500 : 400,
-            fontSize: '14px',
+            fontSize: 'var(--text-base)',
             padding: '8px 12px 12px 12px',
             cursor: 'pointer',
             marginBottom: '-1px'
@@ -697,11 +836,11 @@ export function KafkaConnect() {
           style={{
             background: 'none',
             border: 'none',
-            borderBottom: activeTab === 'plugins' ? '2px solid #3E1363' : '2px solid transparent',
-            color: activeTab === 'plugins' ? '#3E1363' : '#818181',
+            borderBottom: activeTab === 'plugins' ? '2px solid var(--button-primary)' : '2px solid transparent',
+            color: activeTab === 'plugins' ? 'var(--button-primary)' : 'var(--text-tertiary)',
             fontFamily: 'Satoshi, sans-serif',
             fontWeight: activeTab === 'plugins' ? 500 : 400,
-            fontSize: '14px',
+            fontSize: 'var(--text-base)',
             padding: '8px 12px 12px 12px',
             cursor: 'pointer',
             marginBottom: '-1px'
@@ -730,7 +869,7 @@ export function KafkaConnect() {
                         href={summary.connection} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        style={{ color: '#3E1363', textDecoration: 'underline' }}
+                        style={{ color: 'var(--button-primary)', textDecoration: 'underline' }}
                       >
                         {summary.connection}
                       </a>
@@ -809,100 +948,100 @@ export function KafkaConnect() {
       </div>
       </>}
 
-      {/* ── Connection modal ── */}
-      {canManage && showConnection && (
+      {/* Ã¢â€â‚¬Ã¢â€â‚¬ Connection modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
+      {canManage && showConnection && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: '12px', background: '#FFFFFF', padding: '24px', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
+          <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: 'var(--radius-lg)', background: "var(--bg-surface)", padding: 'var(--space-6)', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
             <div className="ds-modal-header" style={{ border: 'none', padding: '0 0 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '18px', color: '#332849', margin: 0 }}>Add Kafka Connect Connection</h3>
-                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', marginTop: '4px', display: 'block' }}>New connection</span>
+                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: '18px', color: 'var(--button-primary-active)', margin: 0 }}>Add Kafka Connect Connection</h3>
+                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>New connection</span>
               </div>
-              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#818181' }}>
+              <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
                 <X size={20} />
               </button>
             </div>
             
-            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: '#F9F9F9', borderRadius: '8px', padding: '24px', marginBottom: '24px' }}>
+            <div className="ds-form ds-compact-form" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', background: '#F8F9FA', border: '1px solid #ECECF1', borderRadius: 'var(--radius-md)', padding: 'var(--space-6)', marginBottom: '24px' }}>
               {connectError && <div className="ds-alert" style={{ marginBottom: 12 }}>{connectError}</div>}
               {selectedConn?.status && editingConnectionId && (
                 <div style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, marginBottom: 12, fontSize: 13 }}>
                   Status: <strong style={{ color: connStatusColor(selectedConn.status) }}>{selectedConn.status}</strong>
-                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>✓ Cert Configured</span>}
-                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>✓ Truststore Password Configured</span>}
+                  {selectedConn.certificateConfigured && <span style={{ marginLeft: 16 }}>Cert Configured</span>}
+                  {selectedConn.truststoreConfigured && <span style={{ marginLeft: 16 }}>Truststore Password Configured</span>}
                 </div>
               )}
               
-              <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Connection Name</label>
+              <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Connection Name</label>
                 <input
                   value={formConnectionName}
                   onChange={e => setFormConnectionName(e.target.value)}
                   placeholder="e.g. ETL Kafka Connect"
                   required
-                  style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                  style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Protocol</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Protocol</label>
                   <div style={{ position: 'relative' }}>
                     <select 
                       value={protocol} 
                       onChange={e => setProtocol(e.target.value)}
-                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                      style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none', appearance: 'none', cursor: 'pointer' }}
                     >
                       <option value="http">http://</option>
                       <option value="https">https://</option>
                     </select>
                     <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
-                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                      <ChevronDown size={16} style={{ color: 'var(--text-tertiary)' }} />
                     </span>
                   </div>
                 </div>
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Host / IP</label>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Host / IP</label>
                   <input 
                     value={customIp} 
                     onChange={e => setCustomIp(e.target.value)} 
                     placeholder="Host or IP address"
                     required 
-                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
                   />
                 </div>
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Port</label>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Port</label>
                   <input 
                     type="number" 
                     value={customPort} 
                     onChange={e => setCustomPort(e.target.value)} 
                     placeholder="8083" 
                     required 
-                    style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
+                    style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
                   />
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate Type</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Certificate Type</label>
                   <div style={{ position: 'relative' }}>
                     <select 
                       value={certType} 
                       onChange={e => { setCertType(e.target.value); setCertFile(null); setCertFileName(''); }}
-                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none', appearance: 'none', cursor: 'pointer' }}
+                      style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none', appearance: 'none', cursor: 'pointer' }}
                     >
                       <option value="PEM">PEM</option>
                       <option value="PKCS12">PKCS12</option>
                     </select>
                     <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
-                      <ChevronDown size={16} style={{ color: '#818181' }} />
+                      <ChevronDown size={16} style={{ color: 'var(--text-tertiary)' }} />
                     </span>
                   </div>
                 </div>
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Certificate / Truststore</label>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Certificate / Truststore</label>
                   <label 
                     className="ds-upload-control"
                     style={{
@@ -910,17 +1049,17 @@ export function KafkaConnect() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '8px',
+                      gap: 'var(--space-2)',
                       width: '100%',
                       height: '40px',
-                      background: '#FFFFFF',
+                      background: "var(--bg-surface)",
                       border: '1px solid #7F56D9',
-                      borderRadius: '8px',
+                      borderRadius: 'var(--radius-md)',
                       cursor: 'pointer',
                       fontFamily: 'Satoshi, sans-serif',
-                      fontSize: '14px',
+                      fontSize: 'var(--text-base)',
                       color: '#7F56D9',
-                      fontWeight: 500
+                      fontWeight: 'var(--font-medium)'
                     }}
                   >
                     <FileDown size={16} style={{ color: '#7F56D9' }} /> {certFileName || 'Choose file'}
@@ -931,25 +1070,20 @@ export function KafkaConnect() {
                       style={{ display: 'none' }}
                     />
                   </label>
-                  {certFileName && <span className="ds-secret-note" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '12px', color: '#36AD8F', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}><CheckCircle size={14} /> {certFileName}</span>}
+                  {certFileName && <span className="ds-secret-note" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-xs)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}><CheckCircle size={14} /> {certFileName}</span>}
                 </div>
               </div>
 
               {certType === 'PKCS12' && (
-                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '13px', color: '#332849' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
-                  <div style={{ position: 'relative' }}>
-                    <input 
-                      type="password" 
-                      value={certPassword} 
-                      onChange={e => setCertPassword(e.target.value)} 
-                      placeholder="Password" 
-                      style={{ width: '100%', height: '40px', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: '14px', outline: 'none' }}
-                    />
-                    <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex', alignItems: 'center' }}>
-                      <ChevronDown size={16} style={{ color: '#818181' }} />
-                    </span>
-                  </div>
+                <div className="ds-field" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <label style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>Truststore Password {selectedConn?.truststoreConfigured && editingConnectionId ? '(Leave blank to keep existing)' : ''}</label>
+                  <input 
+                    type="password" 
+                    value={certPassword} 
+                    onChange={e => setCertPassword(e.target.value)} 
+                    placeholder="Password" 
+                    style={{ width: '100%', height: '40px', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: '0 12px', fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-base)', outline: 'none' }}
+                  />
                 </div>
               )}
 
@@ -972,15 +1106,15 @@ export function KafkaConnect() {
                     padding: '1.5px',
                     width: '33px',
                     height: '18px',
-                    background: formIsDefault ? '#3E1363' : '#ADADAD',
-                    border: formIsDefault ? '0.75px solid #3E1363' : '0.75px solid #ADADAD',
+                    background: formIsDefault ? 'var(--button-primary)' : '#ADADAD',
+                    border: formIsDefault ? '0.75px solid var(--button-primary)' : '0.75px solid #ADADAD',
                     borderRadius: '9px',
                     transition: 'background-color 0.2s, border-color 0.2s'
                   }}>
                     <span className="ds-toggle-thumb" style={{
                       width: '13.5px',
                       height: '13.5px',
-                      background: '#FFFFFF',
+                      background: "var(--bg-surface)",
                       borderRadius: '50%',
                       position: 'absolute',
                       left: formIsDefault ? '16.5px' : '1.5px',
@@ -989,7 +1123,7 @@ export function KafkaConnect() {
                     }} />
                   </span>
                 </label>
-                <label htmlFor="kc-is-default" className="ds-toggle-label" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: '13px', color: '#818181', cursor: 'pointer' }}>
+                <label htmlFor="kc-is-default" className="ds-toggle-label" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
                   Set as default connection for this cluster
                 </label>
               </div>
@@ -1003,13 +1137,13 @@ export function KafkaConnect() {
                 style={{
                   height: '38px',
                   padding: '0 20px',
-                  background: '#FFFFFF',
-                  border: '1px solid #CCCCCC',
-                  borderRadius: '8px',
+                  background: "var(--bg-surface)",
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
                   fontFamily: 'Satoshi, sans-serif',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  color: '#332849',
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 'var(--font-medium)',
+                  color: 'var(--button-primary-active)',
                   cursor: 'pointer'
                 }}
               >
@@ -1022,13 +1156,13 @@ export function KafkaConnect() {
                 style={{
                   height: '38px',
                   padding: '0 20px',
-                  background: '#3E1363',
+                  background: 'var(--button-primary)',
                   border: 'none',
-                  borderRadius: '8px',
+                  borderRadius: 'var(--radius-md)',
                   fontFamily: 'Satoshi, sans-serif',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  color: '#FFFFFF',
+                  fontSize: 'var(--text-base)',
+                  fontWeight: 'var(--font-medium)',
+                  color: "var(--text-light)",
                   cursor: 'pointer',
                   opacity: (connectSaving || !customIp.trim() || !customPort.trim()) ? 0.6 : 1
                 }}
@@ -1037,26 +1171,32 @@ export function KafkaConnect() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {canManage && showCreate && (
+      {canManage && showCreate && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <form className="ds-modal" onSubmit={createConnector}>
+          <form className="ds-modal ds-upload-style-modal ds-connector-create-modal" onSubmit={createConnector}>
             <div className="ds-modal-header">
-              <h3>Create Connector</h3>
-              <button type="button" className="ds-icon-button" onClick={() => setShowCreate(false)} title="Close"><X size={16} /></button>
-            </div>
-            <div className="ds-form">
-              {createError && <div className="ds-alert">{createError}</div>}
-              <div className="ds-upload-row">
-                <label className="ds-button" htmlFor="connector-json-upload"><Upload size={16} /> Upload JSON files</label>
-                <input id="connector-json-upload" type="file" accept="application/json,.json" multiple hidden onChange={e => { void handleConnectorFiles(e.target.files); e.target.value = ''; }} />
-                <span>Choose multiple files, or paste a JSON array for bulk deployment.</span>
+              <div>
+                <h3>Create Connector</h3>
+                <span className="ds-muted-line">Deploy connector configuration</span>
               </div>
-              <div className="ds-field">
-                <label>Connector JSON</label>
-                <textarea value={connectorJson} onChange={e => setConnectorJson(e.target.value)} required />
+              <button type="button" className="ds-close-btn" onClick={() => setShowCreate(false)} title="Close"><X size={20} /></button>
+            </div>
+            <div className="ds-form" style={{ padding: 0 }}>
+              <div className="ds-modal-inner-card">
+                {createError && <div className="ds-alert">{createError}</div>}
+                <div className="ds-upload-row">
+                  <label className="ds-button" htmlFor="connector-json-upload"><Upload size={16} /> Upload JSON files</label>
+                  <input id="connector-json-upload" type="file" accept="application/json,.json" multiple hidden onChange={e => { void handleConnectorFiles(e.target.files); e.target.value = ''; }} />
+                  <span>Choose multiple files, or paste a JSON array for bulk deployment.</span>
+                </div>
+                <div className="ds-field">
+                  <label>Connector JSON</label>
+                  <textarea value={connectorJson} onChange={e => setConnectorJson(e.target.value)} required />
+                </div>
               </div>
             </div>
             <div className="ds-modal-footer">
@@ -1066,14 +1206,17 @@ export function KafkaConnect() {
               </button>
             </div>
           </form>
-        </div>
-      )}      {successMessage && (
+        </div>,
+        document.body
+      )}
+      {successMessage && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-success-modal">
             <CheckCircle size={48} /><h3>Deployment successful</h3><p>{successMessage}</p>
             <button className="ds-button primary" onClick={() => setSuccessMessage(null)}>Done</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

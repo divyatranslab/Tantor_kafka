@@ -90,7 +90,7 @@ public class KafkaAdminService {
                     if (host != null) {
                         try {
                             String configJson = cluster.getConfigJson();
-                            int port = 9092;
+                            Integer port = null;
                             if (configJson != null && !configJson.isEmpty()) {
                                 Map<String, Object> config = objectMapper.readValue(configJson, Map.class);
                                 if (config.containsKey("listeners")) {
@@ -106,18 +106,15 @@ public class KafkaAdminService {
                                     }
                                 }
                             }
+                            if (port == null || port < 1 || port > 65535) {
+                                throw new IllegalArgumentException("listener_port is required and must be between 1 and 65535");
+                            }
                             List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
                             if (!ips.isEmpty()) {
                                 bootstrapServers.add(ips.get(0) + ":" + port);
                             }
                         } catch (Exception e) {
-                            log.error("Error generating bootstrap servers for cluster {}: {}", clusterId, e.getMessage(), e);
-                            try {
-                                List<String> ips = objectMapper.readValue(host.getIpAddresses(), new TypeReference<List<String>>() {});
-                                if (!ips.isEmpty()) bootstrapServers.add(ips.get(0) + ":9092");
-                            } catch (Exception ex) {
-                                log.warn("Failed to parse IPs for host {}", host.getId());
-                            }
+                            throw new IllegalStateException("Invalid Kafka bootstrap configuration for cluster " + clusterId, e);
                         }
                     }
                 }
@@ -181,6 +178,7 @@ public class KafkaAdminService {
                 
                 Map<Integer, String> processRolesMap = new HashMap<>();
                 Map<Integer, String> voterEndpoints = new HashMap<>();
+                String detectedKafkaMode = null;
                 
                 if (!resources.isEmpty()) {
                     try {
@@ -190,6 +188,12 @@ public class KafkaAdminService {
                         for (Map.Entry<org.apache.kafka.common.config.ConfigResource, org.apache.kafka.clients.admin.Config> entry : configs.entrySet()) {
                             int nodeId = Integer.parseInt(entry.getKey().name());
                             org.apache.kafka.clients.admin.Config brokerConfig = entry.getValue();
+
+                            String configuredMode = configuredKafkaMode(brokerConfig);
+                            if ("KRaft".equals(configuredMode)
+                                    || (detectedKafkaMode == null && "ZooKeeper".equals(configuredMode))) {
+                                detectedKafkaMode = configuredMode;
+                            }
                             
                             org.apache.kafka.clients.admin.ConfigEntry processRolesEntry = brokerConfig.get("process.roles");
                             if (processRolesEntry != null && processRolesEntry.value() != null) {
@@ -241,6 +245,7 @@ public class KafkaAdminService {
                 // 2. Query KRaft quorum to find all controllers
                 try {
                     org.apache.kafka.clients.admin.QuorumInfo quorumInfo = client.describeMetadataQuorum().quorumInfo().get();
+                    detectedKafkaMode = "KRaft";
                     for (org.apache.kafka.clients.admin.QuorumInfo.ReplicaState voter : quorumInfo.voters()) {
                         int voterId = voter.replicaId();
                         if (nodeMap.containsKey(voterId)) {
@@ -276,11 +281,17 @@ public class KafkaAdminService {
                         }
                     }
                 } catch (Exception e) {
-                    // Fallback for Zookeeper clusters or older Kafka versions without describeMetadataQuorum
-                    // We just rely on the brokers.
+                    // An unsupported metadata-quorum API proves that this broker is
+                    // from the pre-KRaft/ZooKeeper generation. Authorization and
+                    // timeout failures are not proof of either mode, so retain the
+                    // config-derived result (or Unknown) for those cases.
+                    if (detectedKafkaMode == null && isUnsupportedMetadataQuorum(e)) {
+                        detectedKafkaMode = "ZooKeeper";
+                    }
                     log.warn("Failed to fetch KRaft quorum info (likely Zookeeper mode): {}", e.getMessage());
                 }
 
+                normalizeNodeRolesForMode(nodeMap.values(), detectedKafkaMode);
                 finalNodes.addAll(nodeMap.values());
                 
                 // Deterministic sorting by node ID
@@ -300,7 +311,9 @@ public class KafkaAdminService {
                 result.put("security_protocol", cluster.getSecurityProtocol() == null || cluster.getSecurityProtocol().isBlank()
                         ? "UNKNOWN"
                         : cluster.getSecurityProtocol());
-                result.put("mode", "auto-detected by Kafka client");
+                String reportedKafkaMode = detectedKafkaMode == null ? "Unknown" : detectedKafkaMode;
+                result.put("mode", reportedKafkaMode);
+                result.put("kafkaMode", reportedKafkaMode);
                 result.put("clusterId", clusterId);
                 result.put("kafka_cluster_id", clusterId == null ? "" : clusterId);
                 result.put("brokerCount", finalNodes.stream().filter(n -> Boolean.TRUE.equals(n.get("isBroker"))).count());
@@ -348,6 +361,49 @@ public class KafkaAdminService {
         throw new RuntimeException("Failed to connect to bootstrap servers: " + (lastException != null ? lastException.getMessage() : "Unknown error"));
     }
 
+    void normalizeNodeRolesForMode(Collection<Map<String, Object>> nodes, String kafkaMode) {
+        if (!"ZooKeeper".equalsIgnoreCase(kafkaMode)) {
+            return;
+        }
+
+        // describeCluster().controller() identifies the active broker controller
+        // in ZooKeeper clusters. It is not a KRaft controller process role.
+        // Every node returned by describeCluster().nodes() is therefore a broker.
+        for (Map<String, Object> node : nodes) {
+            node.put("isBroker", true);
+            node.put("isController", false);
+        }
+    }
+
+    private static String configuredKafkaMode(org.apache.kafka.clients.admin.Config brokerConfig) {
+        if (brokerConfig == null) {
+            return null;
+        }
+        org.apache.kafka.clients.admin.ConfigEntry processRoles = brokerConfig.get("process.roles");
+        if (processRoles != null && processRoles.value() != null && !processRoles.value().isBlank()) {
+            return "KRaft";
+        }
+        org.apache.kafka.clients.admin.ConfigEntry zookeeperConnect = brokerConfig.get("zookeeper.connect");
+        if (zookeeperConnect != null
+                && zookeeperConnect.value() != null
+                && !zookeeperConnect.value().isBlank()) {
+            return "ZooKeeper";
+        }
+        return null;
+    }
+
+    private static boolean isUnsupportedMetadataQuorum(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof org.apache.kafka.common.errors.UnsupportedVersionException
+                    || current instanceof UnsupportedOperationException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
     private List<Map<String, Object>> socketResults(String bootstrapServers) {
         List<Map<String, Object>> results = new ArrayList<>();
         for (String server : bootstrapServers.split(",")) {
@@ -392,13 +448,20 @@ public class KafkaAdminService {
 
     public Integer getControllerId(UUID clusterId) {
         try {
-            org.apache.kafka.common.Node controller = getAdminClient(clusterId).describeCluster().controller().get();
-            return controller == null ? null : controller.id();
+            // In KRaft, describeCluster().controller() can identify a broker when the
+            // client was created with bootstrap.servers. The metadata quorum is the
+            // authoritative source for the elected controller leader.
+            return getAdminClient(clusterId)
+                    .describeMetadataQuorum()
+                    .quorumInfo()
+                    .get()
+                    .leaderId();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return null;
         } catch (ExecutionException e) {
             refreshAdminClient(clusterId);
+            log.warn("Failed to resolve active KRaft controller for cluster {}: {}", clusterId, e.getMessage());
             return null;
         }
     }
@@ -513,6 +576,7 @@ public class KafkaAdminService {
 
             // Filter and Sort in memory
             List<String> filteredNames = allTopicNames.stream()
+                    .filter(name -> includeInternal || !isManagedInternalTopic(name))
                     .filter(name -> search == null || search.isEmpty() || name.toLowerCase().contains(search.toLowerCase()))
                     .sorted((a, b) -> {
                         if ("name".equalsIgnoreCase(sortBy)) return a.compareToIgnoreCase(b);
@@ -590,6 +654,14 @@ public class KafkaAdminService {
             refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to list topics: " + e.getMessage());
         }
+    }
+
+    private boolean isManagedInternalTopic(String name) {
+        return "__consumer_offsets".equals(name)
+                || "_schemas".equals(name)
+                || "connect-configs".equals(name)
+                || "connect-offsets".equals(name)
+                || "connect-status".equals(name);
     }
 
     public void createTopic(UUID clusterId, String name, int partitions, short replicationFactor, Map<String, String> configs) {

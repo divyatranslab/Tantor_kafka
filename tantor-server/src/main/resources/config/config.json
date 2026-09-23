@@ -4,6 +4,7 @@
   "ROLLING_RESTART": ["admin"],
   "ADD_NODE": ["admin"],
   "CONFIGURATION_CHANGE": ["admin"],
+  "CONFIGURATION_READ": ["admin", "monitor"],
   "CONFIG_VERSION_CHANGE": ["admin"],
   "BIND_AGENT": ["admin"],
   "HOST_ONBOARDING": ["admin"],

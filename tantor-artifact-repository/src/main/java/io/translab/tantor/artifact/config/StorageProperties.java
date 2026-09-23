@@ -23,6 +23,30 @@ public class StorageProperties {
     @Min(64 * 1024)
     private int streamBufferBytes = 1024 * 1024;
 
+    @Min(1)
+    private long maxUploadBytes = 536_870_912L;
+
+    @Min(1)
+    private long maxBundleBytes = 536_870_912L;
+
+    @Min(1)
+    private long minimumFreeSpaceBytes = 5_368_709_120L;
+
+    @Min(1)
+    private int maxConcurrentUploads = 2;
+
+    @Min(1)
+    private int maxArchiveEntries = 10_000;
+
+    @Min(1)
+    private long maxArchiveEntryBytes = 1_073_741_824L;
+
+    @Min(1)
+    private long maxArchiveExpandedBytes = 2_147_483_648L;
+
+    @Min(1)
+    private int maxArchiveCompressionRatio = 100;
+
     public String getBasePath() {
         return basePath;
     }
@@ -46,4 +70,21 @@ public class StorageProperties {
     public void setStreamBufferBytes(int streamBufferBytes) {
         this.streamBufferBytes = streamBufferBytes;
     }
+
+    public long getMaxUploadBytes() { return maxUploadBytes; }
+    public void setMaxUploadBytes(long maxUploadBytes) { this.maxUploadBytes = maxUploadBytes; }
+    public long getMaxBundleBytes() { return maxBundleBytes; }
+    public void setMaxBundleBytes(long maxBundleBytes) { this.maxBundleBytes = maxBundleBytes; }
+    public long getMinimumFreeSpaceBytes() { return minimumFreeSpaceBytes; }
+    public void setMinimumFreeSpaceBytes(long minimumFreeSpaceBytes) { this.minimumFreeSpaceBytes = minimumFreeSpaceBytes; }
+    public int getMaxConcurrentUploads() { return maxConcurrentUploads; }
+    public void setMaxConcurrentUploads(int maxConcurrentUploads) { this.maxConcurrentUploads = maxConcurrentUploads; }
+    public int getMaxArchiveEntries() { return maxArchiveEntries; }
+    public void setMaxArchiveEntries(int maxArchiveEntries) { this.maxArchiveEntries = maxArchiveEntries; }
+    public long getMaxArchiveEntryBytes() { return maxArchiveEntryBytes; }
+    public void setMaxArchiveEntryBytes(long maxArchiveEntryBytes) { this.maxArchiveEntryBytes = maxArchiveEntryBytes; }
+    public long getMaxArchiveExpandedBytes() { return maxArchiveExpandedBytes; }
+    public void setMaxArchiveExpandedBytes(long maxArchiveExpandedBytes) { this.maxArchiveExpandedBytes = maxArchiveExpandedBytes; }
+    public int getMaxArchiveCompressionRatio() { return maxArchiveCompressionRatio; }
+    public void setMaxArchiveCompressionRatio(int maxArchiveCompressionRatio) { this.maxArchiveCompressionRatio = maxArchiveCompressionRatio; }
 }

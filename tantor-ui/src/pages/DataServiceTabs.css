@@ -573,10 +573,13 @@
   font-size: 12px;
 }
 
-.ds-success-modal {
+.ds-modal.ds-success-modal {
   width: min(420px, calc(100vw - 32px));
+  height: auto;
+  min-height: 0;
+  max-height: calc(100vh - 48px);
   align-items: center;
-  padding: 32px;
+  padding: 28px 32px;
   text-align: center;
 }
 
@@ -687,6 +690,11 @@
   padding: 24px;
 }
 
+.ds-delete-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 .ds-modal {
   width: min(1220px, 100vw - 32px);
   height: 554px;
@@ -781,6 +789,83 @@
 
 .ds-modal-footer .ds-button.primary:hover {
   background: #2D0E49;
+}
+
+/* Scoped compact dialog layout for Schema Registry create/connection flows.
+   The generic .ds-modal is also used by comparison and connector dialogs, so
+   do not change it globally. These rules follow the Upload Binary modal's
+   header, scrollable body, and fixed footer treatment. */
+.ds-modal.ds-upload-style-modal {
+  width: min(760px, calc(100vw - 32px));
+  height: auto;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+}
+
+.ds-upload-style-modal .ds-modal-header {
+  flex-shrink: 0;
+  padding: 24px 24px 12px;
+}
+
+.ds-upload-style-modal .ds-form {
+  min-height: 0;
+  padding: 16px 24px !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ds-upload-style-modal .ds-modal-inner-card {
+  margin: 0;
+  padding: 20px;
+  background: #F8F9FA;
+  border: 1px solid #ECECF1;
+  border-radius: 8px;
+}
+
+/* Keep inline actions such as "Paste text" within their grid column. */
+.ds-upload-style-modal .ds-field {
+  min-width: 0;
+}
+
+.ds-upload-style-modal .ds-field>label:first-child {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-mini-button {
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.ds-upload-style-modal .ds-modal-inner-card + .ds-modal-inner-card {
+  margin-top: 16px;
+}
+
+.ds-configured-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+}
+
+.ds-upload-style-modal .ds-modal-footer {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 20px 24px;
+  background: #F9F9F9;
+  border-top: 1px solid var(--border-default);
+}
+
+.ds-connector-create-modal .ds-upload-row {
+  align-items: center;
+  margin: 0;
+}
+
+.ds-connector-create-modal .ds-field textarea {
+  min-height: 220px;
 }
 
 .ds-result-scroll {
@@ -1040,6 +1125,62 @@
   font-size: 13px;
   height: 38px;
   padding: 0 12px;
+}
+
+/* Keep certificate controls inside the connection modal's grid column. */
+.ds-upload-style-modal .ds-form-grid,
+.ds-upload-style-modal .ds-form-grid > *,
+.ds-upload-style-modal .ds-certificate-field {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-certificate-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.ds-upload-style-modal .ds-certificate-label-row > label {
+  min-width: 0;
+}
+
+.ds-upload-style-modal .ds-certificate-label-row .ds-mini-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  max-width: min(140px, 100%);
+}
+
+.ds-upload-style-modal .ds-file-upload-row {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-upload-btn-label {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-uploaded-file-pill {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ds-upload-style-modal .ds-uploaded-file-pill > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ds-clear-file-btn {
@@ -1548,8 +1689,31 @@
   font-family: monospace;
   font-size: 13px;
   line-height: 1.65;
+  max-height: clamp(280px, 50vh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   white-space: pre-wrap;
   border: none;
+}
+
+.ds-version-schema-code::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-track {
+  background: #17131d;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-thumb {
+  border: 2px solid #17131d;
+  border-radius: 8px;
+  background: #77688a;
+}
+
+.ds-version-schema-code::-webkit-scrollbar-thumb:hover {
+  background: #9b8aad;
 }
 
 @media (max-width: 860px) {
@@ -2270,6 +2434,12 @@
   color: #818181;
 }
 
+.ds-delete-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .ds-delete-btn-cancel {
   padding: 10px 24px;
   border: 1px solid #DF678B;
@@ -2394,6 +2564,8 @@
 /* Compare Versions dialog: keep generic modal rules from overriding this layout. */
 .ds-compare-backdrop {
   background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .ds-compare-modal {

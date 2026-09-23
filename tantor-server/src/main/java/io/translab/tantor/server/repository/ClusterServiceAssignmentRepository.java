@@ -15,4 +15,7 @@ public interface ClusterServiceAssignmentRepository extends JpaRepository<Cluste
 
     @Query("select service from ClusterServiceAssignment service where service.cluster.id = :clusterId and service.hostId = :hostId")
     Optional<ClusterServiceAssignment> findByClusterIdAndHostId(@Param("clusterId") UUID clusterId, @Param("hostId") String hostId);
+
+    @Query("select service from ClusterServiceAssignment service where service.cluster.id = :clusterId and service.role = :role")
+    Optional<ClusterServiceAssignment> findByClusterIdAndRole(@Param("clusterId") UUID clusterId, @Param("role") String role);
 }

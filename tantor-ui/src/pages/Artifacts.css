@@ -6,7 +6,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 24px;
-  min-height: calc(100vh - 120px);
+  min-height: 0;
   margin: 20px;
   box-sizing: border-box;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
@@ -39,7 +39,7 @@
   flex-shrink: 0;
 }
 
-/* ── Buttons ── */
+/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -121,7 +121,7 @@
   text-transform: none !important;
 }
 
-/* ── Upload status message ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Upload status message Ã¢â€â‚¬Ã¢â€â‚¬ */
 .upload-msg {
   font-size: 0.8rem;
   padding: 6px 12px;
@@ -139,7 +139,7 @@
   color: var(--color-danger);
 }
 
-/* ── Loading / empty states ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Loading / empty states Ã¢â€â‚¬Ã¢â€â‚¬ */
 .state-center {
   display: flex;
   flex-direction: column;
@@ -190,7 +190,7 @@
   animation: spin 0.7s linear infinite;
 }
 
-/* ── Version list ── */
+/* Version list */
 .versions-list {
   display: flex;
   flex-direction: column;
@@ -202,7 +202,15 @@
   padding: 24px;
 }
 
-/* ── Version card ── */
+/* The application canvas owns page scrolling; artifact cards should expand normally. */
+.artifacts-page .artifacts-list-container,
+.artifacts-page .versions-list {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+
+/* Version card */
 .version-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
@@ -391,7 +399,7 @@
   cursor: not-allowed;
 }
 
-/* ── Status badges ── */
+/* Status badges */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -419,7 +427,7 @@
   color: #4338CA;
 }
 
-/* ── Expanded panel ── */
+/* Expanded panel */
 .version-card-body {
   border-top: 1px solid #CCCCCC;
   background: #FAFAFA;
@@ -479,7 +487,7 @@
   flex-direction: column;
   border: 1px solid #CCCCCC;
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
   background: #FFFFFF;
 }
 
@@ -492,6 +500,7 @@
   border-bottom: 1px solid #CCCCCC;
   background: #FFFFFF;
   box-sizing: border-box;
+  min-width: 800px;
 }
 
 .parcel-host-row > * {
@@ -596,14 +605,17 @@
 /* State Badge */
 .parcel-status {
   box-sizing: border-box;
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  padding: 4px 8px;
-  gap: 10px;
-  width: 60px;
+  padding: 4px 12px;
+  gap: 0;
+  min-width: max-content;
+  width: fit-content;
   height: 24px;
+  white-space: nowrap;
   background: rgba(42, 199, 146, 0.25);
   border-radius: 100px;
   font-family: 'Satoshi', sans-serif;
@@ -635,19 +647,77 @@
   color: #991B1B;
 }
 
-.parcel-status.distributing,
+.parcel-status.distributing {
+  background: #E0F2FE;
+  color: #0369A1;
+}
+
 .parcel-status.activating,
 .parcel-status.deactivating,
 .parcel-status.removing {
-  background: #ECFEFF;
-  color: #0E7490;
+  background: #F3E8FF;
+  color: #7C3AED;
 }
 
-.parcel-error {
-  margin: 5px 0 0;
-  color: var(--color-danger);
+.parcel-error-details {
+  display: block !important;
+  grid-column: 2 / -1;
+  width: 100%;
+  min-width: 0;
+  margin-top: -2px;
+  border: 1px solid #f3c2c7;
+  border-radius: 8px;
+  background: #fff7f8;
+  overflow-x: auto;
+}
+
+.parcel-error-details summary {
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center !important;
+  gap: 8px;
+  padding: 9px 12px;
+  color: #b4232f;
+  cursor: pointer;
+  list-style: none;
+}
+
+.parcel-error-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.parcel-error-details summary span {
+  min-width: 0;
+  overflow-x: auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.parcel-error-details summary b {
+  color: #6b3340;
   font-size: 0.72rem;
-  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.parcel-error-details[open] summary span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.parcel-error-details pre {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 220px;
+  overflow: auto;
+  border-top: 1px solid #f3c2c7;
+  background: #2c2332;
+  color: #f7edf0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font: 11px/1.5 "Source Code Pro", Consolas, monospace;
 }
 
 .parcel-host-destination .form-control {
@@ -699,6 +769,10 @@
   transition: all 0.2s;
 }
 
+.parcel-action.deactivate {
+  min-width: 112px;
+}
+
 .parcel-action svg {
   display: none;
 }
@@ -710,6 +784,22 @@
 .parcel-action:disabled {
   opacity: 0.48;
   cursor: not-allowed;
+}
+
+.parcel-action.progress {
+  border: none;
+  color: #FFFFFF;
+  opacity: 1;
+}
+
+.parcel-action.progress.distributing {
+  background: #0369A1;
+}
+
+.parcel-action.progress.activating,
+.parcel-action.progress.deactivating,
+.parcel-action.progress.removing {
+  background: #7C3AED;
 }
 
 .parcel-action.remove {
@@ -732,6 +822,7 @@
 
 @media (max-width: 980px) {
   .parcel-host-row {
+    min-width: 0;
     grid-template-columns: 1fr;
     align-items: flex-start;
     gap: 8px;
@@ -740,9 +831,13 @@
   .parcel-host-row.header {
     display: none;
   }
+
+  .parcel-error-details {
+    grid-column: 1;
+  }
 }
 
-/* ── Universal distribution directory Container ── */
+/* Universal distribution directory container */
 .universal-distribution-directory {
   display: flex;
   flex-direction: column;
@@ -768,7 +863,7 @@
   height: 40px;
 }
 
-/* ── Modal ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Modal Ã¢â€â‚¬Ã¢â€â‚¬ */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -792,7 +887,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .modal-body {
@@ -896,8 +991,29 @@
   line-height: 1.45;
 }
 
+.upload-parcel-modal {
+  max-height: calc(100vh - 32px);
+}
+
+.upload-parcel-modal form {
+  min-height: 0;
+  overflow-x: auto;
+}
+
 .upload-parcel-modal .modal-body {
-  padding: 16px 24px 0;
+  min-height: 0;
+  padding: 16px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.upload-parcel-modal .modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.upload-parcel-modal .modal-body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: #CBC0E0;
 }
 
 .modal-close {
@@ -919,7 +1035,7 @@
   color: var(--text-primary);
 }
 
-/* ── Form ── */
+/* Form */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -970,7 +1086,7 @@
   background: var(--bg-raised);
 }
 
-/* ── Dropzone ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Dropzone Ã¢â€â‚¬Ã¢â€â‚¬ */
 .upload-dropzone {
   border: 1.5px dashed var(--border-default);
   border-radius: var(--radius-lg);
@@ -1047,10 +1163,10 @@
   border-radius: 8px;
 }
 
-/* ── Delete Confirmation Modal ── */
+/* Ã¢â€â‚¬Ã¢â€â‚¬ Delete Confirmation Modal Ã¢â€â‚¬Ã¢â€â‚¬ */
 .delete-confirm-modal {
   padding: 0 !important;
-  overflow: hidden;
+  overflow-x: auto;
   max-width: 480px;
   background: var(--bg-surface);
   border-radius: var(--radius-xl);
@@ -1137,3 +1253,6 @@
 .btn-cancel-pink-outline:hover {
   background: rgba(62, 19, 99, 0.05);
 }
+
+
+

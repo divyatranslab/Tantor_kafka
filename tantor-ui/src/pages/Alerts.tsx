@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, CheckCircle, RefreshCw,
   Shield, Activity
@@ -11,44 +11,74 @@ interface AlertRow {
   title: string;
   description?: string;
   clusterId?: string;
+  kafkaClusterId?: string;
   clusterName?: string;
   hostId?: string;
   hostIp?: string;
   status?: string;
   createdAt?: string;
+  resolvedAt?: string;
   errorLog?: string;
   source?: string;
 }
+
+const ALERT_REFRESH_INTERVAL_MS = 2_000;
 
 export function Alerts() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<'CURRENT' | 'RESOLVED'>('CURRENT');
 
-  const fetchAlerts = async () => {
-    setLoading(true);
-    setError('');
+  const fetchAlerts = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    if (!quiet) setError('');
     try {
       const res = await fetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
-    } catch (e: any) {
-      setError(e.message || 'Failed to load alerts');
+    } catch (e: unknown) {
+      if (!quiet) setError(e instanceof Error ? e.message : 'Failed to load alerts');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAlerts();
   }, []);
 
+  useEffect(() => {
+    void (async () => { await fetchAlerts(); })();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void (async () => { await fetchAlerts(true); })();
+      }
+    }, ALERT_REFRESH_INTERVAL_MS);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void (async () => { await fetchAlerts(true); })();
+    };
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [fetchAlerts]);
+
+  const activeAlerts = useMemo(
+    () => alerts.filter(alert => alert.status?.toUpperCase() !== 'RESOLVED'),
+    [alerts],
+  );
+
+  const resolvedAlerts = useMemo(
+    () => alerts.filter(alert => alert.status?.toUpperCase() === 'RESOLVED'),
+    [alerts],
+  );
+
+  const visibleAlerts = viewMode === 'CURRENT' ? activeAlerts : resolvedAlerts;
+
   const summary = useMemo(() => {
-    const critical = alerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
-    const warning = alerts.filter(alert => alert.severity?.toUpperCase() === 'WARNING').length;
-    const clusters = new Set(alerts.map(alert => alert.clusterId).filter(Boolean)).size;
+    const critical = activeAlerts.filter(alert => alert.severity?.toUpperCase() === 'CRITICAL').length;
+    const warning = activeAlerts.filter(alert => alert.severity?.toUpperCase() === 'WARNING').length;
+    const clusters = new Set(activeAlerts.map(alert => alert.clusterId).filter(Boolean)).size;
     return { critical, warning, clusters };
-  }, [alerts]);
+  }, [activeAlerts]);
 
   return (
     <div className="alerts-container">
@@ -64,10 +94,10 @@ export function Alerts() {
           
           {/* Right side actions */}
           <div className="alerts-header-actions">
-            <span className={`alerts-status-badge ${alerts.length ? 'needs-attention' : 'healthy'}`}>
-              {alerts.length ? 'Live system needs attention' : 'Live system healthy'}
+            <span className={`alerts-status-badge ${activeAlerts.length ? 'needs-attention' : 'healthy'}`}>
+              {activeAlerts.length ? 'Live system needs attention' : 'Live system is healthy'}
             </span>
-            <button className="alerts-refresh-btn" onClick={fetchAlerts} aria-label="Refresh alerts">
+            <button className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
               <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
             </button>
           </div>
@@ -126,7 +156,25 @@ export function Alerts() {
 
           {/* Frame 1000005212 (Details Panel) */}
           <section className="alerts-details-panel">
-            <h2>Details Activity</h2>
+            <div className="alerts-details-toolbar">
+              <div>
+                <h2>{viewMode === 'CURRENT' ? 'Current Alerts' : 'Resolved Alerts'}</h2>
+                <span className="alerts-details-count">
+                  {visibleAlerts.length} {visibleAlerts.length === 1 ? 'alert' : 'alerts'}
+                </span>
+              </div>
+              <label className="alerts-view-filter">
+                <span>View</span>
+                <select
+                  value={viewMode}
+                  onChange={event => setViewMode(event.target.value as 'CURRENT' | 'RESOLVED')}
+                  aria-label="Filter alerts by status"
+                >
+                  <option value="CURRENT">Current</option>
+                  <option value="RESOLVED">Resolved</option>
+                </select>
+              </label>
+            </div>
 
             {/* Frame 1000005221 */}
             <div className="alerts-details-list">
@@ -135,14 +183,18 @@ export function Alerts() {
                   <RefreshCw className="spin" size={24} />
                   <strong>Loading alerts...</strong>
                 </div>
-              ) : alerts.length === 0 ? (
+              ) : visibleAlerts.length === 0 ? (
                 <div className="alerts-empty-state healthy">
                   <CheckCircle size={44} />
-                  <strong>No active alerts</strong>
-                  <span>Hosts, clusters, parcels, and recent tasks are not reporting failures.</span>
+                  <strong>{viewMode === 'CURRENT' ? 'All systems are healthy' : 'No resolved alerts'}</strong>
+                  <span>
+                    {viewMode === 'CURRENT'
+                      ? 'There are no current alerts requiring attention.'
+                      : 'Resolved alert history will appear here.'}
+                  </span>
                 </div>
               ) : (
-                alerts.map(alert => (
+                visibleAlerts.map(alert => (
                   /* Frame 1000005219 / 1000005225 */
                   <article key={alert.id} className="alerts-detail-card">
                     {/* Frame 1000005354 */}
@@ -180,7 +232,7 @@ export function Alerts() {
                               {/* Cluster ID */}
                               <div className="alerts-meta-block">
                                 <span className="meta-block-label">Cluster ID</span>
-                                <span className="meta-block-val mono">{alert.clusterId || '-'}</span>
+                                <span className="meta-block-val mono">{alert.kafkaClusterId || '-'}</span>
                               </div>
                               <div className="alerts-meta-separator" />
                               
@@ -200,7 +252,9 @@ export function Alerts() {
 
                               {/* Status Badge */}
                               <div className="alerts-meta-status-container">
-                                <span className="alerts-detail-status-pill">Active</span>
+                                <span className={`alerts-detail-status-pill ${alert.status?.toUpperCase() === 'RESOLVED' ? 'resolved' : ''}`}>
+                                  {alert.status?.toUpperCase() === 'RESOLVED' ? 'Resolved' : 'Active'}
+                                </span>
                               </div>
                             </div>
 
@@ -241,14 +295,16 @@ function sourceLabel(source?: string) {
 
 function clusterLabel(alert: AlertRow) {
   if (alert.clusterName && alert.clusterName !== '-') return alert.clusterName;
-  return alert.clusterId || '-';
+  // clusterId is Tantor's internal UUID. Never display it as the Kafka
+  // cluster identity; the separate Cluster ID field contains kafkaClusterId.
+  return '-';
 }
 
 function hostLabel(alert: AlertRow) {
-  const host = alert.hostId && alert.hostId !== '-' ? alert.hostId : '';
   const ip = alert.hostIp && alert.hostIp !== '-' ? alert.hostIp : '';
-  if (host && ip) return `${host} / ${ip}`;
-  return host || ip || '-';
+  // hostId is the management-system identity, often a UUID. Alerts must
+  // present the real network address rather than exposing that internal ID.
+  return ip || '-';
 }
 
 function formatDateTime(value?: string) {

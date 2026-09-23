@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, Play, RefreshCw, CheckCircle2, XCircle, ArrowUpCircle, BarChart3 } from 'lucide-react';
+import { Activity, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction, notifyAction } from '../components/ConfirmDialog';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 
 interface ClusterInfo {
   id: string;
@@ -41,7 +41,7 @@ export function ClusterActions() {
   const [grafanaUrl, setGrafanaUrl] = useState('');
   const [monitoringLoading, setMonitoringLoading] = useState(false);
 
-  const fetchUpgradeContext = async () => {
+  const fetchUpgradeContext = useCallback(async () => {
     try {
       const [clusterRes, parcelsRes] = await Promise.all([
         fetch(`/api/v1/ui/clusters/${id}`),
@@ -56,7 +56,7 @@ export function ClusterActions() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, [id]);
 
   const triggerRollingRestart = async () => {
     if (!canManage) return;
@@ -79,7 +79,7 @@ export function ClusterActions() {
         const data = await res.json().catch(() => ({}));
         notifyAction(data.error || "Failed to trigger rolling restart.");
       }
-    } catch (e) {
+    } catch {
       notifyAction("Error triggering rolling restart.");
     } finally {
       setLoading(false);
@@ -91,8 +91,6 @@ export function ClusterActions() {
       .filter(p => p.serviceType === 'KAFKA' && p.active && p.status === 'ACTIVE' && p.version !== cluster?.kafkaVersion)
       .map(p => p.version)
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
-  const isExternal = cluster?.mode === 'EXTERNAL';
-  const externalCanRestart = !isExternal || cluster?.managementLevel === 'AGENT_MANAGED';
 
   const enableMonitoring = async () => {
     if (!canManage) return;
@@ -118,14 +116,18 @@ export function ClusterActions() {
   };
 
   useEffect(() => {
-    fetchUpgradeContext();
-  }, [id]);
+    void (async () => { await fetchUpgradeContext(); })();
+  }, [fetchUpgradeContext]);
 
   useEffect(() => {
-    if (!targetVersion && activeUpgradeVersions.length > 0) {
-      setTargetVersion(activeUpgradeVersions[0]);
-    }
-  }, [activeUpgradeVersions, targetVersion]);
+    Promise.resolve().then(() => {
+      if (!targetVersion && activeUpgradeVersions.length > 0) {
+        setTargetVersion(activeUpgradeVersions[0]);
+      }
+    });
+  // activeUpgradeVersions reference changes on every render ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â only react to length change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUpgradeVersions.length, targetVersion]);
 
   const triggerUpgrade = async () => {
     if (!canManage) return;
@@ -146,8 +148,8 @@ export function ClusterActions() {
       }
       setUpgradeMsg(`Upgrade to Kafka ${targetVersion} scheduled. Watch Deployment Logs for symlink switch, validation, and automatic rollback details.`);
       await fetchUpgradeContext();
-    } catch (e: any) {
-      setUpgradeMsg(e.message || 'Failed to schedule upgrade.');
+    } catch (e: unknown) {
+      setUpgradeMsg(e instanceof Error ? e.message : 'Failed to schedule upgrade.');
     } finally {
       setUpgradeLoading(false);
     }
@@ -185,7 +187,7 @@ export function ClusterActions() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
         {canManage && (
-        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{
               display: 'flex',
@@ -195,28 +197,28 @@ export function ClusterActions() {
               height: '32px',
               borderRadius: '50%',
               border: '1px solid #94a3b8',
-              color: '#64748b',
+              color: 'var(--text-muted)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↑</span>
+              <ArrowUpCircle size={18} aria-hidden="true" />
             </div>
             <div style={{ flex: 1 }}>
-              <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Upgrade Kafka Version</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Upgrade Kafka Version</h3>
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
                 Apply an active parcel version to this running cluster.
               </p>
             </div>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
             Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
           </p>
 
           <div style={{
             background: '#f8fafc',
             border: '1px solid #f1f5f9',
-            borderRadius: '12px',
-            padding: '16px',
+            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-4)',
             display: 'grid',
             gridTemplateColumns: '1fr auto',
             gap: '12px',
@@ -229,12 +231,12 @@ export function ClusterActions() {
               style={{
                 width: '100%',
                 padding: '10px 12px',
-                borderRadius: '8px',
-                border: '1px solid #e2e8f0',
-                fontSize: '14px',
-                background: '#fff',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: 'var(--text-base)',
+                background: "var(--bg-surface)",
                 outline: 'none',
-                color: '#332849'
+                color: 'var(--button-primary-active)'
               }}
             >
               {activeUpgradeVersions.length === 0 ? (
@@ -250,14 +252,14 @@ export function ClusterActions() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: 'var(--space-2)',
                 height: '42px',
                 padding: '0 20px',
-                borderRadius: '8px',
-                background: '#3E1363',
-                color: '#fff',
-                fontWeight: 500,
-                fontSize: '14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--button-primary)',
+                color: "var(--text-light)",
+                fontWeight: 'var(--font-medium)',
+                fontSize: 'var(--text-base)',
                 border: 'none',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -277,7 +279,7 @@ export function ClusterActions() {
         )}
         
         {canManage && (
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+          <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
               <div style={{
                 display: 'flex',
@@ -287,26 +289,26 @@ export function ClusterActions() {
                 height: '32px',
                 borderRadius: '50%',
                 border: '1px solid #94a3b8',
-                color: '#64748b',
+                color: 'var(--text-muted)',
                 flexShrink: 0
               }}>
-                <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↑</span>
+                <Activity size={18} aria-hidden="true" />
               </div>
               <div style={{ flex: 1 }}>
-                <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Monitoring Enablement</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p>
+                <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Monitoring Enablement</h3>
+                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p>
               </div>
             </div>
 
-            <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
+            <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
               Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
             </p>
 
             <div style={{
               background: '#f8fafc',
               border: '1px solid #f1f5f9',
-              borderRadius: '12px',
-              padding: '16px',
+              borderRadius: 'var(--radius-lg)',
+              padding: 'var(--space-4)',
               display: 'flex',
               flexDirection: 'column',
               gap: '12px'
@@ -318,15 +320,15 @@ export function ClusterActions() {
                   style={{
                     width: '100%',
                     padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '14px',
-                    background: '#fff',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 'var(--text-base)',
+                    background: "var(--bg-surface)",
                     outline: 'none',
-                    color: '#332849'
+                    color: 'var(--button-primary-active)'
                   }}
                 >
-                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` · ${host.ipAddress}` : ''}</option>)}
+                  {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` | ${host.ipAddress}` : ''}</option>)}
                 </select>
                 <input 
                   value={prometheusUrl} 
@@ -335,12 +337,12 @@ export function ClusterActions() {
                   style={{
                     width: '100%',
                     padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '14px',
-                    background: '#fff',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 'var(--text-base)',
+                    background: "var(--bg-surface)",
                     outline: 'none',
-                    color: '#332849'
+                    color: 'var(--button-primary-active)'
                   }}
                 />
               </div>
@@ -352,12 +354,12 @@ export function ClusterActions() {
                   style={{
                     flex: 1,
                     padding: '10px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    fontSize: '14px',
-                    background: '#fff',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    fontSize: 'var(--text-base)',
+                    background: "var(--bg-surface)",
                     outline: 'none',
-                    color: '#332849'
+                    color: 'var(--button-primary-active)'
                   }}
                 />
                 <button 
@@ -367,14 +369,14 @@ export function ClusterActions() {
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '8px',
+                    gap: 'var(--space-2)',
                     height: '42px',
                     padding: '0 20px',
-                    borderRadius: '8px',
-                    background: '#3E1363',
-                    color: '#fff',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--button-primary)',
+                    color: "var(--text-light)",
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     border: 'none',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
@@ -390,7 +392,7 @@ export function ClusterActions() {
 
         {/* Rolling Restart Card */}
         {canManage && (
-        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px 32px', background: '#fff' }}>
+        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{
               display: 'flex',
@@ -400,26 +402,26 @@ export function ClusterActions() {
               height: '32px',
               borderRadius: '50%',
               border: '1px solid #94a3b8',
-              color: '#64748b',
+              color: 'var(--text-muted)',
               flexShrink: 0
             }}>
-              <span style={{ fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>↺</span>
+              <RefreshCw size={18} aria-hidden="true" />
             </div>
             <div style={{ flex: 1 }}>
-              <h3 style={{ fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: '16px' }}>Rolling Restart</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+              <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Rolling Restart</h3>
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
                 Restart quorum services and brokers one at a time.
               </p>
             </div>
           </div>
-          <p style={{ fontSize: '13px', color: '#475569', marginTop: '1.25rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
             The orchestrator restarts non-leader controllers or ZooKeeper members first, then the active controller and brokers. It waits for each agent task, all brokers, and all replicas to become healthy before continuing. Zero-downtime restart requires at least two brokers and three metadata quorum nodes.
           </p>
           <div style={{
             background: '#f8fafc',
             border: '1px solid #f1f5f9',
-            borderRadius: '12px',
-            padding: '16px',
+            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-4)',
             display: 'flex',
             justifyContent: 'flex-end'
           }}>
@@ -430,14 +432,14 @@ export function ClusterActions() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '8px',
+                gap: 'var(--space-2)',
                 height: '42px',
                 padding: '0 20px',
-                borderRadius: '8px',
-                background: '#3E1363',
-                color: '#fff',
-                fontWeight: 500,
-                fontSize: '14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--button-primary)',
+                color: "var(--text-light)",
+                fontWeight: 'var(--font-medium)',
+                fontSize: 'var(--text-base)',
                 border: 'none',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -449,8 +451,8 @@ export function ClusterActions() {
 
           {/* Progress Tracker */}
           {taskId && (
-            <div style={{ backgroundColor: '#f9fafb', padding: '1.5rem', marginTop: '1.5rem', borderRadius: '8px' }}>
-              <h4 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.75rem 0' }}>
+            <div style={{ backgroundColor: '#f9fafb', padding: '1.5rem', marginTop: '1.5rem', borderRadius: 'var(--radius-md)' }}>
+              <h4 style={{ fontSize: '0.875rem', fontWeight: 'var(--font-medium)', color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.75rem 0' }}>
                 <Activity size={16} color="#3b82f6" /> Live Task Status
               </h4>
               <div style={{ backgroundColor: '#111827', borderRadius: '0.5rem', padding: '1rem', fontFamily: 'monospace', fontSize: '0.875rem', boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)', position: 'relative', overflow: 'hidden' }}>

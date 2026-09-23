@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { AnchoredMenu } from './AnchoredMenu';
 import './CustomSelect.css';
@@ -14,22 +14,24 @@ interface CustomSelectProps {
   options: Option[];
   width?: string;
   placeholder?: string;
+  variant?: 'default' | 'audit';
 }
 
-export function CustomSelect({ value, onChange, options, width = '209px', placeholder }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, width = '209px', placeholder, variant = 'default' }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
 
   const selectedOption = options.find(opt => opt.value === value);
 
   return (
-    <div className="custom-select-container" ref={containerRef} style={{ width }}>
+    <div className={`custom-select-container ${variant === 'audit' ? 'audit-style-select' : ''}`} ref={setAnchor} style={{ width }}>
       <button
         type="button"
         className={`custom-select-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        title={selectedOption?.label || placeholder || 'Select option'}
       >
         <span className="custom-select-value">
           {selectedOption ? selectedOption.label : placeholder || 'Select option'}
@@ -37,10 +39,10 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
         <ChevronDown size={18} className="custom-select-chevron" />
       </button>
 
-      {isOpen && containerRef.current && (
+      {isOpen && anchor && (
         <AnchoredMenu
-          anchor={containerRef.current}
-          className="custom-select-options-wrapper"
+          anchor={anchor}
+          className={`custom-select-options-wrapper ${variant === 'audit' ? 'audit-style-select-options' : ''}`}
           onClose={() => setIsOpen(false)}
           align="start"
           matchAnchorWidth
@@ -53,6 +55,7 @@ export function CustomSelect({ value, onChange, options, width = '209px', placeh
                 className={`app-custom-select-option ${option.value === value ? 'selected' : ''}`}
                 role="option"
                 aria-selected={option.value === value}
+                title={option.label}
                 onClick={() => {
                   onChange(option.value);
                   setIsOpen(false);

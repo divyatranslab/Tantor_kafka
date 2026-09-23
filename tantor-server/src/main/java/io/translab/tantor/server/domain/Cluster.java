@@ -17,6 +17,13 @@ public class Cluster {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    /**
+     * Immutable canonical cluster identity assigned and protected by the
+     * database. It is read-only here until the Phase 3 resolver adopts it.
+     */
+    @Column(name = "canonical_cluster_uuid", nullable = false, insertable = false, updatable = false)
+    private UUID canonicalClusterUuid;
+
     @Column(name = "cluster_name", nullable = false)
     private String name;
 

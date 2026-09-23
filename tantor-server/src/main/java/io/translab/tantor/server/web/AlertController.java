@@ -20,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -37,6 +35,21 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AlertController {
 
+    private static final List<String> RUNTIME_ALERT_KEY_PREFIXES = List.of(
+            "host-offline-",
+            "host-disk-full-",
+            "host-disk-warning-",
+            "host-memory-high-",
+            "cluster-failed-",
+            "cluster-deleting-",
+            "cluster-host-offline-",
+            "cluster-disk-full-",
+            "cluster-port-closed-",
+            "external-failed-",
+            "parcel-failed-",
+            "consumer-lag-",
+            "task-failed-");
+
     private final AlertRepository alertRepository;
     private final ClusterRepository clusterRepository;
     private final HostRepository hostRepository;
@@ -49,7 +62,8 @@ public class AlertController {
     @Transactional
     public ResponseEntity<List<Map<String, Object>>> getActiveAlerts() {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
-        List<Host> hosts = hostRepository.findAll().stream()
+        List<Host> allHosts = hostRepository.findAll();
+        List<Host> hosts = allHosts.stream()
                 .filter(hostStatusService::isInfrastructureHost)
                 .toList();
         List<Task> tasks = taskRepository.findAll();
@@ -60,8 +74,6 @@ public class AlertController {
                 .collect(Collectors.toMap(Host::getId, host -> host, (a, b) -> a));
 
         List<Map<String, Object>> alerts = new ArrayList<>();
-        alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE")
-                .forEach(alert -> alerts.add(storedAlert(alert, clusterById)));
 
         hosts.forEach(host -> {
             String effectiveStatus = hostStatusService.effectiveStatus(host);
@@ -197,26 +209,6 @@ public class AlertController {
                             "storage"
                     )));
 
-            if (!"EXTERNAL".equalsIgnoreCase(cluster.getMode())
-                    && "SUCCESS".equalsIgnoreCase(cluster.getStatus())
-                    && !assignedHosts.isEmpty()
-                    && !clusterBrokerPortListening(cluster, assignedHosts)) {
-                Host firstHost = assignedHosts.get(0);
-                alerts.add(runtimeAlert(
-                        "cluster-port-closed-" + cluster.getId(),
-                        "CRITICAL",
-                        "Cluster broker port closed",
-                        cluster.getName() + " is marked active, but broker port " + brokerPort(cluster) + " is not reachable from the management server.",
-                        cluster.getId(),
-                        cluster.getName(),
-                        firstHost.getId(),
-                        hostIp(firstHost),
-                        OffsetDateTime.now(),
-                        null,
-                        "cluster"
-                ));
-            }
-
             if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) && "FAILED".equalsIgnoreCase(cluster.getStatus())) {
                 alerts.add(runtimeAlert(
                         "external-failed-" + cluster.getId(),
@@ -261,7 +253,10 @@ public class AlertController {
                         "consumer"
                 ))));
         tasks.stream()
+                // A port check is an operator-requested prerequisite result. It
+                // belongs in the audit trail, not in the live-health alert feed.
                 .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
+                .filter(task -> !"CHECK_PORTS".equalsIgnoreCase(task.getCommand()))
                 .sorted(Comparator.comparing(Task::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(12)
                 .forEach(task -> {
@@ -281,11 +276,29 @@ public class AlertController {
                     ));
                 });
 
-        syncRuntimeAlerts(alerts.stream()
-                .filter(alert -> !"stored".equals(String.valueOf(alert.get("source"))))
-                .toList());
+        syncRuntimeAlerts(alerts, clusterById);
 
-        List<Map<String, Object>> deduped = alerts.stream()
+        Map<String, Cluster> historyClusterById = new LinkedHashMap<>(clusterById);
+        clusterRepository.findAll().forEach(cluster ->
+                historyClusterById.putIfAbsent(cluster.getId().toString(), cluster));
+        Map<String, Host> historyHostById = allHosts.stream()
+                .collect(Collectors.toMap(Host::getId, host -> host, (a, b) -> a));
+
+        // Query after synchronization so an alert resolved during this request is
+        // returned as RESOLVED history instead of disappearing from the UI.
+        List<Map<String, Object>> alertHistory = new ArrayList<>();
+        alertRepository.findTop100ByOrderByUpdatedAtDesc().stream()
+                // Preserve port-check history in Audits, while keeping it out of
+                // alerts even for rows created before this policy existed.
+                .filter(alert -> !isPortCheckAlert(alert))
+                // Older builds persisted one cluster-level "2 of 3 agents"
+                // alert. Agent connectivity is now represented by one alert per
+                // affected agent, so the aggregate row must not reappear in
+                // either Current or Resolved alert views.
+                .filter(alert -> !isLegacyAggregateAgentAlert(alert))
+                .forEach(alert -> alertHistory.add(storedAlert(alert, historyClusterById, historyHostById)));
+
+        List<Map<String, Object>> deduped = alertHistory.stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(
                         alert -> String.valueOf(alert.get("id")),
@@ -295,44 +308,112 @@ public class AlertController {
                 ))
                 .values()
                 .stream()
-                .sorted((a, b) -> compareCreatedAt(b.get("createdAt"), a.get("createdAt")))
+                .sorted((a, b) -> compareCreatedAt(b.get("updatedAt"), a.get("updatedAt")))
                 .limit(50)
                 .toList();
         return ResponseEntity.ok(deduped);
     }
 
-    private Map<String, Object> storedAlert(Alert alert, Map<String, Cluster> clusterById) {
+    private Map<String, Object> storedAlert(
+            Alert alert,
+            Map<String, Cluster> clusterById,
+            Map<String, Host> hostById) {
         Cluster cluster = alert.getClusterId() == null ? null : clusterById.get(alert.getClusterId().toString());
-        return runtimeAlert(
+        Host host = alert.getHostId() == null ? null : hostById.get(alert.getHostId());
+        String liveHostIp = hostIp(host);
+        boolean snapshotChanged = false;
+        if (!hasText(alert.getClusterNameSnapshot()) && cluster != null && hasText(cluster.getName())) {
+            alert.setClusterNameSnapshot(cluster.getName());
+            snapshotChanged = true;
+        }
+        if (!hasText(alert.getKafkaClusterIdSnapshot()) && cluster != null && hasText(cluster.getKafkaClusterId())) {
+            alert.setKafkaClusterIdSnapshot(cluster.getKafkaClusterId());
+            snapshotChanged = true;
+        }
+        if (!hasText(alert.getHostIpSnapshot())) {
+            String snapshotIp = firstNonBlank(liveHostIp, alert.getAffectedIps());
+            if (hasText(snapshotIp)) {
+                alert.setHostIpSnapshot(snapshotIp);
+                snapshotChanged = true;
+            }
+        }
+        if (snapshotChanged) {
+            alertRepository.save(alert);
+        }
+        Map<String, Object> response = runtimeAlert(
                 alert.getAlertKey() == null ? alert.getId().toString() : alert.getAlertKey(),
                 alert.getSeverity(),
                 alert.getTitle(),
                 alert.getDescription(),
                 alert.getClusterId(),
-                cluster == null ? null : cluster.getName(),
+                firstNonBlank(alert.getClusterNameSnapshot(), cluster == null ? null : cluster.getName()),
                 alert.getHostId(),
-                null,
+                firstNonBlank(alert.getHostIpSnapshot(), liveHostIp, alert.getAffectedIps()),
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
                 alert.getErrorLog(),
                 "stored"
         );
+        response.put("kafkaClusterId", firstNonBlank(
+                alert.getKafkaClusterIdSnapshot(),
+                cluster == null ? null : cluster.getKafkaClusterId()));
+        response.put("status", alert.getStatus() == null ? "ACTIVE" : alert.getStatus());
+        response.put("resolvedAt", alert.getResolvedAt());
+        response.put("updatedAt", alert.getUpdatedAt());
+        return response;
     }
 
-    private void syncRuntimeAlerts(List<Map<String, Object>> runtimeAlerts) {
+    private boolean isPortCheckAlert(Alert alert) {
+        String key = alert.getAlertKey() == null ? "" : alert.getAlertKey().toLowerCase();
+        String title = alert.getTitle() == null ? "" : alert.getTitle().toLowerCase();
+        String description = alert.getDescription() == null ? "" : alert.getDescription().toLowerCase();
+        return key.startsWith("cluster-port-closed-")
+                || title.contains("check ports")
+                || title.contains("broker port closed")
+                || description.contains("port check failed");
+    }
+
+    private boolean isLegacyAggregateAgentAlert(Alert alert) {
+        String key = alert.getAlertKey() == null ? "" : alert.getAlertKey().toLowerCase();
+        String title = alert.getTitle() == null ? "" : alert.getTitle().toLowerCase();
+        return key.startsWith("external-agent-partial-")
+                || title.equals("external agents partially connected");
+    }
+
+    private void syncRuntimeAlerts(
+            List<Map<String, Object>> runtimeAlerts,
+            Map<String, Cluster> clusterById) {
         java.util.Set<String> observedKeys = new java.util.HashSet<>();
         for (Map<String, Object> runtime : runtimeAlerts) {
             String key = String.valueOf(runtime.get("id"));
             if (key.isBlank() || "null".equals(key)) continue;
             observedKeys.add(key);
             Alert alert = alertRepository.findByAlertKey(key).orElseGet(Alert::new);
+            boolean newlyActive = alert.getId() == null || !"ACTIVE".equalsIgnoreCase(alert.getStatus());
+            if (newlyActive) {
+                alert.setCreatedAt(java.time.Instant.now());
+            }
             alert.setAlertKey(key);
             alert.setSeverity(String.valueOf(runtime.getOrDefault("severity", "WARNING")));
             alert.setTitle(String.valueOf(runtime.getOrDefault("title", "Runtime alert")));
             alert.setDescription(String.valueOf(runtime.getOrDefault("description", "")));
             Object clusterId = runtime.get("clusterId");
-            alert.setClusterId(clusterId instanceof UUID uuid ? uuid
-                    : clusterId == null ? null : parseUuid(String.valueOf(clusterId)));
+            UUID parsedClusterId = clusterId instanceof UUID uuid ? uuid
+                    : clusterId == null ? null : parseUuid(String.valueOf(clusterId));
+            alert.setClusterId(parsedClusterId);
             alert.setHostId(runtime.get("hostId") == null ? null : String.valueOf(runtime.get("hostId")));
+            String clusterName = textValue(runtime.get("clusterName"));
+            if (hasText(clusterName)) {
+                alert.setClusterNameSnapshot(clusterName);
+            }
+            Cluster cluster = parsedClusterId == null ? null : clusterById.get(parsedClusterId.toString());
+            if (cluster != null && hasText(cluster.getKafkaClusterId())) {
+                alert.setKafkaClusterIdSnapshot(cluster.getKafkaClusterId());
+            }
+            String hostIp = textValue(runtime.get("hostIp"));
+            if (hasText(hostIp)) {
+                alert.setHostIpSnapshot(hostIp);
+                alert.setAffectedIps(hostIp);
+            }
             alert.setSource(String.valueOf(runtime.getOrDefault("source", "runtime")));
             alert.setErrorLog(runtime.get("errorLog") == null ? null : String.valueOf(runtime.get("errorLog")));
             alert.setStatus("ACTIVE");
@@ -342,6 +423,7 @@ public class AlertController {
 
         alertRepository.findByStatusOrderByCreatedAtDesc("ACTIVE").stream()
                 .filter(alert -> alert.getAlertKey() != null)
+                .filter(alert -> isRuntimeManagedAlertKey(alert.getAlertKey()))
                 .filter(alert -> !observedKeys.contains(alert.getAlertKey()))
                 .forEach(alert -> {
                     alert.setStatus("RESOLVED");
@@ -350,12 +432,34 @@ public class AlertController {
                 });
     }
 
+    private boolean isRuntimeManagedAlertKey(String alertKey) {
+        return alertKey != null
+                && RUNTIME_ALERT_KEY_PREFIXES.stream().anyMatch(alertKey::startsWith);
+    }
+
     private UUID parseUuid(String value) {
         try {
             return UUID.fromString(value);
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    private String textValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (hasText(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> runtimeAlert(
@@ -455,80 +559,6 @@ public class AlertController {
 
     private String consumerReason(ConsumerGroupSummaryDto group) {
         return group.getGroupId() + " has total lag " + group.getTotalLag() + " and health " + group.getHealth() + ".";
-    }
-
-    private boolean clusterBrokerPortListening(Cluster cluster, List<Host> assignedHosts) {
-
-        int port = brokerPort(cluster);
-        for (Host host : assignedHosts) {
-            String ip = hostIp(host);
-            if (ip == null || ip.isBlank()) {
-                continue;
-            }
-            try (Socket socket = new Socket()) {
-                socket.connect(new InetSocketAddress(ip, port), 600);
-                return true;
-            } catch (Exception ignored) {
-                // Try the next assigned host.
-            }
-        }
-        return false;
-    }
-
-    private int brokerPort(Cluster cluster) {
-        Integer bootstrapPort = firstBootstrapPort(cluster.getBootstrapServers());
-        if (bootstrapPort != null) {
-            return bootstrapPort;
-        }
-        Integer configPort = configInt(cluster.getConfigJson(), "listener_port");
-        return configPort == null ? 9092 : configPort;
-    }
-
-    private Integer firstBootstrapPort(String bootstrapServers) {
-        if (bootstrapServers == null || bootstrapServers.isBlank()) {
-            return null;
-        }
-        String endpoint = bootstrapServers.split(",")[0].trim();
-        int colon = endpoint.lastIndexOf(':');
-        if (colon < 0 || colon == endpoint.length() - 1) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(endpoint.substring(colon + 1));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
-    }
-
-    private Integer configInt(String configJson, String key) {
-        if (configJson == null || configJson.isBlank()) {
-            return null;
-        }
-        String quotedKey = "\"" + key + "\"";
-        int keyIndex = configJson.indexOf(quotedKey);
-        if (keyIndex < 0) {
-            return null;
-        }
-        int colon = configJson.indexOf(':', keyIndex + quotedKey.length());
-        if (colon < 0) {
-            return null;
-        }
-        int start = colon + 1;
-        while (start < configJson.length() && !Character.isDigit(configJson.charAt(start))) {
-            start++;
-        }
-        int end = start;
-        while (end < configJson.length() && Character.isDigit(configJson.charAt(end))) {
-            end++;
-        }
-        if (start == end) {
-            return null;
-        }
-        try {
-            return Integer.parseInt(configJson.substring(start, end));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
     }
 
     private String hostLabel(Host host) {

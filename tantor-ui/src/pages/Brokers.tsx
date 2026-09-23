@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import {
-  Server, Cpu, Activity,
-  AlertCircle, CheckCircle2, XCircle,
-  Database, Share2, Search
-} from 'lucide-react';
+import { Search } from 'lucide-react';
 import './Brokers.css';
+
+type RoleFilter = 'all' | 'broker' | 'controller' | 'broker_controller';
 
 interface Broker {
   brokerId: number;
@@ -14,11 +12,14 @@ interface Broker {
   brokerHealth: string; // HEALTHY | DEGRADED | OFFLINE
   controller: boolean;
   jmxReachable: boolean;
-  cpuUsagePct: number;
-  memoryUsedMb: number;
-  memoryTotalMb: number;
-  diskUsedGb: number;
-  diskTotalGb: number;
+  cpuUsagePct: number | null;
+  memoryUsedMb: number | null;
+  memoryTotalMb: number | null;
+  diskUsedGb: number | null;
+  diskTotalGb: number | null;
+  diskUsedBytes: number | null;
+  diskTotalBytes: number | null;
+  hostMetricStatus: 'LIVE' | 'STALE' | 'UNAVAILABLE';
   messagesInPerSec: number;
   bytesInPerSec: number;
   lastHeartbeat: string;
@@ -31,27 +32,27 @@ export function Brokers() {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<keyof Broker>('brokerId');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [roleFilter, setRoleFilter] = useState<string>('All');
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [search, setSearch] = useState('');
 
-  const fetchBrokers = async () => {
+  const fetchBrokers = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/clusters/${id}/brokers`);
       if (!res.ok) throw new Error('Failed to fetch brokers');
       setBrokers(await res.json());
       setError(null);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch brokers');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
-    fetchBrokers();
-    const interval = setInterval(fetchBrokers, 10000);
+    void (async () => { await fetchBrokers(); })();
+    const interval = setInterval(() => { void (async () => { await fetchBrokers(); })(); }, 10000);
     return () => clearInterval(interval);
-  }, [id]);
+  }, [fetchBrokers]);
 
   const handleSort = (field: keyof Broker) => {
     if (sortField === field) {
@@ -62,24 +63,31 @@ export function Brokers() {
     }
   };
 
-  const sortIndicator = (field: keyof Broker) =>
-    sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '';
+  const normalizeRole = (broker: Broker): Exclude<RoleFilter, 'all'> | 'unknown' => {
+    const roleParts = String(broker.role || '')
+      .toLowerCase()
+      .split(/[_\s,+/-]+/)
+      .filter(Boolean);
+    const isBroker = roleParts.includes('broker');
+    const isController = roleParts.includes('controller') || broker.controller;
 
-  const getHealthIcon = (health: string) => {
-    switch (health) {
-      case 'HEALTHY':
-        return <AlertCircle style={{ color: '#E08E40' }} size={16} />;
-      case 'DEGRADED':
-        return <AlertCircle className="text-yellow" size={15} />;
-      case 'OFFLINE':
-        return <XCircle className="text-red" size={15} />;
-      default:
-        return <Server className="text-gray" size={15} />;
-    }
+    if (isBroker && isController) return 'broker_controller';
+    if (isController) return 'controller';
+    if (isBroker) return 'broker';
+    return 'unknown';
   };
 
+  const matchesRoleFilter = (broker: Broker, filter: RoleFilter) =>
+    filter === 'all' || normalizeRole(broker) === filter;
+
+  const formatRole = (role: string) => role
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' + ');
+
   const filteredBrokers = brokers
-    .filter(b => roleFilter === 'All' || b.role.includes(roleFilter.toLowerCase()))
+    .filter(b => matchesRoleFilter(b, roleFilter))
     .filter(b =>
       b.hostname.toLowerCase().includes(search.toLowerCase()) ||
       b.brokerId.toString().includes(search)
@@ -94,23 +102,38 @@ export function Brokers() {
         : (bVal as number) - (aVal as number);
     });
 
+  const brokerNodes = brokers.filter(broker => {
+    const normalizedRole = normalizeRole(broker);
+    return normalizedRole === 'broker' || normalizedRole === 'broker_controller';
+  });
   const agg = {
-    totalMsgIn: brokers.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
-    totalBytesIn: brokers.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
-    avgCpu: brokers.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (brokers.length || 1),
-    offline: brokers.filter(b => b.brokerHealth === 'OFFLINE').length,
+    totalMsgIn: brokerNodes.reduce((s, b) => s + (b.messagesInPerSec || 0), 0),
+    totalBytesIn: brokerNodes.reduce((s, b) => s + (b.bytesInPerSec || 0), 0),
+    avgCpu: (() => {
+      const liveCpu = brokers.filter(b => b.hostMetricStatus === 'LIVE' && b.cpuUsagePct != null);
+      return liveCpu.reduce((s, b) => s + (b.cpuUsagePct || 0), 0) / (liveCpu.length || 1);
+    })(),
+    offline: brokerNodes.filter(b => b.brokerHealth === 'OFFLINE').length,
   };
 
   const formatBytes = (bytes: number) => {
-    if (bytes === 0) return '0 B';
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    if (bytes < 1) return `${parseFloat(bytes.toFixed(2))} B`;
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const formatMessageRate = (messages: number) => {
+    if (!Number.isFinite(messages) || messages <= 0) return '0';
+    if (messages < 1) return parseFloat(messages.toFixed(2)).toString();
+    if (messages < 10) return parseFloat(messages.toFixed(1)).toString();
+    return messages.toFixed(0);
+  };
+
   const ProgressBar = ({ value, max }: { value: number; max: number }) => {
-    const pct = Math.min(100, Math.max(0, (value / max) * 100));
+    const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
     return (
       <div
         className="progress-bar-container"
@@ -122,7 +145,7 @@ export function Brokers() {
   };
 
   if (loading && brokers.length === 0) {
-    return <div className="state-center">Loading broker metrics…</div>;
+    return <div className="state-center">Loading role metrics…</div>;
   }
 
   return (
@@ -136,16 +159,16 @@ export function Brokers() {
           </div>
           <div className="card-body">
             <span className="value">{formatBytes(agg.totalBytesIn)}/s</span>
-            <span className="subtext">{agg.totalMsgIn.toFixed(0)} msg/s</span>
+            <span className="subtext">{formatMessageRate(agg.totalMsgIn)} msg/s</span>
           </div>
         </div>
 
         <div className="metric-card figma-card">
           <div className="card-header">
-            <span className="label">Active Broker</span>
+            <span className="label">Active Brokers</span>
           </div>
           <div className="card-body">
-            <span className="value">{brokers.length - agg.offline}/{brokers.length}</span>
+            <span className="value">{brokerNodes.length - agg.offline}/{brokerNodes.length}</span>
             <span className="subtext">{agg.offline} Offline Nodes</span>
           </div>
         </div>
@@ -156,14 +179,13 @@ export function Brokers() {
           </div>
           <div className="card-body">
             <span className="value">{agg.avgCpu.toFixed(1)}%</span>
-            <span className="subtext">0 Across Node</span>
           </div>
         </div>
       </div>
 
       {/* ── Controls ── */}
       <div className="brokers-list-header">
-        <h2 className="brokers-list-title cluster-section-heading">Brokers List</h2>
+        <h2 className="brokers-list-title cluster-section-heading">Roles List</h2>
         <div className="brokers-controls figma-controls">
           <div className="search-wrapper">
             <Search size={16} className="search-icon" />
@@ -175,10 +197,15 @@ export function Brokers() {
               className="search-input"
             />
           </div>
-          <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="role-select">
-            <option value="All">All Roles</option>
-            <option value="Broker">Broker Only</option>
-            <option value="Controller">Controller Only</option>
+          <select
+            value={roleFilter}
+            onChange={event => setRoleFilter(event.target.value as RoleFilter)}
+            className="role-select"
+          >
+            <option value="all">All Roles</option>
+            <option value="broker">Broker Only</option>
+            <option value="controller">Controller Only</option>
+            <option value="broker_controller">Broker + Controller</option>
           </select>
         </div>
       </div>
@@ -195,7 +222,7 @@ export function Brokers() {
                 ID
               </th>
               <th onClick={() => handleSort('hostname')} className="sortable">
-                Host Name
+                Host IP
               </th>
               <th>Role</th>
               <th onClick={() => handleSort('cpuUsagePct')} className="sortable">
@@ -204,12 +231,10 @@ export function Brokers() {
               <th onClick={() => handleSort('memoryUsedMb')} className="sortable">
                 RAM
               </th>
-              <th onClick={() => handleSort('diskUsedGb')} className="sortable">
-                Disk
+              <th onClick={() => handleSort('diskUsedBytes')} className="sortable" title="OS filesystem containing the Kafka data directory; reported by the node agent">
+                Host Disk <span className="broker-metric-level">OS level</span>
               </th>
-              <th onClick={() => handleSort('messagesInPerSec')} className="sortable">
-                Msg/S
-              </th>
+
               <th>Last Update</th>
             </tr>
           </thead>
@@ -220,11 +245,7 @@ export function Brokers() {
                 {/* ID */}
                 <td>
                   <div className="broker-id-cell">
-                    {getHealthIcon(broker.brokerHealth)}
                     <span>{broker.brokerId}</span>
-                    {broker.controller && (
-                      <span className="controller-badge" title="Controller">C</span>
-                    )}
                   </div>
                 </td>
 
@@ -233,39 +254,44 @@ export function Brokers() {
 
                 {/* Role */}
                 <td>
-                  <span className="role-badge">{broker.role}</span>
+                  <span className="role-badge">
+                    {normalizeRole(broker) === 'broker_controller'
+                      ? 'Broker + Controller'
+                      : formatRole(broker.role)}
+                  </span>
                 </td>
 
                 {/* CPU */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">{broker.cpuUsagePct.toFixed(1)}%</span>
-                    <ProgressBar value={broker.cpuUsagePct} max={100} />
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.cpuUsagePct != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{broker.cpuUsagePct.toFixed(1)}%</span>
+                      <ProgressBar value={broker.cpuUsagePct} max={100} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
                 {/* RAM */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">
-                      {formatBytes(broker.memoryUsedMb * 1024 * 1024)}
-                    </span>
-                    <ProgressBar value={broker.memoryUsedMb} max={broker.memoryTotalMb} />
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.memoryUsedMb != null && broker.memoryTotalMb != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{formatBytes(broker.memoryUsedMb * 1024 * 1024)}</span>
+                      <ProgressBar value={broker.memoryUsedMb} max={broker.memoryTotalMb} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
                 {/* Disk */}
                 <td>
-                  <div className="metric-cell figma-metric">
-                    <span className="metric-val">{broker.diskUsedGb} GB</span>
-                    <ProgressBar value={broker.diskUsedGb} max={broker.diskTotalGb} />
-                  </div>
+                  {broker.hostMetricStatus === 'LIVE' && broker.diskUsedBytes != null && broker.diskTotalBytes != null ? (
+                    <div className="metric-cell figma-metric">
+                      <span className="metric-val">{formatBytes(broker.diskUsedBytes)} / {formatBytes(broker.diskTotalBytes)}</span>
+                      <ProgressBar value={broker.diskUsedBytes} max={broker.diskTotalBytes} />
+                    </div>
+                  ) : <MetricUnavailable status={broker.hostMetricStatus} lastHeartbeat={broker.lastHeartbeat} />}
                 </td>
 
-                {/* Msg/s */}
-                <td className="font-mono">
-                  {broker.messagesInPerSec ? broker.messagesInPerSec.toFixed(1) : '0'}
-                </td>
+
 
                 {/* Heartbeat */}
                 <td className="text-muted text-sm">
@@ -277,8 +303,8 @@ export function Brokers() {
 
             {filteredBrokers.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center py-4 text-muted">
-                  No brokers found matching criteria
+                <td colSpan={7} className="text-center py-4 text-muted">
+                  No roles found matching criteria
                 </td>
               </tr>
             )}
@@ -288,4 +314,10 @@ export function Brokers() {
 
     </div>
   );
+}
+
+function MetricUnavailable({ status, lastHeartbeat }: { status: Broker['hostMetricStatus']; lastHeartbeat: string | null }) {
+  const label = status === 'STALE' ? 'Stale' : 'Agent unavailable';
+  const title = lastHeartbeat ? `Last reported ${new Date(lastHeartbeat).toLocaleString()}` : undefined;
+  return <span className="broker-metric-status stale" title={title}>{label}</span>;
 }

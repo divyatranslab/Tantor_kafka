@@ -50,7 +50,8 @@ public class TruststoreStorageService {
         Path targetFile = truststoreDir.resolve(clusterId.toString() + ext);
         
         try {
-            byte[] decoded = Base64.getDecoder().decode(base64Content.replaceAll("\\s", ""));
+            String cleanBase64 = normalizeBase64(base64Content);
+            byte[] decoded = Base64.getDecoder().decode(cleanBase64);
             Files.write(targetFile, decoded);
             
             try {
@@ -82,6 +83,16 @@ public class TruststoreStorageService {
         } catch (IOException e) {
             log.warn("Failed to delete truststore file {}", targetFile, e);
         }
+    }
+
+    private String normalizeBase64(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        int commaIndex = trimmed.indexOf(',');
+        if (commaIndex >= 0) {
+            trimmed = trimmed.substring(commaIndex + 1);
+        }
+        return trimmed.replaceAll("\\s", "");
     }
 
     private String resolveExtension(String type) {

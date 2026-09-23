@@ -1,11 +1,13 @@
 package io.translab.tantor.artifact.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.translab.tantor.artifact.config.StorageProperties;
 import io.translab.tantor.artifact.domain.Artifact;
 import io.translab.tantor.artifact.domain.ArtifactStatus;
 import io.translab.tantor.artifact.dto.BundleManifest;
 import io.translab.tantor.artifact.dto.ManifestDto;
 import io.translab.tantor.artifact.exception.StorageException;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
@@ -57,17 +59,20 @@ public class AirGapBundleService {
     private final ManifestService manifestService;
     private final ArtifactService artifactService;
     private final ObjectMapper objectMapper;
+    private final StorageProperties properties;
 
     public AirGapBundleService(ArtifactJpaRepository repository,
                                StorageService storageService,
                                ManifestService manifestService,
                                ArtifactService artifactService,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               StorageProperties properties) {
         this.repository = repository;
         this.storageService = storageService;
         this.manifestService = manifestService;
         this.artifactService = artifactService;
         this.objectMapper = objectMapper;
+        this.properties = properties;
     }
 
     /**
@@ -128,7 +133,7 @@ public class AirGapBundleService {
             throw new StorageException("Cannot create temp dir for bundle import", e);
         }
         try {
-            extract(in, tmp);
+            extract(new BoundedInputStream(in, properties.getMaxBundleBytes()), tmp);
             int imported = 0;
             Path artifactsDir = tmp.resolve("artifacts");
             if (!Files.isDirectory(artifactsDir)) {
@@ -200,7 +205,18 @@ public class AirGapBundleService {
         try (GzipCompressorInputStream gz = new GzipCompressorInputStream(in);
              TarArchiveInputStream tar = new TarArchiveInputStream(gz)) {
             TarArchiveEntry entry;
+            int entries = 0;
+            long expanded = 0;
             while ((entry = tar.getNextEntry()) != null) {
+                if (++entries > properties.getMaxArchiveEntries()) {
+                    throw new UploadLimitExceededException("Bundle contains too many archive entries");
+                }
+                if (entry.getSize() > properties.getMaxArchiveEntryBytes()) {
+                    throw new UploadLimitExceededException("Bundle entry exceeds the configured size limit");
+                }
+                if (entry.isSymbolicLink() || entry.isLink()) {
+                    throw new StorageException("Bundle contains a symbolic or hard link: " + entry.getName());
+                }
                 Path resolved = targetRoot.resolve(entry.getName()).normalize();
                 // Guard against zip-slip / tar traversal.
                 if (!resolved.startsWith(targetRoot)) {
@@ -210,7 +226,20 @@ public class AirGapBundleService {
                     Files.createDirectories(resolved);
                 } else {
                     Files.createDirectories(resolved.getParent());
-                    Files.copy(tar, resolved);
+                    try (OutputStream out = Files.newOutputStream(resolved)) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        long entryBytes = 0;
+                        while ((read = tar.read(buffer)) != -1) {
+                            entryBytes += read;
+                            expanded += read;
+                            if (entryBytes > properties.getMaxArchiveEntryBytes()
+                                    || expanded > properties.getMaxArchiveExpandedBytes()) {
+                                throw new UploadLimitExceededException("Bundle expands beyond the configured size limit");
+                            }
+                            out.write(buffer, 0, read);
+                        }
+                    }
                 }
             }
         }
@@ -236,6 +265,37 @@ public class AirGapBundleService {
             return InetAddress.getLocalHost().getHostName();
         } catch (Exception e) {
             return "unknown";
+        }
+    }
+
+    private static final class BoundedInputStream extends java.io.FilterInputStream {
+        private final long maxBytes;
+        private long bytesRead;
+
+        private BoundedInputStream(InputStream in, long maxBytes) {
+            super(in);
+            this.maxBytes = maxBytes;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int value = super.read();
+            if (value >= 0) increment(1);
+            return value;
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            int read = super.read(buffer, offset, length);
+            if (read > 0) increment(read);
+            return read;
+        }
+
+        private void increment(int count) {
+            if (count > maxBytes - bytesRead) {
+                throw new UploadLimitExceededException("Bundle exceeds the configured maximum of " + maxBytes + " bytes");
+            }
+            bytesRead += count;
         }
     }
 }

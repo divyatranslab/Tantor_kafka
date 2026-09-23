@@ -36,7 +36,7 @@ Two stores are kept in lockstep by `ArtifactService`:
 
 | Store        | Holds                              | Technology         |
 |--------------|------------------------------------|--------------------|
-| Index        | metadata, checksums, manifest, audit | PostgreSQL 16 (JSONB) |
+| Index        | metadata, checksums, manifest, audit | PostgreSQL 16.14 (JSONB) |
 | Object store | the actual `.tar.gz` binaries       | local FS / PVC     |
 
 Every mutating operation is transactional across both: a failed checksum or
@@ -126,19 +126,30 @@ value for HTTP cache validation.
 ## Build & run
 
 ```bash
-# Requires Java 21, a reachable PostgreSQL 16, Maven Central (or a mirror)
+# Requires Java 21, a reachable PostgreSQL 16.14, Maven Central (or a mirror)
 export TANTOR_DB_URL=jdbc:postgresql://localhost:5432/tantor
-export TANTOR_DB_USER=tantor TANTOR_DB_PASSWORD=tantor
+export TANTOR_DB_USER=tantor_dev
+export TANTOR_DB_PASSWORD='<generated-local-only-password>'
 export TANTOR_REPO_PATH=/var/lib/tantor/repository
 
 mvn clean package
 java -jar target/tantor-artifact-repository-1.0.0.jar
 ```
 
+All three database variables are mandatory. There is intentionally no default
+JDBC host, username, or password. In the Podman deployment the URL is
+`jdbc:postgresql://database:5432/tantor`; credentials come from environment
+variables in the developer composition and mounted secret files in production.
+The management readiness endpoint includes both database health and the
+read-only `artifactSchema` indicator. That indicator requires
+`public.kf_artifact` plus a successful Flyway V67 history entry. V67 is the
+latest `tantor-server` migration defining the current artifact service-type
+contract; the Artifact Repository verifies it but never runs migrations.
+
 ### Tests
 
 - `ChecksumServiceTest`, `ArtifactServiceTest` — pure unit tests, no Docker.
-- `ArtifactControllerIT` — full upload/download round-trip against PostgreSQL 16
+- `ArtifactControllerIT` — full upload/download round-trip against PostgreSQL 16.14
   via Testcontainers (needs a Docker daemon; auto-skips otherwise).
 
 ### Container / Kubernetes

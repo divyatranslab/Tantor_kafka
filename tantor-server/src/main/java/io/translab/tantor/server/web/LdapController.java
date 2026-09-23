@@ -4,6 +4,7 @@ import io.translab.tantor.server.domain.LdapConfig;
 import io.translab.tantor.server.dto.LdapDTOs;
 import io.translab.tantor.server.repository.LdapConfigRepository;
 import io.translab.tantor.server.service.LdapService;
+import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,21 +14,29 @@ public class LdapController {
 
     private final LdapConfigRepository ldapConfigRepository;
     private final LdapService ldapService;
+    private final RoleAuthenticationUtil roleAuthenticationUtil;
 
-    public LdapController(LdapConfigRepository ldapConfigRepository, LdapService ldapService) {
+    public LdapController(LdapConfigRepository ldapConfigRepository, LdapService ldapService,
+                          RoleAuthenticationUtil roleAuthenticationUtil) {
         this.ldapConfigRepository = ldapConfigRepository;
         this.ldapService = ldapService;
+        this.roleAuthenticationUtil = roleAuthenticationUtil;
     }
 
     @GetMapping("/config")
-    public ResponseEntity<LdapDTOs.LdapConfigResponse> getConfig() {
+    public ResponseEntity<LdapDTOs.LdapConfigResponse> getConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
         return ldapConfigRepository.findAll().stream().findFirst()
                 .map(config -> ResponseEntity.ok(toResponse(config)))
                 .orElse(ResponseEntity.ok(null));
     }
 
     @PutMapping("/config")
-    public ResponseEntity<LdapDTOs.LdapConfigResponse> updateConfig(@RequestBody LdapDTOs.LdapConfigCreateRequest request) {
+    public ResponseEntity<LdapDTOs.LdapConfigResponse> updateConfig(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody LdapDTOs.LdapConfigCreateRequest request) {
+        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(new LdapConfig());
         
         config.setEnabled(request.isEnabled());
@@ -54,7 +63,10 @@ public class LdapController {
     }
 
     @PostMapping("/test")
-    public ResponseEntity<LdapDTOs.LdapTestResponse> testConnection(@RequestBody LdapDTOs.LdapTestRequest request) {
+    public ResponseEntity<LdapDTOs.LdapTestResponse> testConnection(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestBody LdapDTOs.LdapTestRequest request) {
+        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(null);
         if (config == null) {
             return ResponseEntity.badRequest().body(new LdapDTOs.LdapTestResponse(false, "LDAP not configured", null, null));
@@ -93,5 +105,9 @@ public class LdapController {
         response.setDefaultRole(config.getDefaultRole());
         response.setConnectionTimeout(config.getConnectionTimeout());
         return response;
+    }
+
+    private boolean isAdmin(String authorization) {
+        return roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.USER_MANAGEMENT);
     }
 }

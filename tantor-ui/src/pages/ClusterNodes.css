@@ -3,6 +3,22 @@
   flex-direction: column;
   gap: 16px;
 }
+
+.cluster-node-identity-summary {
+  margin: 6px 0 0;
+  color: #6d6679;
+  font-size: 13px;
+}
+
+.cluster-nodes-error {
+  padding: 12px 14px;
+  border: 1px solid #e8a19a;
+  border-radius: 8px;
+  background: #fff4f2;
+  color: #a5271a;
+  font-size: 14px;
+}
+
 .cluster-nodes-page header button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); font: inherit; font-size: 12px; cursor: pointer; }
 .cluster-nodes-table-wrap {
   overflow: auto;
@@ -73,8 +89,25 @@
   font-weight: 400;
 }
 
-.cluster-node-status.success {
+.cluster-node-status.success,
+.cluster-node-status.online,
+.cluster-node-status.live {
   background: rgba(42, 199, 146, 0.1);
   border: 1px solid #2AC792;
   color: #1F845A;
+}
+
+.cluster-node-status.offline,
+.cluster-node-status.unavailable {
+  background: rgba(222, 71, 71, 0.08);
+  border: 1px solid #d85d5d;
+  color: #a5271a;
+}
+
+.cluster-node-status.stale,
+.cluster-node-status.not-enrolled,
+.cluster-node-status.unknown {
+  background: rgba(230, 153, 37, 0.1);
+  border: 1px solid #e09925;
+  color: #8a5a12;
 }

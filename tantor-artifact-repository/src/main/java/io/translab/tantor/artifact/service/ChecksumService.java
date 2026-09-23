@@ -2,6 +2,7 @@ package io.translab.tantor.artifact.service;
 
 import io.translab.tantor.artifact.dto.ChecksumResult;
 import io.translab.tantor.artifact.exception.StorageException;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -27,6 +28,10 @@ public class ChecksumService {
      * digests of everything that flowed through.
      */
     public ChecksumResult copyAndDigest(InputStream source, OutputStream sink) {
+        return copyAndDigest(source, sink, Long.MAX_VALUE);
+    }
+
+    public ChecksumResult copyAndDigest(InputStream source, OutputStream sink, long maxBytes) {
         MessageDigest sha256 = newDigest("SHA-256");
         MessageDigest md5 = newDigest("MD5");
         long total = 0;
@@ -34,6 +39,9 @@ public class ChecksumService {
         try {
             int read;
             while ((read = source.read(buf)) != -1) {
+                if (read > maxBytes - total) {
+                    throw new UploadLimitExceededException("Upload exceeds the configured maximum of " + maxBytes + " bytes");
+                }
                 sha256.update(buf, 0, read);
                 md5.update(buf, 0, read);
                 sink.write(buf, 0, read);

@@ -10,6 +10,7 @@ type AnchoredMenuProps = {
   matchAnchorWidth?: boolean;
   minWidth?: number;
   gap?: number;
+  placement?: 'auto' | 'above' | 'below';
 };
 
 export function AnchoredMenu({
@@ -21,6 +22,7 @@ export function AnchoredMenu({
   matchAnchorWidth = false,
   minWidth,
   gap = 6,
+  placement = 'auto',
 }: AnchoredMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({
@@ -40,12 +42,11 @@ export function AnchoredMenu({
       const viewportGap = 8;
       const spaceBelow = window.innerHeight - anchorRect.bottom;
       const spaceAbove = anchorRect.top;
-      const openAbove = spaceBelow < Math.min(menuHeight + gap, 180) && spaceAbove > spaceBelow;
+      const openAbove = placement === 'above' || (placement === 'auto' && spaceBelow < Math.min(menuHeight + gap, 180) && spaceAbove > spaceBelow);
       const availableHeight = Math.max(
         96,
         (openAbove ? spaceAbove : spaceBelow) - gap - viewportGap,
       );
-      const top = openAbove ? anchorRect.top - gap : anchorRect.bottom + gap;
       const naturalLeft = align === 'start'
         ? anchorRect.left
         : anchorRect.right - menuWidth;
@@ -55,17 +56,17 @@ export function AnchoredMenu({
       );
       setStyle({
         position: 'fixed',
-        top,
+        top: openAbove ? 'auto' : anchorRect.bottom + gap,
         left,
         right: 'auto',
-        bottom: 'auto',
+        bottom: openAbove ? window.innerHeight - anchorRect.top + gap : 'auto',
         width: matchAnchorWidth ? anchorRect.width : undefined,
         minWidth,
         maxWidth: 'calc(100vw - 16px)',
         maxHeight: Math.min(360, availableHeight),
         overflowY: 'auto',
         margin: 0,
-        transform: openAbove ? 'translateY(-100%)' : 'none',
+        transform: 'none',
         visibility: 'visible',
         zIndex: 25000,
       });
@@ -93,7 +94,7 @@ export function AnchoredMenu({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [align, anchor, gap, matchAnchorWidth, minWidth, onClose]);
+  }, [align, anchor, gap, matchAnchorWidth, minWidth, onClose, placement]);
 
   return createPortal(
     <div ref={menuRef} className={className} style={style}>

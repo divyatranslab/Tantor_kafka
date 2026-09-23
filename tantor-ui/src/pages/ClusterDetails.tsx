@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
-import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Terminal, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
+import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useCluster } from '../contexts/ClusterContext';
+import { useCluster } from '../contexts/useCluster';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import './ClusterDetails.css';
@@ -34,7 +34,7 @@ export function ClusterDetails() {
   const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownAnchor, setDropdownAnchor] = useState<HTMLDivElement | null>(null);
 
   const { setActiveClusterId } = useCluster();
 
@@ -44,12 +44,14 @@ export function ClusterDetails() {
   }, [id, setActiveClusterId]);
 
   useEffect(() => {
-    // Clear stale data when switching clusters to prevent flash of old data
-    setCluster(null);
-    fetch(`/api/v1/ui/clusters/${id}`)
-      .then(res => res.json())
-      .then(setCluster)
-      .catch(console.error);
+    // Clear stale data when switching clusters; then fetch new data async
+    void (async () => {
+      setCluster(null);
+      try {
+        const res = await fetch(`/api/v1/ui/clusters/${id}`);
+        setCluster(await res.json());
+      } catch (e) { console.error(e); }
+    })();
   }, [id]);
 
   // Handle redirects
@@ -102,35 +104,36 @@ export function ClusterDetails() {
   if (isLogsView) {
     return (
       <div className="cluster-details-page cluster-logs-page animate-fade-in">
-        <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
+        <div className="cluster-details-card cluster-logs-card">
+          <header className="cd-details-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '10px', width: '1130px', height: '142px' }}>
           {/* Breadcrumbs (Frame 1000005411) */}
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', padding: '0px', gap: '5px', width: 'auto', height: '20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: 'var(--space-2)', height: '20px' }}>
               <span 
                 onClick={() => navigate('/clusters')} 
                 style={{ 
                   cursor: 'pointer', 
                   fontFamily: 'Satoshi', 
-                  fontWeight: 500, 
-                  fontSize: '14px', 
+                  fontWeight: 'var(--font-medium)', 
+                  fontSize: 'var(--text-base)', 
                   lineHeight: '19px', 
-                  color: '#818181' 
+                  color: 'var(--text-tertiary)' 
                 }}
               >
                 Cluster
               </span>
             </div>
-            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', color: '#818181' }}>
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '20px', height: '20px', color: 'var(--text-tertiary)' }}>
               <ChevronRight size={14} />
             </span>
-            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: '8px', height: '19px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: '0px', gap: 'var(--space-2)', height: '19px' }}>
               <span 
                 style={{ 
                   fontFamily: 'Satoshi', 
-                  fontWeight: 500, 
-                  fontSize: '14px', 
+                  fontWeight: 'var(--font-medium)', 
+                  fontSize: 'var(--text-base)', 
                   lineHeight: '19px', 
-                  color: '#3E1363' 
+                  color: 'var(--button-primary)' 
                 }}
               >
                 {cluster.name}
@@ -139,11 +142,11 @@ export function ClusterDetails() {
           </div>
           
           {/* Title Row (Frame 1000005262) */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '8px', width: '1129px', height: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: 'var(--space-2)', width: '1129px', height: 'auto' }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '0px', gap: '2px', width: '1129px', height: '32px' }}>
               <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', width: '1129px', height: '32px' }}>
-                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '465px', height: '32px' }}>
-                  <h1 style={{ fontFamily: 'Satoshi', fontWeight: 700, fontSize: '24px', lineHeight: '32px', color: '#282F49', margin: 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: 'var(--space-2)', width: '465px', height: '32px' }}>
+                  <h1 style={{ fontFamily: 'Satoshi', fontWeight: 'var(--font-bold)', fontSize: 'var(--text-2xl)', lineHeight: '32px', color: 'var(--text-primary)', margin: 0 }}>
                     Deployment Logs
                   </h1>
                   <div style={{
@@ -161,11 +164,11 @@ export function ClusterDetails() {
                   }}>
                     <span style={{
                       fontFamily: 'Satoshi',
-                      fontWeight: 400,
-                      fontSize: '12px',
+                      fontWeight: 'var(--font-regular)',
+                      fontSize: 'var(--text-xs)',
                       lineHeight: '16px',
                       textAlign: 'center',
-                      color: '#069B68'
+                      color: 'var(--color-success-dark)'
                     }}>
                       Success
                     </span>
@@ -177,10 +180,10 @@ export function ClusterDetails() {
             {/* Subtitle */}
             <p style={{
               fontFamily: 'Satoshi',
-              fontWeight: 400,
-              fontSize: '14px',
+              fontWeight: 'var(--font-regular)',
+              fontSize: 'var(--text-base)',
               lineHeight: '19px',
-              color: '#818181',
+              color: 'var(--text-tertiary)',
               margin: '0px'
             }}>
               {`${cluster.name}Kafka ${cluster.kafkaVersion}${cluster.mode ? cluster.mode.toLowerCase() : ''}`}
@@ -189,22 +192,22 @@ export function ClusterDetails() {
 
           {/* Back button (Frame 1000005471) */}
           <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', margin: '0 auto', width: '1130px', height: '24px', marginTop: '8px' }}>
-            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: '8px', width: '142px', height: '24px' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '0px', gap: 'var(--space-2)', width: '142px', height: '24px' }}>
               <span 
                 onClick={() => navigate(`/clusters/${id}/overview`)} 
                 style={{ 
                   cursor: 'pointer', 
                   fontFamily: 'Satoshi', 
-                  fontWeight: 500, 
-                  fontSize: '16px', 
+                  fontWeight: 'var(--font-medium)', 
+                  fontSize: 'var(--text-md)', 
                   lineHeight: '22px',
-                  color: '#5B327F', 
+                  color: 'var(--button-primary-hover)', 
                   display: 'flex', 
                   alignItems: 'center', 
-                  gap: '8px' 
+                  gap: 'var(--space-2)' 
                 }}
               >
-                <ChevronLeft size={24} style={{ color: '#818181' }} /> Logs (Selected)
+                <ChevronLeft size={24} style={{ color: 'var(--text-tertiary)' }} /> Logs (Selected)
               </span>
             </div>
           </div>
@@ -214,6 +217,7 @@ export function ClusterDetails() {
           <Outlet />
         </div>
       </div>
+      </div>
     );
   }
 
@@ -221,7 +225,7 @@ export function ClusterDetails() {
   const tabs = [
     { to: `/clusters/${id}/overview`, icon: LineChart, label: 'Overview', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/nodes`, icon: Network, label: 'Nodes', disabled: false },
-    { to: `/clusters/${id}/brokers`, icon: Server, label: 'Brokers', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
+    { to: `/clusters/${id}/brokers`, icon: Server, label: 'Roles', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: false },
@@ -257,13 +261,13 @@ export function ClusterDetails() {
           
           {/* Title Row */}
           <div className="cd-details-title-row">
-            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="cd-details-title-left" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <button 
                 type="button" 
                 className="cluster-back-btn" 
                 onClick={() => navigate('/clusters')}
                 aria-label="Back to clusters"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: '#818181' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', color: 'var(--text-tertiary)' }}
               >
                 <ChevronLeft size={20} />
               </button>
@@ -271,10 +275,10 @@ export function ClusterDetails() {
                 {cluster.name}
               </h1>
               <span 
-                title={`Kafka ${cluster.kafkaVersion} • ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} • ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
+                title={`Kafka ${cluster.kafkaVersion} | ${cluster.nodeCount || 0} ${(cluster.nodeCount || 0) === 1 ? 'node' : 'nodes'} | ${cluster.mode === 'EXTERNAL' ? 'EXTERNAL' : 'INTERNAL'}`}
                 style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '4px', cursor: 'pointer' }}
               >
-                <Info size={16} style={{ color: '#818181' }} />
+                <Info size={16} style={{ color: 'var(--text-tertiary)' }} />
               </span>
               <div className={`cd-status-badge ${badgeClass}`} title={cluster.runtimeStatusReason} style={{ gap: '6px', marginLeft: '8px' }}>
                 <span className="cd-status-dot"></span>
@@ -293,9 +297,9 @@ export function ClusterDetails() {
                   .catch(console.error);
               }}
               title="Refresh"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#FFFFFF', border: '1px solid #CCCCCC', borderRadius: '8px', cursor: 'pointer', width: '40px', height: '40px', padding: '8px' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', cursor: 'pointer', width: '40px', height: '40px', padding: 'var(--space-2)' }}
             >
-              <RefreshCw size={16} style={{ color: '#818181' }} />
+              <RefreshCw size={16} style={{ color: 'var(--text-tertiary)' }} />
             </button>
           </div>
 
@@ -325,7 +329,7 @@ export function ClusterDetails() {
             </div>
 
             {dropdownTabs.length > 0 && (
-              <div className="cluster-tabs-dropdown-container" ref={dropdownRef}>
+              <div className="cluster-tabs-dropdown-container" ref={setDropdownAnchor}>
                 <button
                   type="button"
                   className={`cluster-tabs-dropdown-trigger ${isDropdownActive ? 'active' : ''} ${isDropdownOpen ? 'open' : ''}`}
@@ -334,12 +338,13 @@ export function ClusterDetails() {
                 >
                   <ChevronDown size={18} />
                 </button>
-                {isDropdownOpen && dropdownRef.current && (
+                {isDropdownOpen && dropdownAnchor && (
                   <AnchoredMenu
-                    anchor={dropdownRef.current}
+                    anchor={dropdownAnchor}
                     className="cluster-tabs-dropdown-menu"
                     onClose={() => setIsDropdownOpen(false)}
                     minWidth={180}
+                    placement="above"
                   >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {

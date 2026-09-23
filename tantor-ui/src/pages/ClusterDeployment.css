@@ -811,6 +811,17 @@ input:checked+.cd-toggle-slider:before {
   border-color: #3E1363;
 }
 
+.cd-node-option-select-all {
+  width: 100%;
+  padding: 10px 8px 12px;
+  border-bottom: 1px solid #F0EBF8;
+  margin-bottom: 4px;
+}
+
+.cd-node-option-select-all .cd-node-info small {
+  color: #6F6A7D;
+}
+
 
 
 .cd-selected-node-list,
@@ -833,7 +844,20 @@ input:checked+.cd-toggle-slider:before {
   grid-template-columns: minmax(210px, 1fr) minmax(360px, 1.4fr) auto auto;
 }
 
-.cd-preview-row,
+.cd-preview-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.05fr) minmax(320px, 1.4fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 16px;
+  background: #FFFFFF;
+  border-radius: 8px;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  list-style: none;
+}
+
 .cd-prereq-row summary {
   display: flex;
   flex-direction: row;
@@ -870,6 +894,7 @@ input:checked+.cd-toggle-slider:before {
   align-items: flex-start;
   gap: 4px;
   padding: 0px;
+  min-width: 0;
 }
 
 .cd-node-main strong,
@@ -877,6 +902,13 @@ input:checked+.cd-toggle-slider:before {
 .cd-role-copy strong,
 .cd-role-copy span {
   display: block;
+}
+
+.cd-role-copy strong,
+.cd-role-copy span {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .cd-node-main strong,
@@ -993,6 +1025,19 @@ input:checked+.cd-toggle-slider:before {
   font-weight: 500;
   line-height: 16px;
   cursor: pointer;
+}
+
+.cd-secondary-btn.compact.cd-fix-prereqs-btn {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: max-content;
+  min-height: 30px;
+  height: 30px;
+  white-space: nowrap;
+}
+
+.cd-fix-prereqs-btn svg {
+  flex: 0 0 auto;
 }
 
 .cd-secondary-btn:disabled {
@@ -1575,6 +1620,7 @@ input:checked+.cd-toggle-slider:before {
   .cd-selected-node,
   .cd-preview-row {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 
   .cd-status {
@@ -1599,6 +1645,7 @@ input:checked+.cd-toggle-slider:before {
   background: #F2EBFF;
   border-radius: 8px;
   align-self: stretch;
+  margin-bottom: 16px;
 }
 
 .cd-custom-import-row {
@@ -1814,6 +1861,53 @@ input:checked+.cd-toggle-slider:before {
 
 .cd-figma-icon-btn:hover {
   color: #332849;
+}
+
+.cd-node-port-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 10px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid #eeeaf4;
+}
+
+.cd-node-port-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #5d526d;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.cd-node-port-field input {
+  width: 100%;
+  height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #d9d3e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #332849;
+  font: inherit;
+  font-size: 14px;
+}
+
+.cd-node-port-field input:focus {
+  border-color: #6f3b8f;
+  outline: 2px solid rgba(111, 59, 143, 0.12);
+}
+
+.cd-node-port-field.read-only input {
+  background: #f5f3f7;
+  color: #777080;
+}
+
+.cd-node-port-error {
+  color: #c53939;
+  font-size: 12px;
+  line-height: 16px;
 }
 /* -- Create New Cluster Popup Modal Styles -- */
 .cd-deployment-modal-container {

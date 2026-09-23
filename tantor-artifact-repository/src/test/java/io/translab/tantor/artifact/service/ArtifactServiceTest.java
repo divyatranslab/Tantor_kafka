@@ -100,6 +100,17 @@ class ArtifactServiceTest {
         verify(repository, never()).save(any());
     }
 
+    @Test
+    void unsafeFilenameIsRejectedBeforeAnyUploadIsStored() {
+        ArtifactService.UploadCommand unsafe = new ArtifactService.UploadCommand(
+                ServiceType.KAFKA, "kafka", "3.7.0", null, null, "../malicious.tgz",
+                "application/gzip", "test", null, Map.of(), false, "tester");
+
+        assertThatThrownBy(() -> service.upload(unsafe, data()))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(storageService, never()).storeTemporarily(anyString(), any());
+    }
+
     private ArtifactService.UploadCommand cmd(String declaredSha, boolean overwrite) {
         return new ArtifactService.UploadCommand(
                 ServiceType.KAFKA, "kafka", "3.7.0", null, null, "kafka_2.13-3.7.0.tgz",

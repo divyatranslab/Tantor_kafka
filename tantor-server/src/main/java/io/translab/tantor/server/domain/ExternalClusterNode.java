@@ -17,6 +17,13 @@ public class ExternalClusterNode {
     @Column(name = "cluster_id", nullable = false)
     private UUID clusterId;
 
+    /**
+     * Canonical identity of the parent cluster. The database derives this from
+     * cluster_id; application code must not infer it from host or name fields.
+     */
+    @Column(name = "canonical_cluster_uuid", nullable = false, insertable = false, updatable = false)
+    private UUID canonicalClusterUuid;
+
     @Column(name = "host", nullable = false)
     private String host;
 
@@ -43,6 +50,18 @@ public class ExternalClusterNode {
 
     @Column(name = "disk_total_gb")
     private Long diskTotalGb;
+
+    @Column(name = "disk_used_bytes")
+    private Long diskUsedBytes;
+
+    @Column(name = "disk_total_bytes")
+    private Long diskTotalBytes;
+
+    @Column(name = "messages_in_per_sec")
+    private Double messagesInPerSec;
+
+    @Column(name = "bytes_in_per_sec")
+    private Double bytesInPerSec;
 
     @Column(name = "last_seen")
     private OffsetDateTime lastSeen;

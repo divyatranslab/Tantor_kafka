@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
-  MoreVertical, Plus, RefreshCw, Search, Trash2, X
+  Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { TopicActionConfirmationModal } from '../components/TopicActionConfirmationModal';
+import { topicActionCopy, type TopicActionKind } from '../components/topicActionTypes';
 import './Topics.css';
 
 interface TopicSummary {
@@ -27,30 +29,13 @@ interface PaginatedResponse {
   hasNext: boolean;
 }
 
-type ActionKind = 'clear' | 'recreate' | 'remove';
-
-const actionCopy: Record<ActionKind, { title: string; description: string; button: string }> = {
-  clear: {
-    title: 'Clear all messages?',
-    description: 'Kafka will advance the low watermark for every partition. This cannot be undone and requires a DELETE cleanup policy.',
-    button: 'Clear messages'
-  },
-  recreate: {
-    title: 'Recreate topic?',
-    description: 'This deletes the topic and all messages, then recreates it with the current partition assignments and explicit settings.',
-    button: 'Recreate topic'
-  },
-  remove: {
-    title: 'Remove topic?',
-    description: 'The topic, its messages, and all partition data will be permanently deleted.',
-    button: 'Remove topic'
-  }
-};
+type PendingTopicAction = { kind: TopicActionKind; names: string[] };
 
 async function apiError(response: Response) {
   const body = await response.json().catch(() => null);
   return body?.message || body?.error || 'Request failed (HTTP ' + response.status + ')';
 }
+
 
 export function Topics() {
   const { id } = useParams<{ id: string }>();
@@ -59,10 +44,14 @@ export function Topics() {
   const [data, setData] = useState<PaginatedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [refreshInterval, setRefreshInterval] = useState(15);
+  const liveSettingsKey = 'tantor:topics-live:' + (id || 'default');
+  const [autoRefresh, setAutoRefresh] = useState(() => window.localStorage.getItem(liveSettingsKey) === 'true');
+  const [refreshInterval, setRefreshInterval] = useState(() => {
+    const savedInterval = Number(window.localStorage.getItem(liveSettingsKey + ':interval'));
+    return [5, 10, 15, 30, 60].includes(savedInterval) ? savedInterval : 15;
+  });
   const [showIntervalDropdown, setShowIntervalDropdown] = useState(false);
-  const liveDropdownRef = useRef<HTMLDivElement>(null);
+  const [liveDropdownAnchor, setLiveDropdownAnchor] = useState<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -70,9 +59,7 @@ export function Topics() {
   const [search, setSearch] = useState('');
   const [includeInternal, setIncludeInternal] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [pendingAction, setPendingAction] = useState<{ kind: ActionKind; names: string[] } | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingTopicAction | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newTopic, setNewTopic] = useState({
@@ -83,8 +70,7 @@ export function Topics() {
     minInsyncReplicas: '',
     retentionMs: '',
     maxPartitionSize: '',
-    maxMessageBytes: '',
-    customConfigs: false
+    maxMessageBytes: ''
   });
   const [creating, setCreating] = useState(false);
 
@@ -111,7 +97,7 @@ export function Topics() {
     else setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/topics?showInternal=${includeInternal}&page=${page - 1}&size=${size}&search=${encodeURIComponent(search)}`);
+      const res = await fetch(`/api/v1/clusters/${id}/topics?includeInternal=${includeInternal}&page=${page}&size=${size}&search=${encodeURIComponent(search)}`);
       if (!res.ok) {
         throw new Error(`Failed to load topics: ${res.statusText}`);
       }
@@ -131,7 +117,14 @@ export function Topics() {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => fetchTopics(true), refreshInterval * 1000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, fetchTopics]);
+  }, [autoRefresh, fetchTopics, refreshInterval]);
+
+  const updateLiveSettings = (enabled: boolean, interval = refreshInterval) => {
+    window.localStorage.setItem(liveSettingsKey, String(enabled));
+    window.localStorage.setItem(liveSettingsKey + ':interval', String(interval));
+    setAutoRefresh(enabled);
+    setRefreshInterval(interval);
+  };
 
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
@@ -190,8 +183,7 @@ export function Topics() {
         minInsyncReplicas: '',
         retentionMs: '',
         maxPartitionSize: '',
-        maxMessageBytes: '',
-        customConfigs: false
+        maxMessageBytes: ''
       });
       setNotice('Topic created successfully.');
       await fetchTopics();
@@ -220,7 +212,7 @@ export function Topics() {
         const response = await fetch(endpoint, { method });
         if (!response.ok) throw new Error(name + ': ' + await apiError(response));
       }
-      setNotice(actionCopy[pendingAction.kind].button + ' completed.');
+      setNotice(topicActionCopy[pendingAction.kind].button + ' completed.');
       setPendingAction(null);
       setSelected(new Set());
       await fetchTopics();
@@ -268,16 +260,16 @@ export function Topics() {
           <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
             <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
           </button>
-          <div ref={liveDropdownRef} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
+          <div ref={setLiveDropdownAnchor} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
             <div
               onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: 'var(--space-2)',
                 background: '#F8FAFC',
-                border: `1px solid ${autoRefresh ? '#3E1363' : '#E2E8F0'}`,
-                borderRadius: '8px',
+                border: `1px solid ${autoRefresh ? 'var(--button-primary)' : 'var(--border-subtle)'}`,
+                borderRadius: 'var(--radius-md)',
                 padding: '8px 12px',
                 cursor: 'pointer',
                 userSelect: 'none',
@@ -313,9 +305,9 @@ export function Topics() {
               </span>
             </div>
 
-            {showIntervalDropdown && liveDropdownRef.current && (
+            {showIntervalDropdown && liveDropdownAnchor && (
               <AnchoredMenu
-                anchor={liveDropdownRef.current}
+                anchor={liveDropdownAnchor}
                 className="live-dropdown-menu"
                 onClose={() => setShowIntervalDropdown(false)}
                 align="start"
@@ -326,8 +318,7 @@ export function Topics() {
                     key={sec}
                     className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
                     onClick={() => {
-                      setRefreshInterval(sec);
-                      setAutoRefresh(true);
+                      updateLiveSettings(true, sec);
                       setShowIntervalDropdown(false);
                     }}
                   >
@@ -339,7 +330,7 @@ export function Topics() {
                 <div
                   className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
                   onClick={() => {
-                    setAutoRefresh(!autoRefresh);
+                    updateLiveSettings(!autoRefresh);
                     setShowIntervalDropdown(false);
                   }}
                 >
@@ -392,13 +383,21 @@ export function Topics() {
 
       {canManage && selected.size > 0 && (
         <div className="bulk-actions">
-          <strong>{selected.size} selected</strong>
-          <button onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}>
+          <strong className="bulk-actions-count">{selected.size} selected</strong>
+          <button
+            className="bulk-action-button destructive"
+            onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}
+          >
             <Trash2 size={15} /> Delete selected
           </button>
-          <button onClick={copySelected}><Copy size={15} /> Copy names</button>
-          <button onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected) })}>
-            Clear messages
+          <button className="bulk-action-button neutral" onClick={copySelected}>
+            <Copy size={15} /> Copy names
+          </button>
+          <button
+            className="bulk-action-button primary"
+            onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected) })}
+          >
+            <Database size={15} /> Clear messages
           </button>
         </div>
       )}
@@ -424,14 +423,13 @@ export function Topics() {
               <th>Out of Sync Replica</th>
               <th>Replication Factor</th>
               <th>Message</th>
-              {canManage && <th aria-label="Actions" />}
             </tr>
           </thead>
           <tbody>
             {loading && !data ? (
-              <tr><td colSpan={canManage ? 7 : 6}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
+              <tr><td colSpan={5}><div className="topic-empty"><RefreshCw className="spin" size={24} /> Loading topics…</div></td></tr>
             ) : !data?.content.length ? (
-              <tr><td colSpan={canManage ? 6 : 5} className="empty-state-cell">
+              <tr><td colSpan={5} className="empty-state-cell">
                 <div className="topic-empty">
                   <div className="figma-empty-illustration">
                     <div className="illustration-card">
@@ -467,25 +465,6 @@ export function Topics() {
                 </td>
                 <td>{topic.replicationFactor ?? '-'}</td>
                 <td>{topic.messageCount?.toLocaleString() ?? '-'}</td>
-                {canManage && <td className="action-column" onClick={event => event.stopPropagation()}>
-                  <button
-                    className="icon-button"
-                    aria-label={'Actions for ' + topic.name}
-                    onClick={event => {
-                      event.stopPropagation();
-                      const opening = openMenu !== topic.name;
-                      setOpenMenu(opening ? topic.name : null);
-                      setMenuAnchor(opening ? event.currentTarget : null);
-                    }}
-                  ><MoreVertical size={18} /></button>
-                  {openMenu === topic.name && menuAnchor && (
-                    <AnchoredMenu anchor={menuAnchor} className="topic-menu" onClose={() => { setOpenMenu(null); setMenuAnchor(null); }}>
-                      <button onClick={() => setPendingAction({ kind: 'clear', names: [topic.name] })}>Clear messages</button>
-                      <button onClick={() => setPendingAction({ kind: 'recreate', names: [topic.name] })}>Recreate topic</button>
-                      <button onClick={() => setPendingAction({ kind: 'remove', names: [topic.name] })}>Remove topic</button>
-                    </AnchoredMenu>
-                  )}
-                </td>}
               </tr>
             ))}
           </tbody>
@@ -510,7 +489,7 @@ export function Topics() {
         )}
       </div>
 
-      {canManage && showCreate && (
+      {canManage && showCreate && createPortal(
         <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => setShowCreate(false)}>
           <div className="topic-modal create-topic-modal figma-topic-modal" role="dialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
             <header className="create-topic-header">
@@ -527,18 +506,7 @@ export function Topics() {
             <form onSubmit={createTopic} className="create-topic-form">
               <div className="figma-topic-modal-body">
                 <div className="form-section-header">
-                  <span>Cluster Details</span>
-                  <div className="custom-toggle-area">
-                    <label className="cd-toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={newTopic.customConfigs}
-                        onChange={e => setNewTopic(curr => ({ ...curr, customConfigs: e.target.checked }))}
-                      />
-                      <span className="cd-toggle-slider"></span>
-                    </label>
-                    <span className="toggle-label">Custom</span>
-                  </div>
+                  <span>Topic Details</span>
                 </div>
 
                 <div className="form-grid-row">
@@ -661,21 +629,18 @@ export function Topics() {
               </footer>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {canManage && pendingAction && (
-        <div className="topic-modal-backdrop" role="presentation" onMouseDown={() => !acting && setPendingAction(null)}>
-          <div className="topic-modal danger-modal" role="alertdialog" aria-modal="true" onMouseDown={event => event.stopPropagation()}>
-            <header><div className="danger-icon"><AlertTriangle size={22} /></div><button onClick={() => setPendingAction(null)} disabled={acting}><X size={18} /></button></header>
-            <div className="confirm-copy">
-              <h3>{actionCopy[pendingAction.kind].title}</h3>
-              <p>{actionCopy[pendingAction.kind].description}</p>
-              <div>{pendingAction.names.join(', ')}</div>
-            </div>
-            <footer><button className="topic-button secondary" onClick={() => setPendingAction(null)} disabled={acting}>Cancel</button><button className="topic-button destructive" onClick={runAction} disabled={acting}>{acting ? 'Working…' : actionCopy[pendingAction.kind].button}</button></footer>
-          </div>
-        </div>
+        <TopicActionConfirmationModal
+          action={pendingAction.kind}
+          topicNames={pendingAction.names}
+          acting={acting}
+          onClose={() => setPendingAction(null)}
+          onConfirm={runAction}
+        />
       )}
     </section>
   );

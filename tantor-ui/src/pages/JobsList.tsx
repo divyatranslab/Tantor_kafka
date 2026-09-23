@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
 import './JobsList.css';
@@ -18,7 +18,7 @@ export function JobsList() {
   const [refreshing, setRefreshing] = useState(false); // tracks manual/auto refreshes
   const navigate = useNavigate();
 
-  const fetchJobs = async (isManual = false) => {
+  const fetchJobs = useCallback(async (isManual = false) => {
     if (isManual) {
       setRefreshing(true);
     } else {
@@ -36,13 +36,13 @@ export function JobsList() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchJobs(false);
-    const interval = setInterval(() => fetchJobs(true), 5000);
+    void (async () => { await fetchJobs(false); })();
+    const interval = setInterval(() => { void (async () => { await fetchJobs(true); })(); }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchJobs]);
 
   const formatStatus = (status: string) => {
     switch (status.toUpperCase().replace(' - ', '_').replace(' ', '_')) {

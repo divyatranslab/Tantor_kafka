@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Shield, Plus, Trash2, RefreshCw, Loader2, Search, Check, AlertCircle,
+  Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle, X,
 } from 'lucide-react';
 import {
   getAcls, createAcl, deleteAcl,
 } from '../lib/api';
 import { usePermissions } from '../hooks/usePermissions';
+import { CustomSelect } from './CustomSelect';
 
 interface Props {
   clusterId: string;
@@ -22,16 +24,15 @@ export interface AclEntry {
 }
 
 const OPERATIONS = ['Read', 'Write', 'Create', 'Describe', 'Alter', 'Delete', 'All'];
-const RESOURCE_TYPES = ['topic', 'group', 'cluster', 'transactional-id'];
 
 export default function SecurityManager({ clusterId }: Props) {
   const { canManage } = usePermissions();
-  // ── ACLs state ──
+  // Ã¢â€â‚¬Ã¢â€â‚¬ ACLs state Ã¢â€â‚¬Ã¢â€â‚¬
   const [acls, setAcls] = useState<AclEntry[]>([]);
   const [aclsLoading, setAclsLoading] = useState(false);
   const [aclsError, setAclsError] = useState('');
   const [showCreateAcl, setShowCreateAcl] = useState(false);
-  const [aclPrincipal, setAclPrincipal] = useState('http://');
+  const [aclPrincipal, setAclPrincipal] = useState('');
   const [aclResourceType, setAclResourceType] = useState('Topic');
   const [aclResourceName, setAclResourceName] = useState('');
   const [aclPatternType, setAclPatternType] = useState('Literal');
@@ -59,13 +60,16 @@ export default function SecurityManager({ clusterId }: Props) {
     }
   }, [clusterId]);
 
-  useEffect(() => {
-    fetchAcls();
-  }, [fetchAcls]);
+  useEffect(() => { void (async () => { await fetchAcls(); })(); }, [fetchAcls]);
 
   const handleCreateAcl = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManage) return;
+    const normalizedPrincipal = aclPrincipal.trim().replace(/^User:/i, '').trim();
+    if (!normalizedPrincipal) {
+      setAlertMessage('Please enter a Kafka principal.');
+      return;
+    }
     if (aclOperations.length === 0) {
       setAlertMessage("Please select at least one operation.");
       return;
@@ -74,10 +78,10 @@ export default function SecurityManager({ clusterId }: Props) {
     try {
       for (const op of aclOperations) {
         await createAcl(clusterId, {
-          resource_type: aclResourceType,
-          resource_name: aclResourceName,
+          resourceType: aclResourceType,
+          resourceName: aclResourceName,
           pattern_type: aclPatternType,
-          principal: 'User:' + aclPrincipal.replace(/^User:/, ''),
+          principal: `User:${normalizedPrincipal}`,
           host: aclHost,
           operation: op,
           permission_type: aclPermission,
@@ -88,8 +92,10 @@ export default function SecurityManager({ clusterId }: Props) {
       setAclPrincipal('');
       setAclResourceName('');
       fetchAcls();
-    } catch (err: any) {
-      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to create ACL');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        || (err instanceof Error ? err.message : 'Failed to create ACL');
+      setAlertMessage(msg);
     } finally {
       setAclCreating(false);
     }
@@ -103,8 +109,8 @@ export default function SecurityManager({ clusterId }: Props) {
   const confirmDeleteAcl = async (acl: AclEntry) => {
     try {
       await deleteAcl(clusterId, {
-        resource_type: acl.resourceType,
-        resource_name: acl.resourceName,
+        resourceType: acl.resourceType,
+        resourceName: acl.resourceName,
         pattern_type: acl.patternType,
         principal: acl.principal,
         host: acl.host,
@@ -112,8 +118,10 @@ export default function SecurityManager({ clusterId }: Props) {
         permission_type: acl.permissionType,
       });
       fetchAcls();
-    } catch (err: any) {
-      setAlertMessage(err.response?.data?.detail || err.message || 'Failed to delete ACL');
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } }; message?: string })?.response?.data?.detail
+        || (err instanceof Error ? err.message : 'Failed to delete ACL');
+      setAlertMessage(msg);
     }
   };
 
@@ -152,18 +160,18 @@ export default function SecurityManager({ clusterId }: Props) {
             <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
             <input 
               type="text" 
-              placeholder="Filter by principle..." 
+              placeholder="Filter by principal..." 
               value={aclFilterPrincipal} 
               onChange={e => setAclFilterPrincipal(e.target.value)} 
               style={{
                 width: '100%',
                 padding: '10px 12px 10px 36px',
-                borderRadius: '8px',
-                border: '1px solid #e2e8f0',
-                fontSize: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: 'var(--text-base)',
                 fontFamily: 'Satoshi, Inter, sans-serif',
                 outline: 'none',
-                color: '#332849'
+                color: 'var(--button-primary-active)'
               }}
             />
           </div>
@@ -177,12 +185,12 @@ export default function SecurityManager({ clusterId }: Props) {
               style={{
                 width: '100%',
                 padding: '10px 12px 10px 36px',
-                borderRadius: '8px',
-                border: '1px solid #e2e8f0',
-                fontSize: '14px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: 'var(--text-base)',
                 fontFamily: 'Satoshi, Inter, sans-serif',
                 outline: 'none',
-                color: '#332849'
+                color: 'var(--button-primary-active)'
               }}
             />
           </div>
@@ -199,9 +207,9 @@ export default function SecurityManager({ clusterId }: Props) {
               justifyContent: 'center',
               width: '42px',
               height: '42px',
-              borderRadius: '8px',
-              border: '1px solid #e2e8f0',
-              background: '#fff',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-subtle)',
+              background: "var(--bg-surface)",
               cursor: 'pointer',
               color: '#475569',
               transition: 'all 0.2s'
@@ -216,14 +224,14 @@ export default function SecurityManager({ clusterId }: Props) {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                gap: 'var(--space-2)',
                 height: '42px',
                 padding: '0 20px',
-                borderRadius: '8px',
-                background: '#3E1363',
-                color: '#fff',
-                fontWeight: 500,
-                fontSize: '14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--button-primary)',
+                color: "var(--text-light)",
+                fontWeight: 'var(--font-medium)',
+                fontSize: 'var(--text-base)',
                 border: 'none',
                 cursor: 'pointer',
                 transition: 'all 0.2s'
@@ -242,11 +250,11 @@ export default function SecurityManager({ clusterId }: Props) {
           gap: '10px',
           background: '#FFF9EB',
           border: '1px solid #FFE0B2',
-          borderRadius: '8px',
+          borderRadius: 'var(--radius-md)',
           padding: '12px 16px',
           color: '#B78103',
-          fontSize: '14px',
-          fontWeight: 500,
+          fontSize: 'var(--text-base)',
+          fontWeight: 'var(--font-medium)',
           marginBottom: '1.25rem',
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
@@ -255,27 +263,39 @@ export default function SecurityManager({ clusterId }: Props) {
         </div>
       )}
 
-      {canManage && showCreateAcl && (
-        <div style={{
+      {canManage && showCreateAcl && createPortal(
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => setShowCreateAcl(false)}
+          style={{
           position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
+          inset: 0,
+          background: 'rgba(15, 23, 42, 0.48)',
+          backdropFilter: 'blur(2px)',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          zIndex: 1000,
+          padding: '32px',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          zIndex: 10000,
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
-          <div style={{
-            background: '#fff',
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-acl-modal-title"
+            onClick={event => event.stopPropagation()}
+            style={{
+            background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
             maxWidth: '780px',
+            maxHeight: 'calc(100vh - 64px)',
             boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-            overflow: 'hidden'
+            overflowY: 'auto',
+            flexShrink: 0
           }}>
             {/* Modal Header */}
             <div style={{
@@ -285,68 +305,58 @@ export default function SecurityManager({ clusterId }: Props) {
               padding: '20px 24px',
               borderBottom: '1px solid #f1f5f9'
             }}>
-              <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 500, color: '#332849' }}>Add New ACL Binding</h3>
+              <h3 id="add-acl-modal-title" style={{ margin: 0, fontSize: 'var(--text-xl)', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Add New ACL Binding</h3>
               <button 
                 onClick={() => setShowCreateAcl(false)} 
                 style={{
                   background: 'none',
                   border: 'none',
-                  fontSize: '24px',
+                  fontSize: 'var(--text-2xl)',
                   color: '#94a3b8',
                   cursor: 'pointer',
                   padding: '4px'
                 }}
               >
-                ✕
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleCreateAcl} style={{ padding: '24px' }}>
+            <form onSubmit={handleCreateAcl} style={{ padding: 'var(--space-6)' }}>
               <div style={{
                 background: '#F9F9FB',
-                borderRadius: '8px',
-                padding: '24px',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-6)',
                 display: 'grid',
                 gridTemplateColumns: 'repeat(3, 1fr)',
                 gap: '20px 16px',
                 marginBottom: '20px'
               }}>
-                {/* Principle (Username) */}
+                {/* Principal (Username) */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Principle (Username)</label>
-                  <select 
-                    value={aclPrincipal} 
-                    onChange={e => setAclPrincipal(e.target.value)} 
-                    required 
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Principal (Username)</label>
+                  <input
+                    type="text"
+                    value={aclPrincipal}
+                    onChange={e => setAclPrincipal(e.target.value)}
+                    placeholder="User:admin"
+                    required
                     style={{
                       width: '100%',
                       padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: 'var(--text-base)',
+                      background: 'var(--bg-surface)',
+                      color: 'var(--button-primary-active)',
+                      outline: 'none'
                     }}
-                  >
-                    <option value="http://">http://</option>
-                    <option value="User:*">User:*</option>
-                    <option value="User:alice">User:alice</option>
-                    <option value="User:bob">User:bob</option>
-                    <option value="User:anuj">User:anuj</option>
-                    <option value="User:admin">User:admin</option>
-                  </select>
+                  />
                 </div>
 
                 {/* Host */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Host</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Host</label>
                   <input 
                     type="text" 
                     value={aclHost} 
@@ -356,11 +366,11 @@ export default function SecurityManager({ clusterId }: Props) {
                     style={{
                       width: '100%',
                       padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: 'var(--text-base)',
+                      background: "var(--bg-surface)",
+                      color: 'var(--button-primary-active)',
                       outline: 'none'
                     }}
                   />
@@ -368,31 +378,24 @@ export default function SecurityManager({ clusterId }: Props) {
 
                 {/* Resource Type */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Type</label>
-                  <select 
-                    value={aclResourceType} 
-                    onChange={e => setAclResourceType(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none'
-                    }}
-                  >
-                    <option value="Topic">Topic</option>
-                    <option value="Group">Group</option>
-                    <option value="Cluster">Cluster</option>
-                    <option value="TransactionalId">TransactionalId</option>
-                  </select>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Resource Type</label>
+                  <CustomSelect
+                    value={aclResourceType}
+                    onChange={setAclResourceType}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Topic', label: 'Topic' },
+                      { value: 'Group', label: 'Group' },
+                      { value: 'Cluster', label: 'Cluster' },
+                      { value: 'TransactionalId', label: 'TransactionalId' },
+                    ]}
+                  />
                 </div>
 
                 {/* Resource Name */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Resource Name</label>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Resource Name</label>
                   <input 
                     type="text" 
                     value={aclResourceName} 
@@ -402,11 +405,11 @@ export default function SecurityManager({ clusterId }: Props) {
                     style={{
                       width: '100%',
                       padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: 'var(--text-base)',
+                      background: "var(--bg-surface)",
+                      color: 'var(--button-primary-active)',
                       outline: 'none'
                     }}
                   />
@@ -414,68 +417,44 @@ export default function SecurityManager({ clusterId }: Props) {
 
                 {/* Pattern Type */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Pattern Type</label>
-                  <select 
-                    value={aclPatternType} 
-                    onChange={e => setAclPatternType(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
-                    }}
-                  >
-                    <option value="Literal">Literal</option>
-                    <option value="Prefixed">Prefixed</option>
-                  </select>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Pattern Type</label>
+                  <CustomSelect
+                    value={aclPatternType}
+                    onChange={setAclPatternType}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Literal', label: 'Literal' },
+                      { value: 'Prefixed', label: 'Prefixed' },
+                    ]}
+                  />
                 </div>
 
                 {/* Permission */}
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px', color: '#332849' }}>Permission</label>
-                  <select 
-                    value={aclPermission} 
-                    onChange={e => setAclPermission(e.target.value)} 
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      borderRadius: '8px',
-                      border: '1px solid #CCCCCC',
-                      fontSize: '14px',
-                      background: '#fff',
-                      color: '#332849',
-                      outline: 'none',
-                      appearance: 'none',
-                      backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2364748b\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 12px center',
-                      backgroundSize: '16px'
-                    }}
-                  >
-                    <option value="Allow">Allow</option>
-                    <option value="Deny">Deny</option>
-                  </select>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-base)', color: 'var(--button-primary-active)' }}>Permission</label>
+                  <CustomSelect
+                    value={aclPermission}
+                    onChange={setAclPermission}
+                    width="100%"
+                    variant="audit"
+                    options={[
+                      { value: 'Allow', label: 'Allow' },
+                      { value: 'Deny', label: 'Deny' },
+                    ]}
+                  />
                 </div>
               </div>
 
               {/* Operations */}
               <div style={{
                 background: '#F9F9FB',
-                borderRadius: '8px',
-                padding: '24px',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-6)',
                 marginBottom: '24px'
               }}>
-                <label style={{ display: 'block', marginBottom: '16px', fontWeight: 500, fontSize: '16px', color: '#5B327F' }}>Operations</label>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'block', marginBottom: '16px', fontWeight: 'var(--font-medium)', fontSize: 'var(--text-md)', color: 'var(--button-primary-hover)' }}>Operations</label>
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
                   {OPERATIONS.map(op => {
                     const isSelected = aclOperations.includes(op);
                     return (
@@ -485,11 +464,11 @@ export default function SecurityManager({ clusterId }: Props) {
                         onClick={() => toggleAclOperation(op)}
                         style={{
                           padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontSize: '14px',
-                          fontWeight: 500,
-                          border: '1px solid #CCCCCC',
-                          background: isSelected ? '#3E1363' : '#FFFFFF',
+                          borderRadius: 'var(--radius-md)',
+                          fontSize: 'var(--text-base)',
+                          fontWeight: 'var(--font-medium)',
+                          border: '1px solid var(--border-default)',
+                          background: isSelected ? 'var(--button-primary)' : '#FFFFFF',
                           color: isSelected ? '#FFFFFF' : '#5F6368',
                           cursor: 'pointer',
                           transition: 'all 0.15s'
@@ -517,12 +496,12 @@ export default function SecurityManager({ clusterId }: Props) {
                   style={{
                     height: '38px',
                     padding: '0 24px',
-                    borderRadius: '8px',
-                    border: '1px solid #3E1363',
-                    background: '#fff',
-                    color: '#3E1363',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--button-primary)',
+                    background: "var(--bg-surface)",
+                    color: 'var(--button-primary)',
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     cursor: 'pointer'
                   }}
                 >
@@ -537,11 +516,11 @@ export default function SecurityManager({ clusterId }: Props) {
                     gap: '6px',
                     height: '38px',
                     padding: '0 24px',
-                    borderRadius: '8px',
-                    background: '#3E1363',
-                    color: '#fff',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--button-primary)',
+                    color: "var(--text-light)",
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     border: 'none',
                     cursor: 'pointer'
                   }}
@@ -552,19 +531,20 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      <div className="table-container" style={{overflowX:'auto',border:'1px solid #e5e7eb',borderRadius:8}}>
+      <div className="table-container" style={{overflowX:'auto',border:'1px solid var(--bg-neutral)',borderRadius:8}}>
         <table style={{width:'100%',borderCollapse:'collapse',textAlign:'left'}}>
-          <thead style={{background:'#f9fafb',borderBottom:'1px solid #e5e7eb'}}>
+          <thead style={{background:'#f9fafb',borderBottom:'1px solid var(--bg-neutral)'}}>
             <tr>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Principal</th>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Host</th>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Resource</th>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Operation</th>
-              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Permission</th>
-              {canManage && <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight:600,color:'#4b5563'}}>Actions</th>}
+              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Principal</th>
+              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Host</th>
+              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Resource</th>
+              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Operation</th>
+              <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Permission</th>
+              {canManage && <th style={{padding:'0.75rem',fontSize:'0.85rem',fontWeight: 'var(--font-semibold)',color:'#4b5563'}}>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -574,18 +554,18 @@ export default function SecurityManager({ clusterId }: Props) {
               <tr><td colSpan={canManage ? 6 : 5} style={{padding:'2rem',textAlign:'center',color:'#6b7280'}}>No ACLs found.</td></tr>
             ) : (
               filteredAcls.map((acl, i) => (
-                <tr key={i} style={{borderBottom:'1px solid #e5e7eb'}}>
-                  <td style={{padding:'0.75rem',fontWeight:500}}>{acl.principal}</td>
+                <tr key={i} style={{borderBottom:'1px solid var(--bg-neutral)'}}>
+                  <td style={{padding:'0.75rem',fontWeight: 'var(--font-medium)'}}>{acl.principal}</td>
                   <td style={{padding:'0.75rem',color:'#6b7280'}}>{acl.host}</td>
                   <td style={{padding:'0.75rem'}}>
                     <span style={{fontSize:'0.75rem',textTransform:'uppercase',background:'#f3f4f6',padding:'2px 6px',borderRadius:4,marginRight:6}}>{acl.resourceType}</span>
-                    <span style={{fontWeight:500}}>{acl.resourceName}</span>
+                    <span style={{fontWeight: 'var(--font-medium)'}}>{acl.resourceName}</span>
                     {acl.patternType !== 'LITERAL' && <span style={{fontSize:'0.75rem',color:'#9ca3af',marginLeft:6}}>({acl.patternType})</span>}
                   </td>
                   <td style={{padding:'0.75rem'}}>{acl.operation}</td>
                   <td style={{padding:'0.75rem'}}>
                     <span style={{
-                      padding:'2px 8px', borderRadius:12, fontSize:'0.75rem', fontWeight:600,
+                      padding:'2px 8px', borderRadius:12, fontSize:'0.75rem', fontWeight: 'var(--font-semibold)',
                       background: acl.permissionType === 'ALLOW' ? '#dcfce7' : '#fee2e2',
                       color: acl.permissionType === 'ALLOW' ? '#166534' : '#991b1b'
                     }}>
@@ -606,8 +586,8 @@ export default function SecurityManager({ clusterId }: Props) {
         </table>
       </div>
 
-      {aclToDelete && (
-        <div style={{
+      {aclToDelete && createPortal(
+        <div className="modal-overlay" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -621,7 +601,7 @@ export default function SecurityManager({ clusterId }: Props) {
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
           <div style={{
-            background: '#fff',
+            background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
             maxWidth: '540px',
@@ -630,16 +610,16 @@ export default function SecurityManager({ clusterId }: Props) {
           }}>
             {/* Banner */}
             <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
-              <button onClick={() => setAclToDelete(null)} className="confirm-modal-close-btn" style={{ color: '#818181', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px' }} aria-label="Close modal">
-                ✕
+              <button onClick={() => setAclToDelete(null)} className="confirm-modal-close-btn" style={{ color: 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xl)' }} aria-label="Close modal">
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             
             {/* Body */}
-            <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
-              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
+            <div className="confirm-modal-body" style={{ padding: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', boxSizing: 'border-box' }}>
+              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <AlertCircle size={20} color="var(--color-danger)" style={{ flexShrink: 0 }} />
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'var(--font-semibold)', color: 'var(--button-primary-active)' }}>
                   Confirm action
                 </h2>
               </div>
@@ -647,7 +627,7 @@ export default function SecurityManager({ clusterId }: Props) {
               <p style={{ margin: 0, fontSize: '15px', color: '#5F6368', lineHeight: '1.5' }}>
                 Are you sure you want to delete this ACL binding?
                 <br />
-                <span style={{ fontWeight: 600, color: '#332849', display: 'inline-block', marginTop: '8px' }}>
+                <span style={{ fontWeight: 'var(--font-semibold)', color: 'var(--button-primary-active)', display: 'inline-block', marginTop: '8px' }}>
                   Delete ACL for {aclToDelete.principal} on {aclToDelete.resourceType} {aclToDelete.resourceName}?
                 </span>
               </p>
@@ -665,12 +645,12 @@ export default function SecurityManager({ clusterId }: Props) {
                   style={{
                     height: '38px',
                     padding: '0 24px',
-                    borderRadius: '8px',
-                    border: '1px solid #EF4D5F',
-                    background: '#fff',
-                    color: '#EF4D5F',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-danger)',
+                    background: "var(--bg-surface)",
+                    color: 'var(--color-danger)',
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     cursor: 'pointer'
                   }}
                 >
@@ -685,11 +665,11 @@ export default function SecurityManager({ clusterId }: Props) {
                   style={{
                     height: '38px',
                     padding: '0 24px',
-                    borderRadius: '8px',
-                    background: '#3E1363',
-                    color: '#fff',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--button-primary)',
+                    color: "var(--text-light)",
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     border: 'none',
                     cursor: 'pointer'
                   }}
@@ -699,11 +679,12 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {alertMessage && (
-        <div style={{
+      {alertMessage && createPortal(
+        <div className="modal-overlay" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -717,7 +698,7 @@ export default function SecurityManager({ clusterId }: Props) {
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
           <div style={{
-            background: '#fff',
+            background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
             maxWidth: '480px',
@@ -726,16 +707,16 @@ export default function SecurityManager({ clusterId }: Props) {
           }}>
             {/* Banner */}
             <div className="confirm-modal-banner" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', boxSizing: 'border-box', height: '72px' }}>
-              <button onClick={() => setAlertMessage(null)} className="confirm-modal-close-btn" style={{ color: '#818181', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '20px' }} aria-label="Close modal">
-                ✕
+              <button onClick={() => setAlertMessage(null)} className="confirm-modal-close-btn" style={{ color: 'var(--text-tertiary)', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xl)' }} aria-label="Close modal">
+                <X size={20} aria-hidden="true" />
               </button>
             </div>
             
             {/* Body */}
-            <div className="confirm-modal-body" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', boxSizing: 'border-box' }}>
-              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <AlertCircle size={20} color="#EF4D5F" style={{ flexShrink: 0 }} />
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 600, color: '#332849' }}>
+            <div className="confirm-modal-body" style={{ padding: 'var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', boxSizing: 'border-box' }}>
+              <div className="confirm-modal-title-row" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <AlertCircle size={20} color="var(--color-danger)" style={{ flexShrink: 0 }} />
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 'var(--font-semibold)', color: 'var(--button-primary-active)' }}>
                   Notice
                 </h2>
               </div>
@@ -755,11 +736,11 @@ export default function SecurityManager({ clusterId }: Props) {
                   style={{
                     height: '38px',
                     padding: '0 28px',
-                    borderRadius: '8px',
-                    background: '#3E1363',
-                    color: '#fff',
-                    fontWeight: 500,
-                    fontSize: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--button-primary)',
+                    color: "var(--text-light)",
+                    fontWeight: 'var(--font-medium)',
+                    fontSize: 'var(--text-base)',
                     border: 'none',
                     cursor: 'pointer'
                   }}
@@ -769,7 +750,8 @@ export default function SecurityManager({ clusterId }: Props) {
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

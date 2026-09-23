@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
@@ -52,14 +53,14 @@ export function Consumers() {
   const [size] = useState(10);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('totalLag'); // Default sort
+  const [sortBy, setSortBy] = useState('totalLag');
 
   // Detail Modal State
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<ConsumerGroupDetailDto | null>(null);
 
-  const fetchGroups = async () => {
+  const fetchGroups = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -70,17 +71,17 @@ export function Consumers() {
       }
       const json = await res.json();
       setData(json);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'Failed to load consumer groups');
+      setError(e instanceof Error ? e.message : 'Failed to load consumer groups');
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
-    fetchGroups();
-  }, [id, page, searchQuery, sortBy]);
+    void (async () => { await fetchGroups(); })();
+  }, [fetchGroups]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,65 +110,27 @@ export function Consumers() {
     }
   };
 
-
-
   return (
-    <div className="consumers-tab animate-fade-in" style={{ width: '100%' }}>
-      <div className="consumers-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginBottom: '24px', gap: '16px' }}>
+    <div className="consumers-tab animate-fade-in">
+      <div className="consumers-header">
         <h2 className="cluster-section-heading">Consumer Groups</h2>
-        <div className="tab-toolbar" style={{ display: 'flex', gap: '24px', alignItems: 'center', width: '100%', height: '40px' }}>
-          <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
-            <label style={{
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              padding: '6px 8px',
-              gap: '8px',
-              width: '612px',
-              height: '36px',
-              background: '#FFFFFF',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px'
-            }}>
-              <Search size={16} style={{ color: '#818181' }} />
+        <div className="consumer-groups-toolbar">
+          <form className="consumer-search-form" onSubmit={handleSearchSubmit}>
+            <label className="consumer-search-field">
+              <Search size={16} />
               <input
                 type="text"
                 placeholder="Search key or value"
                 value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                style={{
-                  border: 'none',
-                  outline: 'none',
-                  fontFamily: 'Satoshi, sans-serif',
-                  fontWeight: 400,
-                  fontSize: '14px',
-                  color: '#23252D',
-                  width: '100%',
-                  background: 'transparent'
-                }}
+                onChange={(event) => setSearchInput(event.target.value)}
               />
             </label>
           </form>
-          <button 
+          <button
             type="button"
-            onClick={fetchGroups} 
-            disabled={loading} 
-            style={{
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '8px',
-              width: '40px',
-              height: '40px',
-              background: '#FFFFFF',
-              border: '1px solid #CCCCCC',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              color: '#818181'
-            }}
+            className="consumer-refresh-button"
+            onClick={fetchGroups}
+            disabled={loading}
             aria-label="Refresh consumer groups"
           >
             <RefreshCw className={loading ? 'spin' : ''} size={15} />
@@ -192,56 +155,45 @@ export function Consumers() {
           </div>
         ) : (
           <>
-            <div style={{ overflowX: 'auto', width: '100%' }}>
-              <div className="figma-table" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
-                {/* Header Row */}
-                <div className="figma-table-header" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '54px', background: '#F9F9F9', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('groupId')}>
-                    <span>Group ID</span> <ArrowUp size={14} style={{ marginLeft: '4px' }} />
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('state')}>
-                    <span>State</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
-                    <span>Members</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px', cursor: 'pointer' }} onClick={() => handleSort('totalLag')}>
-                    <span>Total Lag</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
-                    <span>Health</span>
-                  </div>
-                  <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '54px', color: '#332849', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '16px' }}>
-                    <span>Last Updated</span>
-                  </div>
-                </div>
-
-                {/* Table Body */}
-                <div className="figma-table-body" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="consumer-table-scroll">
+              <table className="consumer-groups-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('groupId')}>
+                        Group ID <ArrowUp size={14} aria-hidden="true" />
+                      </button>
+                    </th>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('state')}>
+                        State
+                      </button>
+                    </th>
+                    <th>Members</th>
+                    <th>
+                      <button type="button" className="consumer-sort-button" onClick={() => handleSort('totalLag')}>
+                        Total Lag
+                      </button>
+                    </th>
+                    <th>Health</th>
+                    <th>Last Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
                   {data?.content.map(g => (
-                    <div key={g.groupId} className="figma-table-row table-row-hover clickable" onClick={() => handleRowClick(g.groupId)} style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', width: '100%', height: '52px', background: '#FFFFFF', borderBottom: '1px solid #CCCCCC', boxSizing: 'border-box' }}>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 500, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {g.groupId}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
-                        {g.state}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
-                        {g.membersCount}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
-                        {g.totalLag}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#23252D', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
-                        {g.health.charAt(0) + g.health.slice(1).toLowerCase()}
-                      </div>
-                      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'row', alignItems: 'center', padding: '14px 16px', gap: '4px', width: '188.17px', flex: '1 1 188.17px', height: '52px', color: '#818181', fontFamily: 'Satoshi, sans-serif', fontWeight: 400, fontSize: '14px' }}>
+                    <tr key={g.groupId} className="consumer-group-row" onClick={() => handleRowClick(g.groupId)}>
+                      <td className="consumer-group-id" title={g.groupId}>{g.groupId}</td>
+                      <td>{g.state}</td>
+                      <td>{g.membersCount}</td>
+                      <td>{g.totalLag}</td>
+                      <td>{g.health.charAt(0) + g.health.slice(1).toLowerCase()}</td>
+                      <td className="consumer-last-updated">
                         {new Date(g.lastUpdated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
-                    </div>
+                      </td>
+                    </tr>
                   ))}
-                </div>
-              </div>
+                </tbody>
+              </table>
             </div>
 
             {/* Pagination Controls */}
@@ -272,23 +224,13 @@ export function Consumers() {
         )}
       </div>
 
-      {/* Detail Modal */}
-      {selectedGroupId && (
+      {/* Detail Modal — rendered via portal to escape scroll container stacking context */}
+      {selectedGroupId ? createPortal(
         <div className="modal-overlay" onClick={() => setSelectedGroupId(null)} style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.4)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000,
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{
-            background: '#fff',
+            background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
             maxWidth: '780px',
@@ -299,21 +241,21 @@ export function Consumers() {
             {/* Modal Header */}
             <div style={{ padding: '24px 32px 12px 32px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 600, fontSize: '20px', color: '#332849' }}>Consumer Group Details</h3>
+                <h3 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-xl)', color: 'var(--button-primary-active)' }}>Consumer Group Details</h3>
                 <button onClick={() => setSelectedGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
                   <X size={20} color="#94a3b8" />
                 </button>
               </div>
-              <span style={{ fontSize: '13px', color: '#64748b', display: 'block', marginTop: '2px' }}>{selectedGroupId}</span>
+              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>{selectedGroupId}</span>
             </div>
 
             <div className="modal-body" style={{ padding: 0 }}>
               {detailLoading ? (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#64748b' }}>Loading details...</div>
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading details...</div>
               ) : detailData ? (
                 <div>
                   {/* Info Cards */}
-                  <div style={{ display: 'flex', gap: '16px', padding: '0 32px 24px 32px' }}>
+                  <div style={{ display: 'flex', gap: 'var(--space-4)', padding: '0 32px 24px 32px' }}>
                     <div style={{
                       boxSizing: 'border-box',
                       display: 'flex',
@@ -321,17 +263,17 @@ export function Consumers() {
                       justifyContent: 'center',
                       alignItems: 'flex-start',
                       padding: '16px 20px',
-                      gap: '8px',
+                      gap: 'var(--space-2)',
                       width: '280px',
                       height: '84px',
                       background: '#F9F9FB',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '8px'
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)'
                     }}>
-                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>State</span>
+                      <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>State</span>
                       <span style={{
                         fontSize: '18px',
-                        fontWeight: 600,
+                        fontWeight: 'var(--font-semibold)',
                         color: detailData.state === 'Stable' ? '#10B981' : '#EF4444'
                       }}>{detailData.state}</span>
                     </div>
@@ -342,71 +284,71 @@ export function Consumers() {
                       justifyContent: 'center',
                       alignItems: 'flex-start',
                       padding: '16px 20px',
-                      gap: '8px',
+                      gap: 'var(--space-2)',
                       width: '280px',
                       height: '84px',
                       background: '#F9F9FB',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '8px'
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-md)'
                     }}>
-                      <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Members</span>
-                      <span style={{ fontSize: '18px', fontWeight: 600, color: '#10B981' }}>{detailData.members.length}</span>
+                      <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Members</span>
+                      <span style={{ fontSize: '18px', fontWeight: 'var(--font-semibold)', color: '#10B981' }}>{detailData.members.length}</span>
                     </div>
                   </div>
 
                   {/* Section Title */}
                   <div style={{ padding: '0 32px 12px 32px' }}>
-                    <h4 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 600, fontSize: '16px', color: '#5B327F' }}>Members & Partitions</h4>
+                    <h4 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-md)', color: 'var(--button-primary-hover)' }}>Members &amp; Partitions</h4>
                   </div>
 
                   {/* Members List */}
-                  <div style={{ padding: '0 32px 32px 32px', maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                  <div style={{ padding: '0 32px 32px 32px', maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
                     {detailData.members.length === 0 ? (
-                      <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>No active members or assigned partitions found for this group.</p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: 'var(--text-base)', margin: 0 }}>No active members or assigned partitions found for this group.</p>
                     ) : (
                       detailData.members.map((m, i) => (
                         <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {/* Member Headers */}
-                          <div style={{ display: 'flex', gap: '48px', fontSize: '13px', color: '#332849' }}>
+                          <div style={{ display: 'flex', gap: '48px', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>
                             <div>
-                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Member ID</div>
+                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Member ID</div>
                               <div style={{ fontFamily: 'monospace' }}>{m.memberId}</div>
                             </div>
                             <div>
-                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Client ID</div>
+                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Client ID</div>
                               <div>{m.clientId}</div>
                             </div>
                             <div>
-                              <div style={{ fontWeight: 500, color: '#64748B', marginBottom: '4px' }}>Host</div>
+                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Host</div>
                               <div>{m.host}</div>
                             </div>
                           </div>
 
                           {/* Partitions Table */}
-                          <div style={{ border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', fontFamily: 'Satoshi, sans-serif' }}>
+                          <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-base)', fontFamily: 'Satoshi, sans-serif' }}>
                               <thead>
-                                <tr style={{ background: '#F9F9FB', borderBottom: '1px solid #E2E8F0' }}>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Topic</th>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Partition</th>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Current Offset</th>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 500, color: '#332849' }}>Lag</th>
+                                <tr style={{ background: '#F9F9FB', borderBottom: '1px solid var(--border-subtle)' }}>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Topic</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Partition</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Current Offset</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Lag</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {m.partitions.length === 0 ? (
                                   <tr>
-                                    <td colSpan={4} style={{ padding: '16px', textAlign: 'center', color: '#64748B' }}>No partitions assigned</td>
+                                    <td colSpan={4} style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--text-muted)' }}>No partitions assigned</td>
                                   </tr>
                                 ) : (
                                   m.partitions.map((p, idx) => (
-                                    <tr key={`${p.topic}-${p.partition}`} style={{ borderBottom: idx === m.partitions.length - 1 ? 'none' : '1px solid #E2E8F0' }}>
-                                      <td style={{ padding: '12px 16px', color: '#332849' }}>{p.topic}</td>
-                                      <td style={{ padding: '12px 16px', color: '#332849' }}>{p.partition}</td>
-                                      <td style={{ padding: '12px 16px', color: '#332849' }}>
+                                    <tr key={`${p.topic}-${p.partition}`} style={{ borderBottom: idx === m.partitions.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}>
+                                      <td style={{ padding: '12px 16px', color: 'var(--button-primary-active)' }}>{p.topic}</td>
+                                      <td style={{ padding: '12px 16px', color: 'var(--button-primary-active)' }}>{p.partition}</td>
+                                      <td style={{ padding: '12px 16px', color: 'var(--button-primary-active)' }}>
                                         {p.currentOffset === -1 ? 'Unknown' : p.currentOffset.toLocaleString()}
                                       </td>
-                                      <td style={{ padding: '12px 16px', fontWeight: p.lag > 0 ? 600 : 400, color: p.lag > 0 ? '#F97316' : '#332849' }}>
+                                      <td style={{ padding: '12px 16px', fontWeight: p.lag > 0 ? 600 : 400, color: p.lag > 0 ? '#F97316' : 'var(--button-primary-active)' }}>
                                         {p.lag === -1 ? 'Unknown' : p.lag.toLocaleString()}
                                       </td>
                                     </tr>
@@ -426,7 +368,7 @@ export function Consumers() {
             </div>
           </div>
         </div>
-      )}
+        , document.body) : null}
     </div>
   );
 }
