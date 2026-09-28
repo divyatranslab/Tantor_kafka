@@ -52,6 +52,8 @@ type deploymentState struct {
 	DataDir      string   `json:"data_dir"`
 	Services     []string `json:"services"`
 	Ports        []string `json:"ports"`
+	AppLogDirs   []string `json:"app_log_dirs,omitempty"`
+	StorageDirs  []string `json:"storage_dirs,omitempty"`
 }
 
 func firstNonEmpty(values ...string) string {
@@ -184,7 +186,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if err := os.MkdirAll(artifactWorkDir, 0o750); err != nil {
 		return logs.String(), fmt.Errorf("prepare agent artifact work directory %s: %w", artifactWorkDir, err)
 	}
-	for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
+	for _, dir := range append(kafkaStorageDirs(paths), paths.AppLogDir) {
 		if dir != "" {
 			if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", strings.TrimSpace(dir)); err != nil {
 				return logs.String(), fmt.Errorf("create Kafka runtime directory %s: %w (%s %s)", dir, err, out, errOut)
@@ -272,6 +274,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		DataDir:      dataDir,
 		Services:     deploymentServices(t),
 		Ports:        deploymentPorts(t),
+		AppLogDirs:   []string{paths.AppLogDir},
+		StorageDirs:  kafkaStorageDirs(paths),
 	}); err != nil {
 		return logs.String(), fmt.Errorf("persist deployment state: %w", err)
 	}
@@ -449,16 +453,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if !shouldSkip("Format KRaft storage / setup Zookeeper") {
 		// ZooKeeper clusters keep metadata in ZooKeeper and must never run kafka-storage.sh.
 		if deploymentModeForTask(t) == "kraft" {
-			metaPropsDirs := []string{
-				paths.MetadataLogDir,
-				paths.LogDirs,
-				"/data/kafka/controller-data/metadata",
-				"/data/kafka/controller-data/logs",
-				"/data/kafka/broker-metadata",
-				"/data/kafka/broker-data",
-				"/data/kafka/data",
-				"/tmp/kafka-logs",
-			}
+			metaPropsDirs := kafkaStorageDirs(paths)
 			clusterUUID := strings.TrimSpace(t.Parameters["cluster_uuid"])
 			nodeID := strings.TrimSpace(t.Parameters["node_id"])
 			if clusterUUID == "" || nodeID == "" {
@@ -475,7 +470,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				configPath := configPathForTask(activeInstallDir, t)
 				formatArgs := []string{"format", "--cluster-id=" + clusterUUID, "-c", configPath}
 				if strings.EqualFold(strings.TrimSpace(t.Parameters["kraft_quorum_mode"]), "dynamic") {
-					_, _, isController := normalizeKRaftRole(t.Parameters["service_role"])
+					_, _, isController := normalizeKRaftRole(kafkaRoleForTask(t))
 					if isController {
 						initialControllers := strings.TrimSpace(t.Parameters["initial_controllers"])
 						if initialControllers == "" {
@@ -505,7 +500,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 						firstNonEmpty(t.Parameters["host_hostname"], d.cfg.Agent.HostID),
 						firstNonEmpty(t.Parameters["host_ip"], "IP unknown"), nodeID, err, technicalOutput)
 				}
-				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, "", false); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID, true); err != nil {
 					return logs.String(), fmt.Errorf("formatted storage cluster identity validation failed: %w", err)
 				}
 				if err := validateMetaProperties(ctx, d, []string{paths.MetaPropertiesDir}, clusterUUID, nodeID, true); err != nil {
@@ -513,7 +508,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 				}
 				log("KRaft storage formatted successfully")
 			} else {
-				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, "", false); err != nil {
+				if err := validateMetaProperties(ctx, d, metaPropsDirs, clusterUUID, nodeID, true); err != nil {
 					return logs.String(), fmt.Errorf("refusing to reuse KRaft storage: %w", err)
 				}
 				if err := validateMetaProperties(ctx, d, []string{paths.MetaPropertiesDir}, clusterUUID, nodeID, true); err != nil {
@@ -573,7 +568,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if !shouldSkip("Start service") {
 		// 8.5 Chown all system directories to the tantor user so the service can write to them
 		chownDirs := []string{installPaths.BaseDir, installDir, dataDir}
-		for _, dir := range []string{paths.LogDirs, paths.MetadataLogDir, paths.AppLogDir} {
+		for _, dir := range append(kafkaStorageDirs(paths), paths.AppLogDir) {
 			if dir != "" {
 				chownDirs = append(chownDirs, strings.TrimSpace(dir))
 			}
@@ -595,10 +590,14 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 		_, _, err = d.exec.RunSudo(ctx, "systemctl", "daemon-reload")
 		if err == nil {
 			_, _, err = d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName)
-			// Start exporter if it exists
-			if _, _, checkErr := d.exec.RunSudo(ctx, "systemctl", "list-unit-files", serviceName+"-exporter.service"); checkErr == nil {
-				if _, errOut, exporterErr := d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName+"-exporter.service"); exporterErr != nil {
-					return logs.String(), fmt.Errorf("failed to start Kafka exporter service: %w (%s)", exporterErr, strings.TrimSpace(errOut))
+			// Only broker roles have a Kafka exporter unit. Check the exact file;
+			// list-unit-files can exit successfully even when a unit is absent.
+			_, isBroker, _ := normalizeKRaftRole(kafkaRoleForTask(t))
+			if isBroker {
+				if _, _, checkErr := d.exec.RunSudo(ctx, "test", "-f", filepath.Join("/etc/systemd/system", serviceName+"-exporter.service")); checkErr == nil {
+					if _, errOut, exporterErr := d.exec.RunSudo(ctx, "systemctl", "enable", "--now", serviceName+"-exporter.service"); exporterErr != nil {
+						return logs.String(), fmt.Errorf("failed to start Kafka exporter service: %w (%s)", exporterErr, strings.TrimSpace(errOut))
+					}
 				}
 			}
 		}
@@ -653,7 +652,8 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 func deploymentServices(t *api.Task) []string {
 	service := serviceNameForTask(t)
 	services := []string{service}
-	if strings.EqualFold(t.Parameters["enable_exporter"], "true") || firstNonEmpty(t.Parameters["kafka_exporter_artifact_id"], t.Parameters["kafka_exporter_artifact_url"], t.Parameters["kafka_exporter_download_url"]) != "" {
+	_, isBroker, _ := normalizeKRaftRole(kafkaRoleForTask(t))
+	if isBroker && (strings.EqualFold(t.Parameters["enable_exporter"], "true") || firstNonEmpty(t.Parameters["kafka_exporter_artifact_id"], t.Parameters["kafka_exporter_artifact_url"], t.Parameters["kafka_exporter_download_url"]) != "") {
 		services = append(services, service+"-exporter")
 	}
 	return services
@@ -689,6 +689,21 @@ func (d *Deployer) saveDeploymentState(t *api.Task, state deploymentState) error
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
+	if body, err := os.ReadFile(path); err == nil {
+		var previous deploymentState
+		if err := json.Unmarshal(body, &previous); err != nil {
+			return fmt.Errorf("decode existing deployment state: %w", err)
+		}
+		if previous.ActiveDir != state.ActiveDir || previous.VersionedDir != state.VersionedDir || previous.DataDir != state.DataDir {
+			return fmt.Errorf("deployment paths differ from existing cluster state; refusing to overwrite recorded cleanup paths")
+		}
+		state.Services = uniqueNonEmpty(append(previous.Services, state.Services...))
+		state.Ports = uniqueNonEmpty(append(previous.Ports, state.Ports...))
+		state.AppLogDirs = uniqueNonEmpty(append(previous.AppLogDirs, state.AppLogDirs...))
+		state.StorageDirs = uniqueNonEmpty(append(previous.StorageDirs, state.StorageDirs...))
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	body, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -698,6 +713,19 @@ func (d *Deployer) saveDeploymentState(t *api.Task, state deploymentState) error
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+func uniqueNonEmpty(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (d *Deployer) loadDeploymentState(t *api.Task) (deploymentState, error) {
@@ -740,10 +768,7 @@ func (d *Deployer) validateKRaftDeployment(ctx context.Context, t *api.Task, ins
 	if listenerPort == "" {
 		listenerPort = "9092"
 	}
-	jmxMetricsPort := t.Parameters["jmx_port"]
-	if jmxMetricsPort == "" {
-		jmxMetricsPort = "7071"
-	}
+	jmxMetricsPort := kafkaJMXPortForTask(t)
 	var err error
 	jmxMetricsPort, err = taskvalidate.Port(jmxMetricsPort)
 	if err != nil {
@@ -800,7 +825,7 @@ check2:
 	}
 	log("  ✓ KRaft meta.properties exists")
 
-	role, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
+	role, isBroker, isController := normalizeKRaftRole(kafkaRoleForTask(t))
 	controllerPort := t.Parameters["controller_port"]
 	if controllerPort == "" {
 		controllerPort = "9093"
@@ -1040,7 +1065,7 @@ func deploymentModeForTask(t *api.Task) string {
 }
 
 func normalizeKRaftRole(rawRole string) (string, bool, bool) {
-	switch rawRole {
+	switch strings.ToLower(strings.TrimSpace(rawRole)) {
 	case "broker":
 		return "broker", true, false
 	case "controller":
@@ -1150,7 +1175,7 @@ func (d *Deployer) ensureActiveSymlink(ctx context.Context, activeDir, versioned
 }
 
 func resolveKafkaRolePaths(t *api.Task, installDir, dataDir string) kafkaRolePaths {
-	_, isBroker, isController := normalizeKRaftRole(t.Parameters["role"])
+	_, isBroker, isController := normalizeKRaftRole(kafkaRoleForTask(t))
 
 	appLogBaseDir := strings.TrimSpace(t.Parameters["kafka_app_log_dir"])
 	if appLogBaseDir == "" {
@@ -1625,10 +1650,12 @@ func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, exp
 		metaPropsPath := filepath.Join(dir, "meta.properties")
 		content, err := os.ReadFile(metaPropsPath)
 		if err != nil {
-			// Try reading with sudo if normal read fails
-			out, _, err2 := d.exec.RunSudo(ctx, "cat", metaPropsPath)
+			if d == nil || d.exec == nil {
+				return fmt.Errorf("read deployment metadata %s: %w", metaPropsPath, err)
+			}
+			out, stderr, err2 := d.exec.RunSudo(ctx, "cat", metaPropsPath)
 			if err2 != nil {
-				continue // File doesn't exist or is not readable
+				return fmt.Errorf("read deployment metadata %s: %w (%s)", metaPropsPath, err2, strings.TrimSpace(stderr))
 			}
 			content = []byte(out)
 		}
@@ -1646,10 +1673,10 @@ func validateMetaProperties(ctx context.Context, d *Deployer, dirs []string, exp
 			values[strings.TrimSpace(line[:separator])] = strings.TrimSpace(line[separator+1:])
 		}
 
-		if values["cluster.id"] != "" && values["cluster.id"] != expectedClusterID {
+		if values["cluster.id"] != expectedClusterID {
 			return fmt.Errorf("Invalid cluster.id in: %s. Expected new cluster ID %q, but read old cluster ID %q.", metaPropsPath, expectedClusterID, values["cluster.id"])
 		}
-		if validateNodeID && values["node.id"] != "" && values["node.id"] != expectedNodeID {
+		if validateNodeID && values["node.id"] != expectedNodeID {
 			return fmt.Errorf("Invalid node.id in: %s. Expected new node ID %q, but read old node ID %q.", metaPropsPath, expectedNodeID, values["node.id"])
 		}
 	}
@@ -2104,10 +2131,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		heapSize = "1G"
 	}
 
-	jmxPort := t.Parameters["jmx_port"]
-	if jmxPort == "" {
-		jmxPort = "7071"
-	}
+	jmxPort := kafkaJMXPortForTask(t)
 	dataDir := t.Parameters["kafka_data_dir"]
 	if dataDir == "" {
 		installPaths := resolveKafkaInstallPaths(t)
@@ -2118,12 +2142,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	serviceName := serviceNameForTask(t)
 	jmxAgentPath := filepath.Join(installDir, "jmx", "jmx_prometheus_javaagent.jar")
 	jmxConfigPath := filepath.Join(installDir, "jmx", "jmx_config.yml")
-	_, _, _ = normalizeKRaftRole(t.Parameters["role"])
-	if serviceName == "controller" {
-		jmxPort = ""
-		jmxAgentPath = ""
-		jmxConfigPath = ""
-	} else if !isUsableJar(jmxAgentPath) {
+	if !isUsableJar(jmxAgentPath) {
 		// JMX monitoring is optional unless the deployment task explicitly requires it.
 		jmxPort = ""
 		jmxAgentPath = ""
@@ -2166,8 +2185,8 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 
 	// Create exporter service if binary exists
-	_, isBroker, _ := normalizeKRaftRole(t.Parameters["role"])
-	if isBroker || serviceName != "controller" {
+	_, isBroker, _ := normalizeKRaftRole(kafkaRoleForTask(t))
+	if isBroker {
 		kafkaExporterPath := filepath.Join(installDir, "bin", "kafka_exporter")
 		if _, _, checkErr := d.exec.RunSudo(ctx, "test", "-x", kafkaExporterPath); checkErr == nil {
 			exporterPort := t.Parameters["kafka_exporter_port"]
@@ -2308,6 +2327,26 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	if err != nil {
 		return logs.String(), err
 	}
+	services, err := cleanupServices(state.Services, t.Parameters["cleanup_services"])
+	if err != nil {
+		return logs.String(), err
+	}
+	appLogDirs := uniqueNonEmpty(state.AppLogDirs)
+	for _, service := range services {
+		if dir := appLogDirFromUnit(service); dir != "" {
+			appLogDirs = uniqueNonEmpty(append(appLogDirs, dir))
+		}
+	}
+	for _, dir := range appLogDirs {
+		if err := validateKafkaAppLogDir(dir); err != nil {
+			return logs.String(), err
+		}
+	}
+	for _, dir := range state.StorageDirs {
+		if err := validateKafkaStorageDir(dir); err != nil {
+			return logs.String(), err
+		}
+	}
 	runRequired := func(name string, args ...string) error {
 		out, errOut, runErr := d.exec.RunSudo(ctx, name, args...)
 		if runErr != nil {
@@ -2320,7 +2359,12 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	// 1. Stop and disable systemd services
 	log("Stopping Kafka systemd services...")
-	for _, service := range state.Services {
+	for _, service := range services {
+		loadState, _, stateErr := d.exec.RunSudo(ctx, "systemctl", "show", service, "--property=LoadState", "--value")
+		if stateErr == nil && strings.TrimSpace(loadState) == "not-found" {
+			log("Skipping absent systemd service: %s", service)
+			continue
+		}
 		if err := runRequired("systemctl", "stop", service); err != nil {
 			return logs.String(), err
 		}
@@ -2330,7 +2374,7 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	log("Removing systemd unit files...")
-	for _, service := range state.Services {
+	for _, service := range services {
 		if err := runRequired("rm", "-f", filepath.Join("/etc/systemd/system", service+".service")); err != nil {
 			return logs.String(), err
 		}
@@ -2351,6 +2395,18 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	if err := runRequired("rm", "-rf", state.DataDir); err != nil {
 		return logs.String(), err
 	}
+	for _, dir := range appLogDirs {
+		log("Removing Kafka application log directory: %s", dir)
+		if err := runRequired("rm", "-rf", dir); err != nil {
+			return logs.String(), err
+		}
+	}
+	for _, dir := range uniqueNonEmpty(state.StorageDirs) {
+		log("Removing Kafka storage directory: %s", dir)
+		if err := runRequired("rm", "-rf", dir); err != nil {
+			return logs.String(), err
+		}
+	}
 
 	// Validate exactly the ports recorded during deployment.
 	log("Validating ports are free...")
@@ -2369,6 +2425,63 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	log("Cleanup completed successfully.")
 	return logs.String(), nil
+}
+
+func cleanupServices(recorded []string, requested string) ([]string, error) {
+	services := uniqueNonEmpty(append(append([]string{}, recorded...), strings.Split(requested, ",")...))
+	for _, service := range services {
+		base := strings.TrimSuffix(service, "-exporter")
+		if _, err := taskvalidate.KafkaServiceName(base, "cleanup service"); err != nil {
+			return nil, err
+		}
+	}
+	return services, nil
+}
+
+func validateKafkaAppLogDir(dir string) error {
+	if _, err := taskvalidate.ApprovedPath(dir); err != nil {
+		return err
+	}
+	base := filepath.Base(dir)
+	if base != "kafka-broker" && base != "kafka-controller" && base != "kafka-zookeeper" {
+		return fmt.Errorf("unexpected Kafka application log directory %q", dir)
+	}
+	return nil
+}
+
+func validateKafkaStorageDir(dir string) error {
+	clean, err := taskvalidate.ApprovedPath(dir)
+	if err != nil {
+		return err
+	}
+	for _, root := range []string{"/opt", "/var", "/data", "/srv", "/app"} {
+		if clean == root {
+			return fmt.Errorf("refusing to remove storage root %q", dir)
+		}
+	}
+	return nil
+}
+
+func appLogDirFromUnit(service string) string {
+	base := strings.TrimSuffix(service, "-exporter")
+	if _, err := taskvalidate.KafkaServiceName(base, "cleanup service"); err != nil {
+		return ""
+	}
+	body, err := os.ReadFile(filepath.Join("/etc/systemd/system", service+".service"))
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		value := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "Environment="))
+		value = strings.Trim(value, "\"'")
+		if strings.HasPrefix(value, "LOG_DIR=") {
+			dir := strings.TrimPrefix(value, "LOG_DIR=")
+			if validateKafkaAppLogDir(dir) == nil {
+				return dir
+			}
+		}
+	}
+	return ""
 }
 
 // getLocalIP dynamically fetches the first non-loopback IPv4 address of the host.
@@ -2408,4 +2521,37 @@ func (d *Deployer) serviceProcessPID(ctx context.Context, service string) (strin
 		return "", fmt.Errorf("%s MainPID %s is not running: %w (%s)", service, pid, err, strings.TrimSpace(stderr))
 	}
 	return strconv.Itoa(n), nil
+}
+
+func kafkaRoleForTask(t *api.Task) string {
+	return firstNonEmpty(t.Parameters["service_role"], t.Parameters["role"])
+}
+
+// kafkaStorageDirs contains only directories used by this task's generated configuration.
+func kafkaStorageDirs(paths kafkaRolePaths) []string {
+	dirs := []string{}
+	seen := map[string]bool{}
+	for _, raw := range append([]string{paths.MetadataLogDir}, strings.Split(paths.LogDirs, ",")...) {
+		dir := strings.TrimSpace(raw)
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		if !seen[dir] {
+			seen[dir] = true
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
+}
+
+func kafkaJMXPortForTask(t *api.Task) string {
+	_, isBroker, isController := normalizeKRaftRole(kafkaRoleForTask(t))
+	if isController && !isBroker {
+		// jmx_port is the port assigned to this specific service. A cluster-level
+		// controller_jmx_port may still contain the UI default when the user
+		// selected a different port for this controller.
+		return firstNonEmpty(t.Parameters["jmx_port"], t.Parameters["controller_jmx_port"], "7072")
+	}
+	return firstNonEmpty(t.Parameters["jmx_port"], t.Parameters["broker_jmx_port"], "7071")
 }

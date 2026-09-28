@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.4"
-	commit    = "prod16-health-state-fix"
-	buildDate = "2026-07-28"
+	version   = "1.0.0-prod.16-reporting.9"
+	commit    = "prod16-cluster-cleanup"
+	buildDate = "2026-09-24"
 )
 
 func main() {
