@@ -25,6 +25,7 @@ public class MonitoringProperties {
     @Min(1) @Max(65535) private int kafkaExporterPortBase = 9308;
     @Min(1) @Max(65535) private int jmxExporterPort = 7071;
     @Min(1) @Max(65535) private int controllerJmxExporterPort = 7072;
+    @Min(1) @Max(30) private long brokerRefreshTimeoutSeconds = 5;
 
     @AssertTrue(message = "monitoring mode requires a valid endpoint and grafana-proxy requires HTTPS plus datasource UID")
     public boolean isModeConfigurationValid() {
@@ -65,4 +66,6 @@ public class MonitoringProperties {
     public void setJmxExporterPort(int value) { this.jmxExporterPort = value; }
     public int getControllerJmxExporterPort() { return controllerJmxExporterPort; }
     public void setControllerJmxExporterPort(int value) { this.controllerJmxExporterPort = value; }
+    public long getBrokerRefreshTimeoutSeconds() { return brokerRefreshTimeoutSeconds; }
+    public void setBrokerRefreshTimeoutSeconds(long value) { this.brokerRefreshTimeoutSeconds = value; }
 }
