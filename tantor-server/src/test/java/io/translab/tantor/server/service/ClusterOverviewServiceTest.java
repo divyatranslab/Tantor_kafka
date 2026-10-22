@@ -87,7 +87,7 @@ class ClusterOverviewServiceTest {
         host.setDiskTotalGb(16L);
 
         Node brokerNode = new Node(1, "192.168.3.191", 9092);
-        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(clusterRepository.findWithServicesById(clusterId)).thenReturn(Optional.of(cluster));
         when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
         when(adminClient.describeCluster()).thenReturn(describeClusterResult);
         when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(List.of(brokerNode)));
@@ -100,7 +100,7 @@ class ClusterOverviewServiceTest {
         when(describeLogDirsResult.descriptions()).thenReturn(
                 Map.of(1, KafkaFuture.completedFuture(Map.of()))
         );
-        when(hostRepository.findById(hostId)).thenReturn(Optional.of(host));
+        when(hostRepository.findAllById(any())).thenReturn(List.of(host));
         when(hostStatusService.agentConnectivityStatus(host)).thenReturn("ONLINE");
 
         ClusterOverviewDto overview = service.getOverview(clusterId);
@@ -129,7 +129,7 @@ class ClusterOverviewServiceTest {
         cluster.setKafkaMode("ZooKeeper");
 
         Node brokerController = new Node(1, "192.168.3.150", 9092);
-        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(compatibilityCluster));
+        when(clusterRepository.findWithServicesById(clusterId)).thenReturn(Optional.of(compatibilityCluster));
         when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
         when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
         when(adminClient.describeCluster()).thenReturn(describeClusterResult);
@@ -172,7 +172,7 @@ class ClusterOverviewServiceTest {
         Host secondHost = host("controller-b", "controller-b.local", "192.168.3.164");
         Node brokerNode = new Node(2, "192.168.3.164", 9092);
 
-        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(clusterRepository.findWithServicesById(clusterId)).thenReturn(Optional.of(cluster));
         when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
         when(adminClient.describeCluster()).thenReturn(describeClusterResult);
         when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(List.of(brokerNode)));
@@ -185,8 +185,7 @@ class ClusterOverviewServiceTest {
         when(describeLogDirsResult.descriptions()).thenReturn(
                 Map.of(2, KafkaFuture.completedFuture(Map.of()))
         );
-        when(hostRepository.findById("controller-a")).thenReturn(Optional.of(firstHost));
-        when(hostRepository.findById("controller-b")).thenReturn(Optional.of(secondHost));
+        when(hostRepository.findAllById(any())).thenReturn(List.of(firstHost, secondHost));
 
         ClusterOverviewDto overview = service.getOverview(clusterId);
 

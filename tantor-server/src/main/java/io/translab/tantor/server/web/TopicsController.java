@@ -5,10 +5,12 @@ import io.translab.tantor.server.service.TopicOperationsService;
 import io.translab.tantor.server.service.ActivityAlertService;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.audit.AuditService;
+import io.translab.tantor.server.service.CacheRefreshStatus;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -38,6 +40,9 @@ public class TopicsController {
             @RequestParam(defaultValue = "name") String sortBy,
             @RequestParam(defaultValue = "false") boolean includeInternal) {
         
+        if (page < 0 || size < 1) {
+            return ResponseEntity.badRequest().build();
+        }
         // Prevent huge page requests
         if (size > 500) size = 500;
         
@@ -170,6 +175,7 @@ public class TopicsController {
     }
 
     private void clusterChanged(UUID clusterId, String action, Map<String, Object> details) {
+        partitionCacheService.invalidateMetadata(clusterId);
         String clusterName = clusterRepository.findById(clusterId).map(cluster -> {
             cluster.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
             clusterRepository.save(cluster);
@@ -213,15 +219,28 @@ public class TopicsController {
     }
 
     @GetMapping("/partitions")
-    public ResponseEntity<io.translab.tantor.server.dto.PaginatedResponse<io.translab.tantor.server.dto.PartitionSummaryDto>> listPartitions(
+    public ResponseEntity<?> listPartitions(
             @PathVariable UUID clusterId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "topicName") String sortBy) {
         
+        if (page < 0 || size < 1) {
+            return ResponseEntity.badRequest().body(Map.of("error", "page must be non-negative and size must be positive"));
+        }
         if (size > 500) size = 500;
-        return ResponseEntity.ok(partitionCacheService.getPaginatedPartitions(clusterId, page, size, search, sortBy));
+        CacheRefreshStatus cacheStatus = partitionCacheService.getCacheStatus(clusterId);
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("X-Cache-Status", cacheStatus.state().name());
+        headers.add("X-Cache-Last-Successful-Refresh", Long.toString(cacheStatus.lastSuccessfulRefreshMillis()));
+        headers.add("X-Cache-Refresh-Error", Boolean.toString(cacheStatus.lastError() != null));
+        if (cacheStatus.lastError() != null) {
+            String safeMessage = cacheStatus.lastError().replaceAll("[\\r\\n\\t]", " ");
+            headers.add("X-Cache-Refresh-Error-Message", safeMessage.substring(0, Math.min(200, safeMessage.length())));
+        }
+        return ResponseEntity.ok().headers(headers)
+                .body(partitionCacheService.getPaginatedPartitions(clusterId, page, size, search, sortBy));
     }
 
     @Data

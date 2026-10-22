@@ -19,11 +19,13 @@ import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -33,6 +35,9 @@ public class TopicOperationsService {
     private static final int MAX_MESSAGES = 10_000;
     private final KafkaAdminService kafkaAdminService;
     private final AuditService auditService;
+
+    @Value("${tantor.kafka.consumer-group-operation-timeout-ms:30000}")
+    private long consumerGroupOperationTimeoutMillis;
 
     public Map<String, Object> getTopicDetails(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
@@ -265,24 +270,58 @@ public class TopicOperationsService {
 
     public List<Map<String, Object>> getTopicConsumers(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+        long deadline = KafkaRefreshDeadline.afterMillis(consumerGroupOperationTimeoutMillis);
         try {
-            Collection<ConsumerGroupListing> groups = admin.listConsumerGroups().all().get();
+            int timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+            Collection<ConsumerGroupListing> groups = admin.listConsumerGroups(new ListConsumerGroupsOptions()
+                    .timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS);
             if (groups.isEmpty()) {
                 return List.of();
             }
-            List<String> ids = groups.stream().map(ConsumerGroupListing::groupId).toList();
-            Map<String, ConsumerGroupDescription> descriptions =
-                    admin.describeConsumerGroups(ids).all().get();
-            Map<TopicPartition, Long> latest = latestOffsetsForTopic(admin, topicName);
+            List<String> ids = groups.stream().map(ConsumerGroupListing::groupId).distinct().toList();
+            Map<String, ConsumerGroupDescription> descriptions = new LinkedHashMap<>();
+            Map<String, Map<TopicPartition, OffsetAndMetadata>> offsetsByGroup = new LinkedHashMap<>();
+            for (List<String> batch : batches(ids, 500)) {
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                descriptions.putAll(admin.describeConsumerGroups(batch,
+                        new DescribeConsumerGroupsOptions().timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS));
+                Map<String, ListConsumerGroupOffsetsSpec> offsetRequests = batch.stream().collect(Collectors.toMap(
+                        groupId -> groupId, ignored -> new ListConsumerGroupOffsetsSpec(),
+                        (left, right) -> left, LinkedHashMap::new));
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                Map<String, Map<TopicPartition, OffsetAndMetadata>> result = admin.listConsumerGroupOffsets(offsetRequests,
+                        new ListConsumerGroupOffsetsOptions().timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS);
+                if (!result.keySet().containsAll(batch)) {
+                    throw new IllegalStateException("Kafka omitted committed offsets for one or more consumer groups");
+                }
+                offsetsByGroup.putAll(result);
+            }
+            if (!descriptions.keySet().containsAll(ids) || !offsetsByGroup.keySet().containsAll(ids)) {
+                throw new IllegalStateException("Kafka returned incomplete consumer-group data");
+            }
+            timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+            TopicDescription topic = admin.describeTopics(List.of(topicName),
+                    new DescribeTopicsOptions().timeoutMs(timeout)).allTopicNames().get(timeout, TimeUnit.MILLISECONDS).get(topicName);
+            if (topic == null) throw new IllegalStateException("Kafka omitted topic metadata for " + topicName);
+            List<TopicPartition> partitions = topic.partitions().stream()
+                    .map(partition -> new TopicPartition(topicName, partition.partition())).toList();
+            Map<TopicPartition, Long> latest = new HashMap<>();
+            for (List<TopicPartition> batch : batches(partitions, 1000)) {
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                Map<TopicPartition, OffsetSpec> request = batch.stream()
+                        .collect(Collectors.toMap(partition -> partition, ignored -> OffsetSpec.latest(), (a, b) -> a, LinkedHashMap::new));
+                Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> result = admin.listOffsets(request,
+                        new ListOffsetsOptions().timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS);
+                result.forEach((partition, info) -> latest.put(partition, info.offset()));
+            }
+            if (latest.size() != partitions.size() || !latest.keySet().containsAll(partitions)) {
+                throw new IllegalStateException("Kafka returned incomplete latest offsets for topic " + topicName);
+            }
             List<Map<String, Object>> result = new ArrayList<>();
 
             for (String groupId : ids) {
-                Map<TopicPartition, OffsetAndMetadata> offsets;
-                try {
-                    offsets = admin.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get();
-                } catch (ExecutionException ignored) {
-                    continue;
-                }
+                Map<TopicPartition, OffsetAndMetadata> offsets = offsetsByGroup.get(groupId);
+                if (offsets == null) throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
                 List<Map.Entry<TopicPartition, OffsetAndMetadata>> topicOffsets = offsets.entrySet().stream()
                         .filter(entry -> entry.getKey().topic().equals(topicName)).toList();
                 ConsumerGroupDescription description = descriptions.get(groupId);
@@ -311,7 +350,20 @@ public class TopicOperationsService {
             throw new RuntimeException("Interrupted while loading topic consumers");
         } catch (ExecutionException e) {
             throw kafkaFailure("load topic consumers", e);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new RuntimeException("Timed out loading topic consumers", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load topic consumers", e);
         }
+    }
+
+    private static <T> List<List<T>> batches(List<T> values, int batchSize) {
+        if (values.isEmpty()) return List.of();
+        List<List<T>> result = new ArrayList<>((values.size() + batchSize - 1) / batchSize);
+        for (int from = 0; from < values.size(); from += batchSize) {
+            result.add(values.subList(from, Math.min(values.size(), from + batchSize)));
+        }
+        return result;
     }
 
     public List<Map<String, Object>> getTopicAcls(UUID clusterId, String topicName) {

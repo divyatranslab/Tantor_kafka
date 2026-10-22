@@ -11,6 +11,7 @@ import io.translab.tantor.server.config.MonitoringProperties;
 import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -39,14 +40,15 @@ public class BrokerMetricsCacheService {
             .build();
 
     private final Map<UUID, CachedBrokers> cache = new ConcurrentHashMap<>();
-    private static final long CACHE_TTL_MS = 10000;
+    @Value("${tantor.broker-metrics.cache-ttl-ms:10000}")
+    private long cacheTtlMillis;
 
     public List<BrokerSummaryDto> getBrokerSummaries(Cluster cluster) {
         CachedBrokers cached = cache.get(cluster.getId());
         long now = System.currentTimeMillis();
         
-        if (cached != null && (now - cached.timestamp < CACHE_TTL_MS)) {
-            return cached.brokers;
+        if (cached != null && (now - cached.timestamp < Math.max(1, cacheTtlMillis))) {
+            return copyBrokers(cached.brokers);
         }
 
         // Cache miss or expired, fetch asynchronously
@@ -67,21 +69,35 @@ public class BrokerMetricsCacheService {
             }
         }
 
-        cache.put(cluster.getId(), new CachedBrokers(brokers, now));
-        return brokers;
+        cache.put(cluster.getId(), new CachedBrokers(brokers, System.currentTimeMillis()));
+        return copyBrokers(brokers);
     }
 
     public List<BrokerSummaryDto> getBrokerSummaries(ExternalCluster cluster) {
         CachedBrokers cached = cache.get(cluster.getId());
         long now = System.currentTimeMillis();
         
-        if (cached != null && (now - cached.timestamp < CACHE_TTL_MS)) {
-            return cached.brokers;
+        if (cached != null && (now - cached.timestamp < Math.max(1, cacheTtlMillis))) {
+            return copyBrokers(cached.brokers);
         }
 
         List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
-        cache.put(cluster.getId(), new CachedBrokers(brokers, now));
-        return brokers;
+        cache.put(cluster.getId(), new CachedBrokers(brokers, System.currentTimeMillis()));
+        return copyBrokers(brokers);
+    }
+
+    private List<BrokerSummaryDto> copyBrokers(List<BrokerSummaryDto> brokers) {
+        return brokers.stream().map(broker -> BrokerSummaryDto.builder()
+                .brokerId(broker.getBrokerId()).hostname(broker.getHostname()).role(broker.getRole())
+                .brokerHealth(broker.getBrokerHealth()).isController(broker.isController())
+                .isJmxReachable(broker.isJmxReachable()).cpuUsagePct(broker.getCpuUsagePct())
+                .memoryUsedMb(broker.getMemoryUsedMb()).memoryTotalMb(broker.getMemoryTotalMb())
+                .diskUsedGb(broker.getDiskUsedGb()).diskTotalGb(broker.getDiskTotalGb())
+                .diskUsedBytes(broker.getDiskUsedBytes()).diskTotalBytes(broker.getDiskTotalBytes())
+                .hostMetricStatus(broker.getHostMetricStatus()).messagesInPerSec(broker.getMessagesInPerSec())
+                .bytesInPerSec(broker.getBytesInPerSec()).bytesOutPerSec(broker.getBytesOutPerSec())
+                .lastHeartbeat(broker.getLastHeartbeat()).metricsTimestamp(broker.getMetricsTimestamp()).build())
+                .toList();
     }
 
     private BrokerSummaryDto fetchMetricsForBroker(ClusterServiceAssignment svc) {
@@ -240,7 +256,7 @@ public class BrokerMetricsCacheService {
         long timestamp;
 
         CachedBrokers(List<BrokerSummaryDto> brokers, long timestamp) {
-            this.brokers = brokers;
+            this.brokers = List.copyOf(brokers);
             this.timestamp = timestamp;
         }
     }

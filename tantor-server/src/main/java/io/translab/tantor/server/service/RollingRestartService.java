@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -126,12 +127,14 @@ public class RollingRestartService {
 
     private void waitForStableHealth(UUID clusterId, int expectedBrokerCount, Set<String> requiredHostIds,
             String taskId, String prefix) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + healthTimeoutSeconds * 1000;
+        long timeoutMillis = TimeUnit.SECONDS.toMillis(Math.max(1, healthTimeoutSeconds));
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         int consecutiveHealthySamples = 0;
         int requiredStableSamples = Math.max(1, stableSamples);
         RollingRestartHealthService.HealthSnapshot last = null;
-        while (System.currentTimeMillis() < deadline) {
-            last = healthService.inspect(clusterId, expectedBrokerCount, requiredHostIds);
+        while (deadline - System.nanoTime() > 0) {
+            long remainingMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            last = healthService.inspect(clusterId, expectedBrokerCount, requiredHostIds, remainingMillis);
             if (last.healthy()) {
                 consecutiveHealthySamples++;
                 restartTasks.put(taskId, prefix + "health stable " + consecutiveHealthySamples + "/" + requiredStableSamples);
@@ -140,7 +143,11 @@ public class RollingRestartService {
                 consecutiveHealthySamples = 0;
                 restartTasks.put(taskId, prefix + "waiting for health: " + last.failureReason());
             }
-            Thread.sleep(Math.max(1, healthPollSeconds) * 1000);
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0) break;
+            long sleepMillis = Math.min(TimeUnit.SECONDS.toMillis(Math.max(1, healthPollSeconds)),
+                    Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
+            Thread.sleep(sleepMillis);
         }
         throw new IllegalStateException(prefix + "health gate timed out: "
                 + (last == null ? "no health sample available" : last.failureReason()));
