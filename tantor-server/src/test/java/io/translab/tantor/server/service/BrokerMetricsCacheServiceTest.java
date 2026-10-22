@@ -73,8 +73,10 @@ class BrokerMetricsCacheServiceTest {
                 mock(HostStatusService.class), new ObjectMapper(), monitoringProperties());
 
         var rows = service.getBrokerSummaries(cluster);
+        rows.getFirst().setMessagesInPerSec(99.0);
+        var cachedRows = service.getBrokerSummaries(cluster);
 
-        assertThat(rows).singleElement().satisfies(row -> {
+        assertThat(cachedRows).singleElement().satisfies(row -> {
             assertThat(row.getMessagesInPerSec()).isEqualTo(1.67);
             assertThat(row.getBytesInPerSec()).isEqualTo(84.81);
         });

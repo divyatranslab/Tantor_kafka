@@ -15,6 +15,7 @@ import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
@@ -35,6 +36,11 @@ public class KafkaAdminService {
     private final ObjectMapper objectMapper;
     private final EncryptionService encryptionService;
     private final TruststoreStorageService truststoreStorageService;
+
+    @Value("${tantor.kafka.admin.request-timeout-ms:30000}")
+    private int requestTimeoutMillis;
+    @Value("${tantor.kafka.admin.default-api-timeout-ms:60000}")
+    private int defaultApiTimeoutMillis;
 
     private final Map<UUID, AdminClient> adminClients = new ConcurrentHashMap<>();
 
@@ -71,8 +77,8 @@ public class KafkaAdminService {
             
             applySecurityProperties(props, ext, true);
             
-            props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-            props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
+            props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, Integer.toString(requestTimeoutMillis));
+            props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, Integer.toString(defaultApiTimeoutMillis));
             return props;
         }
 
@@ -126,8 +132,8 @@ public class KafkaAdminService {
 
             props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, String.join(",", bootstrapServers));
         }
-        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, "30000");
-        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, "60000");
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, Integer.toString(requestTimeoutMillis));
+        props.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, Integer.toString(defaultApiTimeoutMillis));
 
         return props;
     }

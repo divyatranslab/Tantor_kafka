@@ -91,6 +91,31 @@ tantor:
     health-timeout-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_TIMEOUT_SECONDS:300}
     health-poll-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_POLL_SECONDS:10}
     stable-samples: ${TANTOR_ROLLING_RESTART_STABLE_SAMPLES:2}
+  kafka:
+    admin:
+      request-timeout-ms: ${TANTOR_KAFKA_ADMIN_REQUEST_TIMEOUT_MS:30000}
+      default-api-timeout-ms: ${TANTOR_KAFKA_ADMIN_API_TIMEOUT_MS:60000}
+  cache-refresh:
+    pool-size: ${TANTOR_CACHE_REFRESH_POOL_SIZE:4}
+    queue-capacity: ${TANTOR_CACHE_REFRESH_QUEUE_CAPACITY:128}
+  consumer-lag:
+    refresh-interval-ms: ${TANTOR_CONSUMER_LAG_REFRESH_INTERVAL_MS:10000}
+    reconciliation-interval-ms: ${TANTOR_CONSUMER_LAG_RECONCILIATION_INTERVAL_MS:60000}
+    cache-ttl-ms: ${TANTOR_CONSUMER_LAG_CACHE_TTL_MS:30000}
+    retention-ttl-ms: ${TANTOR_CONSUMER_LAG_RETENTION_TTL_MS:600000}
+    refresh-timeout-ms: ${TANTOR_CONSUMER_LAG_REFRESH_TIMEOUT_MS:30000}
+    group-batch-size: ${TANTOR_CONSUMER_LAG_GROUP_BATCH_SIZE:500}
+    partition-batch-size: ${TANTOR_CONSUMER_LAG_PARTITION_BATCH_SIZE:1000}
+  partition-cache:
+    refresh-interval-ms: ${TANTOR_PARTITION_CACHE_REFRESH_INTERVAL_MS:10000}
+    reconciliation-interval-ms: ${TANTOR_PARTITION_CACHE_RECONCILIATION_INTERVAL_MS:60000}
+    cache-ttl-ms: ${TANTOR_PARTITION_CACHE_TTL_MS:30000}
+    retention-ttl-ms: ${TANTOR_PARTITION_CACHE_RETENTION_TTL_MS:600000}
+    refresh-timeout-ms: ${TANTOR_PARTITION_CACHE_REFRESH_TIMEOUT_MS:30000}
+    metadata-ttl-ms: ${TANTOR_PARTITION_METADATA_TTL_MS:30000}
+    batch-size: ${TANTOR_PARTITION_CACHE_BATCH_SIZE:1000}
+  broker-metrics:
+    cache-ttl-ms: ${TANTOR_BROKER_METRICS_CACHE_TTL_MS:10000}
   monitoring:
     mode: ${TANTOR_MONITORING_MODE}
     prometheus-url: ${TANTOR_PROMETHEUS_URL:}
