@@ -27,6 +27,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -138,6 +141,38 @@ class ExternalClusterServiceTest {
         ExternalCluster saved = service.registerBootstrapCluster(request);
 
         assertThat(saved.getKafkaMode()).isEqualTo("Unknown");
+    }
+
+    @Test
+    void registrationNormalizesNegativeTopologyNodeIdsToMissing() {
+        ExternalClusterRepository externalClusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), externalClusterRepository, nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+        when(externalClusterRepository.save(any(ExternalCluster.class))).thenAnswer(invocation -> {
+            ExternalCluster cluster = invocation.getArgument(0);
+            if (cluster.getId() == null) {
+                cluster.setId(UUID.randomUUID());
+            }
+            return cluster;
+        });
+
+        ExternalClusterService.BootstrapExternalClusterRequest request =
+                new ExternalClusterService.BootstrapExternalClusterRequest();
+        request.setName("negative-node-id");
+        request.setBootstrapServers("broker-a:9092,broker-b:9092");
+        request.setClusterId("negative-node-id-cluster");
+        request.setBrokers(List.of(
+                Map.of("id", -1, "host", "broker-a", "isBroker", true),
+                Map.of("id", -1, "host", "broker-b", "isBroker", true)));
+
+        service.registerBootstrapCluster(request);
+
+        verify(nodeRepository).upsertTopology(
+                any(UUID.class), eq("broker-a"), isNull(), eq(true), eq(false), isNull());
+        verify(nodeRepository).upsertTopology(
+                any(UUID.class), eq("broker-b"), isNull(), eq(true), eq(false), isNull());
     }
 
     @Test
@@ -433,6 +468,7 @@ class ExternalClusterServiceTest {
         ExternalCluster cluster = new ExternalCluster();
         cluster.setId(UUID.randomUUID());
         ExternalClusterNode controller = new ExternalClusterNode();
+        controller.setId(UUID.randomUUID());
         controller.setClusterId(cluster.getId());
         controller.setNodeId(102);
         controller.setHost("unknown");
@@ -446,12 +482,17 @@ class ExternalClusterServiceTest {
         report.setHostname("192.168.3.228");
         report.setListeners("CONTROLLER://192.168.3.228:9093");
 
-        ReflectionTestUtils.invokeMethod(service, "applyDiscoveryReportToNodes",
-                cluster, report, new DiscoveryAgent());
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
 
-        assertThat(controller.getHost()).isEqualTo("192.168.3.228");
-        assertThat(controller.getPort()).isEqualTo(9093);
-        verify(nodeRepository).save(controller);
+        assertThat(controller.getHost()).isEqualTo("unknown");
+        assertThat(controller.getPort()).isZero();
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(controller.getId()), eq(102), eq("192.168.3.228"), isNull(), eq(true), eq(9093), isNull(),
+                nullable(Double.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(controller);
     }
 
     @Test
@@ -470,6 +511,7 @@ class ExternalClusterServiceTest {
         cluster.setKafkaMode("KRaft");
 
         ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setId(UUID.randomUUID());
         broker.setClusterId(clusterId);
         broker.setNodeId(2);
         broker.setHost("192.168.3.164");
@@ -482,11 +524,155 @@ class ExternalClusterServiceTest {
         report.setHostname("192.168.3.164");
         report.setJmxExporterPort(17071);
 
-        ReflectionTestUtils.invokeMethod(service, "applyDiscoveryReportToNodes",
-                cluster, report, new DiscoveryAgent());
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
 
-        assertThat(broker.getJmxExporterPort()).isEqualTo(17071);
-        verify(nodeRepository).save(broker);
+        assertThat(broker.getJmxExporterPort()).isNull();
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(broker.getId()), eq(2), eq("192.168.3.164"), eq(true), isNull(), nullable(Integer.class), eq(17071),
+                nullable(Double.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(broker);
+    }
+
+    @Test
+    void discoveryFillsTopologyOnTelemetryOnlyRowWithoutClearingItsMetrics() {
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        UUID nodeRowId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setKafkaMode("KRaft");
+        ExternalClusterNode telemetryOnlyNode = new ExternalClusterNode();
+        telemetryOnlyNode.setId(nodeRowId);
+        telemetryOnlyNode.setClusterId(clusterId);
+        telemetryOnlyNode.setNodeId(3);
+        telemetryOnlyNode.setHost("broker-3");
+        telemetryOnlyNode.setCpuUsagePct(41.5);
+        telemetryOnlyNode.setMemoryUsedMb(2048L);
+        telemetryOnlyNode.setMessagesInPerSec(1.4);
+        telemetryOnlyNode.setBytesInPerSec(9.2);
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(telemetryOnlyNode));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(3);
+        report.setHostname("broker-3");
+        report.setProcessRoles("broker");
+
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
+
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(nodeRowId), eq(3), eq("broker-3"), eq(true), eq(false), nullable(Integer.class),
+                nullable(Integer.class), nullable(Double.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(telemetryOnlyNode);
+        assertThat(telemetryOnlyNode.getCpuUsagePct()).isEqualTo(41.5);
+        assertThat(telemetryOnlyNode.getMemoryUsedMb()).isEqualTo(2048L);
+        assertThat(telemetryOnlyNode.getMessagesInPerSec()).isEqualTo(1.4);
+        assertThat(telemetryOnlyNode.getBytesInPerSec()).isEqualTo(9.2);
+    }
+
+    @Test
+    void telemetryArrivingBeforeDiscoveryIsFollowedByAtomicTopologyEnrichment() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        UUID nodeRowId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external");
+        cluster.setStatus("SUCCESS");
+        cluster.setKafkaMode("KRaft");
+        cluster.setBootstrapServers("broker-3:9092");
+        ExternalClusterNode telemetryOnlyNode = new ExternalClusterNode();
+        telemetryOnlyNode.setId(nodeRowId);
+        telemetryOnlyNode.setClusterId(clusterId);
+        telemetryOnlyNode.setNodeId(3);
+        telemetryOnlyNode.setHost("broker-3");
+        telemetryOnlyNode.setCpuUsagePct(41.5);
+        telemetryOnlyNode.setMemoryUsedMb(2048L);
+        telemetryOnlyNode.setMessagesInPerSec(1.4);
+        telemetryOnlyNode.setBytesInPerSec(9.2);
+        when(clusterRepository.findByBootstrapServersAndStatusNot("broker-3:9092", "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(), List.of(telemetryOnlyNode));
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setNodeId(3);
+        metrics.setHostname("broker-3");
+        metrics.setBootstrap("broker-3:9092");
+        metrics.setCpuUsagePct(41.5);
+        metrics.setMemoryUsedMb(2048L);
+        metrics.setMessagesInPerSec(1.4);
+        metrics.setBytesInPerSec(9.2);
+        service.receiveMetrics("external", metrics);
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(3);
+        report.setHostname("broker-3");
+        report.setProcessRoles("broker");
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
+
+        verify(nodeRepository).upsertNodeTelemetry(
+                eq(clusterId), eq("broker-3"), eq(3), eq(41.5), eq(2048L),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), eq(1.4), eq(9.2), any(OffsetDateTime.class));
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(nodeRowId), eq(3), eq("broker-3"), eq(true), eq(false), nullable(Integer.class),
+                nullable(Integer.class), nullable(Double.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(telemetryOnlyNode);
+        assertThat(telemetryOnlyNode.getCpuUsagePct()).isEqualTo(41.5);
+        assertThat(telemetryOnlyNode.getMessagesInPerSec()).isEqualTo(1.4);
+        assertThat(telemetryOnlyNode.getBytesInPerSec()).isEqualTo(9.2);
+    }
+
+    @Test
+    void discoveryUsesAtomicConflictUpsertIfTelemetryRowAppearsAfterItsRead() {
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setKafkaMode("KRaft");
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of());
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(4);
+        report.setHostname("broker-4");
+        report.setBootstrapServers("broker-4:9092,broker-5:9092");
+        report.setProcessRoles("broker,controller");
+
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
+
+        verify(nodeRepository).upsertDiscoveredNode(
+                eq(clusterId), eq("broker-4"), eq(4), eq(true), eq(true),
+                nullable(Integer.class), nullable(Integer.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), any(OffsetDateTime.class),
+                nullable(String.class), nullable(String.class), nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(any(ExternalClusterNode.class));
     }
 
     @Test
@@ -593,7 +779,7 @@ class ExternalClusterServiceTest {
     }
 
     @Test
-    void metricsUseNodeIdBeforeHostnameOrBootstrapFallback() {
+    void metricsUseNodeIdForPersistenceWhenMultipleNodesShareAHost() {
         ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
         ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
         DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
@@ -613,7 +799,9 @@ class ExternalClusterServiceTest {
         ExternalClusterNode nodeTwo = new ExternalClusterNode();
         nodeTwo.setClusterId(clusterId);
         nodeTwo.setNodeId(2);
-        nodeTwo.setHost("192.168.3.228");
+        nodeTwo.setHost("192.168.3.229");
+        nodeOne.setIsBroker(true);
+        nodeTwo.setIsBroker(true);
 
         DiscoveryAgent linkedAgent = new DiscoveryAgent();
         linkedAgent.setId("host-229");
@@ -623,7 +811,6 @@ class ExternalClusterServiceTest {
         when(agentRepository.findByHostname("192.168.3.229")).thenReturn(Optional.of(linkedAgent));
         when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
         when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(nodeOne, nodeTwo));
-        when(nodeRepository.findByClusterIdAndNodeId(clusterId, 1)).thenReturn(Optional.of(nodeOne));
 
         ExternalClusterService.ExternalBrokerMetricsDto metrics =
                 new ExternalClusterService.ExternalBrokerMetricsDto();
@@ -638,12 +825,309 @@ class ExternalClusterServiceTest {
 
         service.receiveMetrics("external", metrics);
 
-        assertThat(nodeOne.getDiskUsedBytes()).isEqualTo(7_784_919_040L);
-        assertThat(nodeOne.getDiskTotalBytes()).isEqualTo(44_286_992_384L);
-        assertThat(nodeOne.getMessagesInPerSec()).isEqualTo(0.1);
-        assertThat(nodeOne.getBytesInPerSec()).isEqualTo(7.7);
+        verify(nodeRepository).upsertNodeTelemetry(
+                eq(clusterId),
+                eq("192.168.3.229"),
+                eq(1),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(7_784_919_040L),
+                eq(44_286_992_384L),
+                eq(0.1),
+                eq(7.7),
+                any(OffsetDateTime.class)
+        );
         assertThat(nodeTwo.getDiskUsedBytes()).isNull();
-        verify(nodeRepository).save(nodeOne);
+        verify(nodeRepository, never()).updateTelemetryByHost(
+                any(UUID.class), any(String.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class));
+        verify(nodeRepository, never()).updateBrokerIngestionRates(
+                any(UUID.class), any(String.class), any(), any(), any(OffsetDateTime.class));
+    }
+
+    @Test
+    void metricsWithNodeIdCreateTelemetryRowBeforeTopologyExists() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setStatus("SUCCESS");
+        cluster.setBootstrapServers("192.168.3.229:9092");
+        DiscoveryAgent linkedAgent = new DiscoveryAgent();
+        linkedAgent.setId("host-229");
+        linkedAgent.setHostname("192.168.3.229");
+        linkedAgent.setClusterId(clusterId);
+        when(agentRepository.findByHostname("192.168.3.229")).thenReturn(Optional.of(linkedAgent));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of());
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setNodeId(3);
+        metrics.setHostname("192.168.3.229");
+        metrics.setBootstrap("192.168.3.229:9092");
+        metrics.setMessagesInPerSec(1.25);
+        metrics.setBytesInPerSec(8.5);
+
+        service.receiveMetrics("external", metrics);
+
+        verify(nodeRepository).upsertNodeTelemetry(
+                eq(clusterId), eq("192.168.3.229"), eq(3),
+                isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(),
+                eq(1.25), eq(8.5), any(OffsetDateTime.class));
+        verify(nodeRepository, never()).updateTelemetryByHost(
+                any(UUID.class), any(String.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class));
+        verify(nodeRepository, never()).updateBrokerIngestionRates(
+                any(UUID.class), any(String.class), any(), any(), any(OffsetDateTime.class));
+    }
+
+    @Test
+    void missingNodeIdDoesNotApplyOneBrokersIngestionRatesToCoLocatedBrokers() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setStatus("SUCCESS");
+        cluster.setBootstrapServers("192.168.3.229:9092");
+        ExternalClusterNode nodeOne = new ExternalClusterNode();
+        nodeOne.setClusterId(clusterId);
+        nodeOne.setNodeId(1);
+        nodeOne.setHost("192.168.3.229");
+        nodeOne.setIsBroker(true);
+        ExternalClusterNode nodeTwo = new ExternalClusterNode();
+        nodeTwo.setClusterId(clusterId);
+        nodeTwo.setNodeId(2);
+        nodeTwo.setHost("192.168.3.229");
+        nodeTwo.setIsBroker(true);
+        DiscoveryAgent linkedAgent = new DiscoveryAgent();
+        linkedAgent.setId("host-229");
+        linkedAgent.setHostname("192.168.3.229");
+        linkedAgent.setClusterId(clusterId);
+        when(agentRepository.findByHostname("192.168.3.229")).thenReturn(Optional.of(linkedAgent));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(nodeOne, nodeTwo));
+        when(nodeRepository.updateTelemetryByHost(
+                eq(clusterId), eq("192.168.3.229"), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class)))
+                .thenReturn(2);
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setHostname("192.168.3.229");
+        metrics.setBootstrap("192.168.3.229:9092");
+        metrics.setMessagesInPerSec(1.25);
+        metrics.setBytesInPerSec(8.5);
+
+        service.receiveMetrics("external", metrics);
+
+        verify(nodeRepository).updateTelemetryByHost(
+                eq(clusterId), eq("192.168.3.229"), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class));
+        verify(nodeRepository, never()).updateBrokerIngestionRates(
+                any(UUID.class), any(String.class), any(), any(), any(OffsetDateTime.class));
+    }
+
+    @Test
+    void missingNodeIdAndHostnameDoesNotGuessFirstHostFromMultiEndpointBootstrap() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("multi-bootstrap");
+        cluster.setStatus("SUCCESS");
+        cluster.setBootstrapServers("broker-a:9092,broker-b:9092");
+        ExternalClusterNode brokerA = new ExternalClusterNode();
+        brokerA.setClusterId(clusterId);
+        brokerA.setNodeId(1);
+        brokerA.setHost("broker-a");
+        brokerA.setIsBroker(true);
+        ExternalClusterNode brokerB = new ExternalClusterNode();
+        brokerB.setClusterId(clusterId);
+        brokerB.setNodeId(2);
+        brokerB.setHost("broker-b");
+        brokerB.setIsBroker(true);
+        when(clusterRepository.findByNameAndStatusNot("multi-bootstrap", "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(brokerA, brokerB));
+        when(agentRepository.findByClusterId(clusterId)).thenReturn(List.of());
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setMessagesInPerSec(1.25);
+        metrics.setBytesInPerSec(8.5);
+
+        service.receiveMetrics("multi-bootstrap", metrics);
+
+        verify(nodeRepository, never()).upsertNodeTelemetry(
+                any(UUID.class), any(String.class), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(nodeRepository, never()).updateTelemetryByHost(
+                any(UUID.class), any(String.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class));
+        verify(nodeRepository, never()).updateBrokerIngestionRates(
+                any(UUID.class), any(String.class), any(), any(), any(OffsetDateTime.class));
+        verify(agentRepository, never()).findByHostname(any(String.class));
+    }
+
+    @Test
+    void negativeNodeIdUsesHostIdentityPathInsteadOfCompositeNodeIdentity() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), clusterRepository, nodeRepository,
+                agentRepository, mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external");
+        cluster.setStatus("SUCCESS");
+        cluster.setBootstrapServers("broker-a:9092");
+        ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setId(UUID.randomUUID());
+        broker.setClusterId(clusterId);
+        broker.setNodeId(1);
+        broker.setHost("broker-a");
+        broker.setIsBroker(true);
+        when(clusterRepository.findByNameAndStatusNot("external", "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(broker));
+        when(nodeRepository.updateTelemetryByHost(
+                eq(clusterId), eq("broker-a"), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class)))
+                .thenReturn(1);
+        when(nodeRepository.updateBrokerIngestionRates(
+                eq(clusterId), eq("broker-a"), eq(1.25), eq(8.5), any(OffsetDateTime.class))).thenReturn(1);
+
+        ExternalClusterService.ExternalBrokerMetricsDto metrics =
+                new ExternalClusterService.ExternalBrokerMetricsDto();
+        metrics.setNodeId(-1);
+        metrics.setHostname("broker-a");
+        metrics.setMessagesInPerSec(1.25);
+        metrics.setBytesInPerSec(8.5);
+
+        service.receiveMetrics("external", metrics);
+
+        verify(nodeRepository, never()).upsertNodeTelemetry(
+                any(UUID.class), any(String.class), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(nodeRepository).updateTelemetryByHost(
+                eq(clusterId), eq("broker-a"), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(OffsetDateTime.class));
+        verify(nodeRepository).updateBrokerIngestionRates(
+                eq(clusterId), eq("broker-a"), eq(1.25), eq(8.5), any(OffsetDateTime.class));
+    }
+
+    @Test
+    void discoveryAdoptsReportedNodeIdForAnUnambiguousLegacyMissingIdRow() {
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        UUID rowId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setKafkaMode("KRaft");
+        ExternalClusterNode legacyNode = new ExternalClusterNode();
+        legacyNode.setId(rowId);
+        legacyNode.setClusterId(clusterId);
+        legacyNode.setNodeId(-1);
+        legacyNode.setHost("broker-a");
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(legacyNode));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(7);
+        report.setHostname("broker-a");
+        report.setProcessRoles("broker");
+
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
+
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(rowId), eq(7), eq("broker-a"), eq(true), eq(false), nullable(Integer.class),
+                nullable(Integer.class), nullable(Double.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).upsertDiscoveredNode(
+                any(UUID.class), any(String.class), any(Integer.class), nullable(Boolean.class),
+                nullable(Boolean.class), nullable(Integer.class), nullable(Integer.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), any(OffsetDateTime.class), nullable(String.class),
+                nullable(String.class), nullable(String.class), nullable(String.class));
+    }
+
+    @Test
+    void discoveryDoesNotGuessWhenSeveralMissingIdRowsShareTheReportedHost() {
+        ExternalClusterNodeRepository nodeRepository = mock(ExternalClusterNodeRepository.class);
+        ExternalClusterService service = service(
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class), nodeRepository,
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        ExternalClusterNode first = new ExternalClusterNode();
+        first.setId(UUID.randomUUID());
+        first.setClusterId(clusterId);
+        first.setNodeId(-1);
+        first.setHost("shared-host");
+        ExternalClusterNode second = new ExternalClusterNode();
+        second.setId(UUID.randomUUID());
+        second.setClusterId(clusterId);
+        second.setNodeId(null);
+        second.setHost("shared-host");
+        when(nodeRepository.findByClusterId(clusterId)).thenReturn(List.of(first, second));
+
+        ExternalClusterService.ExternalDiscoveryReport report =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        report.setNodeId(7);
+        report.setHostname("shared-host");
+
+        service.applyDiscoveryReportToNodes(cluster, report, new DiscoveryAgent());
+
+        verify(nodeRepository, never()).updateDiscoveredNode(
+                any(UUID.class), any(Integer.class), any(String.class), nullable(Boolean.class),
+                nullable(Boolean.class), nullable(Integer.class), nullable(Integer.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), any(OffsetDateTime.class), nullable(String.class),
+                nullable(String.class), nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).upsertDiscoveredNode(
+                any(UUID.class), any(String.class), any(Integer.class), nullable(Boolean.class),
+                nullable(Boolean.class), nullable(Integer.class), nullable(Integer.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), any(OffsetDateTime.class), nullable(String.class),
+                nullable(String.class), nullable(String.class), nullable(String.class));
     }
 
     @Test
@@ -668,6 +1152,7 @@ class ExternalClusterServiceTest {
         agent.setClusterId(clusterId);
 
         ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setId(UUID.randomUUID());
         broker.setClusterId(clusterId);
         broker.setNodeId(1);
         broker.setHost("192.168.3.229");
@@ -698,14 +1183,20 @@ class ExternalClusterServiceTest {
 
         assertThat(result).containsEntry("status", "registered")
                 .containsEntry("id", clusterId);
-        assertThat(broker.getCpuUsagePct()).isEqualTo(12.5);
-        assertThat(broker.getMemoryUsedMb()).isEqualTo(2048L);
-        assertThat(broker.getMemoryTotalMb()).isEqualTo(8192L);
+        assertThat(broker.getCpuUsagePct()).isNull();
+        assertThat(broker.getMemoryUsedMb()).isNull();
+        assertThat(broker.getMemoryTotalMb()).isNull();
         assertThat(cluster.getKafkaMode()).isEqualTo("ZooKeeper");
         assertThat(cluster.getKafkaVersion()).isEqualTo("2.5.0");
         assertThat(cluster.getProcessRoles()).isNull();
         verify(clusterRepository).save(cluster);
-        verify(nodeRepository).save(broker);
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(broker.getId()), eq(1), eq("192.168.3.229"), eq(true), eq(false),
+                nullable(Integer.class), nullable(Integer.class), eq(12.5), eq(2048L), eq(8192L),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                any(OffsetDateTime.class), nullable(String.class), nullable(String.class),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(broker);
         verify(clusterRepository, never()).findByBootstrapServersAndStatusNot(
                 "192.168.3.229:9092", "DELETED");
     }
@@ -726,6 +1217,7 @@ class ExternalClusterServiceTest {
         cluster.setBootstrapServers("192.168.3.229:9092");
 
         ExternalClusterNode broker = new ExternalClusterNode();
+        broker.setId(UUID.randomUUID());
         broker.setClusterId(clusterId);
         broker.setNodeId(2);
         broker.setHost("192.168.3.164");
@@ -763,10 +1255,17 @@ class ExternalClusterServiceTest {
         assertThat(result).containsEntry("status", "registered")
                 .containsEntry("id", clusterId);
         assertThat(agent.getClusterId()).isEqualTo(clusterId);
-        assertThat(broker.getInstallDir()).isEqualTo("/opt/kafka_2.13-4.1.0");
-        assertThat(broker.getConfigFile())
-                .isEqualTo("/opt/kafka_2.13-4.1.0/config/broker.properties");
-        verify(nodeRepository).save(broker);
+        assertThat(broker.getInstallDir()).isNull();
+        assertThat(broker.getConfigFile()).isNull();
+        verify(nodeRepository).updateDiscoveredNode(
+                eq(broker.getId()), eq(2), eq("192.168.3.164"), eq(true), isNull(),
+                nullable(Integer.class), nullable(Integer.class), nullable(Double.class),
+                nullable(Long.class), nullable(Long.class), nullable(Long.class), nullable(Long.class),
+                nullable(Long.class), nullable(Long.class), any(OffsetDateTime.class),
+                eq("/opt/kafka_2.13-4.1.0"),
+                eq("/opt/kafka_2.13-4.1.0/config/broker.properties"),
+                nullable(String.class), nullable(String.class));
+        verify(nodeRepository, never()).save(broker);
     }
 
     @Test
