@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,77 +48,78 @@ static final PostgreSQLContainer<?> POSTGRES =
                 ).asCompatibleSubstituteFor("postgres")
         ).withDatabaseName("tantor");
 
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) throws Exception {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-        Path repo = Files.createTempDirectory("tantor-it-repo-");
-        registry.add("tantor.repository.base-path", repo::toString);
-        registry.add("tantor.cors.allowed-origins", () -> "http://localhost:5173");
-    }
-
-    @Autowired
-    MockMvc mockMvc;
-
-    @Test
-    void rejectsUnauthenticatedUpload() throws Exception {
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "kafka_2.13-3.7.0.tgz", "application/gzip", "payload".getBytes());
-
-        mockMvc.perform(multipart("/api/v1/artifacts")
-                        .file(file)
-                        .param("serviceType", "KAFKA")
-                        .param("version", "3.7.0"))
-                .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    void authorizedUploadThenDownloadRoundTrip() throws Exception {
-        byte[] payload = kafkaArchive();
-        MockMultipartFile file = new MockMultipartFile(
-                "file", "kafka_2.13-3.7.0.tgz", "application/gzip", payload);
-
-        String body = mockMvc.perform(multipart("/api/v1/artifacts")
-                        .file(file)
-                        .param("serviceType", "KAFKA")
-                        .param("version", "3.7.0")
-                        .header("Authorization", adminAuthorization()))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.status", is("AVAILABLE")))
-                .andExpect(jsonPath("$.serviceType", is("KAFKA")))
-                .andReturn().getResponse().getContentAsString();
-
-        String id = body.replaceAll(".*\"id\"\\s*:\\s*\"([0-9a-f\\-]+)\".*", "$1");
-
-        mockMvc.perform(get("/api/v1/artifacts/{id}/download", id))
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Checksum-SHA256",
-                        org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")))
-                .andExpect(header().longValue("Content-Length", payload.length));
-    }
-
-    private String adminAuthorization() {
-        String header = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
-        String payload = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString("{\"sub\":\"integration-test\",\"roles\":[\"admin\"]}".getBytes(StandardCharsets.UTF_8));
-        return "Bearer " + header + "." + payload + ".";
-    }
-
-    private byte[] kafkaArchive() throws Exception {
-        byte[] jarContents = "test-kafka-jar".getBytes(StandardCharsets.UTF_8);
-        ByteArrayOutputStream archive = new ByteArrayOutputStream();
-        try (GzipCompressorOutputStream gzip = new GzipCompressorOutputStream(archive);
-             TarArchiveOutputStream tar = new TarArchiveOutputStream(gzip)) {
-            TarArchiveEntry entry = new TarArchiveEntry("kafka_2.13-3.7.0/libs/kafka_2.13-3.7.0.jar");
-            entry.setSize(jarContents.length);
-            tar.putArchiveEntry(entry);
-            tar.write(jarContents);
-            tar.closeArchiveEntry();
-            tar.finish();
+        @DynamicPropertySource
+        static void props(DynamicPropertyRegistry registry) throws Exception {
+                registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+                registry.add("spring.datasource.username", POSTGRES::getUsername);
+                registry.add("spring.datasource.password", POSTGRES::getPassword);
+                registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
+                Path repo = Files.createTempDirectory("tantor-it-repo-");
+                registry.add("tantor.repository.base-path", repo::toString);
+                registry.add("tantor.cors.allowed-origins", () -> "http://localhost:5173");
         }
-        return archive.toByteArray();
-    }
+
+        @Autowired
+        MockMvc mockMvc;
+
+        @Test
+        void rejectsUnauthenticatedUpload() throws Exception {
+                MockMultipartFile file = new MockMultipartFile(
+                                "file", "kafka_2.13-3.7.0.tgz", "application/gzip", "payload".getBytes());
+
+                mockMvc.perform(multipart("/api/v1/artifacts")
+                                .file(file)
+                                .param("serviceType", "KAFKA")
+                                .param("version", "3.7.0"))
+                                .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        void authorizedUploadThenDownloadRoundTrip() throws Exception {
+                byte[] payload = kafkaArchive();
+                MockMultipartFile file = new MockMultipartFile(
+                                "file", "kafka_2.13-3.7.0.tgz", "application/gzip", payload);
+
+                String body = mockMvc.perform(multipart("/api/v1/artifacts")
+                                .file(file)
+                                .param("serviceType", "KAFKA")
+                                .param("version", "3.7.0")
+                                .header("Authorization", adminAuthorization()))
+                                .andExpect(status().isCreated())
+                                .andExpect(jsonPath("$.status", is("AVAILABLE")))
+                                .andExpect(jsonPath("$.serviceType", is("KAFKA")))
+                                .andReturn().getResponse().getContentAsString();
+
+                String id = body.replaceAll(".*\"id\"\\s*:\\s*\"([0-9a-f\\-]+)\".*", "$1");
+
+                mockMvc.perform(get("/api/v1/artifacts/{id}/download", id))
+                                .andExpect(status().isOk())
+                                .andExpect(header().string("X-Checksum-SHA256",
+                                                org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")))
+                                .andExpect(header().longValue("Content-Length", payload.length));
+        }
+
+        private String adminAuthorization() {
+                String header = Base64.getUrlEncoder().withoutPadding()
+                                .encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8));
+                String payload = Base64.getUrlEncoder().withoutPadding()
+                                .encodeToString("{\"sub\":\"integration-test\",\"roles\":[\"admin\"]}"
+                                                .getBytes(StandardCharsets.UTF_8));
+                return "Bearer " + header + "." + payload + ".";
+        }
+
+        private byte[] kafkaArchive() throws Exception {
+                byte[] jarContents = "test-kafka-jar".getBytes(StandardCharsets.UTF_8);
+                ByteArrayOutputStream archive = new ByteArrayOutputStream();
+                try (GzipCompressorOutputStream gzip = new GzipCompressorOutputStream(archive);
+                                TarArchiveOutputStream tar = new TarArchiveOutputStream(gzip)) {
+                        TarArchiveEntry entry = new TarArchiveEntry("kafka_2.13-3.7.0/libs/kafka_2.13-3.7.0.jar");
+                        entry.setSize(jarContents.length);
+                        tar.putArchiveEntry(entry);
+                        tar.write(jarContents);
+                        tar.closeArchiveEntry();
+                        tar.finish();
+                }
+                return archive.toByteArray();
+        }
 }

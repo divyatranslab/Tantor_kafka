@@ -337,6 +337,7 @@ export function TopicDetails() {
       setStatistics(null);
       await loadDetail();
     } catch (requestError) {
+      setConfirmAction(null);
       setError(requestError instanceof Error ? requestError.message : 'Topic action failed');
     } finally {
       setActing(false);

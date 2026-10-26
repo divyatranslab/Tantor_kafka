@@ -2,6 +2,7 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.KafkaAdminService;
 import io.translab.tantor.server.service.TopicOperationsService;
+import io.translab.tantor.server.service.TopicRecreationException;
 import io.translab.tantor.server.service.ActivityAlertService;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.audit.AuditService;
@@ -127,9 +128,14 @@ public class TopicsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        topicOperationsService.recreateTopic(clusterId, topicName);
-        clusterChanged(clusterId, "TOPIC_RECREATED", Map.of("topic", topicName));
-        return ResponseEntity.noContent().build();
+        try {
+            topicOperationsService.recreateTopic(clusterId, topicName);
+            clusterChanged(clusterId, "TOPIC_RECREATED", Map.of("topic", topicName));
+            return ResponseEntity.noContent().build();
+        } catch (TopicRecreationException ex) {
+            partitionCacheService.invalidateMetadata(clusterId);
+            throw ex;
+        }
     }
 
     @GetMapping("/topics/{topicName}/consumers")

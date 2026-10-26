@@ -3,6 +3,7 @@ package io.translab.tantor.server.web;
 import io.translab.tantor.server.service.ClusterNameConflictException;
 import io.translab.tantor.server.service.CanonicalClusterNotFoundException;
 import io.translab.tantor.server.service.CanonicalIdentityException;
+import io.translab.tantor.server.service.TopicRecreationException;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -49,6 +50,29 @@ public class ApiExceptionHandler {
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error(
                 "DATA_CONFLICT", "A data integrity conflict occurred. Please check your input."));
+    }
+
+    @ExceptionHandler(TopicRecreationException.class)
+    public ResponseEntity<ApiError> handleTopicRecreation(TopicRecreationException ex) {
+        log.error("Topic recreation failure [operationId={}, stage={}, presence={}]: {}",
+                ex.getOperationId(), ex.getStage(), ex.getPresence(), ex.getMessage(), ex);
+
+        HttpStatus status = switch (ex.getPresence()) {
+            case ABSENT -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case UNCERTAIN, UNKNOWN -> HttpStatus.GATEWAY_TIMEOUT;
+            case PRESENT -> HttpStatus.BAD_GATEWAY;
+        };
+
+        String correlationId = ex.getOperationId() != null
+                ? ex.getOperationId().toString()
+                : UUID.randomUUID().toString();
+
+        return ResponseEntity.status(status).body(ApiError.builder()
+                .errorCode("TOPIC_RECREATION_FAILED")
+                .message(ex.getMessage() + " (Topic status: " + ex.getPresence() + ", Stage: " + ex.getStage() + ")")
+                .correlationId(correlationId)
+                .timestamp(Instant.now())
+                .build());
     }
 
     @ExceptionHandler(RuntimeException.class)

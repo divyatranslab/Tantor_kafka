@@ -8,7 +8,7 @@ export const topicActionCopy: Record<TopicActionKind, { title: string; descripti
   },
   recreate: {
     title: 'Recreate this topic?',
-    description: 'All messages will be deleted. Partition assignments and explicit settings will be restored.',
+    description: 'All existing messages will be permanently deleted and cannot be recovered. The topic will be deleted and recreated with its original partition assignments and explicit settings. If recreation encounters an error, the topic may remain absent until restored by an administrator.',
     button: 'Recreate topic'
   },
   remove: {
