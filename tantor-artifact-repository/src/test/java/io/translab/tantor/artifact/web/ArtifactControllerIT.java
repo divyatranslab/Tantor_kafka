@@ -27,6 +27,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
 
 
 
@@ -43,17 +46,13 @@ import org.testcontainers.junit.jupiter.Container;
 @Testcontainers(disabledWithoutDocker = true)
 class ArtifactControllerIT {
 
-
-   
-        @Container
-        static final PostgreSQLContainer<?> POSTGRES =
-                 new PostgreSQLContainer<>(
-                           DockerImageName.parse(
-                                "docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b"
-                         ).asCompatibleSubstituteFor("postgres")
-                         ).withDatabaseName("tantor");
-
-        
+    @Container
+static final PostgreSQLContainer<?> POSTGRES =
+        new PostgreSQLContainer<>(
+                DockerImageName.parse(
+                        "docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b"
+                ).asCompatibleSubstituteFor("postgres")
+        ).withDatabaseName("tantor");
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) throws Exception {

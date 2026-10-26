@@ -9,9 +9,9 @@ import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.dto.BrokerSummaryDto;
 import io.translab.tantor.server.config.MonitoringProperties;
 import io.translab.tantor.server.repository.HostRepository;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
@@ -19,8 +19,20 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletionService;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,51 +52,146 @@ public class BrokerMetricsCacheService {
             .build();
 
     private final Map<UUID, CachedBrokers> cache = new ConcurrentHashMap<>();
-    @Value("${tantor.broker-metrics.cache-ttl-ms:10000}")
-    private long cacheTtlMillis;
+    private final Map<UUID, Object> refreshLocks = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 10000;
+    private static final int METRICS_FETCH_THREADS = 8;
+    private static final int METRICS_FETCH_QUEUE_CAPACITY = 64;
+    private static final long METRICS_FETCH_THREAD_KEEP_ALIVE_SECONDS = 30;
+
+    private final ThreadPoolExecutor metricsExecutor = createMetricsExecutor();
 
     public List<BrokerSummaryDto> getBrokerSummaries(Cluster cluster) {
-        CachedBrokers cached = cache.get(cluster.getId());
-        long now = System.currentTimeMillis();
-        
-        if (cached != null && (now - cached.timestamp < Math.max(1, cacheTtlMillis))) {
-            return copyBrokers(cached.brokers);
-        }
+        List<ClusterServiceAssignment> services = cluster.getServices() == null
+                ? List.of()
+                : cluster.getServices();
+        return getBrokerSummaries(
+                cluster,
+                () -> services,
+                currentServices -> loadHostsById(currentServices),
+                null);
+    }
 
-        // Cache miss or expired, fetch asynchronously
-        List<CompletableFuture<BrokerSummaryDto>> futures = cluster.getServices() == null ? new ArrayList<>() : cluster.getServices().stream()
-            .filter(svc -> isKafkaNodeRole(svc.getRole()))
-            .map(svc -> CompletableFuture.supplyAsync(() -> fetchMetricsForBroker(svc)))
-            .collect(Collectors.toList());
+    public List<BrokerSummaryDto> getBrokerSummaries(
+            Cluster cluster,
+            List<ClusterServiceAssignment> services,
+            Map<String, Host> hostsById
+    ) {
+        List<ClusterServiceAssignment> safeServices = services == null ? List.of() : services;
+        Map<String, Host> safeHosts = hostsById == null ? Map.of() : hostsById;
+        List<BrokerInput> inputs = safeServices.stream()
+                .filter(service -> isKafkaNodeRole(service.getRole()))
+                .map(service -> brokerInput(service, safeHosts.get(service.getHostId())))
+                .toList();
+        return getBrokerSummaries(
+                cluster,
+                () -> safeServices,
+                ignored -> safeHosts,
+                inputs);
+    }
 
-        List<BrokerSummaryDto> brokers = new ArrayList<>();
-        for (CompletableFuture<BrokerSummaryDto> future : futures) {
-            try {
-                BrokerSummaryDto dto = future.get();
-                if (dto != null) {
-                    brokers.add(dto);
-                }
-            } catch (Exception e) {
-                log.error("Failed to fetch broker metrics", e);
+    private List<BrokerSummaryDto> getBrokerSummaries(
+            Cluster cluster,
+            Supplier<List<ClusterServiceAssignment>> servicesSupplier,
+            Function<List<ClusterServiceAssignment>, Map<String, Host>> hostsResolver,
+            List<BrokerInput> inputKey
+    ) {
+        synchronized (refreshLock(cluster.getId())) {
+            CachedBrokers cached = cache.get(cluster.getId());
+            long now = System.currentTimeMillis();
+
+            if (cached != null && !cached.external && (now - cached.timestamp < CACHE_TTL_MS)
+                    && Objects.equals(cached.inputKey, inputKey)) {
+                return copyBrokers(cached.brokers);
             }
-        }
 
-        cache.put(cluster.getId(), new CachedBrokers(brokers, System.currentTimeMillis()));
-        return copyBrokers(brokers);
+            long deadlineNanos = System.nanoTime()
+                    + TimeUnit.SECONDS.toNanos(monitoringProperties.getBrokerRefreshTimeoutSeconds());
+
+            // Cache miss or expired, fetch asynchronously
+            List<ClusterServiceAssignment> services = servicesSupplier.get();
+            if (services == null) {
+                services = List.of();
+            }
+            Map<String, Host> hostsById = hostsResolver.apply(services);
+            List<Future<IndexedBroker>> futures = new ArrayList<>();
+            CompletionService<IndexedBroker> completedFetches =
+                    new ExecutorCompletionService<>(metricsExecutor);
+            for (ClusterServiceAssignment service : services) {
+                if (System.nanoTime() >= deadlineNanos) {
+                    log.warn("Broker metrics refresh deadline reached before all nodes were submitted for cluster {}",
+                            cluster.getId());
+                    break;
+                }
+                if (!isKafkaNodeRole(service.getRole())) {
+                    continue;
+                }
+                Host host = hostsById.get(service.getHostId());
+                try {
+                    int resultIndex = futures.size();
+                    futures.add(completedFetches.submit(
+                            () -> new IndexedBroker(resultIndex, fetchMetricsForBroker(service, host))));
+                } catch (RejectedExecutionException e) {
+                    log.warn("Broker metrics capacity reached for cluster {}; skipping node {}",
+                            cluster.getId(), service.getNodeId());
+                }
+            }
+
+            BrokerSummaryDto[] brokerResults = new BrokerSummaryDto[futures.size()];
+            for (int completedCount = 0; completedCount < futures.size(); completedCount++) {
+                try {
+                    long remainingNanos = deadlineNanos - System.nanoTime();
+                    if (remainingNanos <= 0) {
+                        throw new TimeoutException("Broker metrics refresh deadline exceeded");
+                    }
+                    Future<IndexedBroker> completed = completedFetches.poll(remainingNanos, TimeUnit.NANOSECONDS);
+                    if (completed == null) {
+                        throw new TimeoutException("Broker metrics refresh deadline exceeded");
+                    }
+                    IndexedBroker result = completed.get();
+                    brokerResults[result.index()] = result.summary();
+                } catch (InterruptedException e) {
+                    cancelOutstanding(futures);
+                    Thread.currentThread().interrupt();
+                    log.warn("Interrupted while refreshing broker metrics for cluster {}", cluster.getId());
+                    break;
+                } catch (TimeoutException e) {
+                    cancelOutstanding(futures);
+                    log.warn("Broker metrics refresh deadline exceeded for cluster {}", cluster.getId());
+                    break;
+                } catch (ExecutionException e) {
+                    log.warn("Failed to fetch broker metrics for cluster {}", cluster.getId(), e.getCause());
+                }
+            }
+
+            List<BrokerSummaryDto> brokers = Arrays.stream(brokerResults)
+                    .filter(Objects::nonNull)
+                    .toList();
+            cache.put(cluster.getId(), new CachedBrokers(brokers, System.currentTimeMillis(), inputKey, false));
+            return brokers;
+        }
     }
 
-    public List<BrokerSummaryDto> getBrokerSummaries(ExternalCluster cluster) {
-        CachedBrokers cached = cache.get(cluster.getId());
-        long now = System.currentTimeMillis();
-        
-        if (cached != null && (now - cached.timestamp < Math.max(1, cacheTtlMillis))) {
-            return copyBrokers(cached.brokers);
+    private Map<String, Host> loadHostsById(List<ClusterServiceAssignment> services) {
+        Set<String> hostIds = services.stream()
+                .filter(service -> isKafkaNodeRole(service.getRole()))
+                .map(ClusterServiceAssignment::getHostId)
+                .filter(hostId -> hostId != null && !hostId.isBlank())
+                .collect(Collectors.toSet());
+        if (hostIds.isEmpty()) {
+            return Map.of();
         }
-
-        List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
-        cache.put(cluster.getId(), new CachedBrokers(brokers, System.currentTimeMillis()));
-        return copyBrokers(brokers);
+        Map<String, Host> hostsById = new HashMap<>();
+        for (Host host : hostRepository.findAllById(hostIds)) {
+            hostsById.putIfAbsent(host.getId(), host);
+        }
+        return hostsById;
     }
+
+    private void cancelOutstanding(List<Future<IndexedBroker>> futures) {
+        futures.forEach(future -> future.cancel(true));
+    }
+
+  
 
     private List<BrokerSummaryDto> copyBrokers(List<BrokerSummaryDto> brokers) {
         return brokers.stream().map(broker -> BrokerSummaryDto.builder()
@@ -99,9 +206,70 @@ public class BrokerMetricsCacheService {
                 .lastHeartbeat(broker.getLastHeartbeat()).metricsTimestamp(broker.getMetricsTimestamp()).build())
                 .toList();
     }
+    private static ThreadPoolExecutor createMetricsExecutor() {
+        AtomicInteger threadNumber = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "broker-metrics-" + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                METRICS_FETCH_THREADS,
+                METRICS_FETCH_THREADS,
+                METRICS_FETCH_THREAD_KEEP_ALIVE_SECONDS,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(METRICS_FETCH_QUEUE_CAPACITY),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
 
-    private BrokerSummaryDto fetchMetricsForBroker(ClusterServiceAssignment svc) {
-        Host host = hostRepository.findById(svc.getHostId()).orElse(null);
+    private record IndexedBroker(int index, BrokerSummaryDto summary) {}
+
+    @PreDestroy
+    public void shutdownMetricsExecutor() {
+        metricsExecutor.shutdownNow();
+    }
+
+    private Object refreshLock(UUID clusterId) {
+        return refreshLocks.computeIfAbsent(clusterId, ignored -> new Object());
+    }
+
+    private BrokerInput brokerInput(ClusterServiceAssignment service, Host host) {
+        return new BrokerInput(
+                service.getHostId(), service.getNodeId(), service.getRole(),
+                host == null ? null : host.getId(),
+                host == null ? null : host.getHostname(),
+                host == null ? null : host.getHostIp(),
+                host == null ? null : host.getStatus(),
+                host == null ? null : host.getRemoved(),
+                host == null ? null : host.getLastHeartbeat(),
+                host == null ? null : host.getCpuUsagePct(),
+                host == null ? null : host.getMemTotalMb(),
+                host == null ? null : host.getMemUsedMb(),
+                host == null ? null : host.getDiskTotalGb(),
+                host == null ? null : host.getDiskUsedGb());
+    }
+
+    public List<BrokerSummaryDto> getBrokerSummaries(ExternalCluster cluster) {
+        synchronized (refreshLock(cluster.getId())) {
+            CachedBrokers cached = cache.get(cluster.getId());
+            long now = System.currentTimeMillis();
+
+            if (cached != null && cached.external && (now - cached.timestamp < CACHE_TTL_MS)) {
+               return copyBrokers(cached.brokers);
+            }
+
+            List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
+            cache.put(
+                cluster.getId(),
+                new CachedBrokers(brokers, System.currentTimeMillis(), null, true));
+            return copyBrokers(brokers);
+        }
+    }
+
+    private BrokerSummaryDto fetchMetricsForBroker(ClusterServiceAssignment svc, Host host) {
         if (host == null) return null;
 
         boolean heartbeatOk = "ONLINE".equalsIgnoreCase(hostStatusService.agentConnectivityStatus(host));
@@ -254,10 +422,30 @@ public class BrokerMetricsCacheService {
     private static class CachedBrokers {
         List<BrokerSummaryDto> brokers;
         long timestamp;
+        List<BrokerInput> inputKey;
+        boolean external;
 
-        CachedBrokers(List<BrokerSummaryDto> brokers, long timestamp) {
+        CachedBrokers(List<BrokerSummaryDto> brokers, long timestamp, List<BrokerInput> inputKey, boolean external) {
             this.brokers = List.copyOf(brokers);
             this.timestamp = timestamp;
+            this.inputKey = inputKey;
+            this.external = external;
         }
     }
+
+    private record BrokerInput(
+            String hostId,
+            Integer nodeId,
+            String role,
+            String resolvedHostId,
+            String hostname,
+            String hostIp,
+            String status,
+            Boolean removed,
+            OffsetDateTime lastHeartbeat,
+            Double cpuUsagePct,
+            Long memoryTotalMb,
+            Long memoryUsedMb,
+            Long diskTotalGb,
+            Long diskUsedGb) {}
 }

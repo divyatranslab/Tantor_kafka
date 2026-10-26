@@ -526,6 +526,9 @@ public class ExternalClusterService {
                 if (b.get("id") != null) {
                     try { nodeId = Integer.parseInt(idStr); } catch (NumberFormatException ignored) {}
                 }
+                if (nodeId != null && nodeId < 0) {
+                    nodeId = null;
+                }
                 String host = String.valueOf(b.get("host"));
                 boolean isController = Boolean.TRUE.equals(b.get("isController"));
                 boolean isBroker = Boolean.TRUE.equals(b.get("isBroker"));
@@ -948,11 +951,16 @@ public class ExternalClusterService {
         ExternalCluster cluster = clusterOpt.get();
         List<ExternalBrokerRecord> brokers = readBrokerRecords(cluster);
         String bootstrap = blankToDefault(metrics.getBootstrap(), cluster.getBootstrapServers());
+        String reportedHost = firstNonBlank(metrics.getHostname(), extractUniqueHostFromBootstrap(bootstrap));
+        long reportedHostBrokerCount = reportedHost == null || reportedHost.isBlank() ? 0 : brokers.stream()
+                .filter(this::isBrokerRecord)
+                .filter(record -> safeEquals(record.getHostname(), reportedHost))
+                .count();
+        boolean hasNodeId = metrics.getNodeId() != null && metrics.getNodeId() >= 0;
         ExternalBrokerRecord broker = brokers.stream()
-                .filter(item -> metrics.getNodeId() != null
+                .filter(item -> hasNodeId
                         ? metrics.getNodeId().equals(item.getNodeId())
-                        : safeEquals(item.getHostname(), metrics.getHostname())
-                                || (item.getHostname() != null && bootstrap != null && bootstrap.contains(item.getHostname())))
+                        : safeEquals(item.getHostname(), reportedHost))
                 .findFirst()
                 .orElseGet(() -> {
                     ExternalBrokerRecord item = new ExternalBrokerRecord();
@@ -973,41 +981,80 @@ public class ExternalClusterService {
         broker.setMessagesInPerSec(metrics.getMessagesInPerSec());
         broker.setBytesInPerSec(metrics.getBytesInPerSec());
         broker.setLastSeen(OffsetDateTime.now().toString());
-        broker.setLastSeen(OffsetDateTime.now().toString());
 
         OffsetDateTime seen = OffsetDateTime.now();
-        Optional<io.translab.tantor.server.domain.ExternalClusterNode> targetNode = metrics.getNodeId() == null
-                ? Optional.empty()
-                : externalClusterNodeRepository.findByClusterIdAndNodeId(cluster.getId(), metrics.getNodeId());
-        if (targetNode.isPresent()) {
-            updateNodeTelemetry(targetNode.get(), metrics, seen);
-            externalClusterNodeRepository.save(targetNode.get());
+        String telemetryHost = firstNonBlank(broker.getHostname(), reportedHost);
+        if (hasNodeId) {
+            if (telemetryHost == null || telemetryHost.isBlank()) {
+                log.warn("Skipping telemetry for external cluster {} node {} because no host identity was reported",
+                        cluster.getId(), metrics.getNodeId());
+            } else {
+                externalClusterNodeRepository.upsertNodeTelemetry(
+                        cluster.getId(),
+                        telemetryHost,
+                        metrics.getNodeId(),
+                        metrics.getCpuUsagePct(),
+                        metrics.getMemoryUsedMb(),
+                        metrics.getMemoryTotalMb(),
+                        metrics.getDiskUsedGb(),
+                        metrics.getDiskTotalGb(),
+                        resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()),
+                        resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()),
+                        metrics.getMessagesInPerSec(),
+                        metrics.getBytesInPerSec(),
+                        seen
+                );
+            }
         } else {
-            externalClusterNodeRepository.upsertTelemetry(
-                    cluster.getId(),
-                    broker.getHostname(),
-                    broker.getCpuUsagePct(),
-                    broker.getMemoryUsedMb(),
-                    broker.getMemoryTotalMb(),
-                    broker.getDiskUsedGb(),
-                    broker.getDiskTotalGb(),
-                    broker.getDiskUsedBytes(),
-                    broker.getDiskTotalBytes(),
-                    seen
-            );
-            externalClusterNodeRepository.updateBrokerIngestionRates(
-                    cluster.getId(),
-                    broker.getHostname(),
-                    metrics.getMessagesInPerSec(),
-                    metrics.getBytesInPerSec()
-            );
+            if (telemetryHost == null || telemetryHost.isBlank()) {
+                log.warn("Could not persist external telemetry for cluster {} because the report has no unambiguous host identity",
+                        cluster.getId());
+            } else {
+                int updatedNodes = externalClusterNodeRepository.updateTelemetryByHost(
+                        cluster.getId(),
+                        telemetryHost,
+                        broker.getCpuUsagePct(),
+                        broker.getMemoryUsedMb(),
+                        broker.getMemoryTotalMb(),
+                        broker.getDiskUsedGb(),
+                        broker.getDiskTotalGb(),
+                        broker.getDiskUsedBytes(),
+                        broker.getDiskTotalBytes(),
+                        seen
+                );
+                if (updatedNodes == 0) {
+                    log.warn("Could not persist external telemetry for cluster {} host {} because no topology row matches the host",
+                            cluster.getId(), telemetryHost);
+                }
+            }
+            if (reportedHostBrokerCount == 1) {
+                int updatedBrokers = externalClusterNodeRepository.updateBrokerIngestionRates(
+                        cluster.getId(),
+                        telemetryHost,
+                        metrics.getMessagesInPerSec(),
+                        metrics.getBytesInPerSec(),
+                        seen
+                );
+                if (updatedBrokers == 0) {
+                    log.warn("Could not persist broker ingestion rates for external cluster {} host {} because no matching broker row accepted the report; a newer sample may already exist",
+                            cluster.getId(), telemetryHost);
+                }
+            } else if (reportedHostBrokerCount > 1) {
+                log.warn("Skipping broker ingestion rates for external cluster {} host {} because the report has no node ID and multiple brokers share the host",
+                        cluster.getId(), telemetryHost);
+            } else {
+                log.warn("Skipping broker ingestion rates for external cluster {} host {} because no unique broker topology row matches the report",
+                        cluster.getId(), telemetryHost);
+            }
         }
 
-        discoveryAgentRepository.findByHostname(broker.getHostname()).ifPresent(agent -> {
-            agent.setStatus("ONLINE");
-            agent.setLastHeartbeat(OffsetDateTime.now());
-            discoveryAgentRepository.save(agent);
-        });
+        if (broker.getHostname() != null && !broker.getHostname().isBlank()) {
+            discoveryAgentRepository.findByHostname(broker.getHostname()).ifPresent(agent -> {
+                agent.setStatus("ONLINE");
+                agent.setLastHeartbeat(OffsetDateTime.now());
+                discoveryAgentRepository.save(agent);
+            });
+        }
     }
 
     private Optional<ExternalCluster> findExternalClusterForMetrics(
@@ -1354,7 +1401,7 @@ public class ExternalClusterService {
             lastSeen = OffsetDateTime.now();
         }
         
-        externalClusterNodeRepository.upsertTelemetry(
+        externalClusterNodeRepository.updateTelemetryByHost(
                 cluster.getId(),
                 record.getHostname(),
                 record.getCpuUsagePct(),
@@ -1532,55 +1579,108 @@ public class ExternalClusterService {
         return records;
     }
 
-    private void applyDiscoveryReportToNodes(ExternalCluster cluster, ExternalDiscoveryReport report, DiscoveryAgent agent) {
+    void applyDiscoveryReportToNodes(ExternalCluster cluster, ExternalDiscoveryReport report, DiscoveryAgent agent) {
         List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(cluster.getId());
         OffsetDateTime seen = OffsetDateTime.now();
-        boolean matched = false;
-        for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
-            if (!matchesDiscoveryNode(node, report, agent)) {
-                continue;
+        Integer reportNodeId = report.getNodeId() != null && report.getNodeId() >= 0 ? report.getNodeId() : null;
+        List<io.translab.tantor.server.domain.ExternalClusterNode> matchedNodes;
+        if (reportNodeId != null) {
+            matchedNodes = nodes.stream()
+                    .filter(node -> node.getNodeId() != null && node.getNodeId() >= 0)
+                    .filter(node -> reportNodeId.equals(node.getNodeId()))
+                    .toList();
+            if (matchedNodes.isEmpty()) {
+                List<io.translab.tantor.server.domain.ExternalClusterNode> missingIdHostMatches = nodes.stream()
+                        .filter(node -> node.getNodeId() == null || node.getNodeId() < 0)
+                        .filter(node -> matchesDiscoveryHost(node, report, agent))
+                        .toList();
+                if (missingIdHostMatches.size() == 1) {
+                    matchedNodes = missingIdHostMatches;
+                } else if (missingIdHostMatches.size() > 1) {
+                    log.warn("Skipping discovery topology for external cluster {} node {} because host identity matches multiple rows with missing node IDs",
+                            cluster.getId(), reportNodeId);
+                    return;
+                }
             }
-            matched = true;
-            enrichDiscoveryNodeIdentity(node, report);
-            node.setCpuUsagePct(report.getCpuUsagePct());
-            node.setMemoryUsedMb(report.getMemoryUsedMb());
-            node.setMemoryTotalMb(report.getMemoryTotalMb());
-            node.setDiskUsedGb(report.getDiskUsedGb());
-            node.setDiskTotalGb(report.getDiskTotalGb());
-            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
-            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
-            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
-            node.setLastSeen(seen);
-            node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
-            node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
-            node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
-            node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
-            externalClusterNodeRepository.save(node);
+        } else {
+            matchedNodes = nodes.stream()
+                    .filter(node -> matchesDiscoveryNode(node, report, agent))
+                    .toList();
         }
 
-        if (!matched && report.getNodeId() != null) {
-            io.translab.tantor.server.domain.ExternalClusterNode node = new io.translab.tantor.server.domain.ExternalClusterNode();
-            node.setClusterId(cluster.getId());
-            node.setHost(firstNonBlank(extractHostFromBootstrap(report.getBootstrapServers()), report.getHostname(), agent.getHostname()));
-            node.setNodeId(report.getNodeId());
-            String roles = blankToDefault(report.getProcessRoles(), "").toLowerCase();
-            boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
-            node.setIsBroker(zookeeperMode || roles.isBlank() || roles.contains("broker"));
-            node.setIsController(!zookeeperMode && roles.contains("controller"));
-            node.setCpuUsagePct(report.getCpuUsagePct());
-            node.setMemoryUsedMb(report.getMemoryUsedMb());
-            node.setMemoryTotalMb(report.getMemoryTotalMb());
-            node.setDiskUsedGb(report.getDiskUsedGb());
-            node.setDiskTotalGb(report.getDiskTotalGb());
-            node.setDiskUsedBytes(resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()));
-            node.setDiskTotalBytes(resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()));
-            applyReportedJmxExporterPort(node, report.getJmxExporterPort());
-            node.setLastSeen(seen);
-            node.setInstallDir(blankToDefault(report.getInstallPath(), null));
-            node.setLogDirs(blankToDefault(report.getLogDirs(), null));
-            node.setConfigFile(blankToDefault(report.getConfigFile(), null));
-            node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), null)));
-            externalClusterNodeRepository.save(node);
+        boolean matched = !matchedNodes.isEmpty();
+        for (io.translab.tantor.server.domain.ExternalClusterNode node : matchedNodes) {
+            NodeRoles roles = discoveryNodeRoles(cluster, report, node.getIsBroker(), node.getIsController());
+            String host = resolvedDiscoveryHost(node.getHost(), report, agent);
+            Integer port = node.getPort();
+            if (port == null || port <= 0) {
+                port = listenerPort(report.getListeners(), Boolean.TRUE.equals(roles.isController()));
+            }
+            Integer jmxPort = validJmxExporterPort(report.getJmxExporterPort())
+                    ? report.getJmxExporterPort()
+                    : node.getJmxExporterPort();
+            int updatedRows = externalClusterNodeRepository.updateDiscoveredNode(
+                    node.getId(),
+                    reportNodeId,
+                    host,
+                    roles.isBroker(),
+                    roles.isController(),
+                    port,
+                    jmxPort,
+                    report.getCpuUsagePct(),
+                    report.getMemoryUsedMb(),
+                    report.getMemoryTotalMb(),
+                    report.getDiskUsedGb(),
+                    report.getDiskTotalGb(),
+                    resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()),
+                    resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()),
+                    seen,
+                    blankToDefault(report.getInstallPath(), node.getInstallDir()),
+                    blankToDefault(report.getConfigFile(), node.getConfigFile()),
+                    blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())),
+                    blankToDefault(report.getLogDirs(), node.getLogDirs())
+            );
+            if (updatedRows == 0) {
+                log.warn("Could not apply discovery topology for external cluster {} node {} because the topology row no longer exists",
+                        cluster.getId(), node.getNodeId());
+            }
+        }
+
+        if (!matched && report.getNodeId() != null && report.getNodeId() >= 0) {
+            NodeRoles roles = discoveryNodeRoles(cluster, report, null, null);
+            String host = firstNonBlank(
+                    report.getHostname(),
+                    agent == null ? null : agent.getHostname(),
+                    extractUniqueHostFromBootstrap(report.getBootstrapServers()));
+            if (host.isBlank()) {
+                log.warn("Skipping discovery topology for external cluster {} node {} because the report has no unambiguous host identity",
+                        cluster.getId(), report.getNodeId());
+                return;
+            }
+            externalClusterNodeRepository.upsertDiscoveredNode(
+                    cluster.getId(),
+                    host,
+                    report.getNodeId(),
+                    roles.isBroker(),
+                    roles.isController(),
+                    listenerPort(report.getListeners(), Boolean.TRUE.equals(roles.isController())),
+                    validJmxExporterPort(report.getJmxExporterPort()) ? report.getJmxExporterPort() : null,
+                    report.getCpuUsagePct(),
+                    report.getMemoryUsedMb(),
+                    report.getMemoryTotalMb(),
+                    report.getDiskUsedGb(),
+                    report.getDiskTotalGb(),
+                    resolveDiskBytes(report.getDiskUsedBytes(), report.getDiskUsedGb()),
+                    resolveDiskBytes(report.getDiskTotalBytes(), report.getDiskTotalGb()),
+                    seen,
+                    blankToDefault(report.getInstallPath(), null),
+                    blankToDefault(report.getConfigFile(), null),
+                    blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), null)),
+                    blankToDefault(report.getLogDirs(), null)
+            );
+        } else if (!matched) {
+            log.warn("Skipping discovery topology for external cluster {} because the report has no node ID and matched no host",
+                    cluster.getId());
         }
     }
 
@@ -1592,9 +1692,19 @@ public class ExternalClusterService {
         if (node == null) {
             return false;
         }
-        if (report.getNodeId() != null) {
-            return report.getNodeId().equals(node.getNodeId());
+        if (report.getNodeId() != null && report.getNodeId() >= 0) {
+            if (node.getNodeId() != null && node.getNodeId() >= 0) {
+                return report.getNodeId().equals(node.getNodeId());
+            }
         }
+        return matchesDiscoveryHost(node, report, agent);
+    }
+
+    private boolean matchesDiscoveryHost(
+            io.translab.tantor.server.domain.ExternalClusterNode node,
+            ExternalDiscoveryReport report,
+            DiscoveryAgent agent
+    ) {
         String nodeHost = node.getHost();
         if (nodeHost == null || nodeHost.isBlank()) {
             return false;
@@ -1610,7 +1720,7 @@ public class ExternalClusterService {
     private Set<String> discoveryHostCandidates(ExternalDiscoveryReport report, DiscoveryAgent agent) {
         Set<String> candidates = new HashSet<>();
         addCandidate(candidates, report.getHostname());
-        addCandidate(candidates, extractHostFromBootstrap(report.getBootstrapServers()));
+        addCandidate(candidates, extractUniqueHostFromBootstrap(report.getBootstrapServers()));
         if (agent != null) {
             addCandidate(candidates, agent.getHostname());
             candidates.addAll(parseAgentAddresses(agent.getIpAddresses()));
@@ -1618,20 +1728,46 @@ public class ExternalClusterService {
         return candidates;
     }
 
-    private void enrichDiscoveryNodeIdentity(
-            io.translab.tantor.server.domain.ExternalClusterNode node,
-            ExternalDiscoveryReport report
+    private NodeRoles discoveryNodeRoles(
+            ExternalCluster cluster,
+            ExternalDiscoveryReport report,
+            Boolean currentBroker,
+            Boolean currentController
     ) {
-        String reportedHost = blankToDefault(report.getHostname(), null);
-        if (reportedHost != null && (node.getHost() == null || node.getHost().isBlank()
-                || "unknown".equalsIgnoreCase(node.getHost()))) {
-            node.setHost(reportedHost);
+        boolean zookeeperMode = "ZooKeeper".equalsIgnoreCase(normalizeKafkaMode(cluster.getKafkaMode()));
+        String roles = blankToDefault(report.getProcessRoles(), "").toLowerCase();
+        if (zookeeperMode) {
+            return new NodeRoles(true, false);
         }
-        Integer listenerPort = listenerPort(report.getListeners(), Boolean.TRUE.equals(node.getIsController()));
-        if (listenerPort != null && (node.getPort() == null || node.getPort() <= 0)) {
-            node.setPort(listenerPort);
+        if (!roles.isBlank()) {
+            return new NodeRoles(roles.contains("broker"), roles.contains("controller"));
         }
+        if (currentBroker == null && currentController == null) {
+            return new NodeRoles(true, false);
+        }
+        return new NodeRoles(currentBroker, currentController);
     }
+
+    private String resolvedDiscoveryHost(
+            String currentHost,
+            ExternalDiscoveryReport report,
+            DiscoveryAgent agent
+    ) {
+        if (currentHost != null && !currentHost.isBlank() && !"unknown".equalsIgnoreCase(currentHost)) {
+            return currentHost;
+        }
+        return firstNonBlank(
+                report.getHostname(),
+                agent == null ? null : agent.getHostname(),
+                extractUniqueHostFromBootstrap(report.getBootstrapServers()),
+                currentHost);
+    }
+
+    private boolean validJmxExporterPort(Integer port) {
+        return port != null && port >= 1024 && port <= 65535;
+    }
+
+    private record NodeRoles(Boolean isBroker, Boolean isController) {}
 
     private Integer listenerPort(String listeners, boolean controller) {
         if (listeners == null || listeners.isBlank()) {
@@ -1665,23 +1801,6 @@ public class ExternalClusterService {
         }
     }
 
-    private void updateNodeTelemetry(
-            io.translab.tantor.server.domain.ExternalClusterNode node,
-            ExternalBrokerMetricsDto metrics,
-            OffsetDateTime seen
-    ) {
-        node.setCpuUsagePct(metrics.getCpuUsagePct());
-        node.setMemoryUsedMb(metrics.getMemoryUsedMb());
-        node.setMemoryTotalMb(metrics.getMemoryTotalMb());
-        node.setDiskUsedGb(metrics.getDiskUsedGb());
-        node.setDiskTotalGb(metrics.getDiskTotalGb());
-        node.setDiskUsedBytes(resolveDiskBytes(metrics.getDiskUsedBytes(), metrics.getDiskUsedGb()));
-        node.setDiskTotalBytes(resolveDiskBytes(metrics.getDiskTotalBytes(), metrics.getDiskTotalGb()));
-        node.setMessagesInPerSec(metrics.getMessagesInPerSec());
-        node.setBytesInPerSec(metrics.getBytesInPerSec());
-        node.setLastSeen(seen);
-    }
-
     private Long resolveDiskBytes(Long exactBytes, Long legacyGiB) {
         if (exactBytes != null && exactBytes >= 0) {
             return exactBytes;
@@ -1691,15 +1810,6 @@ public class ExternalClusterService {
         }
         long gibibyte = 1024L * 1024L * 1024L;
         return legacyGiB > Long.MAX_VALUE / gibibyte ? Long.MAX_VALUE : legacyGiB * gibibyte;
-    }
-
-    private void applyReportedJmxExporterPort(
-            io.translab.tantor.server.domain.ExternalClusterNode node,
-            Integer reportedPort
-    ) {
-        if (reportedPort != null && reportedPort >= 1024 && reportedPort <= 65535) {
-            node.setJmxExporterPort(reportedPort);
-        }
     }
 
     private void addCandidate(Set<String> candidates, String value) {
@@ -1759,6 +1869,13 @@ public class ExternalClusterService {
 
     private boolean isAgentRecord(ExternalBrokerRecord record) {
         return record.getInstallPath() != null && !record.getInstallPath().isBlank();
+    }
+
+    private boolean isBrokerRecord(ExternalBrokerRecord record) {
+        String role = record.getRole();
+        return "broker".equalsIgnoreCase(role)
+                || "broker_controller".equalsIgnoreCase(role)
+                || "broker_zookeeper".equalsIgnoreCase(role);
     }
 
     long agentStaleSeconds() {
@@ -1844,6 +1961,14 @@ public class ExternalClusterService {
         }
         int idx = first.lastIndexOf(":");
         return idx > 0 ? first.substring(0, idx) : first;
+    }
+
+    private String extractUniqueHostFromBootstrap(String bootstrap) {
+        if (bootstrap == null || bootstrap.isBlank() || bootstrap.contains(",")) {
+            return null;
+        }
+        String host = extractHostFromBootstrap(bootstrap);
+        return host.isBlank() ? null : host;
     }
 
     private boolean bootstrapServersOverlap(String left, String right) {

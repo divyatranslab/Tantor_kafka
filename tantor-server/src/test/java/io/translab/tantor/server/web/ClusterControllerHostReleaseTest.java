@@ -10,6 +10,7 @@ import io.translab.tantor.server.domain.ExternalClusterNode;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.dto.BrokerSummaryDto;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
 import io.translab.tantor.server.repository.DiscoveryAgentRepository;
 import io.translab.tantor.server.repository.ExternalClusterNodeRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
@@ -39,8 +40,13 @@ import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +54,7 @@ class ClusterControllerHostReleaseTest {
 
     @Mock DeploymentService deploymentService;
     @Mock ClusterRepository clusterRepository;
+    @Mock ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
     @Mock ExternalClusterRepository externalClusterRepository;
     @Mock ExternalClusterNodeRepository externalClusterNodeRepository;
     @Mock TaskRepository taskRepository;
@@ -270,11 +277,13 @@ class ClusterControllerHostReleaseTest {
         Host controllerHost = host("controller-host", "controller");
         when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
         when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
-        when(discoveryAgentRepository.findAll()).thenReturn(List.of());
-        when(hostRepository.findById("broker-host")).thenReturn(Optional.of(brokerHost));
-        when(hostRepository.findById("controller-host")).thenReturn(Optional.of(controllerHost));
+        when(clusterServiceAssignmentRepository.findByClusterIdIn(List.of(clusterId)))
+                .thenReturn(List.of(broker, controllerOnly));
+        when(hostRepository.findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any()))
+                .thenReturn(List.of(brokerHost, controllerHost));
         when(hostStatusService.effectiveStatus(any(Host.class))).thenReturn("OCCUPIED");
-        when(brokerMetricsCacheService.getBrokerSummaries(cluster)).thenReturn(List.of(
+        when(brokerMetricsCacheService.getBrokerSummaries(
+                eq(cluster), eq(List.of(broker, controllerOnly)), anyMap())).thenReturn(List.of(
                 BrokerSummaryDto.builder()
                         .brokerId(1).role("broker").brokerHealth("HEALTHY").build(),
                 BrokerSummaryDto.builder()
@@ -287,6 +296,183 @@ class ClusterControllerHostReleaseTest {
         assertThat(result.get("runtimeStatusLabel")).isEqualTo("Active");
         assertThat(result.get("runtimeBrokerCount")).isEqualTo(1L);
         assertThat(result.get("runtimeDegradedBrokers")).isEqualTo(0L);
+    }
+
+    @Test
+    void listClustersUsesOneBatchLookupPerRelationForMultipleClustersAndNodes() {
+        List<Cluster> internalClusters = List.of(
+                internalCluster("internal-1"), internalCluster("internal-2"), internalCluster("internal-3"));
+        List<UUID> internalIds = internalClusters.stream().map(Cluster::getId).toList();
+        List<ClusterServiceAssignment> services = new java.util.ArrayList<>();
+        List<Host> hosts = new java.util.ArrayList<>();
+        List<String> hostIds = new java.util.ArrayList<>();
+        int hostNumber = 1;
+        for (Cluster cluster : internalClusters) {
+            for (int node = 1; node <= 2; node++) {
+                String hostId = "host-" + hostNumber++;
+                hostIds.add(hostId);
+                hosts.add(host(hostId, hostId));
+                services.add(assignment(cluster, hostId, node));
+            }
+        }
+
+        List<ExternalCluster> externalClusters = List.of(
+                externalCluster("external-1"), externalCluster("external-2"));
+        List<UUID> externalIds = externalClusters.stream().map(ExternalCluster::getId).toList();
+        List<ExternalClusterNode> nodes = new java.util.ArrayList<>();
+        int nodeNumber = 1;
+        for (ExternalCluster cluster : externalClusters) {
+            for (int node = 1; node <= 2; node++) {
+                ExternalClusterNode externalNode = new ExternalClusterNode();
+                externalNode.setId(UUID.randomUUID());
+                externalNode.setClusterId(cluster.getId());
+                externalNode.setHost("external-host-" + nodeNumber++);
+                externalNode.setNodeId(node);
+                externalNode.setIsBroker(true);
+                nodes.add(externalNode);
+            }
+        }
+
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(internalClusters);
+        when(clusterServiceAssignmentRepository.findByClusterIdIn(internalIds)).thenReturn(services);
+        when(hostRepository.findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any())).thenReturn(hosts);
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(externalClusters);
+        when(externalClusterNodeRepository.findByClusterIdIn(externalIds)).thenReturn(nodes);
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of());
+
+        List<Map<String, Object>> result = controller.listClusters();
+
+        assertThat(result).hasSize(5);
+        assertThat(result.subList(0, 3)).allSatisfy(cluster -> {
+            assertThat((List<?>) cluster.get("hosts")).hasSize(2);
+            assertThat(cluster.get("nodeCount")).isEqualTo(2);
+        });
+        assertThat(result.subList(3, 5)).allSatisfy(cluster -> {
+            assertThat((List<?>) cluster.get("hosts")).hasSize(2);
+            assertThat(cluster.get("nodeCount")).isEqualTo(2);
+        });
+
+        verify(clusterRepository, times(1)).findByStatusNot("DELETED");
+        verify(clusterServiceAssignmentRepository, times(1)).findByClusterIdIn(internalIds);
+        verify(clusterServiceAssignmentRepository, never()).findByClusterId(any(UUID.class));
+        verify(hostRepository, times(1))
+                .findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any());
+        verify(hostRepository, never()).findById(anyString());
+        verify(externalClusterNodeRepository, times(1)).findByClusterIdIn(externalIds);
+        verify(externalClusterNodeRepository, never()).findByClusterId(any(UUID.class));
+        verify(externalClusterRepository, times(1)).findByStatusNot("DELETED");
+        verify(discoveryAgentRepository, times(1)).findAll();
+        verify(discoveryAgentRepository, never()).findByClusterId(any(UUID.class));
+        verify(brokerMetricsCacheService, times(3))
+                .getBrokerSummaries(any(Cluster.class), anyList(), anyMap());
+    }
+
+    @Test
+    void listClustersChunksLargeRelationInputsAndSkipsQueriesForEmptyInputs() {
+        int rowCount = 501;
+        List<Cluster> internalClusters = new java.util.ArrayList<>();
+        List<ClusterServiceAssignment> services = new java.util.ArrayList<>();
+        List<Host> hosts = new java.util.ArrayList<>();
+        List<ExternalCluster> externalClusters = new java.util.ArrayList<>();
+        List<ExternalClusterNode> externalNodes = new java.util.ArrayList<>();
+        for (int index = 0; index < rowCount; index++) {
+            Cluster cluster = internalCluster("large-internal-" + index);
+            cluster.setStatus("FAILED");
+            internalClusters.add(cluster);
+            String hostId = "large-host-" + index;
+            services.add(assignment(cluster, hostId, index));
+            hosts.add(host(hostId, hostId));
+
+            ExternalCluster externalCluster = externalCluster("large-external-" + index);
+            externalClusters.add(externalCluster);
+            ExternalClusterNode node = new ExternalClusterNode();
+            node.setId(UUID.randomUUID());
+            node.setClusterId(externalCluster.getId());
+            node.setNodeId(index);
+            node.setHost("external-host-" + index);
+            node.setIsBroker(true);
+            externalNodes.add(node);
+        }
+
+        List<UUID> internalIds = internalClusters.stream().map(Cluster::getId).toList();
+        List<UUID> externalIds = externalClusters.stream().map(ExternalCluster::getId).toList();
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(internalClusters);
+        when(clusterServiceAssignmentRepository.findByClusterIdIn(anyList())).thenAnswer(invocation -> {
+            List<UUID> batch = invocation.getArgument(0);
+            return services.stream().filter(service -> batch.contains(service.getCluster().getId())).toList();
+        });
+        when(hostRepository.findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any())).thenAnswer(invocation -> {
+            Iterable<String> batch = invocation.getArgument(0);
+            java.util.Set<String> ids = new java.util.HashSet<>();
+            batch.forEach(ids::add);
+            return hosts.stream().filter(host -> ids.contains(host.getId())).toList();
+        });
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(externalClusters);
+        when(externalClusterNodeRepository.findByClusterIdIn(anyList())).thenAnswer(invocation -> {
+            List<UUID> batch = invocation.getArgument(0);
+            return externalNodes.stream().filter(node -> batch.contains(node.getClusterId())).toList();
+        });
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of());
+
+        List<Map<String, Object>> result = controller.listClusters();
+
+        assertThat(result).hasSize(rowCount * 2);
+        assertThat(result.subList(0, rowCount)).allSatisfy(cluster -> {
+            assertThat((List<?>) cluster.get("hosts")).hasSize(1);
+            assertThat(cluster.get("nodeCount")).isEqualTo(1);
+        });
+        assertThat(result.subList(rowCount, rowCount * 2)).allSatisfy(cluster -> {
+            assertThat((List<?>) cluster.get("hosts")).hasSize(1);
+            assertThat(cluster.get("nodeCount")).isEqualTo(1);
+        });
+        verify(clusterServiceAssignmentRepository, times(2)).findByClusterIdIn(anyList());
+        verify(hostRepository, times(2)).findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any());
+        verify(externalClusterNodeRepository, times(2)).findByClusterIdIn(anyList());
+        verify(discoveryAgentRepository).findAll();
+        assertThat(internalIds).hasSize(rowCount);
+        assertThat(externalIds).hasSize(rowCount);
+    }
+
+    @Test
+    void listClustersDoesNotRunRelationQueriesForEmptyClusterLists() {
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(externalClusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+
+        assertThat(controller.listClusters()).isEmpty();
+
+        verify(clusterServiceAssignmentRepository, never()).findByClusterIdIn(anyList());
+        verify(hostRepository, never()).findAllById(org.mockito.ArgumentMatchers.<Iterable<String>>any());
+        verify(externalClusterNodeRepository, never()).findByClusterIdIn(anyList());
+        verify(discoveryAgentRepository, never()).findAll();
+    }
+
+    private static Cluster internalCluster(String name) {
+        Cluster cluster = new Cluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setName(name);
+        cluster.setMode("KRaft");
+        cluster.setStatus("SUCCESS");
+        cluster.setKafkaVersion("3.9.2");
+        cluster.setConfigJson("{}");
+        return cluster;
+    }
+
+    private static ClusterServiceAssignment assignment(Cluster cluster, String hostId, int nodeId) {
+        ClusterServiceAssignment assignment = new ClusterServiceAssignment();
+        assignment.setCluster(cluster);
+        assignment.setHostId(hostId);
+        assignment.setRole("broker");
+        assignment.setNodeId(nodeId);
+        return assignment;
+    }
+
+    private static ExternalCluster externalCluster(String name) {
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setName(name);
+        cluster.setBootstrapServers(name + ":9092");
+        cluster.setStatus("SUCCESS");
+        return cluster;
     }
 
     private static Host host(String id, String hostname) {

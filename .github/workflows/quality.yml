@@ -44,7 +44,7 @@ jobs:
     defaults:
       run:
         # working-directory: tantor-agent
-          working-directory: internal-agent/source
+        working-directory: internal-agent/source
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
