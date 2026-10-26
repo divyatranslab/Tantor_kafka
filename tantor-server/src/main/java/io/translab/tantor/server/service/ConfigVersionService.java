@@ -165,7 +165,7 @@ public class ConfigVersionService {
 
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
-        ClusterServiceAssignment service = serviceRepository.findById(version.getServiceId())
+        ClusterServiceAssignment service = serviceRepository.findByIdForUpdate(version.getServiceId())
                 .orElseThrow(() -> new IllegalArgumentException("Service assignment no longer exists."));
         if (!clusterId.equals(service.getCluster().getId())) {
             throw new IllegalArgumentException("Service assignment does not belong to this cluster.");
@@ -230,6 +230,14 @@ public class ConfigVersionService {
     @Transactional
     public ConfigVersion createRollback(UUID clusterId, UUID targetVersionId) {
         ConfigVersion target = ownedVersion(clusterId, targetVersionId);
+        serviceRepository.findByIdForUpdate(target.getServiceId())
+                .orElseThrow(() -> new IllegalArgumentException("Service assignment no longer exists."));
+        configVersionRepository.findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
+                        clusterId, target.getServiceId(), ConfigVersionStatus.APPLYING)
+                .ifPresent(applying -> {
+                    throw new IllegalStateException("Cannot create rollback while version v"
+                            + applying.getConfigVersion() + " is currently being applied.");
+                });
         ConfigVersion active = configVersionRepository
                 .findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
                         clusterId, target.getServiceId(), ConfigVersionStatus.APPLIED)
@@ -268,17 +276,27 @@ public class ConfigVersionService {
     @Transactional
     public void markApplied(UUID versionId, String activeServiceConfigJson) {
         ConfigVersion version = configVersionRepository.findById(versionId).orElseThrow();
+        if (version.getStatus() == ConfigVersionStatus.APPLIED) {
+            return;
+        }
+        if (version.getStatus() != ConfigVersionStatus.APPLYING) {
+            throw new IllegalStateException("Version must be in APPLYING state to be marked applied.");
+        }
+        ClusterServiceAssignment service = serviceRepository.findByIdForUpdate(version.getServiceId())
+                .orElseThrow(() -> new IllegalArgumentException("Service assignment no longer exists."));
         configVersionRepository.findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
                         version.getClusterId(), version.getServiceId(), ConfigVersionStatus.APPLIED)
                 .filter(previous -> !previous.getId().equals(version.getId()))
                 .ifPresent(previous -> {
+                    if (previous.getConfigVersion() >= version.getConfigVersion()
+                            || !readMap(previous.getNewConfig()).equals(readMap(version.getOldConfig()))) {
+                        throw new IllegalStateException("Cannot mark applied: active version has been updated concurrently.");
+                    }
                     previous.setStatus(ConfigVersionStatus.SUPERSEDED);
                     configVersionRepository.save(previous);
                 });
-        serviceRepository.findById(version.getServiceId()).ifPresent(service -> {
-            service.setConfigJson(activeServiceConfigJson);
-            serviceRepository.save(service);
-        });
+        service.setConfigJson(activeServiceConfigJson);
+        serviceRepository.save(service);
         version.setStatus(ConfigVersionStatus.APPLIED);
         version.setAppliedAt(Instant.now());
         configVersionRepository.save(version);
@@ -326,21 +344,29 @@ public class ConfigVersionService {
         rollback.setAppliedAt(Instant.now());
         rollback.setValidationResult("{}");
         configVersionRepository.save(rollback);
-        serviceRepository.findById(version.getServiceId()).ifPresent(service -> {
-            Map<String, Object> stored = readMap(service.getConfigJson());
-            stored.put("properties", readMap(version.getOldConfig()));
-            service.setConfigJson(writeJson(stored));
-            serviceRepository.save(service);
-        });
+        ClusterServiceAssignment service = serviceRepository.findByIdForUpdate(version.getServiceId())
+                .orElseThrow(() -> new IllegalArgumentException("Service assignment no longer exists."));
+        Map<String, Object> stored = readMap(service.getConfigJson());
+        stored.put("properties", readMap(version.getOldConfig()));
+        service.setConfigJson(writeJson(stored));
+        serviceRepository.save(service);
         version.setStatus(ConfigVersionStatus.SUPERSEDED);
         configVersionRepository.save(version);
     }
 
     private void assertVersionIsNotStale(ConfigVersion version) {
         configVersionRepository.findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
+                        version.getClusterId(), version.getServiceId(), ConfigVersionStatus.APPLYING)
+                .filter(applying -> !applying.getId().equals(version.getId()))
+                .ifPresent(applying -> {
+                    throw new IllegalStateException("Another configuration version (v"
+                            + applying.getConfigVersion() + ") is currently being applied.");
+                });
+        configVersionRepository.findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
                         version.getClusterId(), version.getServiceId(), ConfigVersionStatus.APPLIED)
                 .ifPresent(active -> {
-                    if (!readMap(active.getNewConfig()).equals(readMap(version.getOldConfig()))) {
+                    if (active.getConfigVersion() >= version.getConfigVersion()
+                            || !readMap(active.getNewConfig()).equals(readMap(version.getOldConfig()))) {
                         throw new IllegalStateException("This version was created from an older active config. Create a new version from the current config.");
                     }
                 });
