@@ -27,6 +27,7 @@ import java.nio.ByteBuffer;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.HashMap;
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
@@ -46,9 +48,11 @@ import java.util.stream.Collectors;
 public class ClusterController {
     private static final int DEFAULT_JMX_EXPORTER_PORT = 7071;
     private static final int DEFAULT_CONTROLLER_JMX_EXPORTER_PORT = 7072;
+    private static final int RELATION_QUERY_BATCH_SIZE = 500;
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
+    private final io.translab.tantor.server.repository.ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
     private final ExternalClusterRepository externalClusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterNodeRepository externalClusterNodeRepository;
     private final io.translab.tantor.server.repository.TaskRepository taskRepository;
@@ -77,10 +81,28 @@ public class ClusterController {
     @GetMapping
     public List<Map<String, Object>> listClusters() {
         List<Map<String, Object>> result = new ArrayList<>();
-        for (Cluster c : clusterRepository.findByStatusNot("DELETED")) {
-            if ("EXTERNAL".equalsIgnoreCase(c.getMode())) {
-                continue;
+        List<Cluster> internalClusters = clusterRepository.findByStatusNot("DELETED").stream()
+                .filter(cluster -> !"EXTERNAL".equalsIgnoreCase(cluster.getMode()))
+                .toList();
+        List<UUID> internalClusterIds = internalClusters.stream().map(Cluster::getId).toList();
+        List<ClusterServiceAssignment> internalServices = fetchInBatches(
+                internalClusterIds, clusterServiceAssignmentRepository::findByClusterIdIn);
+        Map<UUID, List<ClusterServiceAssignment>> servicesByClusterId = internalServices.stream()
+                .collect(Collectors.groupingBy(service -> service.getCluster().getId()));
+        Set<String> internalHostIds = servicesByClusterId.values().stream()
+                .flatMap(List::stream)
+                .map(ClusterServiceAssignment::getHostId)
+                .filter(hostId -> hostId != null && !hostId.isBlank())
+                .collect(Collectors.toSet());
+        Map<String, io.translab.tantor.server.domain.Host> hostsById = new HashMap<>();
+        if (!internalHostIds.isEmpty()) {
+            for (io.translab.tantor.server.domain.Host host : fetchInBatches(
+                    internalHostIds, hostRepository::findAllById)) {
+                hostsById.putIfAbsent(host.getId(), host);
             }
+        }
+
+        for (Cluster c : internalClusters) {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -105,14 +127,25 @@ public class ClusterController {
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
-            List<Map<String, Object>> hosts = clusterHosts(c);
-            m.put("nodeCount", hosts.isEmpty() && c.getServices() != null ? c.getServices().size() : hosts.size());
+            List<ClusterServiceAssignment> services = servicesByClusterId.getOrDefault(c.getId(), List.of());
+            List<Map<String, Object>> hosts = clusterHosts(c, services, hostsById);
+            m.put("nodeCount", hosts.isEmpty() ? services.size() : hosts.size());
             m.put("hosts", hosts);
-            m.putAll(internalRuntimeHealth(c));
+            m.putAll(internalRuntimeHealth(c, services, hostsById));
             result.add(m);
         }
-        List<io.translab.tantor.server.domain.DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findAll();
-        for (ExternalCluster c : externalClusterRepository.findByStatusNot("DELETED")) {
+        List<ExternalCluster> externalClusters = externalClusterRepository.findByStatusNot("DELETED");
+        List<UUID> externalClusterIds = externalClusters.stream().map(ExternalCluster::getId).toList();
+        List<io.translab.tantor.server.domain.ExternalClusterNode> externalNodes = fetchInBatches(
+                externalClusterIds, externalClusterNodeRepository::findByClusterIdIn);
+        Map<UUID, List<io.translab.tantor.server.domain.ExternalClusterNode>> nodesByClusterId = externalNodes.stream()
+                .collect(Collectors.groupingBy(io.translab.tantor.server.domain.ExternalClusterNode::getClusterId));
+        List<io.translab.tantor.server.domain.DiscoveryAgent> discoveryAgents = externalClusters.isEmpty()
+                ? List.of()
+                : discoveryAgentRepository.findAll();
+        Map<UUID, List<io.translab.tantor.server.domain.DiscoveryAgent>> discoveryAgentsByClusterId =
+                groupDiscoveryAgentsByClusterId(discoveryAgents);
+        for (ExternalCluster c : externalClusters) {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId());
             m.put("name", c.getName());
@@ -131,8 +164,9 @@ public class ClusterController {
             m.put("clusterId", c.getId().toString());
             m.put("kafkaClusterId", c.getKafkaClusterId());
             m.put("config", new HashMap<>());
-            List<io.translab.tantor.server.domain.ExternalClusterNode> clusterNodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            ExternalHealthView health = externalHealthView(c, clusterNodes, discoveryAgents, false);
+            List<io.translab.tantor.server.domain.ExternalClusterNode> clusterNodes = nodesByClusterId.getOrDefault(c.getId(), List.of());
+            ExternalHealthView health = externalHealthView(
+                    c, clusterNodes, discoveryAgents, false, null, discoveryAgentsByClusterId);
 
             m.put("managementLevel", health.managementLevel());
             m.put("sourceLabel", "External");
@@ -142,12 +176,26 @@ public class ClusterController {
             m.put("totalHostsCount", health.totalHostsCount());
             m.put("lastAgentHeartbeat", health.lastAgentHeartbeat() != null ? health.lastAgentHeartbeat().toString() : null);
             putExternalHealth(m, health);
-            List<Map<String, Object>> hosts = externalClusterHosts(c, clusterNodes);
+            List<Map<String, Object>> hosts = externalClusterHosts(
+                    c, clusterNodes, discoveryAgentsByClusterId, discoveryAgents);
             m.put("nodeCount", hosts.isEmpty() ? clusterNodes.size() : hosts.size());
             m.put("hosts", hosts);
             result.add(m);
         }
         return result;
+    }
+
+    private <I, O> List<O> fetchInBatches(Collection<I> ids, Function<List<I>, List<O>> fetcher) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<I> values = new ArrayList<>(ids);
+        List<O> results = new ArrayList<>();
+        for (int offset = 0; offset < values.size(); offset += RELATION_QUERY_BATCH_SIZE) {
+            int end = Math.min(offset + RELATION_QUERY_BATCH_SIZE, values.size());
+            results.addAll(fetcher.apply(values.subList(offset, end)));
+        }
+        return results;
     }
 
     @GetMapping("/{id}")
@@ -219,8 +267,13 @@ public class ClusterController {
             m.put("sourceLabel", "External");
 
             List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(c.getId());
-            ExternalHealthView health = externalHealthView(c, nodes, discoveryAgentRepository.findAll(), true);
-            List<Map<String, Object>> hosts = externalClusterHosts(c, nodes);
+            List<io.translab.tantor.server.domain.DiscoveryAgent> discoveryAgents = discoveryAgentRepository.findAll();
+            Map<UUID, List<io.translab.tantor.server.domain.DiscoveryAgent>> discoveryAgentsByClusterId =
+                    groupDiscoveryAgentsByClusterId(discoveryAgents);
+            ExternalHealthView health = externalHealthView(
+                    c, nodes, discoveryAgents, true, null, discoveryAgentsByClusterId);
+            List<Map<String, Object>> hosts = externalClusterHosts(
+                    c, nodes, discoveryAgentsByClusterId, discoveryAgents);
             m.put("managementLevel", health.managementLevel());
             m.put("accessLabel", health.managementLevel());
             m.put("telemetry", health.telemetry());
@@ -2063,6 +2116,14 @@ public class ClusterController {
     }
 
     private Map<String, Object> internalRuntimeHealth(Cluster cluster) {
+        return internalRuntimeHealth(cluster, null, null);
+    }
+
+    private Map<String, Object> internalRuntimeHealth(
+            Cluster cluster,
+            List<ClusterServiceAssignment> services,
+            Map<String, io.translab.tantor.server.domain.Host> hostsById
+    ) {
         Map<String, Object> health = new LinkedHashMap<>();
         String deploymentStatus = cluster.getStatus() == null ? "" : cluster.getStatus().trim();
 
@@ -2074,8 +2135,10 @@ public class ClusterController {
         }
 
         try {
-            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerMetricsCacheService
-                    .getBrokerSummaries(cluster)
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokerSummaries = services == null || hostsById == null
+                    ? brokerMetricsCacheService.getBrokerSummaries(cluster)
+                    : brokerMetricsCacheService.getBrokerSummaries(cluster, services, hostsById);
+            List<io.translab.tantor.server.dto.BrokerSummaryDto> brokers = brokerSummaries
                     .stream()
                     .filter(broker -> isBrokerRole(broker.getRole()))
                     .toList();
@@ -2135,6 +2198,17 @@ public class ClusterController {
             boolean liveKafkaCheck,
             String kafkaHealthOverride
     ) {
+        return externalHealthView(cluster, nodes, knownDiscoveryAgents, liveKafkaCheck, kafkaHealthOverride, null);
+    }
+
+    private ExternalHealthView externalHealthView(
+            ExternalCluster cluster,
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> knownDiscoveryAgents,
+            boolean liveKafkaCheck,
+            String kafkaHealthOverride,
+            Map<UUID, List<io.translab.tantor.server.domain.DiscoveryAgent>> discoveryAgentsByClusterId
+    ) {
         List<io.translab.tantor.server.domain.ExternalClusterNode> safeNodes = nodes == null ? List.of() : nodes;
         List<String> hosts = safeNodes.stream()
                 .map(io.translab.tantor.server.domain.ExternalClusterNode::getHost)
@@ -2145,9 +2219,9 @@ public class ClusterController {
 
         List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents =
                 knownDiscoveryAgents == null ? discoveryAgentRepository.findAll() : knownDiscoveryAgents;
-        List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents = allAgents.stream()
-                .filter(agent -> cluster.getId().equals(agent.getClusterId()))
-                .toList();
+        List<io.translab.tantor.server.domain.DiscoveryAgent> linkedAgents = discoveryAgentsByClusterId == null
+                ? allAgents.stream().filter(agent -> cluster.getId().equals(agent.getClusterId())).toList()
+                : discoveryAgentsByClusterId.getOrDefault(cluster.getId(), List.of());
         OffsetDateTime maxHeartbeat = null;
         long freshHostsCount = 0;
         for (String host : hosts) {
@@ -2516,6 +2590,22 @@ public class ClusterController {
         return hosts;
     }
 
+    private List<Map<String, Object>> clusterHosts(
+            Cluster cluster,
+            List<ClusterServiceAssignment> services,
+            Map<String, io.translab.tantor.server.domain.Host> hostsById
+    ) {
+        List<Map<String, Object>> hosts = new ArrayList<>();
+        for (ClusterServiceAssignment service : services) {
+            io.translab.tantor.server.domain.Host host = hostsById.get(service.getHostId());
+            if (host != null && (!"EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                    || "ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host)))) {
+                hosts.add(hostSummary(service, host));
+            }
+        }
+        return hosts;
+    }
+
     private Map<String, Object> hostSummary(ClusterServiceAssignment service, io.translab.tantor.server.domain.Host host) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("hostId", host.getId());
@@ -2532,13 +2622,23 @@ public class ClusterController {
         return summary;
     }
 
+    private Map<UUID, List<io.translab.tantor.server.domain.DiscoveryAgent>> groupDiscoveryAgentsByClusterId(
+            List<io.translab.tantor.server.domain.DiscoveryAgent> discoveryAgents
+    ) {
+        return discoveryAgents.stream()
+                .filter(agent -> agent.getClusterId() != null)
+                .collect(Collectors.groupingBy(io.translab.tantor.server.domain.DiscoveryAgent::getClusterId));
+    }
+
     private List<Map<String, Object>> externalClusterHosts(
             ExternalCluster cluster,
-            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes,
+            Map<UUID, List<io.translab.tantor.server.domain.DiscoveryAgent>> discoveryAgentsByClusterId,
+            List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents
     ) {
         List<Map<String, Object>> hosts = new ArrayList<>();
-        List<io.translab.tantor.server.domain.DiscoveryAgent> agents = discoveryAgentRepository.findByClusterId(cluster.getId());
-        List<io.translab.tantor.server.domain.DiscoveryAgent> allAgents = discoveryAgentRepository.findAll();
+        List<io.translab.tantor.server.domain.DiscoveryAgent> agents = discoveryAgentsByClusterId
+                .getOrDefault(cluster.getId(), List.of());
         OffsetDateTime now = OffsetDateTime.now();
 
         for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
