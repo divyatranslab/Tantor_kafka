@@ -7,7 +7,8 @@ import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ClusterServiceAssignmentRepository;
 import io.translab.tantor.server.repository.HostRepository;
-import lombok.RequiredArgsConstructor;
+import io.translab.tantor.server.repository.TaskRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,7 +24,6 @@ import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.config.ConfigResource;
 
 @Component
-@RequiredArgsConstructor
 public class DeploymentJobHandler implements JobHandler {
 
     private final JobService jobService;
@@ -36,6 +36,49 @@ public class DeploymentJobHandler implements JobHandler {
     private final KafkaAdminService kafkaAdminService;
     private final DataServiceConnectionService dataServiceConnectionService;
     private final ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
+    private final TaskRepository taskRepository;
+
+    public DeploymentJobHandler(
+            JobService jobService,
+            DeploymentService deploymentService,
+            AgentTaskAwaiter taskAwaiter,
+            ClusterRepository clusterRepository,
+            HostRepository hostRepository,
+            ObjectMapper objectMapper,
+            PrometheusMonitoringService prometheusMonitoringService,
+            KafkaAdminService kafkaAdminService,
+            DataServiceConnectionService dataServiceConnectionService,
+            ClusterServiceAssignmentRepository clusterServiceAssignmentRepository) {
+        this(jobService, deploymentService, taskAwaiter, clusterRepository, hostRepository,
+                objectMapper, prometheusMonitoringService, kafkaAdminService,
+                dataServiceConnectionService, clusterServiceAssignmentRepository, null);
+    }
+
+    @Autowired
+    public DeploymentJobHandler(
+            JobService jobService,
+            DeploymentService deploymentService,
+            AgentTaskAwaiter taskAwaiter,
+            ClusterRepository clusterRepository,
+            HostRepository hostRepository,
+            ObjectMapper objectMapper,
+            PrometheusMonitoringService prometheusMonitoringService,
+            KafkaAdminService kafkaAdminService,
+            DataServiceConnectionService dataServiceConnectionService,
+            ClusterServiceAssignmentRepository clusterServiceAssignmentRepository,
+            @Autowired(required = false) TaskRepository taskRepository) {
+        this.jobService = jobService;
+        this.deploymentService = deploymentService;
+        this.taskAwaiter = taskAwaiter;
+        this.clusterRepository = clusterRepository;
+        this.hostRepository = hostRepository;
+        this.objectMapper = objectMapper;
+        this.prometheusMonitoringService = prometheusMonitoringService;
+        this.kafkaAdminService = kafkaAdminService;
+        this.dataServiceConnectionService = dataServiceConnectionService;
+        this.clusterServiceAssignmentRepository = clusterServiceAssignmentRepository;
+        this.taskRepository = taskRepository;
+    }
 
     @Override
     public boolean supports(JobType type) {
@@ -48,10 +91,10 @@ public class DeploymentJobHandler implements JobHandler {
         UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
         Cluster cluster = clusterRepository.findById(clusterId)
                 .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
-        saveClusterStatus(cluster, "RUNNING", job);
 
         List<JobStep> steps = jobService.getSteps(job.getId());
-        if (steps.isEmpty()) throw new RuntimeException("Deployment job has no persisted steps.");
+        if (steps.isEmpty())
+            throw new RuntimeException("Deployment job has no persisted steps.");
 
         for (int i = 0; i < steps.size();) {
             JobStep step = steps.get(i);
@@ -70,7 +113,8 @@ public class DeploymentJobHandler implements JobHandler {
                         continue;
                     }
                     Map<String, Object> candidatePayload = readMap(candidate.getPayload());
-                    if (!isDeployOperation(candidatePayload)) break;
+                    if (!isDeployOperation(candidatePayload))
+                        break;
                     batchSteps.add(candidate);
                     batchPayloads.add(candidatePayload);
                     i++;
@@ -79,7 +123,8 @@ public class DeploymentJobHandler implements JobHandler {
                 continue;
             }
             try {
-                if (isSchemaOperation(payload)) markSchemaService(clusterId, "DEPLOYING", null);
+                if (isSchemaOperation(payload))
+                    markSchemaService(clusterId, "DEPLOYING", null);
                 if (isBackendSchemaOperation(payload)) {
                     jobService.startStep(step.getId());
                     String output = executeBackendSchemaOperation(clusterId, jobPayload, payload);
@@ -127,13 +172,16 @@ public class DeploymentJobHandler implements JobHandler {
             UUID clusterId,
             Map<String, Object> jobPayload,
             List<JobStep> steps,
-            List<Map<String, Object>> payloads
-    ) {
+            List<Map<String, Object>> payloads) {
         List<RunningStep> running = new ArrayList<>();
+        List<RunningStep> completedSteps = new ArrayList<>();
         JobStep activeStep = null;
         try {
             for (int i = 0; i < steps.size(); i++) {
                 JobStep step = steps.get(i);
+                if (step.getStatus() == JobStepStatus.SUCCESS) {
+                    continue;
+                }
                 activeStep = step;
                 UUID taskId = step.getAgentTaskId();
                 if (step.getStatus() != JobStepStatus.IN_PROGRESS || taskId == null) {
@@ -142,22 +190,153 @@ public class DeploymentJobHandler implements JobHandler {
                     jobService.attachAgentTask(step.getId(), taskId);
                     jobService.appendLog(job.getId(), step.getName() + " dispatched to " + step.getTargetId() + ".");
                 }
-                running.add(new RunningStep(step, taskId));
+                running.add(new RunningStep(step, taskId, payloads.get(i)));
             }
 
             for (RunningStep runningStep : running) {
-                activeStep = runningStep.step();
+                JobStep currentStep = runningStep.step();
+                activeStep = currentStep;
                 Task completed = taskAwaiter.await(runningStep.taskId());
-                jobService.completeStep(activeStep.getId(), taskOutput(completed));
-                jobService.appendLog(job.getId(), activeStep.getName() + " completed on " + activeStep.getTargetId() + ".");
+                jobService.completeStep(currentStep.getId(), taskOutput(completed));
+                jobService.appendLog(job.getId(),
+                        currentStep.getName() + " completed on " + currentStep.getTargetId() + ".");
+                completedSteps.add(runningStep);
             }
         } catch (Exception e) {
+            boolean activeStepInRunning = false;
             if (activeStep != null) {
+                for (RunningStep rs : running) {
+                    if (rs.step().getId().equals(activeStep.getId())) {
+                        activeStepInRunning = true;
+                        break;
+                    }
+                }
+            }
+            if (activeStep != null && !activeStepInRunning) {
                 jobService.failStep(activeStep.getId(), e.getMessage());
+                jobService.appendLog(job.getId(),
+                        activeStep.getName() + " failed on " + activeStep.getTargetId() + ": " + e.getMessage());
+            }
+
+            for (RunningStep runningStep : running) {
+                JobStep s = runningStep.step();
+                if (completedSteps.stream().anyMatch(cs -> cs.step().getId().equals(s.getId()))) {
+                    continue;
+                }
+                boolean isActiveStep = (activeStep != null && s.getId().equals(activeStep.getId()));
+                try {
+                    Task taskRecord = null;
+                    if (taskRepository != null && runningStep.taskId() != null) {
+                        try {
+                            taskRecord = taskRepository.findById(runningStep.taskId()).orElse(null);
+                        } catch (Exception queryEx) {
+                            jobService.appendLog(job.getId(),
+                                    "Could not query task " + runningStep.taskId() + ": " + queryEx.getMessage());
+                        }
+                    }
+
+                    if (taskRecord != null && "PENDING".equalsIgnoreCase(taskRecord.getStatus())) {
+                        boolean cancelled = false;
+                        try {
+                            int updated = taskRepository.cancelPendingTask(runningStep.taskId(),
+                                    "Cancelled due to batch deployment failure: " + e.getMessage());
+                            cancelled = (updated == 1);
+                        } catch (Exception cancelEx) {
+                            jobService.appendLog(job.getId(), "Atomic cancellation failed for task "
+                                    + runningStep.taskId() + ": " + cancelEx.getMessage());
+                        }
+
+                        if (cancelled) {
+                            jobService.failStep(s.getId(),
+                                    "Dispatched task cancelled before agent execution: Cancelled due to batch deployment failure: "
+                                            + e.getMessage());
+                            jobService.appendLog(job.getId(),
+                                    s.getName() + " on " + s.getTargetId() + " was cancelled before agent execution.");
+                        } else {
+                            Task latest = null;
+                            if (taskRepository != null) {
+                                try {
+                                    latest = taskRepository.findById(runningStep.taskId()).orElse(null);
+                                } catch (Exception reReadEx) {
+                                    // keep null
+                                }
+                            }
+                            handleClaimedOrTerminalTask(job, s, runningStep, latest, e, completedSteps, isActiveStep);
+                        }
+                    } else {
+                        handleClaimedOrTerminalTask(job, s, runningStep, taskRecord, e, completedSteps, isActiveStep);
+                    }
+                } catch (Exception se) {
+                    jobService.appendLog(job.getId(), "Failed to update step " + s.getName() + ": " + se.getMessage());
+                }
+            }
+            for (int k = completedSteps.size() - 1; k >= 0; k--) {
+                RunningStep completedStep = completedSteps.get(k);
+                try {
+                    compensateDeployedStep(clusterId, jobPayload, completedStep.step(), completedStep.payload());
+                    jobService.appendLog(job.getId(), completedStep.step().getName() + " rolled back on "
+                            + completedStep.step().getTargetId() + ".");
+                } catch (Exception ce) {
+                    jobService.rollbackFailedStep(completedStep.step().getId(), ce.getMessage());
+                    jobService.appendLog(job.getId(), "Failed to roll back " + completedStep.step().getName() + " on "
+                            + completedStep.step().getTargetId() + ": " + ce.getMessage());
+                }
             }
             saveClusterStatus(cluster, "FAILED", job);
             throw e;
         }
+    }
+
+    private void handleClaimedOrTerminalTask(
+            Job job,
+            JobStep s,
+            RunningStep runningStep,
+            Task taskRecord,
+            Exception e,
+            List<RunningStep> completedSteps,
+            boolean isActiveStep) {
+        if (taskRecord != null && "SUCCESS".equalsIgnoreCase(taskRecord.getStatus())) {
+            jobService.completeStep(s.getId(), taskOutput(taskRecord));
+            jobService.appendLog(job.getId(), s.getName() + " completed remotely before failure handling.");
+            completedSteps.add(runningStep);
+        } else if (taskRecord != null && "FAILED".equalsIgnoreCase(taskRecord.getStatus())) {
+            String reason = taskRecord.getErrorMsg() != null && !taskRecord.getErrorMsg().isBlank()
+                    ? taskRecord.getErrorMsg()
+                    : taskRecord.getLogOutput();
+            jobService.failStep(s.getId(), "Remote agent task failed: " + reason);
+            jobService.appendLog(job.getId(), s.getName() + " on " + s.getTargetId() + " failed remotely: " + reason);
+        } else if (taskRecord != null && "CANCELLED".equalsIgnoreCase(taskRecord.getStatus())) {
+            jobService.failStep(s.getId(), "Dispatched task was cancelled: " + taskRecord.getErrorMsg());
+            jobService.appendLog(job.getId(), s.getName() + " on " + s.getTargetId() + " confirmed cancelled.");
+        } else if (taskRecord != null && "IN_PROGRESS".equalsIgnoreCase(taskRecord.getStatus())) {
+            jobService.failStep(s.getId(),
+                    "Batch failed while task was in progress on host; remote task cancellation unsupported.");
+            jobService.appendLog(job.getId(), s.getName() + " on " + s.getTargetId()
+                    + " unresolved: task in progress on host, remote cancellation unsupported.");
+        } else {
+            String failMsg = isActiveStep ? e.getMessage()
+                    : "Cancelled due to batch deployment failure: " + e.getMessage();
+            jobService.failStep(s.getId(), failMsg);
+            jobService.appendLog(job.getId(),
+                    s.getName() + " on " + s.getTargetId() + " unresolved: remote task outcome unknown.");
+        }
+    }
+
+    private void compensateDeployedStep(
+            UUID clusterId,
+            Map<String, Object> jobPayload,
+            JobStep step,
+            Map<String, Object> payload) {
+        Map<String, Object> effectivePayload = payload != null ? payload : readMap(step.getPayload());
+        jobService.startStep(step.getId());
+        UUID taskId = deploymentService.deleteClusterFromHost(
+                clusterId,
+                required(effectivePayload, "host_id"),
+                required(jobPayload, "kafkaVersion"),
+                stringValue(effectivePayload, "serviceConfigJson"));
+        jobService.attachAgentTask(step.getId(), taskId);
+        Task completed = taskAwaiter.await(taskId);
+        jobService.rolledBackStep(step.getId(), taskOutput(completed));
     }
 
     @Override
@@ -170,32 +349,24 @@ public class DeploymentJobHandler implements JobHandler {
         for (JobStep step : steps) {
             if (step.getStatus() != JobStepStatus.SUCCESS
                     && step.getStatus() != JobStepStatus.ROLLBACK_FAILED
-                    && step.getStatus() != JobStepStatus.IN_PROGRESS) continue;
+                    && step.getStatus() != JobStepStatus.IN_PROGRESS)
+                continue;
             Map<String, Object> payload = readMap(step.getPayload());
             try {
-				String operation = operation(payload);
-				if (!"deploy".equals(operation)) {
-					if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
-						taskAwaiter.await(step.getAgentTaskId());
-					}
-					jobService.rolledBackStep(step.getId(), "Validation step has no deployed resource to remove.");
-					continue;
-				}
+                String operation = operation(payload);
+                if (!"deploy".equals(operation)) {
+                    if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
+                        taskAwaiter.await(step.getAgentTaskId());
+                    }
+                    jobService.rolledBackStep(step.getId(), "Validation step has no deployed resource to remove.");
+                    continue;
+                }
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
                     jobService.rolledBackStep(step.getId(), taskOutput(completed));
                     continue;
                 }
-                jobService.startStep(step.getId());
-                UUID taskId = deploymentService.deleteClusterFromHost(
-                        clusterId,
-                        required(payload, "host_id"),
-                        required(jobPayload, "kafkaVersion"),
-                        stringValue(payload, "serviceConfigJson")
-                );
-                jobService.attachAgentTask(step.getId(), taskId);
-                Task completed = taskAwaiter.await(taskId);
-                jobService.rolledBackStep(step.getId(), taskOutput(completed));
+                compensateDeployedStep(clusterId, jobPayload, step, payload);
             } catch (Exception e) {
                 jobService.rollbackFailedStep(step.getId(), e.getMessage());
                 throw e;
@@ -206,7 +377,8 @@ public class DeploymentJobHandler implements JobHandler {
 
     protected void finalizeRollback(Job job, UUID clusterId) {
         Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElse(null);
-        if (cluster == null) return;
+        if (cluster == null)
+            return;
 
         if (job.getType() == JobType.ADD_HOST) {
             List<Map<String, Object>> rolledBackTargets = jobService.getSteps(job.getId()).stream()
@@ -214,9 +386,10 @@ public class DeploymentJobHandler implements JobHandler {
                     .map(step -> readMap(step.getPayload()))
                     .toList();
             if (cluster.getServices() != null) {
-                cluster.getServices().removeIf(service -> rolledBackTargets.stream().anyMatch(target ->
-                        required(target, "host_id").equals(service.getHostId())
-                                && required(target, "node_id").equals(String.valueOf(service.getNodeId()))));
+                cluster.getServices()
+                        .removeIf(service -> rolledBackTargets.stream()
+                                .anyMatch(target -> required(target, "host_id").equals(service.getHostId())
+                                        && required(target, "node_id").equals(String.valueOf(service.getNodeId()))));
             }
             for (Map<String, Object> target : rolledBackTargets) {
                 hostRepository.findById(required(target, "host_id")).ifPresent(host -> {
@@ -229,12 +402,13 @@ public class DeploymentJobHandler implements JobHandler {
             cluster.setStatus("SUCCESS");
         } else {
             if (cluster.getServices() != null) {
-                cluster.getServices().forEach(service -> hostRepository.findById(service.getHostId()).ifPresent(host -> {
-                    if (clusterId.equals(host.getClusterId())) {
-                        host.setClusterId(null);
-                        hostRepository.save(host);
-                    }
-                }));
+                cluster.getServices()
+                        .forEach(service -> hostRepository.findById(service.getHostId()).ifPresent(host -> {
+                            if (clusterId.equals(host.getClusterId())) {
+                                host.setClusterId(null);
+                                hostRepository.save(host);
+                            }
+                        }));
             }
             cluster.setStatus("ROLLED_BACK");
         }
@@ -259,22 +433,19 @@ public class DeploymentJobHandler implements JobHandler {
             case "connectivity" -> deploymentService.checkKRaftConnectivity(
                     clusterId,
                     required(payload, "host_id"),
-                    required(payload, "controller_endpoints")
-            );
+                    required(payload, "controller_endpoints"));
             case "verify_quorum" -> deploymentService.verifyKRaftQuorum(
                     clusterId,
                     required(payload, "host_id"),
                     required(payload, "controller_endpoints"),
                     required(payload, "cluster_uuid"),
                     required(payload, "expected_controller_count"),
-                    stringValue(payload, "serviceConfigJson")
-            );
+                    stringValue(payload, "serviceConfigJson"));
             case "verify_zk_quorum" -> deploymentService.verifyZooKeeperQuorum(
                     clusterId,
                     required(payload, "host_id"),
                     required(payload, "zookeeper_connect"),
-                    stringValue(payload, "serviceConfigJson")
-            );
+                    stringValue(payload, "serviceConfigJson"));
             case "precheck_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "PRECHECK_SCHEMA");
             case "install_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "INSTALL_SCHEMA");
             case "verify_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "VERIFY_SCHEMA_REGISTRY");
@@ -287,8 +458,7 @@ public class DeploymentJobHandler implements JobHandler {
                     required(payload, "node_id"),
                     stringValue(jobPayload, "quorumVoters"),
                     required(payload, "role"),
-                    stringValue(payload, "serviceConfigJson")
-            );
+                    stringValue(payload, "serviceConfigJson"));
             default -> throw new IllegalArgumentException("Unknown deployment job operation: " + operation(payload));
         };
     }
@@ -316,8 +486,7 @@ public class DeploymentJobHandler implements JobHandler {
                 command,
                 String.valueOf(schema.getOrDefault("artifact_url", "")),
                 String.valueOf(schema.getOrDefault("checksum", "")),
-                schema
-        );
+                schema);
     }
 
     private boolean isBackendSchemaOperation(Map<String, Object> payload) {
@@ -335,14 +504,16 @@ public class DeploymentJobHandler implements JobHandler {
 
     private boolean isSchemaOperation(Map<String, Object> payload) {
         return switch (operation(payload)) {
-            case "precheck_schema", "create_schema_topic", "install_schema", "verify_schema", "save_schema_connection" -> true;
+            case "precheck_schema", "create_schema_topic", "install_schema", "verify_schema",
+                    "save_schema_connection" ->
+                true;
             default -> false;
         };
     }
 
     @SuppressWarnings("unchecked")
     private String executeBackendSchemaOperation(UUID clusterId, Map<String, Object> jobPayload,
-                                                 Map<String, Object> payload) {
+            Map<String, Object> payload) {
         Object configuration = jobPayload.get("schemaRegistry");
         if (!(configuration instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("Schema Registry job configuration is missing.");
@@ -401,11 +572,13 @@ public class DeploymentJobHandler implements JobHandler {
         return "deploy".equals(operation(payload));
     }
 
-    private record RunningStep(JobStep step, UUID taskId) {}
+    private record RunningStep(JobStep step, UUID taskId, Map<String, Object> payload) {
+    }
 
     private Map<String, Object> readMap(String json) {
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
+            return objectMapper.readValue(json, new TypeReference<>() {
+            });
         } catch (Exception e) {
             throw new IllegalArgumentException("Invalid job payload", e);
         }
