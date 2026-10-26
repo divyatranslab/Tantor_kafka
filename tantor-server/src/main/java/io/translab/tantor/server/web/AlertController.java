@@ -236,8 +236,7 @@ public class AlertController {
                         parcel.getUpdatedAt(), parcel.getErrorMsg(), "package"
                 )));
 
-        clusters.forEach(cluster -> consumerLagCacheService.getSummaries(cluster.getId()).stream()
-                .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
+        clusters.forEach(cluster -> consumerLagCacheService.getAlertSummaries(cluster.getId()).stream()
                 .limit(10)
                 .forEach(group -> alerts.add(runtimeAlert(
                         "consumer-lag-" + cluster.getId() + "-" + group.getGroupId(),

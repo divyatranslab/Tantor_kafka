@@ -19,7 +19,6 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -43,7 +42,6 @@ public class ClusterOverviewService {
     private final KafkaAdminService kafkaAdminService;
     private final HostStatusService hostStatusService;
 
-    @Transactional(readOnly = true)
     public ClusterOverviewDto getOverview(UUID clusterId) {
         String clusterName;
         String kafkaVersion;
@@ -54,13 +52,21 @@ public class ClusterOverviewService {
         String dataDirectory;
         String logDirectory;
         Cluster internalCluster = null;
-        
-        var internalOpt = clusterRepository.findById(clusterId);
+        Map<String, io.translab.tantor.server.domain.Host> hostsById = Map.of();
+
+        var internalOpt = clusterRepository.findWithServicesById(clusterId);
         boolean hasInternalCluster = internalOpt.isPresent()
                 && !"EXTERNAL".equalsIgnoreCase(internalOpt.get().getMode());
         if (hasInternalCluster) {
             Cluster cluster = internalOpt.get();
             internalCluster = cluster;
+            if (cluster.getServices() != null) {
+                Set<String> hostIds = cluster.getServices().stream().map(service -> service.getHostId())
+                        .filter(id -> id != null && !id.isBlank()).collect(java.util.stream.Collectors.toSet());
+                hostsById = hostRepository.findAllById(hostIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(io.translab.tantor.server.domain.Host::getId,
+                                host -> host, (left, right) -> left));
+            }
             clusterName = cluster.getName();
             kafkaVersion = cluster.getKafkaVersion();
             originType = cluster.getOriginType();
@@ -110,11 +116,11 @@ public class ClusterOverviewService {
 
             PartitionAccumulator partitionStats = collectPartitionStats(client, brokerStats, warnings);
             collectLogDirStats(client, brokerStats, warnings);
-            applyInternalHostDiskStats(internalCluster, brokerStats);
+            applyInternalHostDiskStats(internalCluster, brokerStats, hostsById);
 
             int brokerCount = brokerStats.size();
             List<ClusterOverviewDto.ControllerRow> controllers = kraft
-                    ? internalControllerRows(internalCluster, activeControllerId)
+                    ? internalControllerRows(internalCluster, activeControllerId, hostsById)
                     : List.of();
             int configuredControllerCount = controllers.size();
             double avgReplicas = brokerCount == 0 ? 0 : (double) partitionStats.totalReplicas / brokerCount;
@@ -169,7 +175,8 @@ public class ClusterOverviewService {
 
     private List<ClusterOverviewDto.ControllerRow> internalControllerRows(
             Cluster cluster,
-            Integer activeControllerId
+            Integer activeControllerId,
+            Map<String, io.translab.tantor.server.domain.Host> hostsById
     ) {
         if (cluster == null || cluster.getServices() == null) {
             return List.of();
@@ -180,7 +187,7 @@ public class ClusterOverviewService {
                 .sorted(Comparator.comparingInt(service -> service.getNodeId()))
                 .map(service -> ClusterOverviewDto.ControllerRow.builder()
                         .nodeId(service.getNodeId())
-                        .host(controllerHost(service.getHostId()))
+                        .host(controllerHost(service.getHostId(), hostsById))
                         .port(controllerPort(service.getConfigJson(), cluster.getConfigJson()))
                         .activeLeader(activeControllerId != null
                                 && activeControllerId.equals(service.getNodeId()))
@@ -196,13 +203,12 @@ public class ClusterOverviewService {
         return "controller".equals(normalized) || "broker_controller".equals(normalized);
     }
 
-    private String controllerHost(String hostId) {
+    private String controllerHost(String hostId, Map<String, io.translab.tantor.server.domain.Host> hostsById) {
         if (hostId == null || hostId.isBlank()) {
             return "unknown";
         }
-        return hostRepository.findById(hostId)
-                .map(host -> firstNonBlank(host.getHostIp(), host.getHostname(), hostId))
-                .orElse(hostId);
+        var host = hostsById.get(hostId);
+        return host == null ? hostId : firstNonBlank(host.getHostIp(), host.getHostname(), hostId);
     }
 
     private Integer controllerPort(String serviceConfigJson, String clusterConfigJson) {
@@ -250,7 +256,8 @@ public class ClusterOverviewService {
 
     private void applyInternalHostDiskStats(
             Cluster cluster,
-            Map<Integer, BrokerAccumulator> brokerStats
+            Map<Integer, BrokerAccumulator> brokerStats,
+            Map<String, io.translab.tantor.server.domain.Host> hostsById
     ) {
         if (cluster == null || cluster.getServices() == null) {
             return;
@@ -263,7 +270,8 @@ public class ClusterOverviewService {
             if (broker == null) {
                 return;
             }
-            hostRepository.findById(service.getHostId()).ifPresent(host -> {
+            var host = hostsById.get(service.getHostId());
+            if (host != null) {
                 broker.hostDiskLastSeen = host.getLastHeartbeat();
                 boolean agentOnline = "ONLINE".equalsIgnoreCase(
                         hostStatusService.agentConnectivityStatus(host)
@@ -275,7 +283,7 @@ public class ClusterOverviewService {
                 broker.hostDiskMetricStatus = "LIVE";
                 broker.hostDiskUsedBytes = host.getDiskUsedGb() == null ? null : gibibytesToBytes(host.getDiskUsedGb());
                 broker.hostDiskTotalBytes = host.getDiskTotalGb() == null ? null : gibibytesToBytes(host.getDiskTotalGb());
-            });
+            }
         });
     }
 
