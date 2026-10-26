@@ -28,6 +28,11 @@ public interface TaskRepository extends JpaRepository<Task, UUID> {
                          @Param("leaseExpiresAt") OffsetDateTime leaseExpiresAt);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("update Task t set t.status = 'CANCELLED', t.errorMsg = :errorMsg "
+            + "where t.id = :taskId and t.status = 'PENDING'")
+    int cancelPendingTask(@Param("taskId") UUID taskId, @Param("errorMsg") String errorMsg);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("update Task t set t.status = 'FAILED', t.errorMsg = 'Task claim lease expired after maximum attempts', "
             + "t.claimToken = null, t.claimedAt = null, t.leaseExpiresAt = null "
             + "where t.hostId = :hostId and t.status = 'IN_PROGRESS' and t.leaseExpiresAt < :now "
