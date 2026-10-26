@@ -115,6 +115,7 @@ public class CanonicalClusterNodeResolver {
     private List<CanonicalNodeContract> resolveExternalNodes(CanonicalClusterContract clusterContract) {
         List<DiscoveryAgent> boundAgents = discoveryAgentRepository.findByClusterId(clusterContract.clusterUuid());
         CanonicalAgentStatus agentStatus = externalAgentStatus(boundAgents);
+        DiscoveryAgentIndex agentIndex = buildDiscoveryAgentIndex(boundAgents);
         List<CanonicalNodeContract> resolved = new ArrayList<>();
 
         for (ExternalClusterNode externalNode
@@ -127,7 +128,7 @@ public class CanonicalClusterNodeResolver {
             if (role.isEmpty()) {
                 continue;
             }
-            DisplayAddress displayAddress = externalDisplayAddress(externalNode.getHost(), boundAgents);
+            DisplayAddress displayAddress = externalDisplayAddress(externalNode.getHost(), agentIndex);
             resolved.add(node(
                     clusterContract,
                     externalNode.getNodeId(),
@@ -290,21 +291,45 @@ public class CanonicalClusterNodeResolver {
      * Enrich display fields only. Canonical identity never depends on IP or hostname.
      */
     private DisplayAddress externalDisplayAddress(String reportedHost, List<DiscoveryAgent> agents) {
+        return externalDisplayAddress(reportedHost, buildDiscoveryAgentIndex(agents));
+    }
+
+    private DisplayAddress externalDisplayAddress(String reportedHost, DiscoveryAgentIndex agentIndex) {
         boolean reportedAsIp = looksLikeIpAddress(reportedHost);
-        for (DiscoveryAgent agent : agents) {
-            List<String> agentIps = parseIpAddresses(agent.getIpAddresses());
-            boolean match = reportedAsIp
-                    ? agentIps.stream().anyMatch(reportedHost::equalsIgnoreCase)
-                    : agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(reportedHost);
-            if (match) {
+        if (reportedHost != null && !reportedHost.isBlank()) {
+            String key = reportedHost.toLowerCase(Locale.ROOT);
+            ParsedDiscoveryAgent matched = reportedAsIp ? agentIndex.byIp().get(key) : agentIndex.byHostname().get(key);
+            if (matched != null) {
                 return new DisplayAddress(
-                        firstNonBlank(agent.getHostname(), reportedAsIp ? null : reportedHost),
-                        reportedAsIp ? reportedHost : agentIps.stream().findFirst().orElse(null));
+                        firstNonBlank(matched.hostname(), reportedAsIp ? null : reportedHost),
+                        reportedAsIp ? reportedHost : matched.ipAddresses().stream().findFirst().orElse(null));
             }
         }
         return reportedAsIp
                 ? new DisplayAddress(null, reportedHost)
                 : new DisplayAddress(reportedHost, null);
+    }
+
+    private DiscoveryAgentIndex buildDiscoveryAgentIndex(List<DiscoveryAgent> agents) {
+        if (agents == null || agents.isEmpty()) {
+            return new DiscoveryAgentIndex(Map.of(), Map.of());
+        }
+        Map<String, ParsedDiscoveryAgent> byIp = new LinkedHashMap<>();
+        Map<String, ParsedDiscoveryAgent> byHostname = new LinkedHashMap<>();
+        for (DiscoveryAgent agent : agents) {
+            if (agent == null) {
+                continue;
+            }
+            List<String> agentIps = parseIpAddresses(agent.getIpAddresses());
+            ParsedDiscoveryAgent parsed = new ParsedDiscoveryAgent(agent.getHostname(), agentIps);
+            if (agent.getHostname() != null && !agent.getHostname().isBlank()) {
+                byHostname.putIfAbsent(agent.getHostname().toLowerCase(Locale.ROOT), parsed);
+            }
+            for (String ip : agentIps) {
+                byIp.putIfAbsent(ip.toLowerCase(Locale.ROOT), parsed);
+            }
+        }
+        return new DiscoveryAgentIndex(byIp, byHostname);
     }
 
     private List<String> parseIpAddresses(String raw) {
@@ -319,7 +344,7 @@ public class CanonicalClusterNodeResolver {
             return List.of();
         }
         return java.util.Arrays.stream(normalized.split(","))
-                .map(value -> value.trim().replaceAll("^\"|\"$", ""))
+                .map(value -> value.trim().replaceAll("^\"|\"$", "").trim())
                 .filter(value -> !value.isBlank())
                 .toList();
     }
@@ -339,6 +364,12 @@ public class CanonicalClusterNodeResolver {
         }
         return null;
     }
+
+    private record ParsedDiscoveryAgent(String hostname, List<String> ipAddresses) {}
+
+    private record DiscoveryAgentIndex(
+            Map<String, ParsedDiscoveryAgent> byIp,
+            Map<String, ParsedDiscoveryAgent> byHostname) {}
 
     private record DisplayAddress(String hostname, String ipAddress) {}
 }

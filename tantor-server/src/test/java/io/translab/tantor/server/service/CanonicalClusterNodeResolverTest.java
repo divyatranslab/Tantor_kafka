@@ -33,6 +33,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -163,6 +165,222 @@ class CanonicalClusterNodeResolverTest {
         assertThatThrownBy(() -> resolver.resolve(clusterUuid))
                 .isInstanceOf(CanonicalClusterNotFoundException.class)
                 .hasMessageContaining(clusterUuid.toString());
+    }
+
+    @Test
+    void resolvesMultipleExternalNodesAgainstMultipleAgentsAndFallbacks() {
+        UUID clusterUuid = UUID.randomUUID();
+        Cluster cluster = cluster(clusterUuid, "external-kafka-id", "EXTERNAL", "KRAFT");
+        ExternalCluster externalCluster = new ExternalCluster();
+        externalCluster.setId(clusterUuid);
+        externalCluster.setKafkaMode("KRaft");
+
+        DiscoveryAgent agent1 = agent(clusterUuid, "broker-1.example.test", "[\"10.0.0.1\"]");
+        DiscoveryAgent agent2 = agent(clusterUuid, "broker-2.example.test", "[\"10.0.0.2\", \"10.0.0.22\"]");
+        DiscoveryAgent agent3 = agent(clusterUuid, "controller-3.example.test", "[\"10.0.0.3\"]");
+
+        ExternalClusterNode node1 = externalNode(clusterUuid, 1, true, false, "10.0.0.1");
+        ExternalClusterNode node2 = externalNode(clusterUuid, 2, true, false, "broker-2.example.test");
+        ExternalClusterNode node3 = externalNode(clusterUuid, 3, false, true, "10.0.0.3");
+        ExternalClusterNode node4 = externalNode(clusterUuid, 4, true, false, "10.0.0.99");
+        ExternalClusterNode node5 = externalNode(clusterUuid, 5, true, false, "unmatched.example.test");
+
+        when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
+        when(discoveryAgentRepository.findByClusterId(clusterUuid)).thenReturn(List.of(agent1, agent2, agent3));
+        when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
+                .thenReturn(List.of(node1, node2, node3, node4, node5));
+
+        CanonicalClusterNodesResponse response = resolver.resolve(clusterUuid);
+
+        assertThat(response.nodes()).hasSize(5);
+
+        // Node 1: matched by IP
+        assertThat(response.nodes().get(0).identity().nodeId()).isEqualTo(1);
+        assertThat(response.nodes().get(0).hostname()).isEqualTo("broker-1.example.test");
+        assertThat(response.nodes().get(0).ipAddress()).isEqualTo("10.0.0.1");
+
+        // Node 2: matched by hostname
+        assertThat(response.nodes().get(1).identity().nodeId()).isEqualTo(2);
+        assertThat(response.nodes().get(1).hostname()).isEqualTo("broker-2.example.test");
+        assertThat(response.nodes().get(1).ipAddress()).isEqualTo("10.0.0.2");
+
+        // Node 3: matched by IP
+        assertThat(response.nodes().get(2).identity().nodeId()).isEqualTo(3);
+        assertThat(response.nodes().get(2).hostname()).isEqualTo("controller-3.example.test");
+        assertThat(response.nodes().get(2).ipAddress()).isEqualTo("10.0.0.3");
+
+        // Node 4: unmatched IP fallback
+        assertThat(response.nodes().get(3).identity().nodeId()).isEqualTo(4);
+        assertThat(response.nodes().get(3).hostname()).isNull();
+        assertThat(response.nodes().get(3).ipAddress()).isEqualTo("10.0.0.99");
+
+        // Node 5: unmatched hostname fallback
+        assertThat(response.nodes().get(4).identity().nodeId()).isEqualTo(5);
+        assertThat(response.nodes().get(4).hostname()).isEqualTo("unmatched.example.test");
+        assertThat(response.nodes().get(4).ipAddress()).isNull();
+    }
+
+    @Test
+    void normalizesCaseAndAgentIpWhitespaceConsistently() {
+        UUID clusterUuid = UUID.randomUUID();
+        Cluster cluster = cluster(clusterUuid, "external-kafka-id", "EXTERNAL", "KRAFT");
+        ExternalCluster externalCluster = new ExternalCluster();
+        externalCluster.setId(clusterUuid);
+        externalCluster.setKafkaMode("KRaft");
+
+        DiscoveryAgent agent1 = agent(clusterUuid, "Broker-Node-A.Example.Test", "[ \" 10.10.10.10 \" ]");
+        DiscoveryAgent agent2 = agent(clusterUuid, "ipv6-agent", "[\"2001:DB8::1\"]");
+
+        ExternalClusterNode node1 = externalNode(clusterUuid, 1, true, false, "broker-node-a.example.test");
+        ExternalClusterNode node2 = externalNode(clusterUuid, 2, true, false, "10.10.10.10");
+        ExternalClusterNode node3 = externalNode(clusterUuid, 3, true, false, "2001:db8::1");
+
+        when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
+        when(discoveryAgentRepository.findByClusterId(clusterUuid)).thenReturn(List.of(agent1, agent2));
+        when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
+                .thenReturn(List.of(node1, node2, node3));
+
+        CanonicalClusterNodesResponse response = resolver.resolve(clusterUuid);
+
+        assertThat(response.nodes()).hasSize(3);
+        // Node 1: hostname case-insensitive match
+        assertThat(response.nodes().get(0).hostname()).isEqualTo("Broker-Node-A.Example.Test");
+        assertThat(response.nodes().get(0).ipAddress()).isEqualTo("10.10.10.10");
+
+        // Node 2: agent IP trimmed whitespace match
+        assertThat(response.nodes().get(1).hostname()).isEqualTo("Broker-Node-A.Example.Test");
+        assertThat(response.nodes().get(1).ipAddress()).isEqualTo("10.10.10.10");
+
+        // Node 3: IPv6 case-insensitive match
+        assertThat(response.nodes().get(2).hostname()).isEqualTo("ipv6-agent");
+        assertThat(response.nodes().get(2).ipAddress()).isEqualTo("2001:db8::1");
+    }
+
+    @Test
+    void handlesNullEmptyMalformedAndDuplicateAgentAddresses() {
+        UUID clusterUuid = UUID.randomUUID();
+        Cluster cluster = cluster(clusterUuid, "external-kafka-id", "EXTERNAL", "KRAFT");
+        ExternalCluster externalCluster = new ExternalCluster();
+        externalCluster.setId(clusterUuid);
+        externalCluster.setKafkaMode("KRaft");
+
+        DiscoveryAgent nullAgent = agent(clusterUuid, null, null);
+        DiscoveryAgent blankAgent = agent(clusterUuid, "   ", "   ");
+        DiscoveryAgent emptyAgent = agent(clusterUuid, "", "[]");
+        DiscoveryAgent duplicateIpAgent = agent(clusterUuid, "duplicate-ip", "[\"10.20.0.1\", \"10.20.0.1\"]");
+        DiscoveryAgent unquotedAgent = agent(clusterUuid, "unquoted-agent", "10.20.0.2, 10.20.0.3");
+
+        ExternalClusterNode node1 = externalNode(clusterUuid, 1, true, false, "10.20.0.1");
+        ExternalClusterNode node2 = externalNode(clusterUuid, 2, true, false, "10.20.0.2");
+        ExternalClusterNode node3 = externalNode(clusterUuid, 3, true, false, "10.20.0.99");
+
+        when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
+        when(discoveryAgentRepository.findByClusterId(clusterUuid))
+                .thenReturn(List.of(nullAgent, blankAgent, emptyAgent, duplicateIpAgent, unquotedAgent));
+        when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
+                .thenReturn(List.of(node1, node2, node3));
+
+        CanonicalClusterNodesResponse response = resolver.resolve(clusterUuid);
+
+        assertThat(response.nodes()).hasSize(3);
+        assertThat(response.nodes().get(0).hostname()).isEqualTo("duplicate-ip");
+        assertThat(response.nodes().get(0).ipAddress()).isEqualTo("10.20.0.1");
+
+        assertThat(response.nodes().get(1).hostname()).isEqualTo("unquoted-agent");
+        assertThat(response.nodes().get(1).ipAddress()).isEqualTo("10.20.0.2");
+
+        assertThat(response.nodes().get(2).hostname()).isNull();
+        assertThat(response.nodes().get(2).ipAddress()).isEqualTo("10.20.0.99");
+    }
+
+    @Test
+    void preservesDeterministicFirstMatchPrecedenceWhenAddressesCollide() {
+        UUID clusterUuid = UUID.randomUUID();
+        Cluster cluster = cluster(clusterUuid, "external-kafka-id", "EXTERNAL", "KRAFT");
+        ExternalCluster externalCluster = new ExternalCluster();
+        externalCluster.setId(clusterUuid);
+        externalCluster.setKafkaMode("KRaft");
+
+        DiscoveryAgent agent1 = agent(clusterUuid, "first-agent", "[\"10.30.0.1\"]");
+        DiscoveryAgent agent2 = agent(clusterUuid, "second-agent", "[\"10.30.0.1\"]");
+        DiscoveryAgent agent3 = agent(clusterUuid, "shared-hostname", "[\"10.30.0.3\"]");
+        DiscoveryAgent agent4 = agent(clusterUuid, "shared-hostname", "[\"10.30.0.4\"]");
+
+        ExternalClusterNode node1 = externalNode(clusterUuid, 1, true, false, "10.30.0.1");
+        ExternalClusterNode node2 = externalNode(clusterUuid, 2, true, false, "shared-hostname");
+
+        when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
+        when(discoveryAgentRepository.findByClusterId(clusterUuid))
+                .thenReturn(List.of(agent1, agent2, agent3, agent4));
+        when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
+                .thenReturn(List.of(node1, node2));
+
+        CanonicalClusterNodesResponse response = resolver.resolve(clusterUuid);
+
+        assertThat(response.nodes()).hasSize(2);
+        // Node 1: First agent winning the colliding IP address
+        assertThat(response.nodes().get(0).identity().nodeId()).isEqualTo(1);
+        assertThat(response.nodes().get(0).hostname()).isEqualTo("first-agent");
+        assertThat(response.nodes().get(0).ipAddress()).isEqualTo("10.30.0.1");
+
+        // Node 2: First agent winning the colliding hostname
+        assertThat(response.nodes().get(1).identity().nodeId()).isEqualTo(2);
+        assertThat(response.nodes().get(1).hostname()).isEqualTo("shared-hostname");
+        assertThat(response.nodes().get(1).ipAddress()).isEqualTo("10.30.0.3");
+    }
+
+    @Test
+    void parsesAgentAddressesOncePerAgentPerResolutionOperation() {
+        UUID clusterUuid = UUID.randomUUID();
+        Cluster cluster = cluster(clusterUuid, "external-kafka-id", "EXTERNAL", "KRAFT");
+        ExternalCluster externalCluster = new ExternalCluster();
+        externalCluster.setId(clusterUuid);
+        externalCluster.setKafkaMode("KRaft");
+
+        DiscoveryAgent agent1 = spy(agent(clusterUuid, "agent-1", "[\"10.40.0.1\"]"));
+        DiscoveryAgent agent2 = spy(agent(clusterUuid, "agent-2", "[\"10.40.0.2\"]"));
+        DiscoveryAgent agent3 = spy(agent(clusterUuid, "agent-3", "[\"10.40.0.3\"]"));
+
+        ExternalClusterNode node1 = externalNode(clusterUuid, 1, true, false, "10.40.0.1");
+        ExternalClusterNode node2 = externalNode(clusterUuid, 2, true, false, "10.40.0.2");
+        ExternalClusterNode node3 = externalNode(clusterUuid, 3, true, false, "10.40.0.3");
+        ExternalClusterNode node4 = externalNode(clusterUuid, 4, true, false, "10.40.0.99");
+        ExternalClusterNode node5 = externalNode(clusterUuid, 5, true, false, "unmatched-node");
+
+        when(clusterRepository.findByCanonicalClusterUuidAndStatusNot(clusterUuid, "DELETED"))
+                .thenReturn(Optional.of(cluster));
+        when(externalClusterRepository.findById(cluster.getId())).thenReturn(Optional.of(externalCluster));
+        when(discoveryAgentRepository.findByClusterId(clusterUuid))
+                .thenReturn(List.of(agent1, agent2, agent3));
+        when(externalNodeRepository.findByCanonicalClusterUuid(clusterUuid))
+                .thenReturn(List.of(node1, node2, node3, node4, node5));
+
+        resolver.resolve(clusterUuid);
+
+        // Crucial verification: with 5 external nodes and 3 discovery agents,
+        // the unoptimized algorithm would have called getIpAddresses() up to 5 * 3 = 15 times.
+        // With the index built once per resolution operation, each agent's address is parsed exactly once.
+        verify(agent1, times(1)).getIpAddresses();
+        verify(agent2, times(1)).getIpAddresses();
+        verify(agent3, times(1)).getIpAddresses();
+    }
+
+    private DiscoveryAgent agent(UUID clusterUuid, String hostname, String ipAddresses) {
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setClusterId(clusterUuid);
+        agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
+        agent.setHostname(hostname);
+        agent.setIpAddresses(ipAddresses);
+        return agent;
     }
 
     private Cluster cluster(UUID canonicalUuid, String kafkaClusterId, String type, String mode) {
