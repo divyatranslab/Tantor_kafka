@@ -24,7 +24,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.errors.TopicExistsException;
+import io.translab.tantor.server.service.TopicRecreationException.TopicPresence;
 
 @Service
 @RequiredArgsConstructor
@@ -238,29 +243,203 @@ public class TopicOperationsService {
 
     public synchronized void recreateTopic(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+        TopicDescription description;
+        Config currentConfig;
         try {
-            TopicDescription description = admin.describeTopics(List.of(topicName))
+            description = admin.describeTopics(List.of(topicName))
                     .allTopicNames().get().get(topicName);
-            Config currentConfig = describeTopicConfig(admin, topicName);
-
-            Map<Integer, List<Integer>> assignments = new LinkedHashMap<>();
-            description.partitions().forEach(partition -> assignments.put(
-                    partition.partition(), partition.replicas().stream().map(node -> node.id()).toList()));
-            Map<String, String> explicitConfigs = currentConfig.entries().stream()
-                    .filter(entry -> !entry.isDefault() && !entry.isSensitive() && entry.value() != null)
-                    .filter(entry -> !entry.isReadOnly())
-                    .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value, (a, b) -> a, LinkedHashMap::new));
-
-            admin.deleteTopics(List.of(topicName)).all().get();
-            waitForTopic(admin, topicName, false);
-            admin.createTopics(List.of(new NewTopic(topicName, assignments).configs(explicitConfigs))).all().get();
-            waitForTopic(admin, topicName, true);
+            if (description == null) {
+                throw new IllegalArgumentException("Topic not found: " + topicName);
+            }
+            currentConfig = describeTopicConfig(admin, topicName);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while recreating topic");
+            throw new RuntimeException("Interrupted while loading topic metadata for recreation", e);
         } catch (ExecutionException e) {
-            throw kafkaFailure("recreate topic", e);
+            throw kafkaFailure("describe topic before recreation", e);
         }
+
+        // 1. Pre-deletion validations
+        if (description.isInternal()) {
+            throw new IllegalArgumentException("Internal Kafka topic '" + topicName + "' cannot be recreated.");
+        }
+        if (description.partitions().isEmpty()) {
+            throw new IllegalStateException("Topic '" + topicName + "' has no partition metadata and cannot be safely recreated.");
+        }
+
+        // Verify active brokers in the cluster
+        Set<Integer> activeBrokerIds;
+        try {
+            activeBrokerIds = admin.describeCluster().nodes().get(10, TimeUnit.SECONDS)
+                    .stream().map(Node::id).collect(Collectors.toSet());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while verifying cluster brokers before recreation", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to describe cluster brokers before topic recreation: " + e.getMessage(), e);
+        }
+
+        Map<Integer, List<Integer>> assignments = new LinkedHashMap<>();
+        int expectedReplicas = -1;
+        for (TopicPartitionInfo partition : description.partitions()) {
+            List<Integer> replicas = partition.replicas().stream().map(Node::id).toList();
+            if (replicas.isEmpty()) {
+                throw new IllegalStateException("Partition " + partition.partition() + " has no replica assignments.");
+            }
+            if (expectedReplicas == -1) {
+                expectedReplicas = replicas.size();
+            } else if (replicas.size() != expectedReplicas) {
+                throw new IllegalStateException("Partitions have inconsistent replication factors in topic '" + topicName + "'.");
+            }
+            for (Integer brokerId : replicas) {
+                if (!activeBrokerIds.contains(brokerId)) {
+                    throw new IllegalStateException(String.format(
+                            "Cannot recreate topic '%s': partition %d references broker %d which is not active in the cluster. Active brokers: %s",
+                            topicName, partition.partition(), brokerId, activeBrokerIds));
+                }
+            }
+            assignments.put(partition.partition(), replicas);
+        }
+
+        Map<String, String> explicitConfigs = currentConfig.entries().stream()
+                .filter(entry -> !entry.isDefault() && !entry.isSensitive() && entry.value() != null)
+                .filter(entry -> !entry.isReadOnly())
+                .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value, (a, b) -> a, LinkedHashMap::new));
+
+        // 2. Record durable pre-deletion audit log
+        UUID operationId = UUID.randomUUID();
+        Map<String, Object> operationDetails = new LinkedHashMap<>();
+        operationDetails.put("operationId", operationId.toString());
+        operationDetails.put("stage", "INITIATED");
+        operationDetails.put("topic", topicName);
+        operationDetails.put("partitionCount", assignments.size());
+        operationDetails.put("assignments", assignments);
+        operationDetails.put("configs", explicitConfigs);
+
+        auditService.record("DATA_SERVICES", "TOPIC_RECREATE_INITIATED", "TOPIC", topicName, clusterId,
+                "IN_PROGRESS", null, null, null, operationDetails);
+
+        // Stage 1: Deletion
+        try {
+            admin.deleteTopics(List.of(topicName)).all().get(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            recordAuditFailure(clusterId, topicName, operationId, "DELETION_INTERRUPTED", "Interrupted during topic deletion");
+            throw new TopicRecreationException(operationId, "DELETION_INTERRUPTED", TopicPresence.PRESENT,
+                    "Interrupted while deleting topic '" + topicName + "'", e);
+        } catch (Exception e) {
+            recordAuditFailure(clusterId, topicName, operationId, "DELETION_FAILED", "Failed to delete topic: " + e.getMessage());
+            throw new TopicRecreationException(operationId, "DELETION_FAILED", TopicPresence.PRESENT,
+                    "Failed to delete topic '" + topicName + "' before recreation: " + e.getMessage(), e);
+        }
+
+        // Stage 2: Wait for Deletion
+        try {
+            waitForTopicPresence(admin, topicName, false, 20_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            TopicPresence presence = checkTopicPresence(admin, topicName);
+            recordAuditFailure(clusterId, topicName, operationId, "WAIT_DELETION_INTERRUPTED",
+                    "Interrupted while waiting for topic deletion. Topic presence: " + presence);
+            throw new TopicRecreationException(operationId, "WAIT_DELETION_INTERRUPTED",
+                    presence == TopicPresence.PRESENT ? TopicPresence.PRESENT : TopicPresence.UNKNOWN,
+                    "Interrupted while waiting for topic '" + topicName + "' to be deleted", e);
+        } catch (Exception e) {
+            TopicPresence presence = checkTopicPresence(admin, topicName);
+            recordAuditFailure(clusterId, topicName, operationId, "WAIT_DELETION_FAILED",
+                    "Timed out waiting for topic deletion. Topic presence: " + presence);
+            throw new TopicRecreationException(operationId, "WAIT_DELETION_FAILED",
+                    presence == TopicPresence.PRESENT ? TopicPresence.PRESENT : TopicPresence.UNKNOWN,
+                    "Timed out waiting for topic '" + topicName + "' deletion to propagate", e);
+        }
+
+        // Stage 3: Resilient Recreation with Retry
+        int maxAttempts = 3;
+        Exception lastCreationError = null;
+        boolean created = false;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            TopicPresence preCheck = checkTopicPresence(admin, topicName);
+            if (preCheck == TopicPresence.PRESENT) {
+                created = true;
+                break;
+            }
+            if (preCheck == TopicPresence.UNKNOWN) {
+                lastCreationError = new RuntimeException("Topic presence could not be confirmed (state unknown)");
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1500L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        lastCreationError = ie;
+                        break;
+                    }
+                    continue;
+                }
+                break;
+            }
+            try {
+                admin.createTopics(List.of(new NewTopic(topicName, assignments).configs(explicitConfigs)))
+                        .all().get(30, TimeUnit.SECONDS);
+                created = true;
+                break;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                lastCreationError = e;
+                break;
+            } catch (ExecutionException e) {
+                lastCreationError = e;
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                boolean isDeletionInProgress = (cause.getMessage() != null
+                        && (cause.getMessage().toLowerCase(Locale.ROOT).contains("deletion")
+                        || cause.getMessage().toLowerCase(Locale.ROOT).contains("marked for deletion")));
+                if (isDeletionInProgress && attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1500L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        lastCreationError = ie;
+                        break;
+                    }
+                    continue;
+                }
+                if (cause instanceof TopicExistsException) {
+                    created = true;
+                    break;
+                }
+                break;
+            } catch (Exception e) {
+                lastCreationError = e;
+                break;
+            }
+        }
+
+        // Stage 4: Post-Creation Verification
+        if (created) {
+            try {
+                waitForTopicPresence(admin, topicName, true, 15_000);
+                auditService.record("DATA_SERVICES", "TOPIC_RECREATE_COMPLETED", "TOPIC", topicName, clusterId,
+                        "SUCCESS", null, null, null, Map.of("operationId", operationId.toString(), "status", "RECREATED"));
+                return;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new TopicRecreationException(operationId, "METADATA_REFRESH_INTERRUPTED", TopicPresence.PRESENT,
+                        "Topic was created but metadata refresh was interrupted for '" + topicName + "'", e);
+            } catch (Exception e) {
+                throw new TopicRecreationException(operationId, "METADATA_REFRESH_TIMEOUT", TopicPresence.PRESENT,
+                        "Topic was created but metadata verification timed out for '" + topicName + "'", e);
+            }
+        }
+
+        // Creation failed
+        TopicPresence presenceAfterFailure = checkTopicPresence(admin, topicName);
+
+        recordAuditFailure(clusterId, topicName, operationId, "RECREATION_FAILED",
+                "Topic recreation failed. Current presence: " + presenceAfterFailure + ". Error: "
+                        + (lastCreationError != null ? lastCreationError.getMessage() : "unknown"));
+
+        throw new TopicRecreationException(operationId, "RECREATION_FAILED", presenceAfterFailure,
+                "Topic '" + topicName + "' recreation failed. Current state: " + presenceAfterFailure, lastCreationError);
     }
 
     public List<Map<String, Object>> getTopicConsumers(UUID clusterId, String topicName) {
@@ -551,18 +730,62 @@ public class TopicOperationsService {
         }
     }
 
-    private void waitForTopic(AdminClient admin, String topicName, boolean expected) throws InterruptedException {
-        long deadline = System.currentTimeMillis() + 15_000;
+    TopicPresence checkTopicPresence(AdminClient admin, String topicName) {
+        try {
+            boolean exists = admin.listTopics(new ListTopicsOptions().listInternal(true).timeoutMs(3000))
+                    .names().get(3, TimeUnit.SECONDS).contains(topicName);
+            return exists ? TopicPresence.PRESENT : TopicPresence.ABSENT;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return TopicPresence.UNKNOWN;
+        } catch (Exception e) {
+            return TopicPresence.UNKNOWN;
+        }
+    }
+
+    boolean checkTopicExists(AdminClient admin, String topicName) {
+        return checkTopicPresence(admin, topicName) == TopicPresence.PRESENT;
+    }
+
+    void waitForTopicPresence(AdminClient admin, String topicName, boolean expected, long timeoutMs)
+            throws InterruptedException, TimeoutException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
         while (System.currentTimeMillis() < deadline) {
             try {
-                boolean present = admin.listTopics(new ListTopicsOptions().listInternal(true)).names().get().contains(topicName);
+                long remaining = Math.max(100, deadline - System.currentTimeMillis());
+                int pollTimeout = (int) Math.min(3000, remaining);
+                boolean present = admin.listTopics(new ListTopicsOptions().listInternal(true).timeoutMs(pollTimeout))
+                        .names().get(pollTimeout, TimeUnit.MILLISECONDS).contains(topicName);
                 if (present == expected) return;
             } catch (ExecutionException ignored) {
                 // Metadata is expected to be briefly inconsistent while the topic is recreated.
+            } catch (TimeoutException ignored) {
+                // Poll timeout, check overall deadline
             }
             Thread.sleep(200);
         }
-        throw new RuntimeException("Timed out waiting for topic metadata to refresh");
+        throw new TimeoutException("Timed out waiting for topic '" + topicName + "' presence to become " + expected);
+    }
+
+    private void waitForTopic(AdminClient admin, String topicName, boolean expected) throws InterruptedException {
+        try {
+            waitForTopicPresence(admin, topicName, expected, 15_000);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Timed out waiting for topic metadata to refresh", e);
+        }
+    }
+
+    private void recordAuditFailure(UUID clusterId, String topicName, UUID operationId, String stage, String error) {
+        try {
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("operationId", operationId.toString());
+            details.put("stage", stage);
+            details.put("error", error);
+            auditService.record("DATA_SERVICES", "TOPIC_RECREATE_FAILED", "TOPIC", topicName, clusterId,
+                    "FAILED", null, null, null, details);
+        } catch (Exception ignored) {
+            // Auditing should not mask the underlying exception
+        }
     }
 
     private RuntimeException kafkaFailure(String operation, ExecutionException error) {

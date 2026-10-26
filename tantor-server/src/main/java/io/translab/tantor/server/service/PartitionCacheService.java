@@ -30,6 +30,12 @@ public class PartitionCacheService {
     // Cache: ClusterID -> List of Partitions
     private final Map<UUID, List<PartitionSummaryDto>> partitionCache = new ConcurrentHashMap<>();
 
+    public void invalidateMetadata(UUID clusterId) {
+        if (clusterId != null) {
+            partitionCache.remove(clusterId);
+        }
+    }
+
     @Scheduled(fixedDelay = 10000)
     public void refreshCaches() {
         List<Cluster> activeClusters = clusterRepository.findByStatusNot("DELETED");
