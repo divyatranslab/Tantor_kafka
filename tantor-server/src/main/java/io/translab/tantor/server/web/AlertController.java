@@ -20,14 +20,18 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @RestController
@@ -57,6 +61,17 @@ public class AlertController {
     private final HostStatusService hostStatusService;
     private final HostParcelRepository hostParcelRepository;
     private final ConsumerLagCacheService consumerLagCacheService;
+
+    private final AtomicReference<ConsumerLagAlertSnapshot> consumerLagAlertSnapshot =
+            new AtomicReference<>(new ConsumerLagAlertSnapshot(-1L, Set.of(), Map.of(), Map.of(), List.of()));
+
+    private record ConsumerLagAlertSnapshot(
+            long cacheVersion,
+            Set<UUID> clusterIds,
+            Map<UUID, List<ConsumerGroupSummaryDto>> cachedGroups,
+            Map<UUID, List<Map<String, Object>>> cachedAlertsByCluster,
+            List<Map<String, Object>> alerts
+    ) {}
 
     @GetMapping
     @Transactional
@@ -236,22 +251,7 @@ public class AlertController {
                         parcel.getUpdatedAt(), parcel.getErrorMsg(), "package"
                 )));
 
-        clusters.forEach(cluster -> consumerLagCacheService.getSummaries(cluster.getId()).stream()
-                .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
-                .limit(10)
-                .forEach(group -> alerts.add(runtimeAlert(
-                        "consumer-lag-" + cluster.getId() + "-" + group.getGroupId(),
-                        group.getTotalLag() >= 10000 ? "CRITICAL" : "WARNING",
-                        "Consumer group needs attention",
-                        consumerReason(group),
-                        cluster.getId(),
-                        cluster.getName(),
-                        null,
-                        null,
-                        OffsetDateTime.now(),
-                        null,
-                        "consumer"
-                ))));
+        alerts.addAll(getPreparedConsumerLagAlerts(clusters));
         tasks.stream()
                 // A port check is an operator-requested prerequisite result. It
                 // belongs in the audit trail, not in the live-health alert feed.
@@ -389,8 +389,13 @@ public class AlertController {
             observedKeys.add(key);
             Alert alert = alertRepository.findByAlertKey(key).orElseGet(Alert::new);
             boolean newlyActive = alert.getId() == null || !"ACTIVE".equalsIgnoreCase(alert.getStatus());
-            if (newlyActive) {
-                alert.setCreatedAt(java.time.Instant.now());
+            if (newlyActive || alert.getCreatedAt() == null) {
+                OffsetDateTime runtimeCreated = toOffsetDateTime(runtime.get("createdAt"));
+                if (runtimeCreated != null) {
+                    alert.setCreatedAt(runtimeCreated.toInstant());
+                } else {
+                    alert.setCreatedAt(java.time.Instant.now());
+                }
             }
             alert.setAlertKey(key);
             alert.setSeverity(String.valueOf(runtime.getOrDefault("severity", "WARNING")));
@@ -559,6 +564,170 @@ public class AlertController {
 
     private String consumerReason(ConsumerGroupSummaryDto group) {
         return group.getGroupId() + " has total lag " + group.getTotalLag() + " and health " + group.getHealth() + ".";
+    }
+
+    private List<Map<String, Object>> getPreparedConsumerLagAlerts(List<Cluster> clusters) {
+        Set<UUID> currentClusterIds = clusters.stream().map(Cluster::getId).collect(Collectors.toSet());
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            ConsumerLagCacheService.AlertCacheGeneration cacheGen = consumerLagCacheService.getAlertCacheGeneration();
+            long currentVersion = cacheGen != null ? cacheGen.generation() : consumerLagCacheService.getCacheVersion();
+            ConsumerLagAlertSnapshot snapshot = consumerLagAlertSnapshot.get();
+
+            if (snapshot != null && snapshot.cacheVersion() == currentVersion && snapshot.clusterIds().equals(currentClusterIds)) {
+                return snapshot.alerts();
+            }
+
+            Map<UUID, List<ConsumerGroupSummaryDto>> newCachedGroups = new LinkedHashMap<>();
+            Map<UUID, List<Map<String, Object>>> newCachedAlerts = new LinkedHashMap<>();
+            List<Map<String, Object>> preparedAlerts = new ArrayList<>();
+            OffsetDateTime now = OffsetDateTime.now();
+
+            Map<UUID, List<ConsumerGroupSummaryDto>> prevGroups = snapshot != null ? snapshot.cachedGroups() : Map.of();
+            Map<UUID, List<Map<String, Object>>> prevAlerts = snapshot != null ? snapshot.cachedAlertsByCluster() : Map.of();
+
+            for (Cluster cluster : clusters) {
+                List<ConsumerGroupSummaryDto> alertGroups = cacheGen != null
+                        ? cacheGen.alertSummaries().get(cluster.getId())
+                        : consumerLagCacheService.getAlertSummaries(cluster.getId());
+                if (alertGroups == null) {
+                    List<ConsumerGroupSummaryDto> allSummaries = consumerLagCacheService.getSummaries(cluster.getId());
+                    alertGroups = allSummaries == null ? List.of() : allSummaries.stream()
+                            .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
+                            .limit(10)
+                            .toList();
+                }
+
+                newCachedGroups.put(cluster.getId(), alertGroups);
+
+                // If this cluster's alert groups have not changed, reuse the previously prepared alerts
+                if (prevAlerts != null && prevAlerts.containsKey(cluster.getId())
+                        && areGroupsEqual(prevGroups.get(cluster.getId()), alertGroups)) {
+                    List<Map<String, Object>> reused = prevAlerts.get(cluster.getId());
+                    newCachedAlerts.put(cluster.getId(), reused);
+                    preparedAlerts.addAll(reused);
+                    continue;
+                }
+
+                List<Map<String, Object>> clusterAlerts = new ArrayList<>();
+                for (ConsumerGroupSummaryDto group : alertGroups) {
+                    long ts = group.getLastUpdated();
+                    if (ts <= 0 && cacheGen != null && cacheGen.clusterLastRefreshed() != null) {
+                        ts = cacheGen.clusterLastRefreshed().getOrDefault(cluster.getId(), 0L);
+                    }
+                    OffsetDateTime alertCreatedAt = ts > 0
+                            ? Instant.ofEpochMilli(ts).atOffset(now.getOffset())
+                            : now;
+                    clusterAlerts.add(runtimeAlert(
+                            "consumer-lag-" + cluster.getId() + "-" + group.getGroupId(),
+                            group.getTotalLag() >= 10000 ? "CRITICAL" : "WARNING",
+                            "Consumer group needs attention",
+                            consumerReason(group),
+                            cluster.getId(),
+                            cluster.getName(),
+                            null,
+                            null,
+                            alertCreatedAt,
+                            null,
+                            "consumer"
+                    ));
+                }
+
+                List<Map<String, Object>> immutableClusterAlerts = List.copyOf(clusterAlerts);
+                newCachedAlerts.put(cluster.getId(), immutableClusterAlerts);
+                preparedAlerts.addAll(immutableClusterAlerts);
+            }
+
+            List<Map<String, Object>> immutableAlerts = List.copyOf(preparedAlerts);
+
+            // Re-read latest generation to ensure cache did not advance while building
+            ConsumerLagCacheService.AlertCacheGeneration latestGen = consumerLagCacheService.getAlertCacheGeneration();
+            long latestVersion = latestGen != null ? latestGen.generation() : consumerLagCacheService.getCacheVersion();
+
+            if (latestVersion > currentVersion) {
+                ConsumerLagAlertSnapshot latestPublished = consumerLagAlertSnapshot.get();
+                if (latestPublished != null && latestPublished.cacheVersion() >= latestVersion
+                        && latestPublished.clusterIds().equals(currentClusterIds)) {
+                    return latestPublished.alerts();
+                }
+                // Cache advanced concurrently: retry building with the fresh generation
+                continue;
+            }
+
+            ConsumerLagAlertSnapshot newSnapshot = new ConsumerLagAlertSnapshot(
+                    currentVersion,
+                    currentClusterIds,
+                    Collections.unmodifiableMap(newCachedGroups),
+                    Collections.unmodifiableMap(newCachedAlerts),
+                    immutableAlerts
+            );
+
+            if (!tryPublishSnapshot(newSnapshot)) {
+                // A newer generation snapshot was published concurrently; do not overwrite it.
+                ConsumerLagAlertSnapshot latestPublished = consumerLagAlertSnapshot.get();
+                if (latestPublished != null && latestPublished.cacheVersion() > currentVersion
+                        && latestPublished.clusterIds().equals(currentClusterIds)) {
+                    return latestPublished.alerts();
+                }
+                continue;
+            }
+
+            return immutableAlerts;
+        }
+
+        // Bounded fallback: if retries exhausted, return published alerts matching cluster set or last available
+        ConsumerLagAlertSnapshot fallback = consumerLagAlertSnapshot.get();
+        if (fallback != null && fallback.clusterIds().equals(currentClusterIds)) {
+            return fallback.alerts();
+        }
+        return consumerLagAlertSnapshot.get() != null ? consumerLagAlertSnapshot.get().alerts() : List.of();
+    }
+
+    private boolean tryPublishSnapshot(ConsumerLagAlertSnapshot newSnapshot) {
+        while (true) {
+            ConsumerLagAlertSnapshot current = consumerLagAlertSnapshot.get();
+            if (current != null) {
+                if (current.cacheVersion() > newSnapshot.cacheVersion()) {
+                    // Do not publish a snapshot built from an older generation over a newer published snapshot
+                    return false;
+                }
+                if (current.cacheVersion() == newSnapshot.cacheVersion()
+                        && current.clusterIds().equals(newSnapshot.clusterIds())) {
+                    return true;
+                }
+            }
+            if (consumerLagAlertSnapshot.compareAndSet(current, newSnapshot)) {
+                return true;
+            }
+        }
+    }
+
+    long getSnapshotCacheVersion() {
+        ConsumerLagAlertSnapshot snapshot = consumerLagAlertSnapshot.get();
+        return snapshot != null ? snapshot.cacheVersion() : -1L;
+    }
+
+    Set<UUID> getSnapshotClusterIds() {
+        ConsumerLagAlertSnapshot snapshot = consumerLagAlertSnapshot.get();
+        return snapshot != null ? snapshot.clusterIds() : Set.of();
+    }
+
+    private boolean areGroupsEqual(List<ConsumerGroupSummaryDto> a, List<ConsumerGroupSummaryDto> b) {
+        if (a == b) return true;
+        if (a == null || b == null || a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            ConsumerGroupSummaryDto g1 = a.get(i);
+            ConsumerGroupSummaryDto g2 = b.get(i);
+            if (g1 == g2) continue;
+            if (g1 == null || g2 == null) return false;
+            if (!Objects.equals(g1.getGroupId(), g2.getGroupId())
+                    || g1.getTotalLag() != g2.getTotalLag()
+                    || !Objects.equals(g1.getHealth(), g2.getHealth())
+                    || g1.getLastUpdated() != g2.getLastUpdated()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String hostLabel(Host host) {
