@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import './JobsList.css';
 
 type Job = {
@@ -16,6 +16,13 @@ export function JobsList() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true); // tracks initial load
   const [refreshing, setRefreshing] = useState(false); // tracks manual/auto refreshes
+  const [page, setPage] = useState(0);
+  const [pageSize] = useState(20);
+  const [pagination, setPagination] = useState<{ totalElements: number; totalPages: number; hasNext: boolean }>({
+    totalElements: 0,
+    totalPages: 0,
+    hasNext: false,
+  });
   const navigate = useNavigate();
 
   const fetchJobs = useCallback(async (isManual = false) => {
@@ -25,24 +32,45 @@ export function JobsList() {
       setLoading(true);
     }
     try {
-      const res = await fetch('/api/v1/ui/jobs');
+      const res = await fetch(`/api/v1/ui/jobs?page=${page}&size=${pageSize}`);
       if (res.ok) {
         const data = await res.json();
-        setJobs(data);
+        if (Array.isArray(data)) {
+          setJobs(data);
+          setPagination({
+            totalElements: data.length,
+            totalPages: 1,
+            hasNext: false,
+          });
+        } else {
+          setJobs(data.content || []);
+          setPagination({
+            totalElements: data.totalElements ?? (data.content ? data.content.length : 0),
+            totalPages: data.totalPages ?? 1,
+            hasNext: !!data.hasNext,
+          });
+        }
+      } else {
+        setJobs([]);
+        setPagination({ totalElements: 0, totalPages: 0, hasNext: false });
       }
     } catch (err) {
       console.error(err);
+      setJobs([]);
+      setPagination({ totalElements: 0, totalPages: 0, hasNext: false });
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [page, pageSize]);
+
 
   useEffect(() => {
     void (async () => { await fetchJobs(false); })();
     const interval = setInterval(() => { void (async () => { await fetchJobs(true); })(); }, 5000);
     return () => clearInterval(interval);
   }, [fetchJobs]);
+
 
   const formatStatus = (status: string) => {
     switch (status.toUpperCase().replace(' - ', '_').replace(' ', '_')) {
@@ -124,8 +152,33 @@ export function JobsList() {
               )}
             </tbody>
           </table>
+          {pagination.totalPages > 1 && (
+            <div className="pagination">
+              <span className="pagination-info">
+                Showing {pagination.totalElements === 0 ? 0 : page * pageSize + 1} to {Math.min((page + 1) * pageSize, pagination.totalElements)} of {pagination.totalElements} jobs
+              </span>
+
+              <div className="pagination-controls">
+                <button
+                  className="pagination-btn"
+                  disabled={page === 0}
+                  onClick={() => setPage(p => Math.max(0, p - 1))}
+                >
+                  <ChevronLeft size={16} /> Previous
+                </button>
+                <button
+                  className="pagination-btn"
+                  disabled={!pagination.hasNext}
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
+
   );
 }

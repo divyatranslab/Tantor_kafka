@@ -18,4 +18,15 @@ public class PaginatedResponse<T> {
     private long totalElements;
     private int totalPages;
     private boolean hasNext;
+
+    public static <T> PaginatedResponse<T> fromPage(org.springframework.data.domain.Page<T> page) {
+        return PaginatedResponse.<T>builder()
+                .content(page.getContent())
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .hasNext(page.hasNext())
+                .build();
+    }
 }

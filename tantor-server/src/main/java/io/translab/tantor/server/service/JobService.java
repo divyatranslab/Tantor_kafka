@@ -7,6 +7,14 @@ import io.translab.tantor.server.repository.JobStepRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import io.translab.tantor.server.dto.JobSummaryDto;
+import io.translab.tantor.server.dto.PaginatedResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,6 +29,8 @@ public class JobService {
     private final JobRepository jobRepository;
     private final JobStepRepository jobStepRepository;
     private final ObjectMapper objectMapper;
+    private static final int MAX_NORMAL_JOBS_BEFORE_ROLLBACK = 5;
+    private final AtomicInteger normalJobsSinceRollback = new AtomicInteger(0);
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
@@ -45,6 +55,29 @@ public class JobService {
                 .orElseThrow(() -> new RuntimeException("Job not found: " + id));
     }
 
+    public static final int DEFAULT_PAGE_SIZE = 20;
+    public static final int MAX_PAGE_SIZE = 100;
+
+    public PaginatedResponse<JobSummaryDto> getJobs(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("Page index must not be less than zero");
+        }
+        if (size < 1) {
+            throw new IllegalArgumentException("Page size must be greater than zero");
+        }
+        int safeSize = Math.min(size, MAX_PAGE_SIZE);
+        Pageable pageable = PageRequest.of(
+                page,
+                safeSize,
+                Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+        Page<JobSummaryDto> summaries = jobRepository.findAllJobSummaries(pageable);
+        return PaginatedResponse.fromPage(summaries);
+    }
+
+    public PaginatedResponse<JobSummaryDto> getJobs() {
+        return getJobs(0, DEFAULT_PAGE_SIZE);
+    }
+
     public List<Job> getAllJobs() {
         return jobRepository.findAllByOrderByCreatedAtDesc();
     }
@@ -53,8 +86,29 @@ public class JobService {
         return jobStepRepository.findByJobIdOrderByStepOrderAsc(jobId);
     }
 
+    private Optional<ClaimedJob> claimRollbackJob() {
+        Optional<Job> rollback = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING);
+        if (rollback.isPresent()) {
+            Job job = rollback.get();
+            job.setStatus(JobStatus.ROLLING_BACK);
+            job.setEndTime(null);
+            jobRepository.save(job);
+            normalJobsSinceRollback.set(0);
+            return Optional.of(new ClaimedJob(job.getId(), true));
+        }
+        return Optional.empty();
+    }
+
     @Transactional
     public Optional<ClaimedJob> claimNextJob() {
+        boolean rollbackDue = normalJobsSinceRollback.get() >= MAX_NORMAL_JOBS_BEFORE_ROLLBACK;
+        if (rollbackDue) {
+            Optional<ClaimedJob> rollback = claimRollbackJob();
+            if (rollback.isPresent()) {
+                return rollback;
+            }
+        }
+
         Optional<Job> normal = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.PENDING);
         if (normal.isPresent()) {
             Job job = normal.get();
@@ -62,18 +116,15 @@ public class JobService {
             job.setStartTime(Instant.now());
             job.setEndTime(null);
             jobRepository.save(job);
+            if (rollbackDue) {
+                normalJobsSinceRollback.set(1);
+            } else {
+                normalJobsSinceRollback.incrementAndGet();
+            }
             return Optional.of(new ClaimedJob(job.getId(), false));
         }
 
-        Optional<Job> rollback = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING);
-        if (rollback.isPresent()) {
-            Job job = rollback.get();
-            job.setStatus(JobStatus.ROLLING_BACK);
-            job.setEndTime(null);
-            jobRepository.save(job);
-            return Optional.of(new ClaimedJob(job.getId(), true));
-        }
-        return Optional.empty();
+        return claimRollbackJob();
     }
 
     @Transactional
@@ -137,7 +188,8 @@ public class JobService {
 
     @Transactional
     public void appendStepLog(UUID stepId, String output) {
-        if (output == null || output.isBlank()) return;
+        if (output == null || output.isBlank())
+            return;
         JobStep step = getStep(stepId);
         String current = step.getLogs() == null ? "" : step.getLogs();
         step.setLogs(current + "[" + Instant.now() + "] " + output + "\n");
@@ -170,7 +222,8 @@ public class JobService {
         job.setStatus(retryRollback ? JobStatus.ROLLBACK_PENDING : JobStatus.PENDING);
         job.setRetryCount(job.getRetryCount() + 1);
         job.setEndTime(null);
-        appendLog(id, retryRollback ? "Rollback retry requested." : "Retry requested; completed steps will be preserved.");
+        appendLog(id,
+                retryRollback ? "Rollback retry requested." : "Retry requested; completed steps will be preserved.");
         refreshProgress(id);
         return jobRepository.save(job);
     }
@@ -202,14 +255,14 @@ public class JobService {
                 .filter(step -> step.getStatus() == JobStepStatus.IN_PROGRESS)
                 .map(JobStep::getName)
                 .findFirst()
-                .orElse(completed == steps.size() && !steps.isEmpty() ? "All steps completed." : "Waiting for execution.");
+                .orElse(completed == steps.size() && !steps.isEmpty() ? "All steps completed."
+                        : "Waiting for execution.");
         try {
             Job job = getJob(jobId);
             job.setProgress(objectMapper.writeValueAsString(Map.of(
                     "currentStep", completed,
                     "totalSteps", steps.size(),
-                    "message", message
-            )));
+                    "message", message)));
             jobRepository.save(job);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to update job progress", e);
@@ -271,5 +324,6 @@ public class JobService {
                 || status == JobStatus.ROLLBACK_FAILED;
     }
 
-    public record ClaimedJob(UUID jobId, boolean rollback) {}
+    public record ClaimedJob(UUID jobId, boolean rollback) {
+    }
 }
