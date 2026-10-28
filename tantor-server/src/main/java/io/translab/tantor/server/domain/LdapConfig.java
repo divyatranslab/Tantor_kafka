@@ -3,6 +3,8 @@ package io.translab.tantor.server.domain;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 import java.util.UUID;
 
@@ -56,6 +58,8 @@ public class LdapConfig {
     @Column(name = "default_role", length = 20)
     private String defaultRole = "monitor";
 
-    @Column(name = "connection_timeout")
+    @Min(value = 1, message = "LDAP connection timeout must be at least 1 second")
+    @Max(value = 60, message = "LDAP connection timeout must not exceed 60 seconds")
+    @Column(name = "connection_timeout", nullable = false)
     private int connectionTimeout = 10;
 }
