@@ -2,6 +2,8 @@ package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.dto.JobSummaryDto;
+import io.translab.tantor.server.dto.PaginatedResponse;
 import io.translab.tantor.server.service.JobService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,9 +20,12 @@ public class JobController {
     private final JobService jobService;
 
     @GetMapping
-    public ResponseEntity<List<Job>> listJobs() {
-        return ResponseEntity.ok(jobService.getAllJobs());
+    public ResponseEntity<PaginatedResponse<JobSummaryDto>> listJobs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(jobService.getJobs(page, size));
     }
+
 
     @GetMapping("/{id}")
     public ResponseEntity<Job> getJob(@PathVariable UUID id) {
