@@ -18,6 +18,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,44 +27,163 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ConsumerLagCacheService {
 
+    public record AlertCacheGeneration(
+            long generation,
+            Map<UUID, List<ConsumerGroupSummaryDto>> alertSummaries,
+            Map<UUID, Long> clusterLastRefreshed) {
+        public AlertCacheGeneration(long generation, Map<UUID, List<ConsumerGroupSummaryDto>> alertSummaries) {
+            this(generation, alertSummaries, extractClusterLastRefreshed(alertSummaries));
+        }
+
+        private static Map<UUID, Long> extractClusterLastRefreshed(
+                Map<UUID, List<ConsumerGroupSummaryDto>> alertSummaries) {
+            Map<UUID, Long> result = new LinkedHashMap<>();
+            if (alertSummaries != null) {
+                alertSummaries.forEach((id, list) -> {
+                    long max = 0L;
+                    if (list != null) {
+                        for (ConsumerGroupSummaryDto group : list) {
+                            if (group.getLastUpdated() > max) {
+                                max = group.getLastUpdated();
+                            }
+                        }
+                    }
+                    result.put(id, max);
+                });
+            }
+            return result;
+        }
+
+        public AlertCacheGeneration {
+            Map<UUID, List<ConsumerGroupSummaryDto>> copy = new LinkedHashMap<>();
+            if (alertSummaries != null) {
+                alertSummaries.forEach((k, v) -> copy.put(k, v == null ? List.of() : List.copyOf(v)));
+            }
+            alertSummaries = Collections.unmodifiableMap(copy);
+            clusterLastRefreshed = clusterLastRefreshed == null
+                    ? Collections.emptyMap()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(clusterLastRefreshed));
+        }
+    }
+
     private final ClusterRepository clusterRepository;
     private final KafkaAdminService kafkaAdminService;
     private final TransactionTemplate transactionTemplate;
 
     // Cache: ClusterID -> List of Summaries
     private final Map<UUID, List<ConsumerGroupSummaryDto>> summaryCache = new ConcurrentHashMap<>();
-    
+
     // Cache: ClusterID -> Map<GroupId, Detail>
     private final Map<UUID, Map<String, ConsumerGroupDetailDto>> detailCache = new ConcurrentHashMap<>();
 
+    private final AtomicLong generationCounter = new AtomicLong(0);
+    private final AtomicReference<AlertCacheGeneration> alertCacheGeneration = new AtomicReference<>(
+            new AlertCacheGeneration(0L, Collections.emptyMap(), Collections.emptyMap()));
+
     @Scheduled(fixedDelay = 10000)
     public void refreshCaches() {
+        AlertCacheGeneration currentGen = alertCacheGeneration.get();
+        long startGeneration = currentGen != null ? currentGen.generation() : 0L;
+
         List<Cluster> activeClusters = clusterRepository.findByStatusNot("DELETED");
+        Set<UUID> activeIds = activeClusters.stream().map(Cluster::getId).collect(Collectors.toSet());
+        summaryCache.keySet().retainAll(activeIds);
+        detailCache.keySet().retainAll(activeIds);
+
+        Map<UUID, List<ConsumerGroupSummaryDto>> nextAlertSummaries = new LinkedHashMap<>();
+        Map<UUID, Long> nextClusterLastRefreshed = new LinkedHashMap<>();
+        if (currentGen != null) {
+            currentGen.alertSummaries().forEach((id, list) -> {
+                if (activeIds.contains(id)) {
+                    nextAlertSummaries.put(id, list);
+                }
+            });
+            if (currentGen.clusterLastRefreshed() != null) {
+                currentGen.clusterLastRefreshed().forEach((id, ts) -> {
+                    if (activeIds.contains(id)) {
+                        nextClusterLastRefreshed.put(id, ts);
+                    }
+                });
+            }
+        }
+
+        Set<UUID> refreshedClusterIds = new HashSet<>();
         for (Cluster cluster : activeClusters) {
+            // Cache policy for skipped clusters:
+            // Kafka admin operations require online brokers. Only managed clusters in
+            // "SUCCESS" status
+            // or external clusters in "EXTERNAL" mode are polled. Clusters in other states
+            // (e.g. CREATING, PENDING, FAILED) are skipped from Kafka polling to avoid
+            // connecting
+            // to brokers that are offline or not yet ready.
+            // If a skipped cluster already has cached summaries from a previous run, those
+            // are preserved
+            // until the cluster is DELETED. Clusters with DELETED status are purged
+            // immediately above.
             if ("SUCCESS".equals(cluster.getStatus()) || "EXTERNAL".equals(cluster.getMode())) {
                 transactionTemplate.execute(status -> {
                     try {
-                        refreshConsumerGroups(cluster.getId());
+                        List<ConsumerGroupSummaryDto> clusterAlertSummaries = refreshConsumerGroups(cluster.getId());
+                        if (clusterAlertSummaries != null) {
+                            nextAlertSummaries.put(cluster.getId(), clusterAlertSummaries);
+                            refreshedClusterIds.add(cluster.getId());
+                            long max = 0L;
+                            for (ConsumerGroupSummaryDto dto : clusterAlertSummaries) {
+                                if (dto.getLastUpdated() > max) {
+                                    max = dto.getLastUpdated();
+                                }
+                            }
+                            nextClusterLastRefreshed.put(cluster.getId(), max > 0 ? max : System.currentTimeMillis());
+                        }
                     } catch (Exception e) {
-                        log.warn("Failed to refresh consumer lag cache for cluster {}: {}", cluster.getId(), e.getMessage());
+                        log.warn("Failed to refresh consumer lag cache for cluster {}: {}", cluster.getId(),
+                                e.getMessage());
                     }
                     return null;
                 });
             }
         }
+
+        // Publication and stale-data policy:
+        // A new generation is only published if at least one cluster successfully
+        // refreshed fresh data from Kafka,
+        // or if active clusters were added or removed (e.g. deleted cluster purged).
+        // If all attempted cluster refreshes fail, the last valid data is preserved in
+        // nextAlertSummaries,
+        // but the generation counter is NOT incremented to prevent stale summaries from
+        // falsely appearing newly refreshed.
+        boolean anyRefreshed = !refreshedClusterIds.isEmpty();
+        boolean clusterSetChanged = currentGen == null
+                || !currentGen.alertSummaries().keySet().equals(nextAlertSummaries.keySet());
+
+        if (anyRefreshed || clusterSetChanged) {
+            while (true) {
+                AlertCacheGeneration current = alertCacheGeneration.get();
+                if (current != null && current.generation() > startGeneration) {
+                    log.debug("Skipping alert cache publish: newer generation {} already published (started at {})",
+                            current.generation(), startGeneration);
+                    break;
+                }
+                long nextGen = generationCounter.incrementAndGet();
+                if (alertCacheGeneration.compareAndSet(current,
+                        new AlertCacheGeneration(nextGen, nextAlertSummaries, nextClusterLastRefreshed))) {
+                    break;
+                }
+            }
+        }
     }
 
-    private void refreshConsumerGroups(UUID clusterId) throws Exception {
+    private List<ConsumerGroupSummaryDto> refreshConsumerGroups(UUID clusterId) throws Exception {
         AdminClient client = kafkaAdminService.getAdminClient(clusterId);
-        
+
         // 1. Fetch all Group IDs
         Collection<ConsumerGroupListing> listings = client.listConsumerGroups().all().get();
         List<String> groupIds = listings.stream().map(ConsumerGroupListing::groupId).collect(Collectors.toList());
-        
+
         if (groupIds.isEmpty()) {
             summaryCache.put(clusterId, Collections.emptyList());
             detailCache.put(clusterId, Collections.emptyMap());
-            return;
+            return Collections.emptyList();
         }
 
         // 2. Describe all Groups
@@ -71,10 +192,11 @@ public class ConsumerLagCacheService {
         // 3. Fetch Offsets for all Groups
         Map<String, Map<TopicPartition, OffsetAndMetadata>> allGroupOffsets = new HashMap<>();
         Set<TopicPartition> allPartitions = new HashSet<>();
-        
+
         for (String groupId : groupIds) {
             try {
-                Map<TopicPartition, OffsetAndMetadata> offsets = client.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get();
+                Map<TopicPartition, OffsetAndMetadata> offsets = client.listConsumerGroupOffsets(groupId)
+                        .partitionsToOffsetAndMetadata().get();
                 allGroupOffsets.put(groupId, offsets);
                 allPartitions.addAll(offsets.keySet());
             } catch (Exception e) {
@@ -88,7 +210,7 @@ public class ConsumerLagCacheService {
         for (TopicPartition tp : allPartitions) {
             latestSpecs.put(tp, OffsetSpec.latest());
         }
-        
+
         Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latestOffsets = new HashMap<>();
         try {
             latestOffsets = client.listOffsets(latestSpecs).all().get();
@@ -97,7 +219,8 @@ public class ConsumerLagCacheService {
             // Fallback: fetch one by one to isolate offline partitions
             for (TopicPartition tp : allPartitions) {
                 try {
-                    Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> res = client.listOffsets(Collections.singletonMap(tp, OffsetSpec.latest())).all().get();
+                    Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> res = client
+                            .listOffsets(Collections.singletonMap(tp, OffsetSpec.latest())).all().get();
                     latestOffsets.putAll(res);
                 } catch (Exception ex) {
                     log.warn("Partition {} is offline or leaderless", tp);
@@ -112,24 +235,25 @@ public class ConsumerLagCacheService {
         for (Map.Entry<String, ConsumerGroupDescription> entry : descriptions.entrySet()) {
             String groupId = entry.getKey();
             ConsumerGroupDescription desc = entry.getValue();
-            Map<TopicPartition, OffsetAndMetadata> groupOffsets = allGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
+            Map<TopicPartition, OffsetAndMetadata> groupOffsets = allGroupOffsets.getOrDefault(groupId,
+                    Collections.emptyMap());
 
             long totalLag = 0;
             boolean hasOfflinePartitions = false;
-            
+
             List<MemberAssignmentDto> memberDtos = new ArrayList<>();
-            
+
             // Map partitions to members based on assignment
             Map<TopicPartition, String> partitionToMember = new HashMap<>();
-            
+
             for (MemberDescription member : desc.members()) {
                 List<PartitionLagDto> partitionLags = new ArrayList<>();
                 for (TopicPartition tp : member.assignment().topicPartitions()) {
                     partitionToMember.put(tp, member.consumerId());
-                    
+
                     long currentOffset = groupOffsets.containsKey(tp) ? groupOffsets.get(tp).offset() : -1;
                     long leo = latestOffsets.containsKey(tp) ? latestOffsets.get(tp).offset() : -1;
-                    
+
                     long lag = -1;
                     if (currentOffset != -1 && leo != -1) {
                         lag = Math.max(0, leo - currentOffset);
@@ -137,13 +261,14 @@ public class ConsumerLagCacheService {
                     } else {
                         hasOfflinePartitions = true;
                     }
-                    
+
                     partitionLags.add(new PartitionLagDto(tp.topic(), tp.partition(), currentOffset, leo, lag));
                 }
-                
-                memberDtos.add(new MemberAssignmentDto(member.consumerId(), member.clientId(), member.host(), partitionLags));
+
+                memberDtos.add(
+                        new MemberAssignmentDto(member.consumerId(), member.clientId(), member.host(), partitionLags));
             }
-            
+
             // Handle unassigned partitions that have committed offsets
             List<PartitionLagDto> unassignedLags = new ArrayList<>();
             for (Map.Entry<TopicPartition, OffsetAndMetadata> offsetEntry : groupOffsets.entrySet()) {
@@ -151,7 +276,7 @@ public class ConsumerLagCacheService {
                 if (!partitionToMember.containsKey(tp)) {
                     long currentOffset = offsetEntry.getValue().offset();
                     long leo = latestOffsets.containsKey(tp) ? latestOffsets.get(tp).offset() : -1;
-                    
+
                     long lag = -1;
                     if (currentOffset != -1 && leo != -1) {
                         lag = Math.max(0, leo - currentOffset);
@@ -162,56 +287,72 @@ public class ConsumerLagCacheService {
                     unassignedLags.add(new PartitionLagDto(tp.topic(), tp.partition(), currentOffset, leo, lag));
                 }
             }
-            
+
             if (!unassignedLags.isEmpty()) {
                 memberDtos.add(new MemberAssignmentDto("UNASSIGNED", "none", "none", unassignedLags));
             }
-            
+
             String health = "HEALTHY";
-            if (hasOfflinePartitions) health = "WARNING";
-            if (desc.state().toString().equals("Dead") || desc.state().toString().equals("Empty")) health = "INACTIVE";
+            if (hasOfflinePartitions)
+                health = "WARNING";
+            if (desc.state().toString().equals("Dead") || desc.state().toString().equals("Empty"))
+                health = "INACTIVE";
 
             summaries.add(new ConsumerGroupSummaryDto(
-                groupId, 
-                desc.state().toString(), 
-                desc.members().size(), 
-                totalLag, 
-                health, 
-                now
-            ));
-            
+                    groupId,
+                    desc.state().toString(),
+                    desc.members().size(),
+                    totalLag,
+                    health,
+                    now));
+
             details.put(groupId, new ConsumerGroupDetailDto(groupId, desc.state().toString(), memberDtos));
         }
 
+        List<ConsumerGroupSummaryDto> alertSummaries = summaries.stream()
+                .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
+                .limit(10)
+                .toList();
+
         summaryCache.put(clusterId, summaries);
         detailCache.put(clusterId, details);
+        return alertSummaries;
     }
 
-    public PaginatedResponse<ConsumerGroupSummaryDto> getPaginatedSummaries(UUID clusterId, int page, int size, String search, String sortBy) {
+    public PaginatedResponse<ConsumerGroupSummaryDto> getPaginatedSummaries(UUID clusterId, int page, int size,
+            String search, String sortBy) {
         List<ConsumerGroupSummaryDto> allCached = summaryCache.getOrDefault(clusterId, Collections.emptyList());
 
         List<ConsumerGroupSummaryDto> filtered = allCached.stream()
-                .filter(c -> search == null || search.isEmpty() || c.getGroupId().toLowerCase().contains(search.toLowerCase()))
+                .filter(c -> search == null || search.isEmpty()
+                        || c.getGroupId().toLowerCase().contains(search.toLowerCase()))
                 .collect(Collectors.toList());
 
         filtered.sort((a, b) -> {
-            if ("totalLag".equalsIgnoreCase(sortBy)) return Long.compare(b.getTotalLag(), a.getTotalLag()); // DESC
-            if ("state".equalsIgnoreCase(sortBy)) return a.getState().compareToIgnoreCase(b.getState());
-            if ("health".equalsIgnoreCase(sortBy)) return a.getHealth().compareToIgnoreCase(b.getHealth());
-            if ("membersCount".equalsIgnoreCase(sortBy)) return Integer.compare(b.getMembersCount(), a.getMembersCount()); // DESC
-            
+            if ("totalLag".equalsIgnoreCase(sortBy))
+                return Long.compare(b.getTotalLag(), a.getTotalLag()); // DESC
+            if ("state".equalsIgnoreCase(sortBy))
+                return a.getState().compareToIgnoreCase(b.getState());
+            if ("health".equalsIgnoreCase(sortBy))
+                return a.getHealth().compareToIgnoreCase(b.getHealth());
+            if ("membersCount".equalsIgnoreCase(sortBy))
+                return Integer.compare(b.getMembersCount(), a.getMembersCount()); // DESC
+
             // Default: groupId ASC
             return a.getGroupId().compareToIgnoreCase(b.getGroupId());
         });
 
         int totalElements = filtered.size();
         int totalPages = (int) Math.ceil((double) totalElements / size);
-        if (page < 0) page = 0;
-        if (page >= totalPages && totalPages > 0) page = totalPages - 1;
-        
+        if (page < 0)
+            page = 0;
+        if (page >= totalPages && totalPages > 0)
+            page = totalPages - 1;
+
         int start = page * size;
         int end = Math.min(start + size, totalElements);
-        List<ConsumerGroupSummaryDto> paged = start <= end && start < totalElements ? filtered.subList(start, end) : Collections.emptyList();
+        List<ConsumerGroupSummaryDto> paged = start <= end && start < totalElements ? filtered.subList(start, end)
+                : Collections.emptyList();
 
         return PaginatedResponse.<ConsumerGroupSummaryDto>builder()
                 .content(paged)
@@ -230,5 +371,48 @@ public class ConsumerLagCacheService {
 
     public List<ConsumerGroupSummaryDto> getSummaries(UUID clusterId) {
         return List.copyOf(summaryCache.getOrDefault(clusterId, Collections.emptyList()));
+    }
+
+    public List<ConsumerGroupSummaryDto> getAlertSummaries(UUID clusterId) {
+        AlertCacheGeneration gen = alertCacheGeneration.get();
+        return gen.alertSummaries().getOrDefault(clusterId, Collections.emptyList());
+    }
+
+    public long getCacheVersion() {
+        return alertCacheGeneration.get().generation();
+    }
+
+    public AlertCacheGeneration getAlertCacheGeneration() {
+        return alertCacheGeneration.get();
+    }
+
+    void setCacheForCluster(UUID clusterId, List<ConsumerGroupSummaryDto> summaries) {
+        summaryCache.put(clusterId, summaries);
+        List<ConsumerGroupSummaryDto> alertSummaries = summaries.stream()
+                .filter(group -> group.getTotalLag() >= 1000 || "WARNING".equalsIgnoreCase(group.getHealth()))
+                .limit(10)
+                .toList();
+
+        while (true) {
+            AlertCacheGeneration current = alertCacheGeneration.get();
+            Map<UUID, List<ConsumerGroupSummaryDto>> updated = new LinkedHashMap<>(current.alertSummaries());
+            updated.put(clusterId, alertSummaries);
+            Map<UUID, Long> updatedTimestamps = new LinkedHashMap<>(current.clusterLastRefreshed());
+            updatedTimestamps.put(clusterId, System.currentTimeMillis());
+
+            long nextGen = generationCounter.incrementAndGet();
+            if (alertCacheGeneration.compareAndSet(current,
+                    new AlertCacheGeneration(nextGen, updated, updatedTimestamps))) {
+                break;
+            }
+        }
+    }
+
+    public long getClusterLastRefreshed(UUID clusterId) {
+        AlertCacheGeneration gen = alertCacheGeneration.get();
+        if (gen != null && gen.clusterLastRefreshed() != null) {
+            return gen.clusterLastRefreshed().getOrDefault(clusterId, 0L);
+        }
+        return 0L;
     }
 }
