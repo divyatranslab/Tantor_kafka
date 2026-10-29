@@ -43,20 +43,22 @@ public class RuntimeEnvironmentProperties implements EnvironmentAware {
     }
 
     @NotNull
-    private Environment environment;
+    private Environment environment = Environment.DEVELOPMENT;
 
     private org.springframework.core.env.Environment springEnv;
+    private boolean explicitlyConfigured = false;
 
     public Environment getEnvironment() {
-        if (this.environment == null && this.springEnv != null) {
+        if (!explicitlyConfigured && this.springEnv != null) {
             deriveEnvironmentFromProfiles();
         }
-        return environment;
+        return environment != null ? environment : Environment.DEVELOPMENT;
     }
 
     public void setEnvironment(Environment environment) {
         if (environment != null) {
             this.environment = environment;
+            this.explicitlyConfigured = true;
         }
     }
 
@@ -67,7 +69,7 @@ public class RuntimeEnvironmentProperties implements EnvironmentAware {
     @Override
     public void setEnvironment(org.springframework.core.env.Environment springEnv) {
         this.springEnv = springEnv;
-        if (this.environment == null) {
+        if (!explicitlyConfigured) {
             deriveEnvironmentFromProfiles();
         }
     }
@@ -91,9 +93,32 @@ public class RuntimeEnvironmentProperties implements EnvironmentAware {
     @Component
     @ConfigurationPropertiesBinding
     public static class StringToEnvironmentConverter implements Converter<String, Environment> {
+        private final org.springframework.core.env.Environment springEnv;
+
+        public StringToEnvironmentConverter(org.springframework.core.env.Environment springEnv) {
+            this.springEnv = springEnv;
+        }
+
         @Override
         public Environment convert(String source) {
-            return Environment.fromString(source);
+            Environment parsed = Environment.fromString(source);
+            if (parsed != null) {
+                return parsed;
+            }
+            if (springEnv != null) {
+                Map<String, Environment> supported = Map.of(
+                        "dev", Environment.DEVELOPMENT,
+                        "sit", Environment.SIT,
+                        "uat", Environment.UAT,
+                        "production", Environment.PRODUCTION);
+                for (String profile : springEnv.getActiveProfiles()) {
+                    Environment env = supported.get(profile.toLowerCase(Locale.ROOT));
+                    if (env != null) {
+                        return env;
+                    }
+                }
+            }
+            return Environment.DEVELOPMENT;
         }
     }
 }

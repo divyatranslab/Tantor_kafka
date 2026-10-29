@@ -59,10 +59,15 @@ class RuntimeEnvironmentPropertiesTest {
     }
 
     @Test
-    void stringConverterDelegatesToFromString() {
-        var converter = new RuntimeEnvironmentProperties.StringToEnvironmentConverter();
-        assertThat(converter.convert("${TANTOR_ENVIRONMENT}")).isNull();
-        assertThat(converter.convert("dev")).isEqualTo(RuntimeEnvironmentProperties.Environment.DEVELOPMENT);
+    void stringConverterDelegatesToFromStringAndFallsBackToProfileOrDevelopment() {
+        var defaultConverter = new RuntimeEnvironmentProperties.StringToEnvironmentConverter(null);
+        assertThat(defaultConverter.convert("${TANTOR_ENVIRONMENT}")).isEqualTo(RuntimeEnvironmentProperties.Environment.DEVELOPMENT);
+        assertThat(defaultConverter.convert("dev")).isEqualTo(RuntimeEnvironmentProperties.Environment.DEVELOPMENT);
+
+        MockEnvironment uatEnv = new MockEnvironment();
+        uatEnv.setActiveProfiles("uat");
+        var uatConverter = new RuntimeEnvironmentProperties.StringToEnvironmentConverter(uatEnv);
+        assertThat(uatConverter.convert("${TANTOR_ENVIRONMENT}")).isEqualTo(RuntimeEnvironmentProperties.Environment.UAT);
     }
 
     @Test

@@ -3,6 +3,8 @@ spring:
     import:
       - optional:file:.env[.properties]
       - optional:configtree:/run/secrets/
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
   application:
     name: tantor-server
   
@@ -38,7 +40,7 @@ server:
 
 tantor:
   runtime:
-    environment: ${TANTOR_ENVIRONMENT:}
+    environment: ${TANTOR_ENVIRONMENT:DEVELOPMENT}
   agent:
     # Transitional compatibility for installations whose agents connect
     # directly without a client certificate or user JWT.
