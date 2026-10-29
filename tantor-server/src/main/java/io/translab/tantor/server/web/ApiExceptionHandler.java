@@ -34,6 +34,26 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error("CLUSTER_NAME_CONFLICT", cleanMessage(ex)));
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> handleMethodArgumentNotValid(
+            org.springframework.web.bind.MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .map(err -> err.getDefaultMessage() != null ? err.getDefaultMessage() : err.getField() + " is invalid")
+                .findFirst()
+                .orElse("Validation failed");
+        return ResponseEntity.badRequest().body(error("BAD_REQUEST", message));
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ApiError> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex) {
+        String message = ex.getConstraintViolations().stream()
+                .map(jakarta.validation.ConstraintViolation::getMessage)
+                .findFirst()
+                .orElse("Validation failed");
+        return ResponseEntity.badRequest().body(error("BAD_REQUEST", message));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(error("BAD_REQUEST", cleanMessage(ex)));

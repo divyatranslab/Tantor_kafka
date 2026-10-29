@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 readonly POSTGRES_16_IMAGE='docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b'
-readonly EXPECTED_MIGRATION_COUNT=74
-readonly EXPECTED_HIGHEST_VERSION='76'
+readonly EXPECTED_MIGRATION_COUNT=78
+readonly EXPECTED_HIGHEST_VERSION='80'
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 run_suffix="${GITHUB_RUN_ID:-local}-$$-${RANDOM}"
@@ -78,6 +78,8 @@ stop_process() {
 
 start_server() {
   log_file=$1
+  SPRING_PROFILES_ACTIVE=dev \
+  TANTOR_ENVIRONMENT=development \
   TANTOR_DB_URL="jdbc:postgresql://127.0.0.1:${database_port}/tantor" \
   TANTOR_DB_USER=tantor_test \
   TANTOR_DB_PASSWORD="$database_password" \

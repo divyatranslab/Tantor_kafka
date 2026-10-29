@@ -1,5 +1,7 @@
 package io.translab.tantor.server.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.Data;
 
 import java.util.List;
@@ -21,7 +23,9 @@ public class LdapDTOs {
         private String adminGroupDn;
         private String monitorGroupDn;
         private String defaultRole;
-        private int connectionTimeout;
+        @Min(value = 1, message = "LDAP connection timeout must be at least 1 second")
+        @Max(value = 60, message = "LDAP connection timeout must not exceed 60 seconds")
+        private int connectionTimeout = 10;
     }
 
     @Data
@@ -55,7 +59,7 @@ public class LdapDTOs {
         private String message;
         private String userDn;
         private List<String> groups;
-        
+
         public LdapTestResponse(boolean success, String message, String userDn, List<String> groups) {
             this.success = success;
             this.message = message;

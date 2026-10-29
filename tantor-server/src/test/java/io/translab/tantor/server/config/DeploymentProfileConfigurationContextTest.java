@@ -7,6 +7,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
+import org.springframework.context.annotation.Import;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DeploymentProfileConfigurationContextTest {
@@ -21,6 +23,19 @@ class DeploymentProfileConfigurationContextTest {
     }
 
     @Test
+    void unexpandedPlaceholderOrOmittedEnvironmentBindsFromActiveProfile() {
+        assertProfileLoads("uat", "${TANTOR_ENVIRONMENT}");
+        assertProfileLoads("sit", "");
+    }
+
+    @Test
+    void caseInsensitiveAndAliasedEnvironmentBinds() {
+        assertProfileLoads("dev", "development");
+        assertProfileLoads("dev", "dev");
+        assertProfileLoads("production", "prod");
+    }
+
+    @Test
     void missingMonitoringEndpointStopsConfigurationContext() {
         runner.withPropertyValues(requiredProperties("production", "PRODUCTION"))
                 .withPropertyValues("tantor.monitoring.prometheus-url=")
@@ -28,11 +43,20 @@ class DeploymentProfileConfigurationContextTest {
     }
 
     private void assertProfileLoads(String profile, String environment) {
+        String expectedEnumName = RuntimeEnvironmentProperties.Environment.fromString(environment) != null
+                ? RuntimeEnvironmentProperties.Environment.fromString(environment).name()
+                : switch (profile) {
+                    case "dev" -> "DEVELOPMENT";
+                    case "sit" -> "SIT";
+                    case "uat" -> "UAT";
+                    case "production" -> "PRODUCTION";
+                    default -> environment;
+                };
         runner.withPropertyValues(requiredProperties(profile, environment))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getBean(RuntimeEnvironmentProperties.class).getEnvironment().name())
-                            .isEqualTo(environment);
+                            .isEqualTo(expectedEnumName);
                 });
     }
 
@@ -55,6 +79,7 @@ class DeploymentProfileConfigurationContextTest {
     @EnableConfigurationProperties({ RuntimeEnvironmentProperties.class, ArtifactRepositoryProperties.class,
             ControlPlaneProperties.class, MonitoringProperties.class, OidcProperties.class,
             KafkaDeploymentProperties.class })
+    @Import(RuntimeEnvironmentProperties.StringToEnvironmentConverter.class)
     static class ProfileConfiguration {
         @Bean
         ConfigurationStartupValidator configurationStartupValidator(RuntimeEnvironmentProperties runtime,

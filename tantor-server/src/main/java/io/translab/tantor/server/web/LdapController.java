@@ -7,6 +7,7 @@ import io.translab.tantor.server.service.LdapService;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/ldap")
@@ -17,7 +18,7 @@ public class LdapController {
     private final RoleAuthenticationUtil roleAuthenticationUtil;
 
     public LdapController(LdapConfigRepository ldapConfigRepository, LdapService ldapService,
-                          RoleAuthenticationUtil roleAuthenticationUtil) {
+            RoleAuthenticationUtil roleAuthenticationUtil) {
         this.ldapConfigRepository = ldapConfigRepository;
         this.ldapService = ldapService;
         this.roleAuthenticationUtil = roleAuthenticationUtil;
@@ -26,7 +27,8 @@ public class LdapController {
     @GetMapping("/config")
     public ResponseEntity<LdapDTOs.LdapConfigResponse> getConfig(
             @RequestHeader(value = "Authorization", required = false) String authorization) {
-        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
+        if (!isAdmin(authorization))
+            return ResponseEntity.status(401).build();
         return ldapConfigRepository.findAll().stream().findFirst()
                 .map(config -> ResponseEntity.ok(toResponse(config)))
                 .orElse(ResponseEntity.ok(null));
@@ -35,21 +37,22 @@ public class LdapController {
     @PutMapping("/config")
     public ResponseEntity<LdapDTOs.LdapConfigResponse> updateConfig(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestBody LdapDTOs.LdapConfigCreateRequest request) {
-        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
+            @Valid @RequestBody LdapDTOs.LdapConfigCreateRequest request) {
+        if (!isAdmin(authorization))
+            return ResponseEntity.status(401).build();
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(new LdapConfig());
-        
+
         config.setEnabled(request.isEnabled());
         config.setServerUrl(request.getServerUrl());
         config.setUseSsl(request.isUseSsl());
         config.setTlsValidateCert(request.isTlsValidateCert());
         config.setTlsCaCert(request.getTlsCaCert());
         config.setBindDn(request.getBindDn());
-        
+
         if (request.getBindPassword() != null && !request.getBindPassword().isEmpty()) {
             config.setEncryptedBindPassword(ldapService.encryptPassword(request.getBindPassword()));
         }
-        
+
         config.setUserSearchBase(request.getUserSearchBase());
         config.setUserSearchFilter(request.getUserSearchFilter());
         config.setGroupSearchBase(request.getGroupSearchBase());
@@ -66,10 +69,12 @@ public class LdapController {
     public ResponseEntity<LdapDTOs.LdapTestResponse> testConnection(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestBody LdapDTOs.LdapTestRequest request) {
-        if (!isAdmin(authorization)) return ResponseEntity.status(401).build();
+        if (!isAdmin(authorization))
+            return ResponseEntity.status(401).build();
         LdapConfig config = ldapConfigRepository.findAll().stream().findFirst().orElse(null);
         if (config == null) {
-            return ResponseEntity.badRequest().body(new LdapDTOs.LdapTestResponse(false, "LDAP not configured", null, null));
+            return ResponseEntity.badRequest()
+                    .body(new LdapDTOs.LdapTestResponse(false, "LDAP not configured", null, null));
         }
 
         String bindPassword = request.getBindPassword();
@@ -79,7 +84,8 @@ public class LdapController {
 
         if (request.getUsername() != null && !request.getUsername().isEmpty()) {
             // Test auth
-            return ResponseEntity.ok(ldapService.authenticate(request.getUsername(), request.getPassword(), config, bindPassword));
+            return ResponseEntity
+                    .ok(ldapService.authenticate(request.getUsername(), request.getPassword(), config, bindPassword));
         } else {
             // Test connection only
             return ResponseEntity.ok(ldapService.testConnection(config, bindPassword));
