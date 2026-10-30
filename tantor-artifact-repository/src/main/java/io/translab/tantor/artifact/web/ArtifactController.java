@@ -11,6 +11,7 @@ import io.translab.tantor.artifact.dto.PageResponse;
 import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
 import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
 import io.swagger.v3.oas.annotations.Operation;
@@ -106,6 +107,8 @@ public class ArtifactController {
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, file.getInputStream());
+        } catch (UploadLimitExceededException e) {
+            throw e;
         } catch (RuntimeException | IOException e) {
             safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
@@ -156,6 +159,8 @@ public class ArtifactController {
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, request.getInputStream());
+        } catch (UploadLimitExceededException e) {
+            throw e;
         } catch (RuntimeException | IOException e) {
             safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
                     Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());

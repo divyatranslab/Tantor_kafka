@@ -10,36 +10,84 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import java.io.InputStream;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 @Service
-public class PackageValidator {
+public class PackageValidator implements DisposableBean {
 
     private static final Logger log = LoggerFactory.getLogger(PackageValidator.class);
     private final StorageProperties properties;
     private final MalwareScanner malwareScanner;
+    private final BoundedAdmissionController admissionController;
 
     public PackageValidator(StorageProperties properties, MalwareScanner malwareScanner) {
+        this(properties, malwareScanner, null);
+    }
+
+    @Autowired
+    public PackageValidator(StorageProperties properties, MalwareScanner malwareScanner,
+                            @Autowired(required = false) io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.properties = properties;
         this.malwareScanner = malwareScanner;
+        this.admissionController = new BoundedAdmissionController(
+                "validation",
+                properties.getMaxConcurrentValidations(),
+                properties.getMaxQueuedValidations(),
+                properties.getValidationQueueWaitTimeout()
+        );
+        if (meterRegistry != null) {
+            this.admissionController.registerMetrics(meterRegistry);
+        }
+    }
+
+    public BoundedAdmissionController getAdmissionController() {
+        return admissionController;
+    }
+
+    @PreDestroy
+    @Override
+    public void destroy() {
+        shutdown();
+    }
+
+    public void shutdown() {
+        admissionController.shutdown();
     }
 
     public void validate(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
+        long startNanos = System.nanoTime();
+        try {
+            try (BoundedAdmissionController.Lease ignored = admissionController.acquire()) {
+                inspectArchive(archivePath, serviceType, expectedVersion, fileName);
+            }
+            // Crucial: Validation slot is released before invoking malware scanner.
+            // Malware scanning operates under its own independent admission gate.
+            malwareScanner.scan(archivePath);
+        } finally {
+            long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+            log.debug("Package validation execution completed for {} in {} ms", fileName, durationMs);
+        }
+    }
+
+    protected void inspectArchive(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
         if (serviceType == ServiceType.JMX_EXPORTER) {
             validateJar(archivePath, fileName);
-            malwareScanner.scan(archivePath);
-            return;
+        } else {
+            validateArchiveExtension(fileName);
+            validateStructureAndVersion(archivePath, serviceType, expectedVersion);
         }
-
-        validateArchiveExtension(fileName);
-        validateStructureAndVersion(archivePath, serviceType, expectedVersion);
-        malwareScanner.scan(archivePath);
     }
 
     private void validateArchiveExtension(String fileName) {
