@@ -1,9 +1,13 @@
 package io.translab.tantor.artifact.config;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
+
+import java.time.Duration;
 
 /**
  * Strongly typed binding for the {@code tantor.repository.*} configuration.
@@ -47,6 +51,20 @@ public class StorageProperties {
     @Min(1)
     private int maxArchiveCompressionRatio = 100;
 
+    @Min(1)
+    private int maxConcurrentValidations = 2;
+
+    @Min(0)
+    private int maxQueuedValidations = 10;
+
+    @NotNull
+    private Duration validationQueueWaitTimeout = Duration.ofSeconds(30);
+
+    @AssertTrue(message = "validationQueueWaitTimeout must be non-null and strictly positive")
+    public boolean isValidationQueueWaitTimeoutPositive() {
+        return validationQueueWaitTimeout != null && !validationQueueWaitTimeout.isNegative() && !validationQueueWaitTimeout.isZero();
+    }
+
     public String getBasePath() {
         return basePath;
     }
@@ -87,4 +105,12 @@ public class StorageProperties {
     public void setMaxArchiveExpandedBytes(long maxArchiveExpandedBytes) { this.maxArchiveExpandedBytes = maxArchiveExpandedBytes; }
     public int getMaxArchiveCompressionRatio() { return maxArchiveCompressionRatio; }
     public void setMaxArchiveCompressionRatio(int maxArchiveCompressionRatio) { this.maxArchiveCompressionRatio = maxArchiveCompressionRatio; }
+    public int getMaxConcurrentValidations() { return maxConcurrentValidations; }
+    public void setMaxConcurrentValidations(int maxConcurrentValidations) { this.maxConcurrentValidations = maxConcurrentValidations; }
+    public int getMaxQueuedValidations() { return maxQueuedValidations; }
+    public void setMaxQueuedValidations(int maxQueuedValidations) { this.maxQueuedValidations = maxQueuedValidations; }
+    public Duration getValidationQueueWaitTimeout() { return validationQueueWaitTimeout; }
+    public void setValidationQueueWaitTimeout(Duration validationQueueWaitTimeout) { this.validationQueueWaitTimeout = validationQueueWaitTimeout; }
+    public long getValidationQueueWaitTimeoutMs() { return validationQueueWaitTimeout.toMillis(); }
+    public void setValidationQueueWaitTimeoutMs(long ms) { this.validationQueueWaitTimeout = Duration.ofMillis(ms); }
 }

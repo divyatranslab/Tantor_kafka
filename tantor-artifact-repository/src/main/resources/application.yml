@@ -64,6 +64,9 @@ tantor:
     max-bundle-bytes: ${TANTOR_MAX_BUNDLE_BYTES:536870912}
     minimum-free-space-bytes: ${TANTOR_MINIMUM_FREE_SPACE_BYTES:5368709120}
     max-concurrent-uploads: ${TANTOR_MAX_CONCURRENT_UPLOADS:2}
+    max-concurrent-validations: ${TANTOR_MAX_CONCURRENT_VALIDATIONS:2}
+    max-queued-validations: ${TANTOR_MAX_QUEUED_VALIDATIONS:10}
+    validation-queue-wait-timeout: ${TANTOR_VALIDATION_QUEUE_WAIT_TIMEOUT:30s}
     max-archive-entries: ${TANTOR_MAX_ARCHIVE_ENTRIES:10000}
     max-archive-entry-bytes: ${TANTOR_MAX_ARCHIVE_ENTRY_BYTES:1073741824}
     max-archive-expanded-bytes: ${TANTOR_MAX_ARCHIVE_EXPANDED_BYTES:2147483648}
@@ -74,12 +77,19 @@ tantor:
       host: ${TANTOR_MALWARE_SCAN_HOST:}
       port: ${TANTOR_MALWARE_SCAN_PORT:0}
       timeout-ms: ${TANTOR_MALWARE_SCAN_TIMEOUT_MS:30000}
+      max-concurrent-scans: ${TANTOR_MAX_CONCURRENT_SCANS:4}
+      max-queued-scans: ${TANTOR_MAX_QUEUED_SCANS:10}
+      scan-queue-wait-timeout: ${TANTOR_SCAN_QUEUE_WAIT_TIMEOUT:30s}
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   endpoint:
     health:
       probes:
