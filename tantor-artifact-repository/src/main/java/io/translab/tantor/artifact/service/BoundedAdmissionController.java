@@ -14,18 +14,20 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Reusable, thread-safe bounded admission control gate providing strict FIFO queuing.
+ * Reusable, thread-safe bounded admission control gate providing strict FIFO
+ * queuing.
  *
- * <p>Invariants:
- * <ul>
- *   <li>{@code activeCount <= maxConcurrent}</li>
- *   <li>{@code queuedCount <= maxQueued}</li>
- *   <li>{@code activeCount} and {@code queuedCount} are never negative</li>
- *   <li>Capacity is released exactly once per acquired lease</li>
- *   <li>Strict FIFO: newly arriving threads cannot bypass existing eligible waiters</li>
- *   <li>Timed-out or cancelled waiters are safely removed and cannot claim slots later</li>
- *   <li>The controller lock is never held during external task execution</li>
- * </ul>
+ * Invariants:
+ *
+ * {@code activeCount <= maxConcurrent}
+ * {@code queuedCount <= maxQueued}
+ * {@code activeCount} and {@code queuedCount} are never negative
+ * Capacity is released exactly once per acquired lease
+ * Strict FIFO: newly arriving threads cannot bypass existing eligible waiters
+ * Timed-out or cancelled waiters are safely removed and cannot claim slots
+ * later
+ * The controller lock is never held during external task execution
+ * 
  */
 public class BoundedAdmissionController implements AutoCloseable {
 
@@ -93,10 +95,14 @@ public class BoundedAdmissionController implements AutoCloseable {
     }
 
     /**
-     * Acquires admission capacity, waiting in strict FIFO order if worker slots are currently full.
+     * Acquires admission capacity, waiting in strict FIFO order if worker slots are
+     * currently full.
      *
-     * @return a {@link Lease} that releases the acquired capacity upon {@link Lease#close()}
-     * @throws UploadLimitExceededException if the queue is full, the wait timeout expires, or the controller is shutting down
+     * @return a {@link Lease} that releases the acquired capacity upon
+     *         {@link Lease#close()}
+     * @throws UploadLimitExceededException if the queue is full, the wait timeout
+     *                                      expires, or the controller is shutting
+     *                                      down
      */
     public Lease acquire() {
         long startNanos = System.nanoTime();
@@ -159,7 +165,8 @@ public class BoundedAdmissionController implements AutoCloseable {
             return new LeaseImpl();
 
         } finally {
-            // Handle race conditions where slot was granted right before waiter timeout, interruption, or shutdown
+            // Handle race conditions where slot was granted right before waiter timeout,
+            // interruption, or shutdown
             if (myWaiter != null && myWaiter.granted && myWaiter.cancelled) {
                 handoffOrReleaseSlot();
             }
@@ -173,7 +180,8 @@ public class BoundedAdmissionController implements AutoCloseable {
         if (now - last > LOG_THROTTLE_NANOS && lastQueueFullLogNanos.compareAndSet(last, now)) {
             long suppressed = suppressedQueueFullLogs.getAndSet(0);
             if (suppressed > 0) {
-                log.warn("{} admission rejected: queue is full (active={}, queued={}, maxQueued={}) [{} similar rejections suppressed]",
+                log.warn(
+                        "{} admission rejected: queue is full (active={}, queued={}, maxQueued={}) [{} similar rejections suppressed]",
                         name, active, queued, maxQueuedLimit, suppressed);
             } else {
                 log.warn("{} admission rejected: queue is full (active={}, queued={}, maxQueued={})",
@@ -193,7 +201,8 @@ public class BoundedAdmissionController implements AutoCloseable {
         if (now - last > LOG_THROTTLE_NANOS && lastTimeoutLogNanos.compareAndSet(last, now)) {
             long suppressed = suppressedTimeoutLogs.getAndSet(0);
             if (suppressed > 0) {
-                log.warn("{} admission rejected: queue wait timeout exceeded (waitDurationMs={}, queued={}) [{} similar timeouts suppressed]",
+                log.warn(
+                        "{} admission rejected: queue wait timeout exceeded (waitDurationMs={}, queued={}) [{} similar timeouts suppressed]",
                         name, waitDurationMs, queued, suppressed);
             } else {
                 log.warn("{} admission rejected: queue wait timeout exceeded (waitDurationMs={}, queued={})",
@@ -314,7 +323,8 @@ public class BoundedAdmissionController implements AutoCloseable {
     }
 
     /**
-     * Returns average wait duration in nanoseconds for requests that waited in queue and were admitted.
+     * Returns average wait duration in nanoseconds for requests that waited in
+     * queue and were admitted.
      */
     public long getAverageWaitNanos() {
         long count = totalWaitCount.get();
@@ -322,7 +332,8 @@ public class BoundedAdmissionController implements AutoCloseable {
     }
 
     /**
-     * Returns average wait duration in milliseconds for requests that waited in queue and were admitted.
+     * Returns average wait duration in milliseconds for requests that waited in
+     * queue and were admitted.
      */
     public double getAverageWaitMs() {
         long count = totalWaitCount.get();
@@ -330,23 +341,32 @@ public class BoundedAdmissionController implements AutoCloseable {
     }
 
     public void registerMetrics(io.micrometer.core.instrument.MeterRegistry registry) {
-        if (registry == null) return;
-        io.micrometer.core.instrument.Gauge.builder("tantor.artifact.admission.active", this, BoundedAdmissionController::getActiveCount)
+        if (registry == null)
+            return;
+        io.micrometer.core.instrument.Gauge
+                .builder("tantor.artifact.admission.active", this, BoundedAdmissionController::getActiveCount)
                 .description("Current number of active operations executing in worker slots")
                 .tag("controller", name).register(registry);
-        io.micrometer.core.instrument.Gauge.builder("tantor.artifact.admission.queued", this, BoundedAdmissionController::getQueuedCount)
+        io.micrometer.core.instrument.Gauge
+                .builder("tantor.artifact.admission.queued", this, BoundedAdmissionController::getQueuedCount)
                 .description("Current number of operations waiting in the bounded admission queue")
                 .tag("controller", name).register(registry);
-        io.micrometer.core.instrument.FunctionCounter.builder("tantor.artifact.admission.admitted", this, BoundedAdmissionController::getTotalAdmitted)
+        io.micrometer.core.instrument.FunctionCounter
+                .builder("tantor.artifact.admission.admitted", this, BoundedAdmissionController::getTotalAdmitted)
                 .description("Total number of operations admitted through this controller")
                 .tag("controller", name).register(registry);
-        io.micrometer.core.instrument.FunctionCounter.builder("tantor.artifact.admission.rejected", this, BoundedAdmissionController::getTotalRejectedQueueFull)
+        io.micrometer.core.instrument.FunctionCounter
+                .builder("tantor.artifact.admission.rejected", this,
+                        BoundedAdmissionController::getTotalRejectedQueueFull)
                 .description("Total number of operations rejected due to queue saturation")
                 .tag("controller", name).tag("reason", "queue_full").register(registry);
-        io.micrometer.core.instrument.FunctionCounter.builder("tantor.artifact.admission.rejected", this, BoundedAdmissionController::getTotalTimeouts)
+        io.micrometer.core.instrument.FunctionCounter
+                .builder("tantor.artifact.admission.rejected", this, BoundedAdmissionController::getTotalTimeouts)
                 .description("Total number of operations rejected due to queue wait timeout")
                 .tag("controller", name).tag("reason", "timeout").register(registry);
-        io.micrometer.core.instrument.Gauge.builder("tantor.artifact.admission.wait.average.ms", this, BoundedAdmissionController::getAverageWaitMs)
+        io.micrometer.core.instrument.Gauge
+                .builder("tantor.artifact.admission.wait.average.ms", this,
+                        BoundedAdmissionController::getAverageWaitMs)
                 .description("Average wait time in milliseconds for queued requests that were admitted")
                 .baseUnit("milliseconds")
                 .tag("controller", name).register(registry);
