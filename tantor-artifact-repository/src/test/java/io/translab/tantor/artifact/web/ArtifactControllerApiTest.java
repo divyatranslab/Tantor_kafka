@@ -3,6 +3,7 @@ package io.translab.tantor.artifact.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
 import io.translab.tantor.artifact.domain.ServiceType;
+import io.translab.tantor.artifact.exception.OperationTimeoutException;
 import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
@@ -91,6 +92,27 @@ class ArtifactControllerApiTest {
                 .andExpect(jsonPath("$.title", is("Service Unavailable")))
                 .andExpect(jsonPath("$.detail", is("malware-scan queue wait timeout exceeded; try again shortly")))
                 .andExpect(jsonPath("$.type", is("https://docs.translab.io/tantor/errors/service-unavailable")));
+
+        verify(auditService, never()).record(anyString(), eq("PACKAGE_UPLOAD_FAILED"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void uploadOperationTimeoutReturns503ServiceUnavailable() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "kafka_2.13-3.7.0.tgz", "application/gzip", "test-data".getBytes());
+
+        when(artifactService.upload(any(), any(InputStream.class)))
+                .thenThrow(new OperationTimeoutException("Operation timeout exceeded during archive inspection"));
+
+        mockMvc.perform(multipart("/api/v1/artifacts")
+                        .file(file)
+                        .param("serviceType", "KAFKA")
+                        .param("version", "3.7.0")
+                        .header("Authorization", "Bearer token"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status", is(503)))
+                .andExpect(jsonPath("$.title", is("Service Unavailable")))
+                .andExpect(jsonPath("$.detail", is("Operation timeout exceeded during archive inspection")))
+                .andExpect(jsonPath("$.type", is("https://docs.translab.io/tantor/errors/operation-timeout")));
 
         verify(auditService, never()).record(anyString(), eq("PACKAGE_UPLOAD_FAILED"), any(), any(), any(), any(), any(), any());
     }
@@ -188,6 +210,27 @@ class ArtifactControllerApiTest {
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.status", is(503)))
                 .andExpect(jsonPath("$.title", is("Service Unavailable")));
+
+        verify(auditService, never()).record(anyString(), eq("PACKAGE_UPLOAD_FAILED"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rawPutOperationTimeoutReturns503ServiceUnavailable() throws Exception {
+        when(artifactService.upload(any(), any(InputStream.class)))
+                .thenThrow(new OperationTimeoutException("Operation timeout exceeded during package validation"));
+
+        mockMvc.perform(put("/api/v1/artifacts")
+                        .param("serviceType", "KAFKA")
+                        .param("version", "3.7.0")
+                        .param("fileName", "kafka_2.13-3.7.0.tgz")
+                        .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        .content("raw-content".getBytes())
+                        .header("Authorization", "Bearer token"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status", is(503)))
+                .andExpect(jsonPath("$.title", is("Service Unavailable")))
+                .andExpect(jsonPath("$.detail", is("Operation timeout exceeded during package validation")))
+                .andExpect(jsonPath("$.type", is("https://docs.translab.io/tantor/errors/operation-timeout")));
 
         verify(auditService, never()).record(anyString(), eq("PACKAGE_UPLOAD_FAILED"), any(), any(), any(), any(), any(), any());
     }

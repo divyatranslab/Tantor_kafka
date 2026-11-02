@@ -117,4 +117,16 @@ class GlobalExceptionHandlerTest {
         assertThat(pd.getDetail()).isEqualTo("Bundle contains too many archive entries");
         assertThat(pd.getType()).isEqualTo(URI.create("https://docs.translab.io/tantor/errors/upload-limit-exceeded"));
     }
+
+    @Test
+    void operationTimeoutReturnsServiceUnavailableNotPayloadTooLarge() {
+        io.translab.tantor.artifact.exception.OperationTimeoutException ex =
+                new io.translab.tantor.artifact.exception.OperationTimeoutException("Operation timeout exceeded during malware scan");
+        ProblemDetail pd = handler.handleOperationTimeout(ex);
+
+        assertThat(pd.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.value());
+        assertThat(pd.getTitle()).isEqualTo("Service Unavailable");
+        assertThat(pd.getDetail()).isEqualTo("Operation timeout exceeded during malware scan");
+        assertThat(pd.getType()).isEqualTo(URI.create("https://docs.translab.io/tantor/errors/operation-timeout"));
+    }
 }

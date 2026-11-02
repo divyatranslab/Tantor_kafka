@@ -52,9 +52,15 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Package validation failed", ex.getMessage(), "package-validation-failed");
     }
 
+    @ExceptionHandler(io.translab.tantor.artifact.exception.OperationTimeoutException.class)
+    public ProblemDetail handleOperationTimeout(io.translab.tantor.artifact.exception.OperationTimeoutException ex) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable", ex.getMessage(), "operation-timeout");
+    }
+
     @ExceptionHandler(UploadLimitExceededException.class)
     public ProblemDetail handleUploadLimit(UploadLimitExceededException ex) {
         String message = ex.getMessage();
+
         String lower = message != null ? message.toLowerCase() : "";
 
         if (lower.contains("timeout") || lower.contains("shutting down") || lower.contains("interrupted")) {

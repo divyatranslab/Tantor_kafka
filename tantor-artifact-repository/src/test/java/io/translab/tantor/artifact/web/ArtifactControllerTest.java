@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,8 +43,8 @@ class ArtifactControllerTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         controller = new ArtifactController(artifactService, manifestService, objectMapper, auditService, roleAuthenticationUtil);
-        when(roleAuthenticationUtil.canAccess(any(), eq(RoleAuthenticationUtil.ARTIFACT_UPLOAD))).thenReturn(true);
-        when(roleAuthenticationUtil.username(any())).thenReturn("admin");
+        lenient().when(roleAuthenticationUtil.canAccess(any(), eq(RoleAuthenticationUtil.ARTIFACT_UPLOAD))).thenReturn(true);
+        lenient().when(roleAuthenticationUtil.username(any())).thenReturn("admin");
     }
 
     @Test
@@ -125,5 +126,39 @@ class ArtifactControllerTest {
                 .hasMessageContaining("Corrupted archive");
 
         verify(auditService).record(eq("admin"), eq("PACKAGE_UPLOAD_FAILED"), eq("3.7.0"), eq("FAILED"), any(), any(), any(), any());
+    }
+
+    @Test
+    void listClampsPageSizeToConfiguredMax() {
+        org.springframework.data.domain.Page<io.translab.tantor.artifact.domain.Artifact> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(java.util.List.of());
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> captor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+
+        when(artifactService.list(any(), any(), captor.capture())).thenReturn(emptyPage);
+
+        // Request size 500 when max configured is 100
+        controller.list(null, null, 0, 500, "createdAt", org.springframework.data.domain.Sort.Direction.DESC);
+
+        org.springframework.data.domain.Pageable pageable = captor.getValue();
+        org.assertj.core.api.Assertions.assertThat(pageable.getPageSize()).isLessThanOrEqualTo(100);
+    }
+
+    @Test
+    void listFallsBackToCreatedAtWhenSortNotWhitelisted() {
+        org.springframework.data.domain.Page<io.translab.tantor.artifact.domain.Artifact> emptyPage =
+                new org.springframework.data.domain.PageImpl<>(java.util.List.of());
+
+        org.mockito.ArgumentCaptor<org.springframework.data.domain.Pageable> captor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+
+        when(artifactService.list(any(), any(), captor.capture())).thenReturn(emptyPage);
+
+        // SQL injection / arbitrary property attempt
+        controller.list(null, null, 0, 20, "maliciousProperty;DROP TABLE;", org.springframework.data.domain.Sort.Direction.DESC);
+
+        org.springframework.data.domain.Pageable pageable = captor.getValue();
+        org.assertj.core.api.Assertions.assertThat(pageable.getSort().getOrderFor("createdAt")).isNotNull();
     }
 }

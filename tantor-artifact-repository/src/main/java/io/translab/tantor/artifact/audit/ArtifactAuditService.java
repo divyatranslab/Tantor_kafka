@@ -64,8 +64,14 @@ public class ArtifactAuditService {
         return repository.findAllByOrderByCreatedAtDesc(PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 500)));
     }
 
+    public Page<ArtifactAuditLog> getLogsForResource(String resourceId, int page, int size) {
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        return repository.findByArtifactIdOrderByCreatedAtDesc(resourceId, PageRequest.of(safePage, safeSize));
+    }
+
     public java.util.List<ArtifactAuditLog> getLogsForResource(String resourceId) {
-        return repository.findByArtifactIdOrderByCreatedAtDesc(resourceId);
+        return getLogsForResource(resourceId, 0, 100).getContent();
     }
 
     public String integrity() {

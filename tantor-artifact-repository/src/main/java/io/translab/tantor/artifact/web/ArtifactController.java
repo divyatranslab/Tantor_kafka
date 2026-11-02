@@ -11,6 +11,7 @@ import io.translab.tantor.artifact.dto.PageResponse;
 import io.translab.tantor.artifact.service.ArtifactService;
 import io.translab.tantor.artifact.service.ManifestService;
 import io.translab.tantor.artifact.service.StorageService;
+import io.translab.tantor.artifact.exception.OperationTimeoutException;
 import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.audit.ArtifactAuditService;
 import io.translab.tantor.artifact.util.RoleAuthenticationUtil;
@@ -55,17 +56,32 @@ public class ArtifactController {
     private final ObjectMapper objectMapper;
     private final ArtifactAuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final io.translab.tantor.artifact.config.StorageProperties properties;
+
+    private static final java.util.Set<String> ALLOWED_SORTS = java.util.Set.of(
+            "createdAt", "updatedAt", "version", "serviceType", "fileSizeBytes", "status", "fileName");
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
                               ObjectMapper objectMapper,
                               ArtifactAuditService auditService,
                               RoleAuthenticationUtil roleAuthenticationUtil) {
+        this(artifactService, manifestService, objectMapper, auditService, roleAuthenticationUtil, new io.translab.tantor.artifact.config.StorageProperties());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ArtifactController(ArtifactService artifactService,
+                              ManifestService manifestService,
+                              ObjectMapper objectMapper,
+                              ArtifactAuditService auditService,
+                              RoleAuthenticationUtil roleAuthenticationUtil,
+                              @org.springframework.beans.factory.annotation.Autowired(required = false) io.translab.tantor.artifact.config.StorageProperties properties) {
         this.artifactService = artifactService;
         this.manifestService = manifestService;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
         this.roleAuthenticationUtil = roleAuthenticationUtil;
+        this.properties = properties != null ? properties : new io.translab.tantor.artifact.config.StorageProperties();
     }
 
     @Operation(summary = "Upload an artifact (multipart)")
@@ -90,6 +106,15 @@ public class ArtifactController {
         }
         String actor = currentUser(authorization);
         String fileName = file.getOriginalFilename();
+        String idempHeader = request != null ? request.getHeader("Idempotency-Key") : null;
+        String xIdempHeader = request != null ? request.getHeader("X-Idempotency-Key") : null;
+        String idempParam = request != null ? request.getParameter("idempotencyKey") : null;
+        String effectiveKey = idempHeader != null && !idempHeader.isBlank() ? idempHeader :
+                (xIdempHeader != null && !xIdempHeader.isBlank() ? xIdempHeader : idempParam);
+
+        io.translab.tantor.artifact.util.OperationDeadline deadline =
+                io.translab.tantor.artifact.util.OperationDeadline.start(properties.getUploadTimeout());
+
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
                 name != null ? name : fileName,
@@ -102,19 +127,23 @@ public class ArtifactController {
                 sha256,
                 parseAttributes(attributesJson),
                 overwrite,
-                actor);
+                actor,
+                effectiveKey,
+                deadline);
 
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, file.getInputStream());
+        } catch (OperationTimeoutException e) {
+            throw e;
         } catch (UploadLimitExceededException e) {
             throw e;
         } catch (RuntimeException | IOException e) {
             safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
-                    Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
+                    Map.of("fileName", String.valueOf(fileName), "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request != null ? request.getRemoteAddr() : null);
             throw e;
         }
-        auditUpload(saved, actor, request.getRemoteAddr());
+        auditUpload(saved, actor, request != null ? request.getRemoteAddr() : null);
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -142,6 +171,15 @@ public class ArtifactController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         String actor = currentUser(authorization);
+        String idempHeader = request != null ? request.getHeader("Idempotency-Key") : null;
+        String xIdempHeader = request != null ? request.getHeader("X-Idempotency-Key") : null;
+        String idempParam = request != null ? request.getParameter("idempotencyKey") : null;
+        String effectiveKey = idempHeader != null && !idempHeader.isBlank() ? idempHeader :
+                (xIdempHeader != null && !xIdempHeader.isBlank() ? xIdempHeader : idempParam);
+
+        io.translab.tantor.artifact.util.OperationDeadline deadline =
+                io.translab.tantor.artifact.util.OperationDeadline.start(properties.getUploadTimeout());
+
         ArtifactService.UploadCommand cmd = new ArtifactService.UploadCommand(
                 serviceType,
                 name != null ? name : fileName,
@@ -154,19 +192,23 @@ public class ArtifactController {
                 sha256,
                 parseAttributes(attributesJson),
                 overwrite,
-                actor);
+                actor,
+                effectiveKey,
+                deadline);
 
         Artifact saved;
         try {
             saved = artifactService.upload(cmd, request.getInputStream());
+        } catch (OperationTimeoutException e) {
+            throw e;
         } catch (UploadLimitExceededException e) {
             throw e;
         } catch (RuntimeException | IOException e) {
             safeAudit(actor, "PACKAGE_UPLOAD_FAILED", version, "FAILED", null, null,
-                    Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request.getRemoteAddr());
+                    Map.of("fileName", fileName, "serviceType", serviceType.name(), "error", String.valueOf(e.getMessage())), request != null ? request.getRemoteAddr() : null);
             throw e;
         }
-        auditUpload(saved, actor, request.getRemoteAddr());
+        auditUpload(saved, actor, request != null ? request.getRemoteAddr() : null);
         if (saved.getStatus() == ArtifactStatus.FAILED) {
             return ResponseEntity.status(422).body(ArtifactResponse.from(saved));
         }
@@ -183,8 +225,12 @@ public class ArtifactController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "DESC") Sort.Direction direction) {
 
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), properties.getMaxPageSize());
+        String safeSortBy = ALLOWED_SORTS.contains(sortBy) ? sortBy : "createdAt";
+
         Page<Artifact> result = artifactService.list(
-                serviceType, status, PageRequest.of(page, size, Sort.by(direction, sortBy)));
+                serviceType, status, PageRequest.of(safePage, safeSize, Sort.by(direction != null ? direction : Sort.Direction.DESC, safeSortBy)));
         return PageResponse.from(result, ArtifactResponse::from);
     }
 

@@ -10,7 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import io.translab.tantor.artifact.exception.OperationTimeoutException;
 import io.translab.tantor.artifact.exception.UploadLimitExceededException;
+import io.translab.tantor.artifact.util.OperationDeadline;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,15 +40,14 @@ public class PackageValidator implements DisposableBean {
 
     @Autowired
     public PackageValidator(StorageProperties properties, MalwareScanner malwareScanner,
-                            @Autowired(required = false) io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+            @Autowired(required = false) io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.properties = properties;
         this.malwareScanner = malwareScanner;
         this.admissionController = new BoundedAdmissionController(
                 "validation",
                 properties.getMaxConcurrentValidations(),
                 properties.getMaxQueuedValidations(),
-                properties.getValidationQueueWaitTimeout()
-        );
+                properties.getValidationQueueWaitTimeout());
         if (meterRegistry != null) {
             this.admissionController.registerMetrics(meterRegistry);
         }
@@ -66,15 +67,41 @@ public class PackageValidator implements DisposableBean {
         admissionController.shutdown();
     }
 
+    protected void checkArchiveReadDeadline(
+            OperationDeadline deadline, String stage) {
+
+        if (deadline != null) {
+            deadline.checkNotExceeded(stage);
+        }
+    }
+
     public void validate(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
+        validate(archivePath, serviceType, expectedVersion, fileName, null);
+    }
+
+    public void validate(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName,
+            io.translab.tantor.artifact.util.OperationDeadline deadline) {
         long startNanos = System.nanoTime();
         try {
+            if (deadline != null) {
+                deadline.checkNotExceeded("validation admission");
+            }
             try (BoundedAdmissionController.Lease ignored = admissionController.acquire()) {
-                inspectArchive(archivePath, serviceType, expectedVersion, fileName);
+                if (deadline != null) {
+                    deadline.checkNotExceeded("archive inspection");
+                    inspectArchive(archivePath, serviceType, expectedVersion, fileName, deadline);
+                } else {
+                    inspectArchive(archivePath, serviceType, expectedVersion, fileName);
+                }
             }
             // Crucial: Validation slot is released before invoking malware scanner.
             // Malware scanning operates under its own independent admission gate.
-            malwareScanner.scan(archivePath);
+            if (deadline != null) {
+                deadline.checkNotExceeded("malware scanning admission");
+                malwareScanner.scan(archivePath, deadline);
+            } else {
+                malwareScanner.scan(archivePath);
+            }
         } finally {
             long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
             log.debug("Package validation execution completed for {} in {} ms", fileName, durationMs);
@@ -82,11 +109,16 @@ public class PackageValidator implements DisposableBean {
     }
 
     protected void inspectArchive(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName) {
+        inspectArchive(archivePath, serviceType, expectedVersion, fileName, null);
+    }
+
+    protected void inspectArchive(Path archivePath, ServiceType serviceType, String expectedVersion, String fileName,
+            io.translab.tantor.artifact.util.OperationDeadline deadline) {
         if (serviceType == ServiceType.JMX_EXPORTER) {
-            validateJar(archivePath, fileName);
+            validateJar(archivePath, fileName, deadline);
         } else {
             validateArchiveExtension(fileName);
-            validateStructureAndVersion(archivePath, serviceType, expectedVersion);
+            validateStructureAndVersion(archivePath, serviceType, expectedVersion, deadline);
         }
     }
 
@@ -98,6 +130,11 @@ public class PackageValidator implements DisposableBean {
     }
 
     private void validateJar(Path jarPath, String fileName) {
+        validateJar(jarPath, fileName, null);
+    }
+
+    private void validateJar(Path jarPath, String fileName,
+            io.translab.tantor.artifact.util.OperationDeadline deadline) {
         if (fileName == null || !fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".jar")) {
             throw new PackageValidationException("Invalid JMX exporter extension. Only .jar is supported.");
         }
@@ -108,6 +145,10 @@ public class PackageValidator implements DisposableBean {
                 throw new PackageValidationException("Invalid JMX exporter jar. The file is not a valid Java archive.");
             }
         } catch (PackageValidationException e) {
+            throw e;
+        } catch (OperationTimeoutException e) {
+            throw e;
+        } catch (UploadLimitExceededException e) {
             throw e;
         } catch (Exception e) {
             throw new PackageValidationException("JMX exporter jar validation failed: " + e.getMessage(), e);
@@ -125,6 +166,9 @@ public class PackageValidator implements DisposableBean {
             ZipEntry entry;
             byte[] buffer = new byte[8192];
             while ((entry = zip.getNextEntry()) != null) {
+                if (deadline != null) {
+                    deadline.checkNotExceeded("jar entry inspection");
+                }
                 if (++entries > properties.getMaxArchiveEntries()) {
                     throw new PackageValidationException("JAR contains too many entries");
                 }
@@ -135,19 +179,37 @@ public class PackageValidator implements DisposableBean {
                 }
                 int read;
                 long entryBytes = 0;
-                while ((read = zip.read(buffer)) != -1) {
+                while (true) {
+                    checkArchiveReadDeadline(deadline, "JAR entry content inspection");
+
+                    read = zip.read(buffer);
+
+                    if (read == -1) {
+                        break;
+                    }
+
+                    checkArchiveReadDeadline(deadline, "JAR entry content inspection");
+
                     entryBytes += read;
                     expanded += read;
                     if (entryBytes > properties.getMaxArchiveEntryBytes()
                             || expanded > properties.getMaxArchiveExpandedBytes()
-                            || expanded / compressedSize > properties.getMaxArchiveCompressionRatio()) {
+                            || exceedsCompressionRatio(expanded, compressedSize,
+                                    properties.getMaxArchiveCompressionRatio())) {
                         throw new PackageValidationException("JAR expands beyond the configured safety limit");
                     }
                 }
             }
         } catch (PackageValidationException e) {
             throw e;
+        } catch (OperationTimeoutException e) {
+            throw e;
+        } catch (UploadLimitExceededException e) {
+            throw e;
         } catch (Exception e) {
+            if (deadline != null && deadline.isExceeded()) {
+                throw new OperationTimeoutException("Operation timeout exceeded during jar inspection", e);
+            }
             throw new PackageValidationException("JMX exporter archive validation failed: " + e.getMessage(), e);
         }
 
@@ -155,20 +217,28 @@ public class PackageValidator implements DisposableBean {
     }
 
     private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion) {
+        validateStructureAndVersion(archivePath, serviceType, expectedVersion, null);
+    }
+
+    private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion,
+            io.translab.tantor.artifact.util.OperationDeadline deadline) {
         boolean isKafka = serviceType == ServiceType.KAFKA;
         boolean foundExpectedVersion = false;
         boolean extractionTestPassed = false;
 
         try (CountingInputStream fi = new CountingInputStream(Files.newInputStream(archivePath));
-             InputStream bi = new java.io.BufferedInputStream(fi);
-             GzipCompressorInputStream gzi = new GzipCompressorInputStream(bi);
-             TarArchiveInputStream ti = new TarArchiveInputStream(gzi)) {
+                InputStream bi = new java.io.BufferedInputStream(fi);
+                GzipCompressorInputStream gzi = new GzipCompressorInputStream(bi);
+                TarArchiveInputStream ti = new TarArchiveInputStream(gzi)) {
 
             TarArchiveEntry entry;
             int entries = 0;
             long expanded = 0;
             byte[] buffer = new byte[8192];
             while ((entry = ti.getNextTarEntry()) != null) {
+                if (deadline != null) {
+                    deadline.checkNotExceeded("archive inspection");
+                }
                 if (++entries > properties.getMaxArchiveEntries()) {
                     throw new PackageValidationException("Archive contains too many entries");
                 }
@@ -178,7 +248,7 @@ public class PackageValidator implements DisposableBean {
                 }
                 extractionTestPassed = true; // successfully read at least one entry without corruption
                 String name = entry.getName();
-                
+
                 if (isKafka) {
                     // Check for Kafka jar to verify version
                     if (name.contains("libs/kafka_") && name.endsWith(".jar")) {
@@ -189,22 +259,40 @@ public class PackageValidator implements DisposableBean {
                 }
                 int read;
                 long entryBytes = 0;
-                while ((read = ti.read(buffer)) != -1) {
+                while (true) {
+                    checkArchiveReadDeadline(deadline, "TAR entry content inspection");
+
+                    read = ti.read(buffer);
+                    if (read == -1) {
+                        break;
+                    }
+
+                    checkArchiveReadDeadline(deadline, "TAR entry content inspection");
                     entryBytes += read;
                     expanded += read;
-                    if (entryBytes > properties.getMaxArchiveEntryBytes() || expanded > properties.getMaxArchiveExpandedBytes()) {
+                    if (entryBytes > properties.getMaxArchiveEntryBytes()
+                            || expanded > properties.getMaxArchiveExpandedBytes()) {
                         throw new PackageValidationException("Archive expands beyond the configured size limit");
                     }
                     long compressed = Math.max(1L, fi.getByteCount());
-                    if (expanded / compressed > properties.getMaxArchiveCompressionRatio()) {
-                        throw new PackageValidationException("Archive compression ratio exceeds the configured safety limit");
+                    if (exceedsCompressionRatio(expanded, compressed, properties.getMaxArchiveCompressionRatio())) {
+                        throw new PackageValidationException(
+                                "Archive compression ratio exceeds the configured safety limit");
                     }
                 }
             }
         } catch (PackageValidationException e) {
             throw e;
+        } catch (OperationTimeoutException e) {
+            throw e;
+        } catch (UploadLimitExceededException e) {
+            throw e;
         } catch (Exception e) {
-            throw new PackageValidationException("Package extraction test failed. The archive may be corrupted: " + e.getMessage(), e);
+            if (deadline != null && deadline.isExceeded()) {
+                throw new OperationTimeoutException("Operation timeout exceeded during archive inspection", e);
+            }
+            throw new PackageValidationException(
+                    "Package extraction test failed. The archive may be corrupted: " + e.getMessage(), e);
         }
 
         if (!extractionTestPassed) {
@@ -213,11 +301,30 @@ public class PackageValidator implements DisposableBean {
 
         if (isKafka && !foundExpectedVersion) {
             throw new PackageValidationException(
-                    String.format("Kafka version detection failed. Expected version '%s' but could not find corresponding kafka jars in the package.", expectedVersion)
-            );
+                    String.format(
+                            "Kafka version detection failed. Expected version '%s' but could not find corresponding kafka jars in the package.",
+                            expectedVersion));
         }
-        
+
         log.info("Package structure and version validation passed for {}", archivePath);
+    }
+
+    /**
+     * Checks whether the expanded-to-compressed ratios exceeds the configured
+     * Limit.
+     * Uses quotient and remainder to avoid integer devision truncation and
+     * multiplication overflow.
+     */
+
+    public static boolean exceedsCompressionRatio(long expandedBytes, long compressedBytes, long maxRatio) {
+        if (expandedBytes < 0 || compressedBytes <= 0 || maxRatio < 1) {
+            throw new IllegalArgumentException("Invalid archive compression ration values.");
+        }
+
+        long quotient = expandedBytes / compressedBytes;
+        long remainder = expandedBytes % compressedBytes;
+
+        return quotient > maxRatio || (quotient == maxRatio && remainder > 0);
     }
 
     private void rejectUnsafeEntry(TarArchiveEntry entry) {
@@ -232,22 +339,28 @@ public class PackageValidator implements DisposableBean {
     private static final class CountingInputStream extends FilterInputStream {
         private long byteCount;
 
-        private CountingInputStream(InputStream in) { super(in); }
+        private CountingInputStream(InputStream in) {
+            super(in);
+        }
 
         @Override
         public int read() throws IOException {
             int value = super.read();
-            if (value >= 0) byteCount++;
+            if (value >= 0)
+                byteCount++;
             return value;
         }
 
         @Override
         public int read(byte[] buffer, int offset, int length) throws IOException {
             int read = super.read(buffer, offset, length);
-            if (read > 0) byteCount += read;
+            if (read > 0)
+                byteCount += read;
             return read;
         }
 
-        private long getByteCount() { return byteCount; }
+        private long getByteCount() {
+            return byteCount;
+        }
     }
 }

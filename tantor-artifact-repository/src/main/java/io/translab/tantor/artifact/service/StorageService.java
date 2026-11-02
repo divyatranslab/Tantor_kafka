@@ -35,17 +35,31 @@ import java.util.UUID;
 public class StorageService {
 
     private static final Logger log = LoggerFactory.getLogger(StorageService.class);
-    private static final String ARTIFACTS_DIR = "artifacts";
+    public static final String ARTIFACTS_DIR = "artifacts";
     public static final String MANIFEST_FILE = "manifest.json";
 
     private final StorageProperties properties;
     private final ChecksumService checksumService;
+    private final TemporaryStorageBudget storageBudget;
     private Path artifactsRoot;
     private Semaphore uploadSlots;
 
     public StorageService(StorageProperties properties, ChecksumService checksumService) {
+        this(properties, checksumService, new TemporaryStorageBudget(properties));
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public StorageService(StorageProperties properties, ChecksumService checksumService,
+                          @org.springframework.beans.factory.annotation.Autowired(required = false) TemporaryStorageBudget storageBudget) {
         this.properties = properties;
         this.checksumService = checksumService;
+        this.storageBudget = storageBudget != null ? storageBudget : new TemporaryStorageBudget(properties);
+    }
+
+    private final java.util.Set<Path> activeUploadFiles = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public boolean isActiveUpload(Path path) {
+        return path != null && activeUploadFiles.contains(path.toAbsolutePath().normalize());
     }
 
     @PostConstruct
@@ -57,6 +71,7 @@ public class StorageService {
                 Files.createDirectories(artifactsRoot.resolve(type.directory()));
             }
             uploadSlots = new Semaphore(properties.getMaxConcurrentUploads(), true);
+            storageBudget.accountExistingTempFiles(artifactsRoot);
             log.info("Tantor artifact repository initialised at {}", artifactsRoot);
         } catch (IOException e) {
             throw new StorageException("Unable to initialise repository at " + properties.getBasePath(), e);
@@ -72,7 +87,25 @@ public class StorageService {
         return sb.toString();
     }
 
-    public record TempStoreResult(Path tempPath, ChecksumResult checksumResult) {}
+    public record TempStoreResult(Path tempPath, ChecksumResult checksumResult, TemporaryStorageBudget.Reservation reservation, StorageService storageService) implements AutoCloseable {
+        public TempStoreResult(Path tempPath, ChecksumResult checksumResult, TemporaryStorageBudget.Reservation reservation) {
+            this(tempPath, checksumResult, reservation, null);
+        }
+
+        public TempStoreResult(Path tempPath, ChecksumResult checksumResult) {
+            this(tempPath, checksumResult, null, null);
+        }
+
+        @Override
+        public void close() {
+            if (storageService != null && tempPath != null) {
+                storageService.activeUploadFiles.remove(tempPath.toAbsolutePath().normalize());
+            }
+            if (reservation != null) {
+                reservation.close();
+            }
+        }
+    }
 
     /**
      * Stream an upload into a temporary file in the repository, computing checksums in the same pass.
@@ -80,23 +113,43 @@ public class StorageService {
      * @return the path to the temporary file and computed checksums
      */
     public TempStoreResult storeTemporarily(String fileNameHint, InputStream data) {
+        return storeTemporarily(fileNameHint, data, null, -1L);
+    }
+
+    public TempStoreResult storeTemporarily(String fileNameHint, InputStream data,
+                                            io.translab.tantor.artifact.util.OperationDeadline deadline,
+                                            long expectedSizeBytes) {
         validateFileName(fileNameHint);
+        if (deadline != null) {
+            deadline.checkNotExceeded("staging admission");
+        }
         if (!uploadSlots.tryAcquire()) {
             throw new UploadLimitExceededException("Too many concurrent uploads; try again shortly");
         }
+        Path tmp = null;
+        TemporaryStorageBudget.Reservation reservation = null;
         try {
+            long toReserve = expectedSizeBytes > 0 ? expectedSizeBytes : properties.getMaxUploadBytes();
+            reservation = storageBudget.reserve(toReserve, artifactsRoot);
             ensureFreeSpace();
-            Path tmp = Files.createTempFile(artifactsRoot, ".upload-", "-" + fileNameHint);
+            tmp = Files.createTempFile(artifactsRoot, ".upload-", "-" + fileNameHint);
+            activeUploadFiles.add(tmp.toAbsolutePath().normalize());
             ChecksumResult result;
             try (OutputStream out = Files.newOutputStream(tmp)) {
-                result = checksumService.copyAndDigest(data, out, properties.getMaxUploadBytes());
-            } catch (RuntimeException e) {
-                Files.deleteIfExists(tmp);
-                throw e;
+                result = checksumService.copyAndDigest(data, out, properties.getMaxUploadBytes(), deadline);
             }
-            return new TempStoreResult(tmp, result);
+            if (reservation != null) {
+                reservation.adjust(result.sizeBytes());
+            }
+            return new TempStoreResult(tmp, result, reservation, this);
         } catch (IOException e) {
+            deleteTemp(tmp);
+            if (reservation != null) reservation.close();
             throw new StorageException("Failed to store temporary upload for " + fileNameHint, e);
+        } catch (RuntimeException e) {
+            deleteTemp(tmp);
+            if (reservation != null) reservation.close();
+            throw e;
         } finally {
             uploadSlots.release();
         }
@@ -131,10 +184,12 @@ public class StorageService {
      */
     public void deleteTemp(Path tempPath) {
         if (tempPath == null) return;
+        activeUploadFiles.remove(tempPath.toAbsolutePath().normalize());
         try {
             Files.deleteIfExists(tempPath);
         } catch (IOException e) {
             log.warn("Failed to delete temp file {}", tempPath);
+            storageBudget.recordCleanupFailure();
         }
     }
 
@@ -172,6 +227,7 @@ public class StorageService {
             Files.deleteIfExists(resolveBinary(relativeDir, fileName));
             Files.deleteIfExists(resolveSafe(relativeDir).resolve(MANIFEST_FILE));
         } catch (IOException e) {
+            storageBudget.recordCleanupFailure();
             throw new StorageException("Failed to delete " + relativeDir + "/" + fileName, e);
         }
     }
@@ -198,6 +254,7 @@ public class StorageService {
      */
     public void quarantine(Path tempPath, String fileName) {
         if (tempPath == null || !Files.exists(tempPath)) return;
+        activeUploadFiles.remove(tempPath.toAbsolutePath().normalize());
         try {
             validateFileName(fileName);
             Path quarantineDir = artifactsRoot.resolve("quarantine").normalize();

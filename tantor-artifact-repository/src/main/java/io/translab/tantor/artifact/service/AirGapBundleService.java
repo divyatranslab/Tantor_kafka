@@ -9,6 +9,8 @@ import io.translab.tantor.artifact.dto.ManifestDto;
 import io.translab.tantor.artifact.exception.StorageException;
 import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
+import io.translab.tantor.artifact.util.OperationDeadline;
+
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
@@ -33,7 +35,8 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 /**
- * Air-gapped transfer support. A bundle is a single {@code .tar.gz} that mirrors
+ * Air-gapped transfer support. A bundle is a single {@code .tar.gz} that
+ * mirrors
  * the repository layout plus a top-level {@code bundle-manifest.json}:
  *
  * <pre>
@@ -46,7 +49,8 @@ import java.util.stream.Stream;
  *
  * Export it on an internet-connected staging server, move it across the
  * air-gap on physical media, and import it on the customer's isolated Tantor
- * server. Every binary is re-checksummed on import via {@link ArtifactService#upload}.
+ * server. Every binary is re-checksummed on import via
+ * {@link ArtifactService#upload}.
  */
 @Service
 public class AirGapBundleService {
@@ -60,45 +64,89 @@ public class AirGapBundleService {
     private final ArtifactService artifactService;
     private final ObjectMapper objectMapper;
     private final StorageProperties properties;
+    private final TemporaryStorageBudget storageBudget;
 
     public AirGapBundleService(ArtifactJpaRepository repository,
-                               StorageService storageService,
-                               ManifestService manifestService,
-                               ArtifactService artifactService,
-                               ObjectMapper objectMapper,
-                               StorageProperties properties) {
+            StorageService storageService,
+            ManifestService manifestService,
+            ArtifactService artifactService,
+            ObjectMapper objectMapper,
+            StorageProperties properties) {
+        this(repository, storageService, manifestService, artifactService, objectMapper, properties, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AirGapBundleService(ArtifactJpaRepository repository,
+            StorageService storageService,
+            ManifestService manifestService,
+            ArtifactService artifactService,
+            ObjectMapper objectMapper,
+            StorageProperties properties,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) TemporaryStorageBudget storageBudget) {
         this.repository = repository;
         this.storageService = storageService;
         this.manifestService = manifestService;
         this.artifactService = artifactService;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.storageBudget = storageBudget != null ? storageBudget : new TemporaryStorageBudget(properties);
     }
 
     /**
-     * Stream a bundle of the given artifacts (or all AVAILABLE ones if the list
+     * Stream a bundle of the given artifacts (or bounded AVAILABLE ones if the list
      * is empty) to {@code out}.
      */
     public void export(List<UUID> ids, OutputStream out) {
-        List<Artifact> artifacts = ids == null || ids.isEmpty()
-                ? repository.findByStatusAndAction(ArtifactStatus.AVAILABLE, "UPLOAD")
-                : repository.findAllById(ids).stream()
-                    .filter(a -> a.getStatus() == ArtifactStatus.AVAILABLE).toList();
+        export(ids, out, io.translab.tantor.artifact.util.OperationDeadline.start(properties.getBundleExportTimeout()));
+    }
+
+    public void export(List<UUID> ids, OutputStream out, io.translab.tantor.artifact.util.OperationDeadline deadline) {
+        if (ids != null && ids.size() > properties.getMaxExportEntries()) {
+            throw new UploadLimitExceededException(
+                    "Export entry count " + ids.size() + " exceeds configured maximum of "
+                            + properties.getMaxExportEntries());
+        }
+
+        List<Artifact> artifacts;
+        if (ids == null || ids.isEmpty()) {
+            org.springframework.data.domain.Page<Artifact> page = repository.search(
+                    null, ArtifactStatus.AVAILABLE,
+                    org.springframework.data.domain.PageRequest.of(0, properties.getMaxExportEntries()));
+            if (page.getTotalElements() > properties.getMaxExportEntries()) {
+                throw new UploadLimitExceededException(
+                        "Total available artifacts (%d) exceeds configured maximum export limit of %d. Specify explicit IDs."
+                                .formatted(page.getTotalElements(), properties.getMaxExportEntries()));
+            }
+            artifacts = page.getContent();
+        } else {
+            artifacts = repository.findAllById(ids).stream()
+                    .filter(a -> a.getStatus() == ArtifactStatus.AVAILABLE)
+                    .limit(properties.getMaxExportEntries())
+                    .toList();
+        }
 
         List<BundleManifest.Entry> entries = new ArrayList<>();
-        try (BufferedOutputStream bos = new BufferedOutputStream(out);
-             GzipCompressorOutputStream gz = new GzipCompressorOutputStream(bos);
-             TarArchiveOutputStream tar = new TarArchiveOutputStream(gz)) {
+        BoundedOutputStream boundedOut = new BoundedOutputStream(out, properties.getMaxBundleBytes());
+        try (BufferedOutputStream bos = new BufferedOutputStream(boundedOut);
+                GzipCompressorOutputStream gz = new GzipCompressorOutputStream(bos);
+                TarArchiveOutputStream tar = new TarArchiveOutputStream(gz)) {
 
             tar.setLongFileMode(TarArchiveOutputStream.LONGFILE_POSIX);
 
             for (Artifact a : artifacts) {
+                if (deadline != null) {
+                    deadline.checkNotExceeded("bundle export");
+                }
                 String relDir = dirOf(a.getRelativePath());
                 String entryPath = "artifacts/" + a.getRelativePath();
                 String manifestPath = "artifacts/" + relDir + "/" + StorageService.MANIFEST_FILE;
 
                 Path binary = storageService.resolveBinary(relDir, a.getFileName());
-                addFileEntry(tar, entryPath, binary);
+                if (!Files.isRegularFile(binary)) {
+                    log.warn("Artifact {} binary is missing on disk at {}; skipping from export", a.getId(), binary);
+                    continue;
+                }
+                addFileEntry(tar, entryPath, binary, deadline);
 
                 String manifestJson = manifestService.toJson(manifestService.build(a, null));
                 addBytesEntry(tar, manifestPath, manifestJson.getBytes(StandardCharsets.UTF_8));
@@ -126,37 +174,59 @@ public class AirGapBundleService {
      * @return number of artifacts imported
      */
     public int importBundle(InputStream in) {
-        Path tmp;
-        try {
-            tmp = Files.createTempDirectory("tantor-bundle-");
-        } catch (IOException e) {
-            throw new StorageException("Cannot create temp dir for bundle import", e);
+        return importBundle(in,
+                io.translab.tantor.artifact.util.OperationDeadline.start(properties.getBundleImportTimeout()));
+    }
+
+    public int importBundle(InputStream in, io.translab.tantor.artifact.util.OperationDeadline deadline) {
+        long estimatedImportBytes = properties.getMaxBundleBytes();
+        Path targetFsRoot = storageService.artifactsRoot();
+        if (targetFsRoot == null) {
+            targetFsRoot = java.nio.file.Paths.get(properties.getBasePath(), StorageService.ARTIFACTS_DIR)
+                    .toAbsolutePath().normalize();
         }
-        try {
-            extract(new BoundedInputStream(in, properties.getMaxBundleBytes()), tmp);
-            int imported = 0;
-            Path artifactsDir = tmp.resolve("artifacts");
-            if (!Files.isDirectory(artifactsDir)) {
-                throw new StorageException("Bundle is missing an 'artifacts/' directory");
+        try (TemporaryStorageBudget.Reservation reservation = storageBudget.reserve(estimatedImportBytes,
+                targetFsRoot)) {
+            Path tmp = null;
+            try {
+                Files.createDirectories(targetFsRoot);
+                tmp = Files.createTempDirectory(targetFsRoot, "tantor-bundle-");
+            } catch (IOException e) {
+                throw new StorageException("Cannot create temp dir for bundle import", e);
             }
-            try (Stream<Path> walk = Files.walk(artifactsDir)) {
-                List<Path> manifests = walk
-                        .filter(p -> p.getFileName().toString().equals(StorageService.MANIFEST_FILE))
-                        .toList();
-                for (Path manifestPath : manifests) {
-                    imported += importOne(manifestPath);
+            try {
+                long actualExtractedBytes = extract(
+                        new BoundedInputStream(in, properties.getMaxBundleBytes(), deadline), tmp, reservation);
+                if (reservation != null) {
+                    reservation.adjust(actualExtractedBytes);
                 }
+                int imported = 0;
+                Path artifactsDir = tmp.resolve("artifacts");
+                if (!Files.isDirectory(artifactsDir)) {
+                    throw new StorageException("Bundle is missing an 'artifacts/' directory");
+                }
+                try (Stream<Path> walk = Files.walk(artifactsDir)) {
+                    List<Path> manifests = walk
+                            .filter(p -> p.getFileName().toString().equals(StorageService.MANIFEST_FILE))
+                            .toList();
+                    for (Path manifestPath : manifests) {
+                        if (deadline != null) {
+                            deadline.checkNotExceeded("bundle import processing");
+                        }
+                        imported += importOne(manifestPath, deadline);
+                    }
+                }
+                log.info("Imported {} artifact(s) from bundle", imported);
+                return imported;
+            } catch (IOException e) {
+                throw new StorageException("Failed to import air-gap bundle", e);
+            } finally {
+                deleteQuietly(tmp);
             }
-            log.info("Imported {} artifact(s) from bundle", imported);
-            return imported;
-        } catch (IOException e) {
-            throw new StorageException("Failed to import air-gap bundle", e);
-        } finally {
-            deleteQuietly(tmp);
         }
     }
 
-    private int importOne(Path manifestPath) throws IOException {
+    private int importOne(Path manifestPath, OperationDeadline deadline) throws IOException {
         ManifestDto manifest = manifestService.fromJson(Files.readString(manifestPath));
         Path binary = manifestPath.resolveSibling(manifest.fileName());
         if (!Files.isRegularFile(binary)) {
@@ -173,11 +243,14 @@ public class AirGapBundleService {
                 manifest.fileName(),
                 manifest.contentType(),
                 "Imported from air-gap bundle",
-                manifest.sha256(),       // declared checksum -> re-verified on ingest
+                manifest.sha256(), // declared checksum -> re-verified on ingest
                 manifest.attributes(),
-                true,                    // overwrite on import
-                "airgap-import");
+                true, // overwrite on import
+                "airgap-import", null, deadline);
         try (InputStream bin = Files.newInputStream(binary)) {
+            if (deadline != null) {
+                deadline.checkNotExceeded("Bundle artifact import");
+            }
             artifactService.upload(cmd, bin);
         }
         return 1;
@@ -185,11 +258,40 @@ public class AirGapBundleService {
 
     // --- tar helpers ------------------------------------------------------
 
-    private void addFileEntry(TarArchiveOutputStream tar, String path, Path file) throws IOException {
+    private void copyWithDealLine(Path file, OutputStream out, OperationDeadline deadline) throws IOException {
+        byte[] buffer = new byte[8192];
+
+        try (InputStream in = Files.newInputStream(file)) {
+            int read;
+            while (true) {
+                if (deadline != null) {
+                    deadline.checkNotExceeded("Bundle export file copy");
+                }
+
+                read = in.read(buffer);
+
+                if (read == -1) {
+                    break;
+                }
+                if (deadline != null) {
+                    deadline.checkNotExceeded("Bundle export file copy");
+                }
+
+                out.write(buffer, 0, read);
+
+                if (deadline != null) {
+                    deadline.checkNotExceeded("Bundle export file copy");
+                }
+            }
+        }
+    }
+
+    private void addFileEntry(TarArchiveOutputStream tar, String path, Path file, OperationDeadline deadline)
+            throws IOException {
         TarArchiveEntry entry = new TarArchiveEntry(file.toFile(), path);
         entry.setSize(Files.size(file));
         tar.putArchiveEntry(entry);
-        Files.copy(file, tar);
+        copyWithDealLine(file, tar, deadline);
         tar.closeArchiveEntry();
     }
 
@@ -201,9 +303,14 @@ public class AirGapBundleService {
         tar.closeArchiveEntry();
     }
 
-    private void extract(InputStream in, Path targetRoot) throws IOException {
+    private long extract(InputStream in, Path targetRoot) throws IOException {
+        return extract(in, targetRoot, null);
+    }
+
+    private long extract(InputStream in, Path targetRoot, TemporaryStorageBudget.Reservation reservation)
+            throws IOException {
         try (GzipCompressorInputStream gz = new GzipCompressorInputStream(in);
-             TarArchiveInputStream tar = new TarArchiveInputStream(gz)) {
+                TarArchiveInputStream tar = new TarArchiveInputStream(gz)) {
             TarArchiveEntry entry;
             int entries = 0;
             long expanded = 0;
@@ -235,22 +342,33 @@ public class AirGapBundleService {
                             expanded += read;
                             if (entryBytes > properties.getMaxArchiveEntryBytes()
                                     || expanded > properties.getMaxArchiveExpandedBytes()) {
-                                throw new UploadLimitExceededException("Bundle expands beyond the configured size limit");
+                                throw new UploadLimitExceededException(
+                                        "Bundle expands beyond the configured size limit");
+                            }
+                            if (reservation != null && expanded > reservation.getReservedBytes()) {
+                                long targetReservation = Math.max(expanded + 1024 * 1024, expanded);
+                                reservation.adjust(targetReservation);
                             }
                             out.write(buffer, 0, read);
                         }
                     }
                 }
             }
+            return expanded;
         }
     }
 
     private void deleteQuietly(Path dir) {
+        if (dir == null || !Files.exists(dir))
+            return;
         try (Stream<Path> walk = Files.walk(dir)) {
             walk.sorted((a, b) -> b.getNameCount() - a.getNameCount())
-                .forEach(p -> {
-                    try { Files.deleteIfExists(p); } catch (IOException ignored) { }
-                });
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                        }
+                    });
         } catch (IOException e) {
             log.warn("Failed to clean temp dir {}", dir, e);
         }
@@ -268,32 +386,83 @@ public class AirGapBundleService {
         }
     }
 
-    private static final class BoundedInputStream extends java.io.FilterInputStream {
+    private static final class BoundedOutputStream extends java.io.FilterOutputStream {
         private final long maxBytes;
-        private long bytesRead;
+        private long bytesWritten;
 
-        private BoundedInputStream(InputStream in, long maxBytes) {
-            super(in);
+        private BoundedOutputStream(OutputStream out, long maxBytes) {
+            super(out);
             this.maxBytes = maxBytes;
         }
 
         @Override
+        public void write(int b) throws IOException {
+            increment(1);
+            out.write(b);
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            increment(len);
+            out.write(b, off, len);
+        }
+
+        @Override
+        public void close() throws IOException {
+            flush();
+        }
+
+        private void increment(int count) {
+            if (count > 0) {
+                bytesWritten += count;
+                if (bytesWritten > maxBytes) {
+                    throw new UploadLimitExceededException(
+                            "Export bundle size exceeded configured limit of " + maxBytes + " bytes");
+                }
+            }
+        }
+    }
+
+    private static final class BoundedInputStream extends java.io.FilterInputStream {
+        private final long maxBytes;
+        private final io.translab.tantor.artifact.util.OperationDeadline deadline;
+        private long bytesRead;
+
+        private BoundedInputStream(InputStream in, long maxBytes) {
+            this(in, maxBytes, null);
+        }
+
+        private BoundedInputStream(InputStream in, long maxBytes,
+                io.translab.tantor.artifact.util.OperationDeadline deadline) {
+            super(in);
+            this.maxBytes = maxBytes;
+            this.deadline = deadline;
+        }
+
+        @Override
         public int read() throws IOException {
+            if (deadline != null)
+                deadline.checkNotExceeded("reading bundle stream");
             int value = super.read();
-            if (value >= 0) increment(1);
+            if (value >= 0)
+                increment(1);
             return value;
         }
 
         @Override
         public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (deadline != null)
+                deadline.checkNotExceeded("reading bundle stream");
             int read = super.read(buffer, offset, length);
-            if (read > 0) increment(read);
+            if (read > 0)
+                increment(read);
             return read;
         }
 
         private void increment(int count) {
             if (count > maxBytes - bytesRead) {
-                throw new UploadLimitExceededException("Bundle exceeds the configured maximum of " + maxBytes + " bytes");
+                throw new UploadLimitExceededException(
+                        "Bundle exceeds the configured maximum of " + maxBytes + " bytes");
             }
             bytesRead += count;
         }

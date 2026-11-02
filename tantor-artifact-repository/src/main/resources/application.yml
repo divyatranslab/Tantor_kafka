@@ -62,11 +62,18 @@ tantor:
     stream-buffer-bytes: 1048576
     max-upload-bytes: ${TANTOR_MAX_UPLOAD_BYTES:536870912}
     max-bundle-bytes: ${TANTOR_MAX_BUNDLE_BYTES:536870912}
+    max-aggregate-temp-bytes: ${TANTOR_MAX_AGGREGATE_TEMP_BYTES:3221225472}
     minimum-free-space-bytes: ${TANTOR_MINIMUM_FREE_SPACE_BYTES:5368709120}
     max-concurrent-uploads: ${TANTOR_MAX_CONCURRENT_UPLOADS:2}
     max-concurrent-validations: ${TANTOR_MAX_CONCURRENT_VALIDATIONS:2}
     max-queued-validations: ${TANTOR_MAX_QUEUED_VALIDATIONS:10}
     validation-queue-wait-timeout: ${TANTOR_VALIDATION_QUEUE_WAIT_TIMEOUT:30s}
+    upload-timeout: ${TANTOR_UPLOAD_TIMEOUT:60s}
+    download-timeout: ${TANTOR_DOWNLOAD_TIMEOUT:60s}
+    bundle-export-timeout: ${TANTOR_BUNDLE_EXPORT_TIMEOUT:120s}
+    bundle-import-timeout: ${TANTOR_BUNDLE_IMPORT_TIMEOUT:180s}
+    max-page-size: ${TANTOR_MAX_PAGE_SIZE:100}
+    max-export-entries: ${TANTOR_MAX_EXPORT_ENTRIES:500}
     max-archive-entries: ${TANTOR_MAX_ARCHIVE_ENTRIES:10000}
     max-archive-entry-bytes: ${TANTOR_MAX_ARCHIVE_ENTRY_BYTES:1073741824}
     max-archive-expanded-bytes: ${TANTOR_MAX_ARCHIVE_EXPANDED_BYTES:2147483648}
