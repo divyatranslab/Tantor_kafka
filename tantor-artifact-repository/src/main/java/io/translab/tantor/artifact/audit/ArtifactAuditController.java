@@ -24,8 +24,11 @@ public class ArtifactAuditController {
     }
 
     @GetMapping("/{resourceId}")
-    public Map<String, Object> getByResource(@org.springframework.web.bind.annotation.PathVariable String resourceId) {
-        java.util.List<ArtifactAuditLog> logs = service.getLogsForResource(resourceId);
-        return Map.of("events", logs, "total", logs.size(), "integrity", service.integrity());
+    public Map<String, Object> getByResource(@org.springframework.web.bind.annotation.PathVariable String resourceId,
+                                             @RequestParam(defaultValue = "0") int page,
+                                             @RequestParam(defaultValue = "50") int size) {
+        Page<ArtifactAuditLog> result = service.getLogsForResource(resourceId, page, size);
+        return Map.of("events", result.getContent(), "total", result.getTotalElements(),
+                "page", result.getNumber(), "totalPages", result.getTotalPages(), "integrity", service.integrity());
     }
 }

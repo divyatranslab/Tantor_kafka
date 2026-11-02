@@ -30,6 +30,20 @@ public interface ArtifactJpaRepository extends JpaRepository<Artifact, UUID> {
                                              @Param("version") String version);
 
     @Query("""
+            select a from Artifact a
+            where a.action = 'UPLOAD'
+              and a.serviceType = :serviceType
+              and a.version = :version
+              and a.status = 'AVAILABLE'
+              and not exists (
+                  select d.id from Artifact d
+                  where d.rootArtifactId = a.rootArtifactId and d.action = 'DELETE'
+              )
+            """)
+    List<Artifact> findActiveByServiceTypeAndVersion(@Param("serviceType") ServiceType serviceType,
+                                                    @Param("version") String version);
+
+    @Query("""
             select count(a) from Artifact a
             where a.action = 'UPLOAD'
               and a.checksumSha256 = :checksumSha256
@@ -41,12 +55,25 @@ public interface ArtifactJpaRepository extends JpaRepository<Artifact, UUID> {
             """)
     long countActiveByChecksumSha256(@Param("checksumSha256") String checksumSha256);
 
+    @Query("""
+            select a from Artifact a
+            where a.action = 'UPLOAD'
+              and a.checksumSha256 = :checksumSha256
+              and a.status = 'AVAILABLE'
+              and not exists (
+                  select d.id from Artifact d
+                  where d.rootArtifactId = a.rootArtifactId and d.action = 'DELETE'
+              )
+            """)
+    List<Artifact> findActiveByChecksumSha256(@Param("checksumSha256") String checksumSha256);
+
     @Query(value = "select 1 from pg_advisory_xact_lock(hashtext(:lockKey))", nativeQuery = true)
     Integer acquireUploadLock(@Param("lockKey") String lockKey);
     List<Artifact> findByRootArtifactIdOrderByCreatedAtAsc(UUID rootArtifactId);
 
     List<Artifact> findByStatus(ArtifactStatus status);
     List<Artifact> findByStatusAndAction(ArtifactStatus status, String action);
+    Page<Artifact> findByStatusAndAction(ArtifactStatus status, String action, Pageable pageable);
 
     /**
      * Flexible listing with optional service-type and status filters. A null

@@ -52,9 +52,25 @@ public class GlobalExceptionHandler {
         return problem(HttpStatus.UNPROCESSABLE_ENTITY, "Package validation failed", ex.getMessage(), "package-validation-failed");
     }
 
+    @ExceptionHandler(io.translab.tantor.artifact.exception.OperationTimeoutException.class)
+    public ProblemDetail handleOperationTimeout(io.translab.tantor.artifact.exception.OperationTimeoutException ex) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable", ex.getMessage(), "operation-timeout");
+    }
+
     @ExceptionHandler(UploadLimitExceededException.class)
     public ProblemDetail handleUploadLimit(UploadLimitExceededException ex) {
-        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload limit exceeded", ex.getMessage(), "upload-limit-exceeded");
+        String message = ex.getMessage();
+
+        String lower = message != null ? message.toLowerCase() : "";
+
+        if (lower.contains("timeout") || lower.contains("shutting down") || lower.contains("interrupted")) {
+            return problem(HttpStatus.SERVICE_UNAVAILABLE, "Service Unavailable", message, "service-unavailable");
+        }
+        if (lower.contains("queue is full") || lower.contains("queue full") || lower.contains("capacity is full")
+                || lower.contains("capacity full") || lower.contains("concurrent uploads") || lower.contains("too many requests")) {
+            return problem(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", message, "too-many-requests");
+        }
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Upload limit exceeded", message, "upload-limit-exceeded");
     }
 
     @ExceptionHandler(Exception.class)

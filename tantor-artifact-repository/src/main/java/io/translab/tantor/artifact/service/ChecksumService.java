@@ -32,6 +32,10 @@ public class ChecksumService {
     }
 
     public ChecksumResult copyAndDigest(InputStream source, OutputStream sink, long maxBytes) {
+        return copyAndDigest(source, sink, maxBytes, null);
+    }
+
+    public ChecksumResult copyAndDigest(InputStream source, OutputStream sink, long maxBytes, io.translab.tantor.artifact.util.OperationDeadline deadline) {
         MessageDigest sha256 = newDigest("SHA-256");
         MessageDigest md5 = newDigest("MD5");
         long total = 0;
@@ -39,6 +43,9 @@ public class ChecksumService {
         try {
             int read;
             while ((read = source.read(buf)) != -1) {
+                if (deadline != null) {
+                    deadline.checkNotExceeded("streaming upload bytes");
+                }
                 if (read > maxBytes - total) {
                     throw new UploadLimitExceededException("Upload exceeds the configured maximum of " + maxBytes + " bytes");
                 }
@@ -57,6 +64,14 @@ public class ChecksumService {
     /** Digest an existing stream without copying it anywhere (used for re-verification). */
     public ChecksumResult digest(InputStream source) {
         return copyAndDigest(source, OutputStream.nullOutputStream());
+    }
+
+    public ChecksumResult digest(InputStream source, io.translab.tantor.artifact.util.OperationDeadline deadline) {
+        return copyAndDigest(source, OutputStream.nullOutputStream(), Long.MAX_VALUE, deadline);
+    }
+
+    public String digestSha256(InputStream source, io.translab.tantor.artifact.util.OperationDeadline deadline) {
+        return digest(source, deadline).sha256();
     }
 
     private MessageDigest newDigest(String algorithm) {

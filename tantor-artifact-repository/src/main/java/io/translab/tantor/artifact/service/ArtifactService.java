@@ -9,6 +9,9 @@ import io.translab.tantor.artifact.dto.ManifestDto;
 import io.translab.tantor.artifact.exception.ArtifactNotFoundException;
 import io.translab.tantor.artifact.exception.ArtifactAlreadyExistsException;
 import io.translab.tantor.artifact.exception.ChecksumMismatchException;
+import io.translab.tantor.artifact.exception.OperationTimeoutException;
+import io.translab.tantor.artifact.exception.PackageValidationException;
+import io.translab.tantor.artifact.exception.UploadLimitExceededException;
 import io.translab.tantor.artifact.repository.ArtifactJpaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -37,17 +41,43 @@ public class ArtifactService {
     private final ManifestService manifestService;
     private final StorageProperties properties;
     private final PackageValidator packageValidator;
+    private final ArtifactCommitHelper commitHelper;
+    private UploadIdempotencyService idempotencyService;
+    private ArtifactReconciliationService reconciliationService;
+    private ChecksumService checksumService = new ChecksumService();
 
     public ArtifactService(ArtifactJpaRepository repository,
-                           StorageService storageService,
-                           ManifestService manifestService,
-                           StorageProperties properties,
-                           PackageValidator packageValidator) {
+            StorageService storageService,
+            ManifestService manifestService,
+            StorageProperties properties,
+            PackageValidator packageValidator,
+            ArtifactCommitHelper commitHelper) {
         this.repository = repository;
         this.storageService = storageService;
         this.manifestService = manifestService;
         this.properties = properties;
         this.packageValidator = packageValidator;
+        this.commitHelper = Objects.requireNonNull(commitHelper, "commitHelper must not be null");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setChecksumService(ChecksumService checksumService) {
+        if (checksumService != null) {
+            this.checksumService = checksumService;
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setIdempotencyService(UploadIdempotencyService idempotencyService) {
+        this.idempotencyService = idempotencyService;
+        if (this.commitHelper != null) {
+            this.commitHelper.setIdempotencyService(idempotencyService);
+        }
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setReconciliationService(ArtifactReconciliationService reconciliationService) {
+        this.reconciliationService = reconciliationService;
     }
 
     /** Parameters for an upload. */
@@ -63,96 +93,188 @@ public class ArtifactService {
             String declaredSha256,
             Map<String, String> attributes,
             boolean overwrite,
-            String createdBy
-    ) {}
+            String createdBy,
+            String idempotencyKey,
+            io.translab.tantor.artifact.util.OperationDeadline deadline) {
+        public UploadCommand(ServiceType serviceType, String name, String version, String classifier,
+                String storageDirectory, String fileName, String contentType, String description,
+                String declaredSha256, Map<String, String> attributes, boolean overwrite, String createdBy) {
+            this(serviceType, name, version, classifier, storageDirectory, fileName, contentType, description,
+                    declaredSha256, attributes, overwrite, createdBy, null, null);
+        }
 
-    @Transactional
+        public UploadCommand(ServiceType serviceType, String name, String version, String classifier,
+                String storageDirectory, String fileName, String contentType, String description,
+                String declaredSha256, Map<String, String> attributes, boolean overwrite, String createdBy,
+                String idempotencyKey) {
+            this(serviceType, name, version, classifier, storageDirectory, fileName, contentType, description,
+                    declaredSha256, attributes, overwrite, createdBy, idempotencyKey, null);
+        }
+    }
+
     public Artifact upload(UploadCommand cmd, InputStream data) {
         StorageService.validateFileName(cmd.fileName());
         validateCoordinate(cmd.version(), "version");
-        if (cmd.classifier() != null) validateCoordinate(cmd.classifier(), "classifier");
+        if (cmd.classifier() != null)
+            validateCoordinate(cmd.classifier(), "classifier");
         String classifier = blankToNull(cmd.classifier());
-        // 1. Stream bytes to temporary disk location and compute checksums.
-        StorageService.TempStoreResult tempStore = storageService.storeTemporarily(cmd.fileName(), data);
-        ChecksumResult cs = tempStore.checksumResult();
-        Path tempFile = tempStore.tempPath();
 
-        // Serialize uploads for the same identity/checksum so two concurrent
-        // requests cannot both pass the active-ledger duplicate check.
-        repository.acquireUploadLock("artifact-version:" + cmd.serviceType() + ":" + cmd.version());
-        repository.acquireUploadLock("artifact-checksum:" + cs.sha256());
-
-        if (repository.countActiveByServiceTypeAndVersion(cmd.serviceType(), cmd.version()) > 0) {
-            storageService.deleteTemp(tempFile);
-            throw new ArtifactAlreadyExistsException("Artifact already exists for " + cmd.serviceType() + " " + cmd.version());
-        }
-        if (repository.countActiveByChecksumSha256(cs.sha256()) > 0) {
-            storageService.deleteTemp(tempFile);
-            throw new ArtifactAlreadyExistsException("An artifact with the same SHA-256 checksum already exists");
+        // Idempotency check: if already completed, return existing; if in flight, await
+        // result
+        if (idempotencyService != null && cmd.idempotencyKey() != null) {
+            java.util.function.Supplier<String> fingerprintSupplier = (data != null)
+                    ? () -> checksumService.digestSha256(data, cmd.deadline())
+                    : null;
+            io.translab.tantor.artifact.dto.ArtifactResponse existingResp = idempotencyService.claimOrAwait(
+                    cmd.idempotencyKey(), cmd.serviceType(), cmd.version(), cmd.fileName(),
+                    cmd.declaredSha256(), fingerprintSupplier, cmd.deadline());
+            if (existingResp != null) {
+                return repository.findById(existingResp.id()).orElse(null);
+            }
         }
 
-        // 2. Enforce declared checksum (reject before heavy validation)
-        if (properties.isEnforceChecksum() && cmd.declaredSha256() != null
-                && !cmd.declaredSha256().equalsIgnoreCase(cs.sha256())) {
-            storageService.deleteTemp(tempFile);
-            throw new ChecksumMismatchException(
-                    "Declared SHA-256 %s does not match computed %s"
-                            .formatted(cmd.declaredSha256(), cs.sha256()));
-        }
-
-        // 3. Prepare index row
-        Artifact artifact = new Artifact();
-        artifact.setId(UUID.randomUUID());
-        String artifactDir = uploadDirectory(cmd, classifier, artifact.getId());
-
-        artifact.setServiceType(cmd.serviceType());
-        artifact.setVersion(cmd.version());
-        artifact.setAction("UPLOAD");
-        artifact.setRootArtifactId(artifact.getId());
-        artifact.setFileName(cmd.fileName());
-        artifact.setRelativePath(artifactDir + "/" + cmd.fileName());
-        artifact.setFileSizeBytes(cs.sizeBytes());
-        artifact.setContentType(cmd.contentType() != null ? cmd.contentType() : "application/gzip");
-        artifact.setChecksumSha256(cs.sha256());
-        artifact.setChecksumMd5(cs.md5());
-        artifact.setCreatedBy(cmd.createdBy() != null ? cmd.createdBy() : "system");
-        artifact.setUpdatedBy(artifact.getCreatedBy());
+        StorageService.TempStoreResult tempStore = null;
+        Path tempFile = null;
+        String artifactDir = null;
+        boolean commitAttempted = false;
+        Artifact saved = null;
 
         try {
-            artifact.setHostIp(getRealHostIp());
-            artifact.setHostname(getRealHostName());
-            artifact.setUserName(cmd.createdBy() != null ? cmd.createdBy() : "system");
+            // 1. Stream bytes to temporary disk location and compute checksums (bounded by
+            // staging semaphore and storage budget).
+            tempStore = cmd.deadline() != null
+                    ? storageService.storeTemporarily(cmd.fileName(), data, cmd.deadline(), -1L)
+                    : storageService.storeTemporarily(cmd.fileName(), data);
+            ChecksumResult cs = tempStore.checksumResult();
+            tempFile = tempStore.tempPath();
+
+            // Preliminary duplicate check before expensive validation & scanning.
+            if (!cmd.overwrite()
+                    && repository.countActiveByServiceTypeAndVersion(cmd.serviceType(), cmd.version()) > 0) {
+                throw new ArtifactAlreadyExistsException(
+                        "Artifact already exists for " + cmd.serviceType() + " " + cmd.version());
+            }
+            if (!cmd.overwrite() && repository.countActiveByChecksumSha256(cs.sha256()) > 0) {
+                throw new ArtifactAlreadyExistsException("An artifact with the same SHA-256 checksum already exists");
+            }
+
+            // 2. Enforce declared checksum (reject before heavy validation)
+            if (properties.isEnforceChecksum() && cmd.declaredSha256() != null
+                    && !cmd.declaredSha256().equalsIgnoreCase(cs.sha256())) {
+                throw new ChecksumMismatchException(
+                        "Declared SHA-256 %s does not match computed %s"
+                                .formatted(cmd.declaredSha256(), cs.sha256()));
+            }
+
+            // 3. Prepare index row
+            Artifact artifact = new Artifact();
+            artifact.setId(UUID.randomUUID());
+            artifactDir = uploadDirectory(cmd, classifier, artifact.getId());
+
+            artifact.setServiceType(cmd.serviceType());
+            artifact.setVersion(cmd.version());
+            artifact.setAction("UPLOAD");
+            artifact.setRootArtifactId(artifact.getId());
+            artifact.setFileName(cmd.fileName());
+            artifact.setRelativePath(artifactDir + "/" + cmd.fileName());
+            artifact.setFileSizeBytes(cs.sizeBytes());
+            artifact.setContentType(cmd.contentType() != null ? cmd.contentType() : "application/gzip");
+            artifact.setChecksumSha256(cs.sha256());
+            artifact.setChecksumMd5(cs.md5());
+            artifact.setCreatedBy(cmd.createdBy() != null ? cmd.createdBy() : "system");
+            artifact.setUpdatedBy(artifact.getCreatedBy());
+
+            try {
+                artifact.setHostIp(getRealHostIp());
+                artifact.setHostname(getRealHostName());
+                artifact.setUserName(cmd.createdBy() != null ? cmd.createdBy() : "system");
+            } catch (Exception e) {
+                artifact.setHostIp(null);
+                artifact.setHostname(null);
+            }
+
+            // 4. Validate package contents (extraction test, Kafka version check, malware
+            // scan)
+            // outside the database transaction, bounded by validation & scanner semaphores.
+            try {
+                if (cmd.deadline() != null) {
+                    packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName(),
+                            cmd.deadline());
+                } else {
+                    packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName());
+                }
+            } catch (OperationTimeoutException e) {
+                // Operation timeout during validation must propagate directly to
+                // GlobalExceptionHandler (HTTP 503)
+                // without quarantining the file or creating a FAILED artifact database record.
+                log.warn("Operation timeout exceeded during package validation for {}: {}", cmd.fileName(),
+                        e.getMessage());
+                throw e;
+            } catch (UploadLimitExceededException e) {
+                // Capacity rejection must not be treated as invalid/malicious package,
+                // must not create a failed-artifact audit/db record, and must clean up temp
+                // file.
+                throw e;
+            } catch (PackageValidationException e) {
+                // Validation failure: rejected bytes stay outside the downloadable artifact
+                // tree.
+                storageService.quarantine(tempFile, cmd.fileName());
+                artifact.setStatus(ArtifactStatus.FAILED);
+                saved = commitHelper.recordFailedArtifact(artifact);
+                if (idempotencyService != null && cmd.idempotencyKey() != null) {
+                    idempotencyService.recordFailure(cmd.idempotencyKey(), e);
+                }
+                log.info("Artifact {} registered: {} {} ({} bytes, status: {})",
+                        saved.getId(), saved.getServiceType(), saved.getVersion(), saved.getFileSizeBytes(),
+                        saved.getStatus());
+                return saved;
+            }
+
+            // 5. Commit available artifact inside a short database transaction holding
+            // advisory locks.
+            commitAttempted = true;
+            saved = commitHelper.commitAvailableArtifact(cmd, tempFile, cs, artifactDir, artifact, cmd.attributes());
+            log.info("Artifact {} registered: {} {} ({} bytes, status: {})",
+                    saved.getId(), saved.getServiceType(), saved.getVersion(), saved.getFileSizeBytes(),
+                    saved.getStatus());
+            return saved;
         } catch (Exception e) {
-            artifact.setHostIp(null);
-            artifact.setHostname(null);
+            if (idempotencyService != null && cmd.idempotencyKey() != null) {
+                idempotencyService.recordFailure(cmd.idempotencyKey(), e);
+            }
+            if (tempStore != null) {
+                try {
+                    tempStore.close();
+                } catch (Exception ignored) {
+                }
+            }
+            if (tempFile != null) {
+                try {
+                    storageService.deleteTemp(tempFile);
+                } catch (Exception cleanupEx) {
+                    log.warn("Failed to delete temp file {}: {}", tempFile, cleanupEx.getMessage());
+                    if (reconciliationService != null) {
+                        reconciliationService.enqueueForCleanup(tempFile);
+                    }
+                }
+            }
+            if (commitAttempted && artifactDir != null && saved == null) {
+                try {
+                    storageService.deleteBinary(artifactDir, cmd.fileName());
+                } catch (Exception cleanupEx) {
+                    log.warn("Failed to clean up final binary in {}: {}", artifactDir, cleanupEx.getMessage());
+                    if (reconciliationService != null) {
+                        reconciliationService
+                                .enqueueForCleanup(storageService.resolveBinary(artifactDir, cmd.fileName()));
+                    }
+                }
+            }
+            throw e;
+        } finally {
+            if (tempStore != null) {
+                tempStore.close();
+            }
         }
-
-        try {
-            // 4. Validate package contents (extraction test, Kafka version check, malware scan)
-            packageValidator.validate(tempFile, cmd.serviceType(), cmd.version(), cmd.fileName());
-
-            // 5. Move to final and set status AVAILABLE
-            storageService.moveToFinal(tempFile, artifactDir, cmd.fileName());
-            artifact.setFullFilePath(storageService.resolveBinary(artifactDir, cmd.fileName()).toAbsolutePath().normalize().toString());
-            artifact.setStatus(ArtifactStatus.AVAILABLE);
-
-            ManifestDto manifest = manifestService.build(artifact, cmd.attributes());
-            String manifestJson = manifestService.toJson(manifest);
-            storageService.writeManifest(
-                    artifactDir, manifestJson);
-
-        } catch (Exception e) {
-            // Rejected bytes stay outside the downloadable artifact tree for
-            // forensic review; only successfully validated files become AVAILABLE.
-            storageService.quarantine(tempFile, cmd.fileName());
-            artifact.setStatus(ArtifactStatus.FAILED);
-        }
-
-        Artifact saved = repository.save(artifact);
-
-        log.info("Artifact {} registered: {} {} ({} bytes, status: {})",
-                saved.getId(), saved.getServiceType(), saved.getVersion(), saved.getFileSizeBytes(), saved.getStatus());
-        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -215,13 +337,34 @@ public class ArtifactService {
         return ok;
     }
 
-    /** Soft-delete: remove the binary from disk, mark the row DELETED. */
+    /**
+     * Soft-delete: mark the row DELETED, and remove the binary from disk only after
+     * commit.
+     */
     @Transactional
     public void delete(UUID id) {
         Artifact a = get(id);
         String relDir = a.getRelativePath().substring(0, a.getRelativePath().lastIndexOf('/'));
-        storageService.deleteBinary(relDir, a.getFileName());
         repository.save(actionFrom(a, "DELETE", ArtifactStatus.DELETED, "system"));
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            try {
+                                storageService.deleteBinary(relDir, a.getFileName());
+                            } catch (Exception ex) {
+                                log.warn("Failed to delete binary after commit for {}: {}", id, ex.getMessage());
+                                if (reconciliationService != null) {
+                                    reconciliationService
+                                            .enqueueForCleanup(storageService.resolveBinary(relDir, a.getFileName()));
+                                }
+                            }
+                        }
+                    });
+        } else {
+            storageService.deleteBinary(relDir, a.getFileName());
+        }
         log.info("Artifact {} soft-deleted", id);
     }
 
@@ -261,26 +404,33 @@ public class ArtifactService {
             return storageService.relativeDir(cmd.serviceType(), cmd.version(), classifier) + "/" + artifactId;
         }
         String normalized = requested.replace('\\', '/').replaceAll("^/+|/+$", "");
-        if (normalized.isBlank() || normalized.equals("..") || normalized.startsWith("../") || normalized.contains("/../")) {
+        if (normalized.isBlank() || normalized.equals("..") || normalized.startsWith("../")
+                || normalized.contains("/../")) {
             throw new IllegalArgumentException("Storage directory must be a safe repository-relative path");
         }
         return normalized + "/" + cmd.serviceType().directory() + "/" + cmd.version() + "/" + artifactId;
     }
+
     private String getRealHostIp() {
         try {
-            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder
+                    .getRequestAttributes();
             if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
                 String localAddr = servletAttrs.getRequest().getLocalAddr();
-                if (localAddr != null && !localAddr.startsWith("127.") && !localAddr.equals("0:0:0:0:0:0:0:1") && !localAddr.equals("::1")) {
+                if (localAddr != null && !localAddr.startsWith("127.") && !localAddr.equals("0:0:0:0:0:0:0:1")
+                        && !localAddr.equals("::1")) {
                     return localAddr;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         try {
-            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface
+                    .getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 java.net.NetworkInterface iface = interfaces.nextElement();
-                if (iface.isLoopback() || !iface.isUp()) continue;
+                if (iface.isLoopback() || !iface.isUp())
+                    continue;
                 java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     java.net.InetAddress addr = addresses.nextElement();
@@ -298,14 +448,18 @@ public class ArtifactService {
 
     private String getRealHostName() {
         try {
-            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+            org.springframework.web.context.request.RequestAttributes attrs = org.springframework.web.context.request.RequestContextHolder
+                    .getRequestAttributes();
             if (attrs instanceof org.springframework.web.context.request.ServletRequestAttributes servletAttrs) {
                 String localName = servletAttrs.getRequest().getLocalName();
-                if (localName != null && !localName.equalsIgnoreCase("localhost") && !localName.equalsIgnoreCase("127.0.0.1") && !localName.equals("0:0:0:0:0:0:0:1") && !localName.equals("::1")) {
+                if (localName != null && !localName.equalsIgnoreCase("localhost")
+                        && !localName.equalsIgnoreCase("127.0.0.1") && !localName.equals("0:0:0:0:0:0:0:1")
+                        && !localName.equals("::1")) {
                     return localName;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         try {
             String hostName = java.net.InetAddress.getLocalHost().getHostName();
             return isLoopbackName(hostName) ? null : hostName;

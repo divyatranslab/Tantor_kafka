@@ -5,4 +5,8 @@ public class UploadLimitExceededException extends StorageException {
     public UploadLimitExceededException(String message) {
         super(message);
     }
+
+    public UploadLimitExceededException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }
