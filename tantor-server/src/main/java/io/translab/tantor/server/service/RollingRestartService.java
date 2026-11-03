@@ -57,10 +57,12 @@ public class RollingRestartService {
             }
 
             if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+                int expectedBrokerCount = externalClusterService.getExpectedBrokerCount(clusterId);
+                restartTasks.put(taskId, "External cluster inventory validated: " + expectedBrokerCount + " brokers");
                 restartTasks.put(taskId, "Dispatching restart command to external discovery agent");
                 Map<String, Object> externalTask = externalClusterService.queueRestart(clusterId);
                 waitForExternalTask(String.valueOf(externalTask.get("taskId")));
-                waitForStableHealth(clusterId, 1, Set.of(), taskId, "External cluster: ");
+                waitForStableHealth(clusterId, expectedBrokerCount, Set.of(), taskId, "External cluster: ");
                 restartTasks.put(taskId, "COMPLETED successfully.");
                 return;
             }
@@ -80,15 +82,16 @@ public class RollingRestartService {
                 return;
             }
             if (metadataServices.size() < 3) {
-                restartTasks.put(taskId, "FAILED: A zero-downtime rolling restart requires at least three controller or ZooKeeper quorum nodes");
+                restartTasks.put(taskId,
+                        "FAILED: A zero-downtime rolling restart requires at least three controller or ZooKeeper quorum nodes");
                 return;
             }
 
             Set<String> requiredHostIds = services.stream()
                     .map(ClusterServiceAssignment::getHostId)
                     .collect(java.util.stream.Collectors.toSet());
-            RollingRestartHealthService.HealthSnapshot precheck =
-                    healthService.inspect(clusterId, brokers.size(), requiredHostIds);
+            RollingRestartHealthService.HealthSnapshot precheck = healthService.inspect(clusterId, brokers.size(),
+                    requiredHostIds);
             if (!precheck.healthy()) {
                 restartTasks.put(taskId, "PAUSED: Pre-restart health gate failed: " + precheck.failureReason());
                 return;
@@ -99,7 +102,9 @@ public class RollingRestartService {
                     : null;
             services.sort(Comparator
                     .comparingInt((ClusterServiceAssignment service) -> restartPhase(service, cluster.getMode()))
-                    .thenComparingInt(service -> activeControllerId != null && activeControllerId.equals(service.getNodeId()) ? 1 : 0)
+                    .thenComparingInt(
+                            service -> activeControllerId != null && activeControllerId.equals(service.getNodeId()) ? 1
+                                    : 0)
                     .thenComparing(service -> service.getNodeId() == null ? Integer.MAX_VALUE : service.getNodeId()));
 
             for (int i = 0; i < services.size(); i++) {
@@ -110,8 +115,7 @@ public class RollingRestartService {
                 UUID agentTaskId = deploymentService.restartService(
                         clusterId,
                         service.getHostId(),
-                        systemdServiceName(service.getRole())
-                );
+                        systemdServiceName(service.getRole()));
                 waitForAgentTask(agentTaskId, prefix);
                 waitForStableHealth(clusterId, brokers.size(), requiredHostIds, taskId, prefix);
                 restartTasks.put(taskId, prefix + "healthy; continuing");
@@ -137,14 +141,17 @@ public class RollingRestartService {
             last = healthService.inspect(clusterId, expectedBrokerCount, requiredHostIds, remainingMillis);
             if (last.healthy()) {
                 consecutiveHealthySamples++;
-                restartTasks.put(taskId, prefix + "health stable " + consecutiveHealthySamples + "/" + requiredStableSamples);
-                if (consecutiveHealthySamples >= requiredStableSamples) return;
+                restartTasks.put(taskId,
+                        prefix + "health stable " + consecutiveHealthySamples + "/" + requiredStableSamples);
+                if (consecutiveHealthySamples >= requiredStableSamples)
+                    return;
             } else {
                 consecutiveHealthySamples = 0;
                 restartTasks.put(taskId, prefix + "waiting for health: " + last.failureReason());
             }
             long remainingNanos = deadline - System.nanoTime();
-            if (remainingNanos <= 0) break;
+            if (remainingNanos <= 0)
+                break;
             long sleepMillis = Math.min(TimeUnit.SECONDS.toMillis(Math.max(1, healthPollSeconds)),
                     Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
             Thread.sleep(sleepMillis);
@@ -165,9 +172,11 @@ public class RollingRestartService {
     private void waitForAgentTask(UUID agentTaskId, String prefix) throws InterruptedException {
         for (int i = 0; i < 120; i++) {
             io.translab.tantor.server.domain.Task task = taskRepository.findById(agentTaskId).orElse(null);
-            if (task != null && "SUCCESS".equalsIgnoreCase(task.getStatus())) return;
+            if (task != null && "SUCCESS".equalsIgnoreCase(task.getStatus()))
+                return;
             if (task != null && "FAILED".equalsIgnoreCase(task.getStatus())) {
-                throw new RuntimeException(prefix + (task.getErrorMsg() == null ? "agent restart failed" : task.getErrorMsg()));
+                throw new RuntimeException(
+                        prefix + (task.getErrorMsg() == null ? "agent restart failed" : task.getErrorMsg()));
             }
             Thread.sleep(2000);
         }
@@ -178,17 +187,22 @@ public class RollingRestartService {
         for (int i = 0; i < 60; i++) {
             Map<String, Object> statusMap = externalClusterService.getExternalTaskStatus(externalTaskId);
             String status = String.valueOf(statusMap.get("status"));
-            if ("SUCCESS".equals(status)) return;
-            if ("FAILED".equals(status)) throw new RuntimeException(String.valueOf(statusMap.get("message")));
+            if ("SUCCESS".equals(status))
+                return;
+            if ("FAILED".equals(status))
+                throw new RuntimeException(String.valueOf(statusMap.get("message")));
             Thread.sleep(2000);
         }
         throw new RuntimeException("Timeout waiting for external agent task to finish");
     }
 
     private int restartPhase(ClusterServiceAssignment service, String mode) {
-        if ("zookeeper".equalsIgnoreCase(mode)) return "zookeeper".equals(service.getRole()) ? 0 : 1;
-        if ("controller".equals(service.getRole())) return 0;
-        if ("broker_controller".equals(service.getRole())) return 1;
+        if ("zookeeper".equalsIgnoreCase(mode))
+            return "zookeeper".equals(service.getRole()) ? 0 : 1;
+        if ("controller".equals(service.getRole()))
+            return 0;
+        if ("broker_controller".equals(service.getRole()))
+            return 1;
         return 2;
     }
 
@@ -203,9 +217,12 @@ public class RollingRestartService {
     }
 
     private String systemdServiceName(String role) {
-        if ("controller".equals(role)) return "controller";
-        if ("zookeeper".equals(role)) return "zookeeper";
-        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
+        if ("controller".equals(role))
+            return "controller";
+        if ("zookeeper".equals(role))
+            return "zookeeper";
+        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role))
+            return "kafka";
         return "broker";
     }
 
