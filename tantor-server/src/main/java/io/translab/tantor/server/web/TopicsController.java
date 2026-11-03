@@ -95,8 +95,12 @@ public class TopicsController {
             @RequestParam(defaultValue = "newest") String order,
             @RequestParam(defaultValue = "100") int limit,
             @RequestParam(required = false) String search) {
+        if (limit < 1) {
+            return ResponseEntity.badRequest().build();
+        }
+        String normalizedSearch = TopicOperationsService.normalizeSearch(search);
         return ResponseEntity.ok(topicOperationsService.getMessages(
-                clusterId, topicName, partitions, order, limit, search));
+                clusterId, topicName, partitions, order, limit, normalizedSearch));
     }
 
     @PostMapping("/topics/{topicName}/messages")
@@ -209,6 +213,9 @@ public class TopicsController {
     public ResponseEntity<Map<String, Object>> getStatistics(
             @PathVariable UUID clusterId, @PathVariable String topicName,
             @RequestParam(defaultValue = "10000") int limit) {
+        if (limit < 1) {
+            return ResponseEntity.badRequest().build();
+        }
         return ResponseEntity.ok(topicOperationsService.analyzeTopic(clusterId, topicName, limit));
     }
 

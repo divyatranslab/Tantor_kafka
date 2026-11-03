@@ -95,6 +95,13 @@ tantor:
     admin:
       request-timeout-ms: ${TANTOR_KAFKA_ADMIN_REQUEST_TIMEOUT_MS:30000}
       default-api-timeout-ms: ${TANTOR_KAFKA_ADMIN_API_TIMEOUT_MS:60000}
+    browser:
+      max-scan-records: ${TANTOR_KAFKA_BROWSER_MAX_SCAN_RECORDS:20000}
+      max-retained-bytes: ${TANTOR_KAFKA_BROWSER_MAX_RETAINED_BYTES:20971520}
+      timeout-ms: ${TANTOR_KAFKA_BROWSER_TIMEOUT_MS:5000}
+      max-concurrent-requests: ${TANTOR_KAFKA_BROWSER_MAX_CONCURRENT_REQUESTS:8}
+      fetch-max-bytes: ${TANTOR_KAFKA_BROWSER_FETCH_MAX_BYTES:4194304}
+      max-partition-fetch-bytes: ${TANTOR_KAFKA_BROWSER_MAX_PARTITION_FETCH_BYTES:262144}
   cache-refresh:
     pool-size: ${TANTOR_CACHE_REFRESH_POOL_SIZE:4}
     queue-capacity: ${TANTOR_CACHE_REFRESH_QUEUE_CAPACITY:128}

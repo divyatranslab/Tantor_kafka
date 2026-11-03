@@ -164,6 +164,13 @@
                     </execution>
                 </executions>
             </plugin>
+                    <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>-XX:+EnableDynamicAgentLoading -javaagent:${user.home}/.m2/repository/net/bytebuddy/byte-buddy-agent/1.14.16/byte-buddy-agent-1.14.16.jar</argLine>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>
