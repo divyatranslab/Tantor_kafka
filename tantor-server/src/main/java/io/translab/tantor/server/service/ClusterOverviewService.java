@@ -18,7 +18,19 @@ import org.apache.kafka.clients.admin.ReplicaInfo;
 import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.errors.AuthorizationException;
+import org.apache.kafka.common.errors.BrokerNotAvailableException;
+import org.apache.kafka.common.errors.DisconnectException;
+import org.apache.kafka.common.errors.InvalidRequestException;
+import org.apache.kafka.common.errors.NetworkException;
+import org.apache.kafka.common.errors.SecurityDisabledException;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -165,11 +177,48 @@ public class ClusterOverviewService {
                     .build();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            kafkaAdminService.refreshAdminClient(clusterId);
-            throw new RuntimeException("Interrupted while loading cluster overview");
+            Throwable root = extractRootCause(e);
+            String rootMessage = root.getMessage() != null ? root.getMessage() : root.getClass().getSimpleName();
+            log.warn("Interrupted while loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                    clusterId, root.getClass().getName(), rootMessage);
+            throw new RuntimeException("Interrupted while loading cluster overview for cluster " + clusterId, e);
+        } catch (ExecutionException e) {
+            Throwable root = extractRootCause(e);
+            String rootMessage = root.getMessage() != null ? root.getMessage() : root.getClass().getSimpleName();
+            if (isTransientConnectivityFailure(e)) {
+                log.warn("Transient Kafka connectivity failure loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage);
+                kafkaAdminService.refreshAdminClient(clusterId);
+            } else {
+                log.warn("Non-transient Kafka failure loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage);
+            }
+            throw new RuntimeException("Failed to load cluster overview for cluster " + clusterId + ": " + rootMessage, e);
+        } catch (RuntimeException e) {
+            Throwable root = extractRootCause(e);
+            String rootMessage = root.getMessage() != null ? root.getMessage() : root.getClass().getSimpleName();
+            if (isTransientConnectivityFailure(e)) {
+                log.warn("Transient Kafka connectivity failure loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage);
+                kafkaAdminService.refreshAdminClient(clusterId);
+                throw new RuntimeException("Failed to load cluster overview for cluster " + clusterId + ": " + rootMessage, e);
+            } else {
+                log.error("Unexpected runtime exception loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage, e);
+                throw e;
+            }
         } catch (Exception e) {
-            kafkaAdminService.refreshAdminClient(clusterId);
-            throw new RuntimeException("Failed to load cluster overview: " + e.getMessage(), e);
+            Throwable root = extractRootCause(e);
+            String rootMessage = root.getMessage() != null ? root.getMessage() : root.getClass().getSimpleName();
+            if (isTransientConnectivityFailure(e)) {
+                log.warn("Transient Kafka connectivity failure loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage);
+                kafkaAdminService.refreshAdminClient(clusterId);
+            } else {
+                log.error("Unexpected error loading cluster overview for clusterId [{}], operation [getOverview], exception [{}]: {}",
+                        clusterId, root.getClass().getName(), rootMessage, e);
+            }
+            throw new RuntimeException("Failed to load cluster overview for cluster " + clusterId + ": " + rootMessage, e);
         }
     }
 
@@ -438,5 +487,42 @@ public class ClusterOverviewService {
                     .leaderSkewPct(skewPct(leaders, avgLeaders, brokerCount))
                     .build();
         }
+    }
+    static boolean isTransientConnectivityFailure(Throwable throwable) {
+        Set<Throwable> visited = new HashSet<>();
+        Throwable current = throwable;
+        while (current != null && visited.add(current)) {
+            if (current instanceof AuthorizationException
+                    || current instanceof AuthenticationException
+                    || current instanceof UnsupportedVersionException
+                    || current instanceof InvalidRequestException
+                    || current instanceof SecurityDisabledException
+                    || current instanceof InterruptedException) {
+                return false;
+            }
+            // True transient transport, connectivity, or request timeout failures:
+            if (current instanceof NetworkException
+                    || current instanceof DisconnectException
+                    || current instanceof BrokerNotAvailableException
+                    || current instanceof org.apache.kafka.common.errors.TimeoutException
+                    || current instanceof java.util.concurrent.TimeoutException
+                    || current instanceof IOException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    static Throwable extractRootCause(Throwable throwable) {
+        if (throwable == null) {
+            return null;
+        }
+        Throwable current = throwable;
+        Set<Throwable> visited = new HashSet<>();
+        while (current.getCause() != null && current.getCause() != current && visited.add(current)) {
+            current = current.getCause();
+        }
+        return current;
     }
 }

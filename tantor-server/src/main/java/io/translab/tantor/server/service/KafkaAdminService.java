@@ -466,7 +466,6 @@ public class KafkaAdminService {
             Thread.currentThread().interrupt();
             return null;
         } catch (ExecutionException e) {
-            refreshAdminClient(clusterId);
             log.warn("Failed to resolve active KRaft controller for cluster {}: {}", clusterId, e.getMessage());
             return null;
         }
