@@ -6,12 +6,16 @@ import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.ClusterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 
 @Component
 @RequiredArgsConstructor
@@ -22,8 +26,20 @@ public class RollingRestartJobHandler implements JobHandler {
     private final AgentTaskAwaiter taskAwaiter;
     private final ClusterRepository clusterRepository;
     private final KafkaAdminService kafkaAdminService;
+    private final RollingRestartHealthService healthService;
     private final ExternalClusterService externalClusterService;
     private final ObjectMapper objectMapper;
+
+    @Value("${tantor.rolling-restart.health-timeout-seconds:300}")
+    private long healthTimeoutSeconds;
+    @Value("${tantor.rolling-restart.health-poll-seconds:10}")
+    private long healthPollSeconds;
+
+    private LongSupplier nanoClock = System::nanoTime;
+    private HealthSleeper healthSleeper = Thread::sleep;
+
+    @FunctionalInterface
+    interface HealthSleeper { void sleep(long millis) throws InterruptedException; }
 
     @Override
     public boolean supports(JobType type) {
@@ -47,6 +63,8 @@ public class RollingRestartJobHandler implements JobHandler {
         long metadataCount = services.stream().filter(service -> "zookeeper".equalsIgnoreCase(cluster.getMode())
                 ? "zookeeper".equals(service.getRole()) : isController(service)).count();
         long uniqueHosts = services.stream().map(ClusterServiceAssignment::getHostId).distinct().count();
+        Set<String> requiredHostIds = services.stream().map(ClusterServiceAssignment::getHostId)
+                .filter(hostId -> hostId != null && !hostId.isBlank()).collect(java.util.stream.Collectors.toSet());
         boolean confirmedSingleNode = Boolean.parseBoolean(String.valueOf(jobPayload.getOrDefault("confirmSingleNode", false)));
         boolean singleNodeOverride = uniqueHosts == 1 && confirmedSingleNode;
         if (!singleNodeOverride && brokerCount < 2) throw new RuntimeException("Rolling restart requires at least two brokers.");
@@ -61,14 +79,14 @@ public class RollingRestartJobHandler implements JobHandler {
                         && activeController.toString().equals(String.valueOf(readMap(step.getPayload()).get("nodeId"))) ? 1 : 0)
                 .thenComparing(JobStep::getStepOrder));
 
-        waitForHealth(clusterId, (int) brokerCount);
+        waitForHealth(clusterId, (int) brokerCount, requiredHostIds);
         for (JobStep step : steps) {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
             Map<String, Object> payload = readMap(step.getPayload());
             try {
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
-                    waitForHealth(clusterId, (int) brokerCount);
+                    waitForHealth(clusterId, (int) brokerCount, requiredHostIds);
                     jobService.completeStep(step.getId(), completed.getLogOutput());
                     continue;
                 }
@@ -80,7 +98,7 @@ public class RollingRestartJobHandler implements JobHandler {
                 );
                 jobService.attachAgentTask(step.getId(), taskId);
                 Task task = taskAwaiter.await(taskId);
-                waitForHealth(clusterId, (int) brokerCount);
+                waitForHealth(clusterId, (int) brokerCount, requiredHostIds);
                 jobService.completeStep(step.getId(), task.getLogOutput());
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
@@ -103,7 +121,9 @@ public class RollingRestartJobHandler implements JobHandler {
         Cluster cluster = clusterRepository.findWithServicesById(clusterId)
                 .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
         int brokerCount = (int) cluster.getServices().stream().filter(this::isBroker).count();
-        waitForHealth(clusterId, brokerCount);
+        Set<String> requiredHostIds = cluster.getServices().stream().map(ClusterServiceAssignment::getHostId)
+                .filter(hostId -> hostId != null && !hostId.isBlank()).collect(java.util.stream.Collectors.toSet());
+        waitForHealth(clusterId, brokerCount, requiredHostIds);
         for (JobStep step : jobService.getSteps(job.getId())) {
             if (step.getStatus() == JobStepStatus.SUCCESS || step.getStatus() == JobStepStatus.ROLLBACK_FAILED) {
                 jobService.rolledBackStep(step.getId(), "Rolling restart changed no desired configuration; cluster health was verified.");
@@ -111,24 +131,26 @@ public class RollingRestartJobHandler implements JobHandler {
         }
     }
 
-    private void waitForHealth(UUID clusterId, int expectedBrokers) {
-        for (int attempt = 0; attempt < 30; attempt++) {
+    private void waitForHealth(UUID clusterId, int expectedBrokers, Set<String> requiredHostIds) {
+        long deadline = nanoClock.getAsLong() + TimeUnit.SECONDS.toNanos(Math.max(1, healthTimeoutSeconds));
+        RollingRestartHealthService.HealthSnapshot last = null;
+        while (deadline - nanoClock.getAsLong() > 0) {
+            long remainingMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - nanoClock.getAsLong()));
+            last = healthService.inspect(clusterId, expectedBrokers, requiredHostIds, remainingMillis);
+            if (last.healthy()) return;
+            long remainingNanos = deadline - nanoClock.getAsLong();
+            if (remainingNanos <= 0) break;
             try {
-                long underReplicated = kafkaAdminService.listTopics(clusterId).stream()
-                        .mapToLong(topic -> ((Number) topic.getOrDefault("underReplicated", 0)).longValue()).sum();
-                int visibleBrokers = kafkaAdminService.describeClusterNodes(clusterId).size();
-                if (underReplicated == 0 && visibleBrokers >= expectedBrokers) return;
-            } catch (Exception e) {
-                kafkaAdminService.refreshAdminClient(clusterId);
-            }
-            try {
-                Thread.sleep(10000);
+                long sleepMillis = Math.min(TimeUnit.SECONDS.toMillis(Math.max(1, healthPollSeconds)),
+                        Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
+                healthSleeper.sleep(sleepMillis);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Interrupted while waiting for cluster health", e);
             }
         }
-        throw new RuntimeException("Timed out waiting for brokers and replicas to become healthy.");
+        throw new RuntimeException("Timed out waiting for cluster health: "
+                + (last == null ? "no health sample available" : last.failureReason()));
     }
 
     private void executeExternal(Job job, UUID clusterId) {

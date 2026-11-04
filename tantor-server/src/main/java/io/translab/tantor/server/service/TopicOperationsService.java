@@ -3,6 +3,8 @@ package io.translab.tantor.server.service;
 import lombok.RequiredArgsConstructor;
 import io.translab.tantor.server.audit.AuditService;
 import org.apache.kafka.clients.admin.*;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -10,6 +12,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.acl.AclBinding;
@@ -19,20 +22,134 @@ import org.apache.kafka.common.resource.ResourceType;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.acl.AccessControlEntryFilter;
+import org.apache.kafka.common.resource.PatternType;
+import org.apache.kafka.common.resource.ResourcePatternFilter;
 
 @Service
 @RequiredArgsConstructor
 public class TopicOperationsService {
 
+    public static final int DEFAULT_MAX_SCAN_RECORDS = 20_000;
+    public static final long DEFAULT_MAX_RETAINED_BYTES = 20 * 1024 * 1024L;
+    public static final long DEFAULT_BROWSER_TIMEOUT_MS = 5_000L;
+    public static final int DEFAULT_MAX_CONCURRENT_REQUESTS = 8;
+    public static final int DEFAULT_FETCH_MAX_BYTES = 4 * 1024 * 1024;
+    public static final int DEFAULT_MAX_PARTITION_FETCH_BYTES = 256 * 1024;
+
     private static final int MAX_MESSAGES = 10_000;
     private final KafkaAdminService kafkaAdminService;
     private final AuditService auditService;
+
+    @Value("${tantor.kafka.consumer-group-operation-timeout-ms:30000}")
+    private long consumerGroupOperationTimeoutMillis;
+
+    @Value("${tantor.kafka.browser.max-scan-records:20000}")
+    private int maxScanRecords = 20_000;
+
+    @Value("${tantor.kafka.browser.max-retained-bytes:20971520}")
+    private long maxRetainedBytes = 20 * 1024 * 1024L;
+
+    @Value("${tantor.kafka.browser.timeout-ms:5000}")
+    private long browserTimeoutMillis = 5_000L;
+
+    @Value("${tantor.kafka.browser.max-concurrent-requests:8}")
+    private int maxConcurrentRequests = 8;
+
+    @Value("${tantor.kafka.browser.fetch-max-bytes:4194304}")
+    private int fetchMaxBytes = 4 * 1024 * 1024;
+
+    @Value("${tantor.kafka.browser.max-partition-fetch-bytes:262144}")
+    private int maxPartitionFetchBytes = 256 * 1024;
+
+    private volatile Semaphore browserSemaphore;
+    private LongSupplier nanoTimeSupplier = System::nanoTime;
+
+    public int getEffectiveMaxScanRecords() {
+        return maxScanRecords > 0 ? maxScanRecords : DEFAULT_MAX_SCAN_RECORDS;
+    }
+
+    public long getEffectiveMaxRetainedBytes() {
+        return maxRetainedBytes > 0 ? maxRetainedBytes : DEFAULT_MAX_RETAINED_BYTES;
+    }
+
+    public long getEffectiveBrowserTimeoutMillis() {
+        return browserTimeoutMillis > 0 ? browserTimeoutMillis : DEFAULT_BROWSER_TIMEOUT_MS;
+    }
+
+    public int getEffectiveMaxConcurrentRequests() {
+        return maxConcurrentRequests > 0 ? maxConcurrentRequests : DEFAULT_MAX_CONCURRENT_REQUESTS;
+    }
+
+    public int getEffectiveFetchMaxBytes() {
+        return fetchMaxBytes > 0 ? fetchMaxBytes : DEFAULT_FETCH_MAX_BYTES;
+    }
+
+    public int getEffectiveMaxPartitionFetchBytes() {
+        return maxPartitionFetchBytes > 0 ? maxPartitionFetchBytes : DEFAULT_MAX_PARTITION_FETCH_BYTES;
+    }
+
+    public static String normalizeSearch(String search) {
+        if (search == null || search.isBlank()) {
+            return null;
+        }
+        return search.trim();
+    }
+
+    void setMaxScanRecords(int maxScanRecords) {
+        this.maxScanRecords = maxScanRecords > 0 ? maxScanRecords : DEFAULT_MAX_SCAN_RECORDS;
+    }
+
+    void setMaxRetainedBytes(long maxRetainedBytes) {
+        this.maxRetainedBytes = maxRetainedBytes > 0 ? maxRetainedBytes : DEFAULT_MAX_RETAINED_BYTES;
+    }
+
+    void setBrowserTimeoutMillis(long browserTimeoutMillis) {
+        this.browserTimeoutMillis = browserTimeoutMillis > 0 ? browserTimeoutMillis : DEFAULT_BROWSER_TIMEOUT_MS;
+    }
+
+    void setMaxConcurrentRequests(int maxConcurrentRequests) {
+        this.maxConcurrentRequests = maxConcurrentRequests > 0 ? maxConcurrentRequests
+                : DEFAULT_MAX_CONCURRENT_REQUESTS;
+        this.browserSemaphore = new Semaphore(this.maxConcurrentRequests);
+    }
+
+    void setNanoTimeSupplier(LongSupplier nanoTimeSupplier) {
+        this.nanoTimeSupplier = nanoTimeSupplier != null ? nanoTimeSupplier : System::nanoTime;
+    }
+
+    Consumer<byte[], byte[]> createConsumer(Properties properties) {
+        return new KafkaConsumer<>(properties);
+    }
+
+    Semaphore getBrowserSemaphore() {
+        if (browserSemaphore == null) {
+            synchronized (this) {
+                if (browserSemaphore == null) {
+                    browserSemaphore = new Semaphore(getEffectiveMaxConcurrentRequests());
+                }
+            }
+        }
+        return browserSemaphore;
+    }
+
+    public record ReadRecordsResult(
+            List<ConsumerRecord<byte[], byte[]>> records,
+            boolean truncated,
+            String truncationReason,
+            long scannedRecords,
+            long retainedBytes) {
+    }
 
     public Map<String, Object> getTopicDetails(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
@@ -73,7 +190,8 @@ public class TopicOperationsService {
 
             long storedBytes = replicaStorageBytes(admin, topicName, description);
             int replicationFactor = description.partitions().isEmpty()
-                    ? 0 : description.partitions().get(0).replicas().size();
+                    ? 0
+                    : description.partitions().get(0).replicas().size();
             long underReplicated = description.partitions().stream()
                     .filter(p -> p.replicas().size() > p.isr().size()).count();
 
@@ -156,16 +274,22 @@ public class TopicOperationsService {
     public Map<String, Object> getMessages(
             UUID clusterId, String topicName, List<Integer> requestedPartitions,
             String order, int limit, String search) {
-        long started = System.nanoTime();
-        List<ConsumerRecord<byte[], byte[]>> records = readRecords(
-                clusterId, topicName, requestedPartitions, order, Math.min(Math.max(limit, 1), 500), search);
+        long started = nanoTimeSupplier.getAsLong();
+        int boundedLimit = Math.min(Math.max(limit, 1), 500);
+        String normalizedSearch = normalizeSearch(search);
+        ReadRecordsResult readResult = readRecords(
+                clusterId, topicName, requestedPartitions, order, boundedLimit, normalizedSearch);
+        List<ConsumerRecord<byte[], byte[]>> records = readResult.records();
         List<Map<String, Object>> messages = records.stream().map(this::messageMap).toList();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("messages", messages);
         result.put("count", messages.size());
         result.put("bytes", records.stream().mapToLong(this::recordSize).sum());
-        result.put("elapsedMs", (System.nanoTime() - started) / 1_000_000);
+        result.put("elapsedMs", (nanoTimeSupplier.getAsLong() - started) / 1_000_000);
+        result.put("truncated", readResult.truncated());
+        result.put("truncationReason", readResult.truncationReason());
+        result.put("scannedRecords", readResult.scannedRecords());
         return result;
     }
 
@@ -181,8 +305,8 @@ public class TopicOperationsService {
         byte[] valueBytes = value == null ? null : value.getBytes(StandardCharsets.UTF_8);
         ProducerRecord<byte[], byte[]> record = new ProducerRecord<>(topicName, partition, keyBytes, valueBytes);
         if (headers != null) {
-            headers.forEach((name, headerValue) ->
-                    record.headers().add(name, headerValue == null ? null : headerValue.getBytes(StandardCharsets.UTF_8)));
+            headers.forEach((name, headerValue) -> record.headers().add(name,
+                    headerValue == null ? null : headerValue.getBytes(StandardCharsets.UTF_8)));
         }
 
         try (KafkaProducer<byte[], byte[]> producer = new KafkaProducer<>(properties)) {
@@ -192,11 +316,11 @@ public class TopicOperationsService {
             result.put("offset", metadata.offset());
             result.put("timestamp", metadata.timestamp());
 
-            String details = String.format("Partition: %d, Key size: %d bytes, Value size: %d bytes", 
+            String details = String.format("Partition: %d, Key size: %d bytes, Value size: %d bytes",
                     partition != null ? partition : -1,
                     keyBytes != null ? keyBytes.length : 0,
                     valueBytes != null ? valueBytes.length : 0);
-            auditService.record("DATA_SERVICES", "PRODUCE_MESSAGE", "TOPIC", topicName, clusterId, 
+            auditService.record("DATA_SERVICES", "PRODUCE_MESSAGE", "TOPIC", topicName, clusterId,
                     "SUCCESS", null, null, null, details);
 
             return result;
@@ -223,10 +347,11 @@ public class TopicOperationsService {
                     .map(p -> new TopicPartition(topicName, p.partition())).toList();
             Map<TopicPartition, Long> latest = listOffsets(admin, partitions, OffsetSpec.latest());
             Map<TopicPartition, RecordsToDelete> deletion = latest.entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> RecordsToDelete.beforeOffset(entry.getValue())));
+                    .collect(Collectors.toMap(Map.Entry::getKey,
+                            entry -> RecordsToDelete.beforeOffset(entry.getValue())));
             admin.deleteRecords(deletion).all().get();
-            
-            auditService.record("DATA_SERVICES", "CLEAR_TOPIC", "TOPIC", topicName, clusterId, 
+
+            auditService.record("DATA_SERVICES", "CLEAR_TOPIC", "TOPIC", topicName, clusterId,
                     "SUCCESS", null, null, null, "Messages cleared from all partitions");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -265,24 +390,101 @@ public class TopicOperationsService {
 
     public List<Map<String, Object>> getTopicConsumers(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+        long deadline = KafkaRefreshDeadline.afterMillis(consumerGroupOperationTimeoutMillis);
         try {
-            Collection<ConsumerGroupListing> groups = admin.listConsumerGroups().all().get();
+            int timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+            Collection<ConsumerGroupListing> groups = admin.listConsumerGroups(new ListConsumerGroupsOptions()
+                    .timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS);
             if (groups.isEmpty()) {
                 return List.of();
             }
-            List<String> ids = groups.stream().map(ConsumerGroupListing::groupId).toList();
-            Map<String, ConsumerGroupDescription> descriptions =
-                    admin.describeConsumerGroups(ids).all().get();
-            Map<TopicPartition, Long> latest = latestOffsetsForTopic(admin, topicName);
+            List<String> ids = groups.stream().map(ConsumerGroupListing::groupId).distinct().toList();
+            Map<String, ConsumerGroupDescription> descriptions = new LinkedHashMap<>();
+            Map<String, Map<TopicPartition, OffsetAndMetadata>> offsetsByGroup = new LinkedHashMap<>();
+            for (List<String> batch : batches(ids, 500)) {
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                descriptions.putAll(admin.describeConsumerGroups(batch,
+                        new DescribeConsumerGroupsOptions().timeoutMs(timeout)).all()
+                        .get(timeout, TimeUnit.MILLISECONDS));
+                Map<String, ListConsumerGroupOffsetsSpec> offsetRequests = batch.stream().collect(Collectors.toMap(
+                        groupId -> groupId, ignored -> new ListConsumerGroupOffsetsSpec(),
+                        (left, right) -> left, LinkedHashMap::new));
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                ListConsumerGroupOffsetsResult offsetsResult = admin
+                        .listConsumerGroupOffsets(offsetRequests,
+                                new ListConsumerGroupOffsetsOptions().timeoutMs(timeout));
+                for (String groupId : batch) {
+                    KafkaFuture<Map<TopicPartition, OffsetAndMetadata>> future = null;
+                    try {
+                        future = offsetsResult.partitionsToOffsetAndMetadata(groupId);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId,
+                                e);
+                    }
+                    if (future == null) {
+                        try {
+                            KafkaFuture<Map<String, Map<TopicPartition, OffsetAndMetadata>>> allFuture = offsetsResult
+                                    .all();
+                            if (allFuture != null && allFuture.isDone() && !allFuture.isCompletedExceptionally()) {
+                                Map<String, Map<TopicPartition, OffsetAndMetadata>> allMap = allFuture.getNow(null);
+                                if (allMap != null && allMap.containsKey(groupId)) {
+                                    future = KafkaFuture.completedFuture(allMap.get(groupId));
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (future == null) {
+                        throw new IllegalStateException(
+                                "Kafka omitted committed offsets for consumer group " + groupId);
+                    }
+                    timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                    Map<TopicPartition, OffsetAndMetadata> groupOffsets;
+                    try {
+                        groupOffsets = future.get(timeout, TimeUnit.MILLISECONDS);
+                    } catch (ExecutionException e) {
+                        throw kafkaFailure("load committed offsets for consumer group " + groupId, e);
+                    } catch (java.util.concurrent.TimeoutException e) {
+                        throw new RuntimeException("Timed out loading committed offsets for consumer group " + groupId,
+                                e);
+                    }
+                    if (groupOffsets == null) {
+                        throw new IllegalStateException(
+                                "Kafka omitted committed offsets for consumer group " + groupId);
+                    }
+                    offsetsByGroup.put(groupId, groupOffsets);
+                }
+            }
+            if (!descriptions.keySet().containsAll(ids) || !offsetsByGroup.keySet().containsAll(ids)) {
+                throw new IllegalStateException("Kafka returned incomplete consumer-group data");
+            }
+            timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+            TopicDescription topic = admin.describeTopics(List.of(topicName),
+                    new DescribeTopicsOptions().timeoutMs(timeout)).allTopicNames().get(timeout, TimeUnit.MILLISECONDS)
+                    .get(topicName);
+            if (topic == null)
+                throw new IllegalStateException("Kafka omitted topic metadata for " + topicName);
+            List<TopicPartition> partitions = topic.partitions().stream()
+                    .map(partition -> new TopicPartition(topicName, partition.partition())).toList();
+            Map<TopicPartition, Long> latest = new HashMap<>();
+            for (List<TopicPartition> batch : batches(partitions, 1000)) {
+                timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                Map<TopicPartition, OffsetSpec> request = batch.stream()
+                        .collect(Collectors.toMap(partition -> partition, ignored -> OffsetSpec.latest(), (a, b) -> a,
+                                LinkedHashMap::new));
+                Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> result = admin.listOffsets(request,
+                        new ListOffsetsOptions().timeoutMs(timeout)).all().get(timeout, TimeUnit.MILLISECONDS);
+                result.forEach((partition, info) -> latest.put(partition, info.offset()));
+            }
+            if (latest.size() != partitions.size() || !latest.keySet().containsAll(partitions)) {
+                throw new IllegalStateException("Kafka returned incomplete latest offsets for topic " + topicName);
+            }
             List<Map<String, Object>> result = new ArrayList<>();
 
             for (String groupId : ids) {
-                Map<TopicPartition, OffsetAndMetadata> offsets;
-                try {
-                    offsets = admin.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get();
-                } catch (ExecutionException ignored) {
-                    continue;
-                }
+                Map<TopicPartition, OffsetAndMetadata> offsets = offsetsByGroup.get(groupId);
+                if (offsets == null)
+                    throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
                 List<Map.Entry<TopicPartition, OffsetAndMetadata>> topicOffsets = offsets.entrySet().stream()
                         .filter(entry -> entry.getKey().topic().equals(topicName)).toList();
                 ConsumerGroupDescription description = descriptions.get(groupId);
@@ -293,35 +495,66 @@ public class TopicOperationsService {
                     continue;
                 }
 
-                long lag = topicOffsets.stream().mapToLong(entry ->
-                        Math.max(0, latest.getOrDefault(entry.getKey(), entry.getValue().offset())
-                                - entry.getValue().offset())).sum();
+                long lag = topicOffsets.stream()
+                        .mapToLong(entry -> Math.max(0, latest.getOrDefault(entry.getKey(), entry.getValue().offset())
+                                - entry.getValue().offset()))
+                        .sum();
                 Map<String, Object> row = new LinkedHashMap<>();
                 row.put("groupId", groupId);
                 row.put("activeConsumers", description == null ? 0 : description.members().size());
                 row.put("lag", lag);
                 row.put("coordinator", description == null || description.coordinator() == null
-                        ? null : description.coordinator().host() + ":" + description.coordinator().port());
+                        ? null
+                        : description.coordinator().host() + ":" + description.coordinator().port());
                 row.put("state", description == null ? "UNKNOWN" : description.state().toString());
                 result.add(row);
             }
             return result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while loading topic consumers");
+            throw new RuntimeException("Interrupted while loading topic consumers", e);
         } catch (ExecutionException e) {
             throw kafkaFailure("load topic consumers", e);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new RuntimeException("Timed out loading topic consumers", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load topic consumers: " + e.getMessage(), e);
         }
+    }
+
+    private static <T> List<List<T>> batches(List<T> values, int batchSize) {
+        if (values.isEmpty())
+            return List.of();
+        List<List<T>> result = new ArrayList<>((values.size() + batchSize - 1) / batchSize);
+        for (int from = 0; from < values.size(); from += batchSize) {
+            result.add(values.subList(from, Math.min(values.size(), from + batchSize)));
+        }
+        return result;
+    }
+
+    private boolean isApplicableToTopic(AclBinding binding, String topicName) {
+        if (binding.pattern().resourceType() != ResourceType.TOPIC) {
+            return false;
+        }
+        String resourceName = binding.pattern().name();
+
+        return switch (binding.pattern().patternType()) {
+            case LITERAL -> resourceName.equals(topicName) || resourceName.equals("*");
+            case PREFIXED -> topicName.startsWith(resourceName);
+            default -> false;
+        };
     }
 
     public List<Map<String, Object>> getTopicAcls(UUID clusterId, String topicName) {
         try {
+            AclBindingFilter filter = new AclBindingFilter(
+                    new ResourcePatternFilter(ResourceType.TOPIC, topicName, PatternType.MATCH),
+                    AccessControlEntryFilter.ANY);
             Collection<AclBinding> bindings = kafkaAdminService.getAdminClient(clusterId)
-                    .describeAcls(AclBindingFilter.ANY).values().get();
+                    .describeAcls(filter).values().get();
             return bindings.stream()
-                    .filter(binding -> binding.pattern().resourceType() == ResourceType.TOPIC)
-                    .filter(binding -> binding.pattern().name().equals(topicName)
-                            || binding.pattern().name().equals("*"))
+                    .filter(binding -> isApplicableToTopic(binding, topicName))
+                    .distinct()
                     .map(binding -> {
                         Map<String, Object> row = new LinkedHashMap<>();
                         row.put("principal", binding.entry().principal());
@@ -342,15 +575,19 @@ public class TopicOperationsService {
 
     public Map<String, Object> analyzeTopic(UUID clusterId, String topicName, int requestedLimit) {
         int limit = Math.min(Math.max(requestedLimit, 1), MAX_MESSAGES);
-        List<ConsumerRecord<byte[], byte[]>> records =
-                readRecords(clusterId, topicName, List.of(), "oldest", limit, null);
-        List<Integer> keySizes = records.stream().map(record -> record.key() == null ? 0 : record.key().length).sorted().toList();
-        List<Integer> valueSizes = records.stream().map(record -> record.value() == null ? 0 : record.value().length).sorted().toList();
+        ReadRecordsResult readResult = readRecords(clusterId, topicName, List.of(), "oldest", limit, null);
+        List<ConsumerRecord<byte[], byte[]>> records = readResult.records();
+        List<Integer> keySizes = records.stream().map(record -> record.key() == null ? 0 : record.key().length).sorted()
+                .toList();
+        List<Integer> valueSizes = records.stream().map(record -> record.value() == null ? 0 : record.value().length)
+                .sorted().toList();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("analyzedAt", System.currentTimeMillis());
         result.put("sampleLimit", limit);
-        result.put("truncated", records.size() == limit);
+        result.put("truncated", readResult.truncated());
+        result.put("truncationReason", readResult.truncationReason());
+        result.put("scannedRecords", readResult.scannedRecords());
         result.put("messageCount", records.size());
         result.put("minOffset", records.stream().mapToLong(ConsumerRecord::offset).min().orElse(0));
         result.put("maxOffset", records.stream().mapToLong(ConsumerRecord::offset).max().orElse(0));
@@ -363,8 +600,8 @@ public class TopicOperationsService {
         result.put("keySize", sizeStatistics(keySizes));
         result.put("valueSize", sizeStatistics(valueSizes));
 
-        Map<Integer, List<ConsumerRecord<byte[], byte[]>>> byPartition =
-                records.stream().collect(Collectors.groupingBy(ConsumerRecord::partition, TreeMap::new, Collectors.toList()));
+        Map<Integer, List<ConsumerRecord<byte[], byte[]>>> byPartition = records.stream()
+                .collect(Collectors.groupingBy(ConsumerRecord::partition, TreeMap::new, Collectors.toList()));
         result.put("partitions", byPartition.entrySet().stream().map(entry -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("partition", entry.getKey());
@@ -376,59 +613,236 @@ public class TopicOperationsService {
         return result;
     }
 
-    private List<ConsumerRecord<byte[], byte[]>> readRecords(
+    ReadRecordsResult readRecords(
             UUID clusterId, String topicName, List<Integer> requestedPartitions,
             String order, int limit, String search) {
-        Properties properties = kafkaAdminService.getKafkaClientProperties(clusterId);
-        properties.put("key.deserializer", ByteArrayDeserializer.class.getName());
-        properties.put("value.deserializer", ByteArrayDeserializer.class.getName());
-        properties.put("enable.auto.commit", "false");
-        properties.put("group.id", "tantor-browser-" + UUID.randomUUID());
-        properties.put("auto.offset.reset", "earliest");
+        Semaphore semaphore = getBrowserSemaphore();
+        boolean acquired = false;
+        long timeout = getEffectiveBrowserTimeoutMillis();
+        try {
+            acquired = semaphore.tryAcquire(timeout, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while waiting for Kafka browser capacity", e);
+        }
+        if (!acquired) {
+            throw new IllegalStateException("Kafka browser request limit reached, please retry later");
+        }
+        try {
+            return doReadRecords(clusterId, topicName, requestedPartitions, order, limit, search);
+        } finally {
+            semaphore.release();
+        }
+    }
 
-        try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(properties)) {
-            List<TopicPartition> available = consumer.partitionsFor(topicName, Duration.ofSeconds(10)).stream()
+    private ReadRecordsResult doReadRecords(
+            UUID clusterId, String topicName, List<Integer> requestedPartitions,
+            String order, int limit, String search) {
+        search = normalizeSearch(search);
+        Properties properties = kafkaAdminService.getKafkaClientProperties(clusterId);
+        properties.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+        properties.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
+        properties.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+        properties.put(ConsumerConfig.GROUP_ID_CONFIG, "tantor-browser-" + UUID.randomUUID());
+        properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        properties.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(Math.max(50, Math.min(limit, 500))));
+        properties.put(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG,
+                Integer.toString(getEffectiveMaxPartitionFetchBytes()));
+        properties.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, Integer.toString(getEffectiveFetchMaxBytes()));
+
+        try (Consumer<byte[], byte[]> consumer = createConsumer(properties)) {
+            List<org.apache.kafka.common.PartitionInfo> partitionInfos;
+            try {
+                partitionInfos = consumer.partitionsFor(topicName, Duration.ofSeconds(10));
+            } catch (org.apache.kafka.common.errors.InterruptException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted while loading topic partitions", e);
+            }
+            if (partitionInfos == null || partitionInfos.isEmpty()) {
+                return new ReadRecordsResult(List.of(), false, null, 0, 0);
+            }
+
+            List<TopicPartition> available = partitionInfos.stream()
                     .map(info -> new TopicPartition(topicName, info.partition())).toList();
             Set<Integer> selected = requestedPartitions == null ? Set.of() : new HashSet<>(requestedPartitions);
-            List<TopicPartition> partitions = selected.isEmpty() ? available : available.stream()
-                    .filter(tp -> selected.contains(tp.partition())).toList();
+            List<TopicPartition> partitions = selected.isEmpty() ? available
+                    : available.stream()
+                            .filter(tp -> selected.contains(tp.partition())).toList();
             if (partitions.isEmpty()) {
-                return List.of();
+                return new ReadRecordsResult(List.of(), false, null, 0, 0);
             }
 
             consumer.assign(partitions);
             Map<TopicPartition, Long> beginnings = consumer.beginningOffsets(partitions);
             Map<TopicPartition, Long> ends = consumer.endOffsets(partitions);
             boolean newest = !"oldest".equalsIgnoreCase(order);
+            Map<TopicPartition, Long> targetOffsets = new HashMap<>();
+            Map<TopicPartition, Long> seekPositions = new HashMap<>();
+
+            int effectiveMaxScan = getEffectiveMaxScanRecords();
+            long effectiveMaxBytes = getEffectiveMaxRetainedBytes();
+            long effectiveTimeoutMs = getEffectiveBrowserTimeoutMillis();
+            int scanBudget = effectiveMaxScan;
+
             for (TopicPartition partition : partitions) {
                 long beginning = beginnings.getOrDefault(partition, 0L);
                 long end = ends.getOrDefault(partition, 0L);
-                consumer.seek(partition, newest ? Math.max(beginning, end - limit) : beginning);
+                consumer.seek(partition, beginning);
+                seekPositions.put(partition, beginning);
+                targetOffsets.put(partition, end);
             }
 
-            List<ConsumerRecord<byte[], byte[]>> records = new ArrayList<>();
-            long deadline = System.currentTimeMillis() + 3_000;
+            long deadlineNanos = nanoTimeSupplier.getAsLong() + TimeUnit.MILLISECONDS.toNanos(effectiveTimeoutMs);
+
+            Comparator<ConsumerRecord<byte[], byte[]>> comparator = Comparator
+                    .comparingLong((ConsumerRecord<byte[], byte[]> record) -> record.timestamp())
+                    .thenComparingInt(ConsumerRecord::partition)
+                    .thenComparingLong(ConsumerRecord::offset);
+
+            PriorityQueue<ConsumerRecord<byte[], byte[]>> heap = new PriorityQueue<>(
+                    Math.max(1, Math.min(limit, scanBudget)), newest ? comparator : comparator.reversed());
+
+            long scannedRecords = 0;
+            long retainedBytes = 0;
+            boolean truncated = false;
+            String truncationReason = null;
             int emptyPolls = 0;
-            while (System.currentTimeMillis() < deadline && records.size() < Math.max(limit * partitions.size(), limit)) {
-                ConsumerRecords<byte[], byte[]> polled = consumer.poll(Duration.ofMillis(250));
-                if (polled.isEmpty()) {
-                    if (++emptyPolls >= 2) break;
+
+            while (nanoTimeSupplier.getAsLong() < deadlineNanos) {
+
+                ConsumerRecords<byte[], byte[]> polled;
+                try {
+                    polled = consumer.poll(Duration.ofMillis(250));
+                } catch (org.apache.kafka.common.errors.InterruptException e) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while reading Kafka records", e);
+                }
+
+                if (polled == null || polled.isEmpty()) {
+                    if (++emptyPolls >= 2)
+                        break;
                     continue;
                 }
                 emptyPolls = 0;
-                for (ConsumerRecord<byte[], byte[]> record : polled) {
-                    if (matches(record, search)) records.add(record);
+
+                var recordIterator = polled.iterator();
+
+                while (recordIterator.hasNext()) {
+                    ConsumerRecord<byte[], byte[]> record = recordIterator.next();
+                    if (nanoTimeSupplier.getAsLong() >= deadlineNanos) {
+                        truncated = true;
+                        truncationReason = "Execution deadline exceeded";
+                        break;
+                    }
+
+                    scannedRecords++;
+
+                    if (matches(record, search)) {
+                        long recBytes = retainedRecordSize(record);
+
+                        if (recBytes > effectiveMaxBytes) {
+                            truncated = true;
+                            truncationReason = "Retained byte budget reached";
+                            break;
+                        }
+
+                        if (heap.size() < limit) {
+                            if (retainedBytes + recBytes > effectiveMaxBytes) {
+                                truncated = true;
+                                truncationReason = "Retained byte budget reached";
+                                break;
+                            }
+                            heap.add(record);
+                            retainedBytes += recBytes;
+                        } else {
+                            ConsumerRecord<byte[], byte[]> root = heap.peek();
+                            boolean shouldReplace = newest
+                                    ? comparator.compare(record, root) > 0
+                                    : comparator.compare(record, root) < 0;
+
+                            if (shouldReplace) {
+                                long evictedBytes = retainedRecordSize(root);
+                                if (retainedBytes - evictedBytes + recBytes > effectiveMaxBytes) {
+                                    truncated = true;
+                                    truncationReason = "Retained byte budget reached";
+                                    break;
+                                }
+                                heap.poll();
+                                heap.add(record);
+                                retainedBytes = retainedBytes - evictedBytes + recBytes;
+                            }
+                        }
+                    }
+
+                    if (scannedRecords >= scanBudget) {
+                        boolean moreRecordsRemain = recordIterator.hasNext();
+                        if (!moreRecordsRemain) {
+                            for (TopicPartition tp : partitions) {
+                                try {
+                                    long currentPosition = consumer.position(tp);
+                                    long targetPosition = targetOffsets.getOrDefault(tp, 0L);
+
+                                    if (currentPosition < targetPosition) {
+                                        moreRecordsRemain = true;
+                                        break;
+                                    }
+                                } catch (Exception e) {
+                                    moreRecordsRemain = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (moreRecordsRemain) {
+                            truncated = true;
+                            truncationReason = "Global scan budget reached";
+                        }
+                        break;
+                    }
                 }
-                boolean atEnd = partitions.stream().allMatch(tp -> consumer.position(tp) >= ends.getOrDefault(tp, 0L));
-                if (atEnd) break;
+
+                if (truncated) {
+                    break;
+                }
+
+                boolean reachedTargets = partitions.stream().allMatch(tp -> {
+                    try {
+                        return consumer.position(tp) >= targetOffsets.getOrDefault(tp, 0L);
+                    } catch (Exception e) {
+                        return false;
+                    }
+                });
+                if (reachedTargets) {
+                    break;
+                }
             }
 
-            Comparator<ConsumerRecord<byte[], byte[]>> comparator =
-                    Comparator.comparingLong((ConsumerRecord<byte[], byte[]> record) -> record.timestamp())
-                            .thenComparingInt(ConsumerRecord::partition)
-                            .thenComparingLong(ConsumerRecord::offset);
-            records.sort(newest ? comparator.reversed() : comparator);
-            return records.stream().limit(limit).toList();
+            if (!truncated && nanoTimeSupplier.getAsLong() >= deadlineNanos) {
+                truncated = true;
+                truncationReason = "Execution deadline exceeded";
+            }
+
+            if (!truncated) {
+                boolean fullyScanned = partitions.stream().allMatch(tp -> {
+                    try {
+                        long beginning = beginnings.getOrDefault(tp, 0L);
+                        long end = ends.getOrDefault(tp, 0L);
+                        long seek = seekPositions.getOrDefault(tp, beginning);
+                        long pos = consumer.position(tp);
+                        return seek <= beginning && pos >= end;
+                    } catch (Exception e) {
+                        return false;
+                    }
+                });
+                if (!fullyScanned) {
+                    truncated = true;
+                    truncationReason = "Partition scan ended early";
+                }
+            }
+
+            List<ConsumerRecord<byte[], byte[]>> resultList = new ArrayList<>(heap);
+            resultList.sort(newest ? comparator.reversed() : comparator);
+            return new ReadRecordsResult(resultList, truncated, truncationReason, scannedRecords, retainedBytes);
         }
     }
 
@@ -449,7 +863,8 @@ public class TopicOperationsService {
     }
 
     private boolean matches(ConsumerRecord<byte[], byte[]> record, String search) {
-        if (search == null || search.isBlank()) return true;
+        if (search == null || search.isBlank())
+            return true;
         String needle = search.toLowerCase(Locale.ROOT);
         return Optional.ofNullable(asUtf8(record.key())).orElse("").toLowerCase(Locale.ROOT).contains(needle)
                 || Optional.ofNullable(asUtf8(record.value())).orElse("").toLowerCase(Locale.ROOT).contains(needle);
@@ -458,6 +873,22 @@ public class TopicOperationsService {
     private long recordSize(ConsumerRecord<byte[], byte[]> record) {
         return (record.key() == null ? 0 : record.key().length)
                 + (record.value() == null ? 0 : record.value().length);
+    }
+
+    private long retainedRecordSize(ConsumerRecord<byte[], byte[]> record) {
+        long size = recordSize(record);
+        if (record.headers() != null) {
+            for (org.apache.kafka.common.header.Header header : record.headers()) {
+                if (header.key() != null) {
+                    size += header.key().getBytes(StandardCharsets.UTF_8).length;
+                }
+                if (header.value() != null) {
+                    size += header.value().length;
+                }
+            }
+        }
+        size += 128;
+        return size;
     }
 
     private String asUtf8(byte[] bytes) {
@@ -483,7 +914,8 @@ public class TopicOperationsService {
     }
 
     private int percentile(List<Integer> sorted, double percentile) {
-        if (sorted.isEmpty()) return 0;
+        if (sorted.isEmpty())
+            return 0;
         int index = (int) Math.ceil(percentile * sorted.size()) - 1;
         return sorted.get(Math.max(0, Math.min(index, sorted.size() - 1)));
     }
@@ -502,15 +934,15 @@ public class TopicOperationsService {
             throws InterruptedException, ExecutionException {
         Map<TopicPartition, OffsetSpec> request = partitions.stream()
                 .collect(Collectors.toMap(tp -> tp, ignored -> spec));
-        Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> values =
-                admin.listOffsets(request).all().get();
+        Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> values = admin.listOffsets(request).all().get();
         return values.entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().offset()));
     }
 
     private Config describeTopicConfig(AdminClient admin, String topicName)
             throws InterruptedException, ExecutionException {
-        return admin.describeConfigs(List.of(topicResource(topicName)), new DescribeConfigsOptions().includeSynonyms(true))
+        return admin
+                .describeConfigs(List.of(topicResource(topicName)), new DescribeConfigsOptions().includeSynonyms(true))
                 .all().get().get(topicResource(topicName));
     }
 
@@ -536,15 +968,16 @@ public class TopicOperationsService {
             Set<Integer> brokerIds = description.partitions().stream()
                     .flatMap(partition -> partition.replicas().stream()).map(node -> node.id())
                     .collect(Collectors.toSet());
-            Map<Integer, Map<String, LogDirDescription>> descriptions =
-                    admin.describeLogDirs(brokerIds).allDescriptions().get();
+            Map<Integer, Map<String, LogDirDescription>> descriptions = admin.describeLogDirs(brokerIds)
+                    .allDescriptions().get();
             long allReplicaBytes = descriptions.values().stream()
                     .flatMap(logDirs -> logDirs.values().stream())
                     .flatMap(logDir -> logDir.replicaInfos().entrySet().stream())
                     .filter(entry -> entry.getKey().topic().equals(topicName))
                     .mapToLong(entry -> entry.getValue().size()).sum();
             int replicationFactor = description.partitions().isEmpty()
-                    ? 1 : Math.max(1, description.partitions().get(0).replicas().size());
+                    ? 1
+                    : Math.max(1, description.partitions().get(0).replicas().size());
             return allReplicaBytes / replicationFactor;
         } catch (Exception ignored) {
             return -1;
@@ -555,8 +988,10 @@ public class TopicOperationsService {
         long deadline = System.currentTimeMillis() + 15_000;
         while (System.currentTimeMillis() < deadline) {
             try {
-                boolean present = admin.listTopics(new ListTopicsOptions().listInternal(true)).names().get().contains(topicName);
-                if (present == expected) return;
+                boolean present = admin.listTopics(new ListTopicsOptions().listInternal(true)).names().get()
+                        .contains(topicName);
+                if (present == expected)
+                    return;
             } catch (ExecutionException ignored) {
                 // Metadata is expected to be briefly inconsistent while the topic is recreated.
             }

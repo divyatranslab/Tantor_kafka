@@ -101,7 +101,7 @@ public class BrokerMetricsCacheService {
 
             if (cached != null && !cached.external && (now - cached.timestamp < CACHE_TTL_MS)
                     && Objects.equals(cached.inputKey, inputKey)) {
-                return cached.brokers;
+                return copyBrokers(cached.brokers);
             }
 
             long deadlineNanos = System.nanoTime()
@@ -191,6 +191,21 @@ public class BrokerMetricsCacheService {
         futures.forEach(future -> future.cancel(true));
     }
 
+  
+
+    private List<BrokerSummaryDto> copyBrokers(List<BrokerSummaryDto> brokers) {
+        return brokers.stream().map(broker -> BrokerSummaryDto.builder()
+                .brokerId(broker.getBrokerId()).hostname(broker.getHostname()).role(broker.getRole())
+                .brokerHealth(broker.getBrokerHealth()).isController(broker.isController())
+                .isJmxReachable(broker.isJmxReachable()).cpuUsagePct(broker.getCpuUsagePct())
+                .memoryUsedMb(broker.getMemoryUsedMb()).memoryTotalMb(broker.getMemoryTotalMb())
+                .diskUsedGb(broker.getDiskUsedGb()).diskTotalGb(broker.getDiskTotalGb())
+                .diskUsedBytes(broker.getDiskUsedBytes()).diskTotalBytes(broker.getDiskTotalBytes())
+                .hostMetricStatus(broker.getHostMetricStatus()).messagesInPerSec(broker.getMessagesInPerSec())
+                .bytesInPerSec(broker.getBytesInPerSec()).bytesOutPerSec(broker.getBytesOutPerSec())
+                .lastHeartbeat(broker.getLastHeartbeat()).metricsTimestamp(broker.getMetricsTimestamp()).build())
+                .toList();
+    }
     private static ThreadPoolExecutor createMetricsExecutor() {
         AtomicInteger threadNumber = new AtomicInteger();
         ThreadFactory threadFactory = task -> {
@@ -243,12 +258,14 @@ public class BrokerMetricsCacheService {
             long now = System.currentTimeMillis();
 
             if (cached != null && cached.external && (now - cached.timestamp < CACHE_TTL_MS)) {
-                return cached.brokers;
+               return copyBrokers(cached.brokers);
             }
 
             List<BrokerSummaryDto> brokers = fetchBootstrapOnlyExternalBrokers(cluster);
-            cache.put(cluster.getId(), new CachedBrokers(brokers, now, null, true));
-            return brokers;
+            cache.put(
+                cluster.getId(),
+                new CachedBrokers(brokers, System.currentTimeMillis(), null, true));
+            return copyBrokers(brokers);
         }
     }
 
@@ -409,7 +426,7 @@ public class BrokerMetricsCacheService {
         boolean external;
 
         CachedBrokers(List<BrokerSummaryDto> brokers, long timestamp, List<BrokerInput> inputKey, boolean external) {
-            this.brokers = brokers;
+            this.brokers = List.copyOf(brokers);
             this.timestamp = timestamp;
             this.inputKey = inputKey;
             this.external = external;

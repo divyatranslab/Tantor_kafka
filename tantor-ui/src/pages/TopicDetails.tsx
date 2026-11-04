@@ -56,6 +56,9 @@ interface MessageResponse {
   count: number;
   bytes: number;
   elapsedMs: number;
+  truncated?: boolean;
+  truncationReason?: string | null;
+  scannedRecords?: number;
 }
 
 interface MessageFilters {
@@ -106,6 +109,8 @@ interface TopicStatistics {
   analyzedAt: number;
   sampleLimit: number;
   truncated: boolean;
+  truncationReason?: string | null;
+  scannedRecords?: number;
   messageCount: number;
   minOffset: number;
   maxOffset: number;
@@ -489,6 +494,16 @@ export function TopicDetails() {
               <button className="message-refresh-btn" onClick={() => void loadMessages()} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
             </div>
 
+            {messages?.truncated && (
+              <div className="detail-alert warning" style={{ marginBottom: '16px' }}>
+                <AlertTriangle size={17} />
+                <span>
+                  Partial results: {messages.count.toLocaleString()} matching messages returned after scanning {messages.scannedRecords !== undefined ? messages.scannedRecords.toLocaleString() : messages.count.toLocaleString()} records
+                  {messages.truncationReason ? ` (${messages.truncationReason})` : ''}.
+                </span>
+              </div>
+            )}
+
             <div className="detail-table-wrap">
               <table className="detail-table messages-table">
                 <thead><tr><th>Offset</th><th>Partition</th><th>Timestamp</th><th>Key preview</th><th>Value preview</th></tr></thead>
@@ -557,6 +572,17 @@ export function TopicDetails() {
                 <RefreshCw className={statisticsLoading ? 'spin' : ''} size={15} />
               </button>
             </div>
+
+            {statistics?.truncated && (
+              <div className="detail-alert warning" style={{ marginBottom: '16px' }}>
+                <AlertTriangle size={17} />
+                <span>
+                  Partial results: {statistics.messageCount.toLocaleString()} messages analyzed after scanning {statistics.scannedRecords !== undefined ? statistics.scannedRecords.toLocaleString() : statistics.messageCount.toLocaleString()} records
+                  {statistics.truncationReason ? ` (${statistics.truncationReason})` : ''}.
+                </span>
+              </div>
+            )}
+
             <div className="statistics-figma-heading">
               <h3 style={{ margin: 0, color: 'var(--button-primary-hover)', fontSize: 'var(--text-md)', fontWeight: 'var(--font-medium)', fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
             </div>
