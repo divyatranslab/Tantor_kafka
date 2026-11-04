@@ -32,6 +32,9 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
+import org.apache.kafka.common.acl.AccessControlEntryFilter;
+import org.apache.kafka.common.resource.PatternType;
+import org.apache.kafka.common.resource.ResourcePatternFilter;
 
 @Service
 @RequiredArgsConstructor
@@ -415,11 +418,13 @@ public class TopicOperationsService {
                     try {
                         future = offsetsResult.partitionsToOffsetAndMetadata(groupId);
                     } catch (IllegalArgumentException e) {
-                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId, e);
+                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId,
+                                e);
                     }
                     if (future == null) {
                         try {
-                            KafkaFuture<Map<String, Map<TopicPartition, OffsetAndMetadata>>> allFuture = offsetsResult.all();
+                            KafkaFuture<Map<String, Map<TopicPartition, OffsetAndMetadata>>> allFuture = offsetsResult
+                                    .all();
                             if (allFuture != null && allFuture.isDone() && !allFuture.isCompletedExceptionally()) {
                                 Map<String, Map<TopicPartition, OffsetAndMetadata>> allMap = allFuture.getNow(null);
                                 if (allMap != null && allMap.containsKey(groupId)) {
@@ -430,7 +435,8 @@ public class TopicOperationsService {
                         }
                     }
                     if (future == null) {
-                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
+                        throw new IllegalStateException(
+                                "Kafka omitted committed offsets for consumer group " + groupId);
                     }
                     timeout = KafkaRefreshDeadline.remainingMillis(deadline);
                     Map<TopicPartition, OffsetAndMetadata> groupOffsets;
@@ -439,10 +445,12 @@ public class TopicOperationsService {
                     } catch (ExecutionException e) {
                         throw kafkaFailure("load committed offsets for consumer group " + groupId, e);
                     } catch (java.util.concurrent.TimeoutException e) {
-                        throw new RuntimeException("Timed out loading committed offsets for consumer group " + groupId, e);
+                        throw new RuntimeException("Timed out loading committed offsets for consumer group " + groupId,
+                                e);
                     }
                     if (groupOffsets == null) {
-                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
+                        throw new IllegalStateException(
+                                "Kafka omitted committed offsets for consumer group " + groupId);
                     }
                     offsetsByGroup.put(groupId, groupOffsets);
                 }
@@ -524,14 +532,29 @@ public class TopicOperationsService {
         return result;
     }
 
+    private boolean isApplicableToTopic(AclBinding binding, String topicName) {
+        if (binding.pattern().resourceType() != ResourceType.TOPIC) {
+            return false;
+        }
+        String resourceName = binding.pattern().name();
+
+        return switch (binding.pattern().patternType()) {
+            case LITERAL -> resourceName.equals(topicName) || resourceName.equals("*");
+            case PREFIXED -> topicName.startsWith(resourceName);
+            default -> false;
+        };
+    }
+
     public List<Map<String, Object>> getTopicAcls(UUID clusterId, String topicName) {
         try {
+            AclBindingFilter filter = new AclBindingFilter(
+                    new ResourcePatternFilter(ResourceType.TOPIC, topicName, PatternType.MATCH),
+                    AccessControlEntryFilter.ANY);
             Collection<AclBinding> bindings = kafkaAdminService.getAdminClient(clusterId)
-                    .describeAcls(AclBindingFilter.ANY).values().get();
+                    .describeAcls(filter).values().get();
             return bindings.stream()
-                    .filter(binding -> binding.pattern().resourceType() == ResourceType.TOPIC)
-                    .filter(binding -> binding.pattern().name().equals(topicName)
-                            || binding.pattern().name().equals("*"))
+                    .filter(binding -> isApplicableToTopic(binding, topicName))
+                    .distinct()
                     .map(binding -> {
                         Map<String, Object> row = new LinkedHashMap<>();
                         row.put("principal", binding.entry().principal());
