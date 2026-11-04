@@ -12,39 +12,53 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeClusterResult;
 import org.apache.kafka.clients.admin.DescribeLogDirsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.clients.admin.LogDirDescription;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.Node;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ClusterOverviewServiceTest {
 
-    @Mock private ClusterRepository clusterRepository;
-    @Mock private ExternalClusterRepository externalClusterRepository;
-    @Mock private HostRepository hostRepository;
-    @Mock private KafkaAdminService kafkaAdminService;
-    @Mock private HostStatusService hostStatusService;
-    @Mock private AdminClient adminClient;
-    @Mock private DescribeClusterResult describeClusterResult;
-    @Mock private ListTopicsResult listTopicsResult;
-    @Mock private DescribeLogDirsResult describeLogDirsResult;
+    @Mock
+    private ClusterRepository clusterRepository;
+    @Mock
+    private ExternalClusterRepository externalClusterRepository;
+    @Mock
+    private HostRepository hostRepository;
+    @Mock
+    private KafkaAdminService kafkaAdminService;
+    @Mock
+    private HostStatusService hostStatusService;
+    @Mock
+    private AdminClient adminClient;
+    @Mock
+    private DescribeClusterResult describeClusterResult;
+    @Mock
+    private ListTopicsResult listTopicsResult;
+    @Mock
+    private DescribeLogDirsResult describeLogDirsResult;
 
     private ClusterOverviewService service;
 
@@ -55,8 +69,7 @@ class ClusterOverviewServiceTest {
                 externalClusterRepository,
                 hostRepository,
                 kafkaAdminService,
-                hostStatusService
-        );
+                hostStatusService);
     }
 
     @Test
@@ -98,9 +111,8 @@ class ClusterOverviewServiceTest {
         when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
         when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
         when(describeLogDirsResult.descriptions()).thenReturn(
-                Map.of(1, KafkaFuture.completedFuture(Map.of()))
-        );
-        when(hostRepository.findById(hostId)).thenReturn(Optional.of(host));
+                Map.of(1, KafkaFuture.completedFuture(Map.of())));
+        when(hostRepository.findAllById(Set.of(hostId))).thenReturn(List.of(host));
         when(hostStatusService.agentConnectivityStatus(host)).thenReturn("ONLINE");
 
         ClusterOverviewDto overview = service.getOverview(clusterId);
@@ -140,8 +152,7 @@ class ClusterOverviewServiceTest {
         when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
         when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
         when(describeLogDirsResult.descriptions()).thenReturn(
-                Map.of(1, KafkaFuture.completedFuture(Map.of()))
-        );
+                Map.of(1, KafkaFuture.completedFuture(Map.of())));
 
         ClusterOverviewDto overview = service.getOverview(clusterId);
 
@@ -183,8 +194,7 @@ class ClusterOverviewServiceTest {
         when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
         when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
         when(describeLogDirsResult.descriptions()).thenReturn(
-                Map.of(2, KafkaFuture.completedFuture(Map.of()))
-        );
+                Map.of(2, KafkaFuture.completedFuture(Map.of())));
         when(hostRepository.findById("controller-a")).thenReturn(Optional.of(firstHost));
         when(hostRepository.findById("controller-b")).thenReturn(Optional.of(secondHost));
 
@@ -198,17 +208,233 @@ class ClusterOverviewServiceTest {
                         ClusterOverviewDto.ControllerRow::isActiveLeader)
                 .containsExactly(
                         org.assertj.core.groups.Tuple.tuple(101, "192.168.3.229", 19093, false),
-                        org.assertj.core.groups.Tuple.tuple(102, "192.168.3.164", 9093, true)
-                );
+                        org.assertj.core.groups.Tuple.tuple(102, "192.168.3.164", 9093, true));
         assertThat(overview.getUptime().getConfiguredControllerCount()).isEqualTo(2);
+    }
+
+    @Test
+    void appliesHostDiskStatsViaBatchLookupInsteadOfNPlusOneQueries() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Host host1 = host("host-1", "host-1.local", "192.168.3.101");
+        host1.setLastHeartbeat(OffsetDateTime.now());
+        host1.setDiskUsedGb(10L);
+        host1.setDiskTotalGb(20L);
+
+        Host host2 = host("host-2", "host-2.local", "192.168.3.102");
+        host2.setLastHeartbeat(OffsetDateTime.now());
+        host2.setDiskUsedGb(15L);
+        host2.setDiskTotalGb(30L);
+
+        Host host3 = host("host-3", "host-3.local", "192.168.3.103");
+        host3.setLastHeartbeat(OffsetDateTime.now());
+        host3.setDiskUsedGb(25L);
+        host3.setDiskTotalGb(50L);
+
+        Cluster cluster = internalCluster(clusterId, List.of(
+                assignment(null, "host-1", 1, "broker"),
+                assignment(null, "host-2", 2, "broker"),
+                assignment(null, "host-3", 3, "broker")));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(
+                new Node(1, "192.168.3.101", 9092),
+                new Node(2, "192.168.3.102", 9092),
+                new Node(3, "192.168.3.103", 9092)));
+
+        when(hostRepository.findAllById(any())).thenReturn(List.of(host1, host2, host3));
+        when(hostStatusService.agentConnectivityStatus(any())).thenReturn("ONLINE");
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Set<String>> captor = ArgumentCaptor.forClass(Set.class);
+        verify(hostRepository, times(1)).findAllById(captor.capture());
+        assertThat(captor.getValue()).containsExactlyInAnyOrder("host-1", "host-2", "host-3");
+        verify(hostRepository, never()).findById(any());
+
+        assertThat(overview.getBrokers()).hasSize(3);
+        assertThat(overview.getBrokers())
+                .extracting(ClusterOverviewDto.BrokerRow::getHostDiskMetricStatus)
+                .containsOnly("LIVE");
+    }
+
+    @Test
+    void multipleServicesSharingOneHostFetchedOnceInBatch() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        String sharedHostId = "shared-host";
+        Host sharedHost = host(sharedHostId, "shared.local", "192.168.3.200");
+        sharedHost.setLastHeartbeat(OffsetDateTime.now());
+        sharedHost.setDiskUsedGb(40L);
+        sharedHost.setDiskTotalGb(80L);
+
+        Cluster cluster = internalCluster(clusterId, List.of(
+                assignment(null, sharedHostId, 1, "broker"),
+                assignment(null, sharedHostId, 2, "broker")));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(
+                new Node(1, "192.168.3.200", 9092),
+                new Node(2, "192.168.3.200", 9093)));
+
+        when(hostRepository.findAllById(any())).thenReturn(List.of(sharedHost));
+        when(hostStatusService.agentConnectivityStatus(sharedHost)).thenReturn("ONLINE");
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Set<String>> captor = ArgumentCaptor.forClass(Set.class);
+        verify(hostRepository, times(1)).findAllById(captor.capture());
+        assertThat(captor.getValue()).containsExactly(sharedHostId);
+        verify(hostRepository, never()).findById(any());
+
+        assertThat(overview.getBrokers()).hasSize(2);
+        for (ClusterOverviewDto.BrokerRow broker : overview.getBrokers()) {
+            assertThat(broker.getHostDiskMetricStatus()).isEqualTo("LIVE");
+            assertThat(broker.getHostDiskUsedBytes()).isEqualTo(40L * 1024 * 1024 * 1024);
+            assertThat(broker.getHostDiskTotalBytes()).isEqualTo(80L * 1024 * 1024 * 1024);
+            assertThat(broker.getHostDiskLastSeen()).isEqualTo(sharedHost.getLastHeartbeat());
+        }
+    }
+
+    @Test
+    void missingHostRecordLeavesBrokerDiskStatsUnchanged() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = internalCluster(clusterId, List.of(
+                assignment(null, "missing-host-id", 1, "broker")));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(new Node(1, "192.168.3.201", 9092)));
+
+        when(hostRepository.findAllById(any())).thenReturn(List.of());
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        assertThat(overview.getBrokers()).hasSize(1);
+        ClusterOverviewDto.BrokerRow broker = overview.getBrokers().getFirst();
+        assertThat(broker.getHostDiskMetricStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(broker.getHostDiskUsedBytes()).isNull();
+        assertThat(broker.getHostDiskTotalBytes()).isNull();
+        assertThat(broker.getHostDiskLastSeen()).isNull();
+    }
+
+    @Test
+    void offlineAgentSetsStaleWhenHeartbeatPresentAndUnavailableWhenHeartbeatNull() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Host staleHost = host("stale-host", "stale.local", "192.168.3.202");
+        staleHost.setLastHeartbeat(OffsetDateTime.now().minusHours(2));
+        staleHost.setDiskUsedGb(10L);
+        staleHost.setDiskTotalGb(20L);
+
+        Host unavailableHost = host("unavailable-host", "unavailable.local", "192.168.3.203");
+        unavailableHost.setLastHeartbeat(null);
+
+        Cluster cluster = internalCluster(clusterId, List.of(
+                assignment(null, "stale-host", 1, "broker"),
+                assignment(null, "unavailable-host", 2, "broker")));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(
+                new Node(1, "192.168.3.202", 9092),
+                new Node(2, "192.168.3.203", 9092)));
+
+        when(hostRepository.findAllById(any())).thenReturn(List.of(staleHost, unavailableHost));
+        when(hostStatusService.agentConnectivityStatus(staleHost)).thenReturn("OFFLINE");
+        when(hostStatusService.agentConnectivityStatus(unavailableHost)).thenReturn("OFFLINE");
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        Map<Integer, ClusterOverviewDto.BrokerRow> brokersById = overview.getBrokers().stream()
+                .collect(Collectors.toMap(ClusterOverviewDto.BrokerRow::getBrokerId, b -> b));
+
+        ClusterOverviewDto.BrokerRow staleBroker = brokersById.get(1);
+        assertThat(staleBroker.getHostDiskMetricStatus()).isEqualTo("STALE");
+        assertThat(staleBroker.getHostDiskLastSeen()).isEqualTo(staleHost.getLastHeartbeat());
+        assertThat(staleBroker.getHostDiskUsedBytes()).isNull();
+        assertThat(staleBroker.getHostDiskTotalBytes()).isNull();
+
+        ClusterOverviewDto.BrokerRow unavailableBroker = brokersById.get(2);
+        assertThat(unavailableBroker.getHostDiskMetricStatus()).isEqualTo("UNAVAILABLE");
+        assertThat(unavailableBroker.getHostDiskLastSeen()).isNull();
+        assertThat(unavailableBroker.getHostDiskUsedBytes()).isNull();
+        assertThat(unavailableBroker.getHostDiskTotalBytes()).isNull();
+    }
+
+    @Test
+    void onlineAgentSetsLiveAndCalculatesDiskBytesAccurately() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Host host = host("online-host", "online.local", "192.168.3.204");
+        host.setLastHeartbeat(OffsetDateTime.now());
+        host.setDiskUsedGb(50L);
+        host.setDiskTotalGb(100L);
+
+        Cluster cluster = internalCluster(clusterId, List.of(
+                assignment(null, "online-host", 1, "broker")));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(new Node(1, "192.168.3.204", 9092)));
+
+        when(hostRepository.findAllById(any())).thenReturn(List.of(host));
+        when(hostStatusService.agentConnectivityStatus(host)).thenReturn("ONLINE");
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        ClusterOverviewDto.BrokerRow broker = overview.getBrokers().getFirst();
+        assertThat(broker.getHostDiskMetricStatus()).isEqualTo("LIVE");
+        assertThat(broker.getHostDiskUsedBytes()).isEqualTo(50L * 1024L * 1024L * 1024L);
+        assertThat(broker.getHostDiskTotalBytes()).isEqualTo(100L * 1024L * 1024L * 1024L);
+        assertThat(broker.getHostDiskLastSeen()).isEqualTo(host.getLastHeartbeat());
+    }
+
+    @Test
+    void invalidOrIrrelevantServicesDoNotTriggerHostLookups() throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        ClusterServiceAssignment nullNodeId = assignment(null, "host-1", 1, "broker");
+        nullNodeId.setNodeId(null);
+
+        ClusterServiceAssignment nullHostId = assignment(null, null, 2, "broker");
+
+        ClusterServiceAssignment absentNodeId = assignment(null, "host-3", 999, "broker");
+
+        Cluster cluster = internalCluster(clusterId, List.of(nullNodeId, nullHostId, absentNodeId));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        mockKafkaCluster(clusterId, List.of(new Node(1, "192.168.3.205", 9092)));
+
+        ClusterOverviewDto overview = service.getOverview(clusterId);
+
+        verify(hostRepository, never()).findAllById(any());
+        verify(hostRepository, never()).findById(any());
+        assertThat(overview.getBrokers()).hasSize(1);
+        assertThat(overview.getBrokers().getFirst().getHostDiskMetricStatus()).isEqualTo("UNAVAILABLE");
+    }
+
+    private Cluster internalCluster(UUID clusterId, List<ClusterServiceAssignment> services) {
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setName("internal-test");
+        cluster.setKafkaVersion("3.9.2");
+        cluster.setOriginType("INTERNAL");
+        cluster.setMode("kraft");
+        cluster.setServices(services);
+        return cluster;
+    }
+
+    private void mockKafkaCluster(UUID clusterId, List<Node> nodes) {
+        when(kafkaAdminService.getAdminClient(clusterId)).thenReturn(adminClient);
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(KafkaFuture.completedFuture(nodes));
+        when(describeClusterResult.controller()).thenReturn(KafkaFuture.completedFuture(nodes.getFirst()));
+        when(describeClusterResult.clusterId()).thenReturn(KafkaFuture.completedFuture("test-cluster-id"));
+        when(kafkaAdminService.getControllerId(clusterId)).thenReturn(nodes.getFirst().id());
+        when(adminClient.listTopics(any())).thenReturn(listTopicsResult);
+        when(listTopicsResult.names()).thenReturn(KafkaFuture.completedFuture(Set.of()));
+        when(adminClient.describeLogDirs(any())).thenReturn(describeLogDirsResult);
+        Map<Integer, KafkaFuture<Map<String, LogDirDescription>>> logDirs = new HashMap<>();
+        for (Node node : nodes) {
+            logDirs.put(node.id(), KafkaFuture.completedFuture(Map.of()));
+        }
+        when(describeLogDirsResult.descriptions()).thenReturn(logDirs);
     }
 
     private ClusterServiceAssignment assignment(
             Cluster cluster,
             String hostId,
             int nodeId,
-            String role
-    ) {
+            String role) {
         ClusterServiceAssignment assignment = new ClusterServiceAssignment();
         assignment.setCluster(cluster);
         assignment.setHostId(hostId);

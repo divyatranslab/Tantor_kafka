@@ -1,6 +1,7 @@
 package io.translab.tantor.server.service;
 
 import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.dto.ClusterOverviewDto;
 import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.repository.ClusterRepository;
@@ -25,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -255,27 +257,45 @@ public class ClusterOverviewService {
         if (cluster == null || cluster.getServices() == null) {
             return;
         }
+        Set<String> hostIds = new HashSet<>();
         cluster.getServices().forEach(service -> {
-            if (service.getNodeId() == null || service.getHostId() == null) {
+            if (service != null && service.getNodeId() != null && service.getHostId() != null
+                    && brokerStats.containsKey(service.getNodeId())) {
+                hostIds.add(service.getHostId());
+            }
+        });
+        if (hostIds.isEmpty()) {
+            return;
+        }
+        Map<String, Host> hostsById = new HashMap<>();
+        hostRepository.findAllById(hostIds).forEach(host -> {
+            if (host != null && host.getId() != null) {
+                hostsById.put(host.getId(), host);
+            }
+        });
+        cluster.getServices().forEach(service -> {
+            if (service == null || service.getNodeId() == null || service.getHostId() == null) {
                 return;
             }
             BrokerAccumulator broker = brokerStats.get(service.getNodeId());
             if (broker == null) {
                 return;
             }
-            hostRepository.findById(service.getHostId()).ifPresent(host -> {
-                broker.hostDiskLastSeen = host.getLastHeartbeat();
-                boolean agentOnline = "ONLINE".equalsIgnoreCase(
-                        hostStatusService.agentConnectivityStatus(host)
-                );
-                if (!agentOnline) {
-                    broker.hostDiskMetricStatus = host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE";
-                    return;
-                }
-                broker.hostDiskMetricStatus = "LIVE";
-                broker.hostDiskUsedBytes = host.getDiskUsedGb() == null ? null : gibibytesToBytes(host.getDiskUsedGb());
-                broker.hostDiskTotalBytes = host.getDiskTotalGb() == null ? null : gibibytesToBytes(host.getDiskTotalGb());
-            });
+            Host host = hostsById.get(service.getHostId());
+            if (host == null) {
+                return;
+            }
+            broker.hostDiskLastSeen = host.getLastHeartbeat();
+            boolean agentOnline = "ONLINE".equalsIgnoreCase(
+                    hostStatusService.agentConnectivityStatus(host)
+            );
+            if (!agentOnline) {
+                broker.hostDiskMetricStatus = host.getLastHeartbeat() == null ? "UNAVAILABLE" : "STALE";
+                return;
+            }
+            broker.hostDiskMetricStatus = "LIVE";
+            broker.hostDiskUsedBytes = host.getDiskUsedGb() == null ? null : gibibytesToBytes(host.getDiskUsedGb());
+            broker.hostDiskTotalBytes = host.getDiskTotalGb() == null ? null : gibibytesToBytes(host.getDiskTotalGb());
         });
     }
 
