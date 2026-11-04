@@ -12,6 +12,7 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.kafka.common.acl.AclBinding;
@@ -406,14 +407,45 @@ public class TopicOperationsService {
                         groupId -> groupId, ignored -> new ListConsumerGroupOffsetsSpec(),
                         (left, right) -> left, LinkedHashMap::new));
                 timeout = KafkaRefreshDeadline.remainingMillis(deadline);
-                Map<String, Map<TopicPartition, OffsetAndMetadata>> result = admin
+                ListConsumerGroupOffsetsResult offsetsResult = admin
                         .listConsumerGroupOffsets(offsetRequests,
-                                new ListConsumerGroupOffsetsOptions().timeoutMs(timeout))
-                        .all().get(timeout, TimeUnit.MILLISECONDS);
-                if (!result.keySet().containsAll(batch)) {
-                    throw new IllegalStateException("Kafka omitted committed offsets for one or more consumer groups");
+                                new ListConsumerGroupOffsetsOptions().timeoutMs(timeout));
+                for (String groupId : batch) {
+                    KafkaFuture<Map<TopicPartition, OffsetAndMetadata>> future = null;
+                    try {
+                        future = offsetsResult.partitionsToOffsetAndMetadata(groupId);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId, e);
+                    }
+                    if (future == null) {
+                        try {
+                            KafkaFuture<Map<String, Map<TopicPartition, OffsetAndMetadata>>> allFuture = offsetsResult.all();
+                            if (allFuture != null && allFuture.isDone() && !allFuture.isCompletedExceptionally()) {
+                                Map<String, Map<TopicPartition, OffsetAndMetadata>> allMap = allFuture.getNow(null);
+                                if (allMap != null && allMap.containsKey(groupId)) {
+                                    future = KafkaFuture.completedFuture(allMap.get(groupId));
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    if (future == null) {
+                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
+                    }
+                    timeout = KafkaRefreshDeadline.remainingMillis(deadline);
+                    Map<TopicPartition, OffsetAndMetadata> groupOffsets;
+                    try {
+                        groupOffsets = future.get(timeout, TimeUnit.MILLISECONDS);
+                    } catch (ExecutionException e) {
+                        throw kafkaFailure("load committed offsets for consumer group " + groupId, e);
+                    } catch (java.util.concurrent.TimeoutException e) {
+                        throw new RuntimeException("Timed out loading committed offsets for consumer group " + groupId, e);
+                    }
+                    if (groupOffsets == null) {
+                        throw new IllegalStateException("Kafka omitted committed offsets for consumer group " + groupId);
+                    }
+                    offsetsByGroup.put(groupId, groupOffsets);
                 }
-                offsetsByGroup.putAll(result);
             }
             if (!descriptions.keySet().containsAll(ids) || !offsetsByGroup.keySet().containsAll(ids)) {
                 throw new IllegalStateException("Kafka returned incomplete consumer-group data");
@@ -472,13 +504,13 @@ public class TopicOperationsService {
             return result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Interrupted while loading topic consumers");
+            throw new RuntimeException("Interrupted while loading topic consumers", e);
         } catch (ExecutionException e) {
             throw kafkaFailure("load topic consumers", e);
         } catch (java.util.concurrent.TimeoutException e) {
             throw new RuntimeException("Timed out loading topic consumers", e);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to load topic consumers", e);
+            throw new RuntimeException("Failed to load topic consumers: " + e.getMessage(), e);
         }
     }
 
